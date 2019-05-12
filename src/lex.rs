@@ -15,8 +15,8 @@ impl<'a, R: Read> Lexer<'a, R> {
     pub fn new(filename: &'a str, stream: BufReader<R>) -> Lexer<'a, R> {
         Lexer {
             location: Location {
-                line: 1,
-                column: 1,
+                line: 0,
+                column: 0,
                 file: filename
             },
             reader: stream,

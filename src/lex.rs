@@ -11,6 +11,12 @@ pub struct Lexer<'a, R: Read> {
     current: Option<char>
 }
 
+enum CharError {
+    Eof,
+    Newline,
+    Terminator
+}
+
 impl<'a, R: Read> Lexer<'a, R> {
     pub fn new(filename: &'a str, stream: BufReader<R>) -> Lexer<'a, R> {
         Lexer {
@@ -78,6 +84,77 @@ impl<'a, R: Read> Lexer<'a, R> {
             Ok(Token::Int(current))
         }
     }
+    fn parse_single_char(&mut self, string: bool) -> Result<char, CharError> {
+        let terminator = if string { '"' } else { '\'' };
+        if let Some(c) = self.next_char() {
+            if c == '\\' {
+                if let Some(c) = self.next_char() {
+                    Ok(match c {
+                    '\n' => return self.parse_single_char(string),
+                    'n' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
+                    '"' => '"',
+                    '\'' => '\'',
+                    '\\' => '\\',
+                    '\0' => '\0',
+                    'b' => '\x08',
+                    'f' => '\x0c',
+                    // TODO: emit a warning (how?)
+                    _ => c
+                    })
+                } else {
+                    Err(CharError::Eof)
+                }
+            } else if c == '\n' {
+                Err(CharError::Newline)
+            } else if c == terminator {
+                Err(CharError::Terminator)
+            } else {
+                Ok(c)
+            }
+        } else {
+            Err(CharError::Eof)
+        }
+    }
+    fn parse_char(&mut self) -> Result<Token, String> {
+        let (term_err, newline_err) = (Err(String::from("Missing terminating ' character in char literal")),
+                                     Err(String::from("Illegal newline while parsing char literal")));
+        match self.parse_single_char(false) {
+            Ok(c) => {
+                match self.next_char() {
+                    Some('\'') => Ok(Token::Char(c)),
+                    Some('\n') => newline_err,
+                    None => term_err,
+                    Some(_) => {
+                        loop {
+                            match self.parse_single_char(false) {
+                                Ok('\'') => break,
+                                Err(_) => break,
+                                _ => {}
+                            }
+                        }
+                        Err(String::from("Multi-character character literal"))
+                    },
+                }
+            },
+            Err(CharError::Eof) => term_err,
+            Err(CharError::Newline) => newline_err,
+            Err(CharError::Terminator) => Err(String::from("Empty character constant")),
+        }
+    }
+    fn parse_string(&mut self) -> Result<Token, String> {
+        let mut literal = String::new();
+        loop {
+            match self.parse_single_char(true) {
+                Ok(c) => literal.push(c),
+                Err(CharError::Eof) => return Err(String::from("Missing terminating \" character in string literal")),
+                Err(CharError::Newline) => return Err(String::from("Illegal newline while parsing string literal")),
+                Err(CharError::Terminator) => break,
+            }
+        }
+        Ok(Token::Str(literal))
+    }
 }
 
 impl<'a, R: Read> Iterator for Lexer<'a, R> {
@@ -108,7 +185,9 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
                 '0'...'9' => {
                     self.unput(Some(c));
                     self.parse_int()
-                }
+                },
+                '\'' => self.parse_char(),
+                '"' => self.parse_string(),
                 '\r'|'\n'|' ' => {
                     return self.next();
                 },

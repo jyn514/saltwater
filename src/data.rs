@@ -9,8 +9,10 @@ pub enum Token {
     Minus,
     Star,
     Divide,
-    Int(i64)
     Equal,
+    Int(i64),
+    Str(String),
+    Char(char)
 }
 
 // holds where a piece of code came from

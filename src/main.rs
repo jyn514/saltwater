@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate lazy_static;
+
 mod data;
 mod lex;
 

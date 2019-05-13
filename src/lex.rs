@@ -1,8 +1,11 @@
+use lazy_static;
+
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
 use std::iter::IntoIterator;
 use std::vec::IntoIter;
 
-use super::data::{Location, Locatable, Token};
+use super::data::{Keyword, Location, Locatable, Token};
 
 pub struct Lexer<'a, R: Read> {
     location: Location<'a>,
@@ -15,6 +18,58 @@ enum CharError {
     Eof,
     Newline,
     Terminator
+}
+
+lazy_static! {
+    static ref KEYWORDS: HashMap<&'static str, Keyword> = {
+        let mut m = HashMap::new();
+
+        // booleans
+        //m.insert("false", Token::FALSE);
+        //m.insert("true", Token::TRUE);
+
+        // control flow
+        m.insert("if", Keyword::IF);
+        m.insert("else", Keyword::ELSE);
+        m.insert("do", Keyword::DO);
+        m.insert("while", Keyword::WHILE);
+        m.insert("for", Keyword::FOR);
+        m.insert("switch", Keyword::SWITCH);
+        m.insert("case", Keyword::CASE);
+        m.insert("default", Keyword::DEFAULT);
+        m.insert("break", Keyword::BREAK);
+        m.insert("continue", Keyword::CONTINUE);
+        m.insert("return", Keyword::RETURN);
+        m.insert("goto", Keyword::GOTO);
+
+        // types
+        m.insert("bool", Keyword::BOOL);
+        m.insert("char", Keyword::CHAR);
+        m.insert("short", Keyword::SHORT);
+        m.insert("int", Keyword::INT);
+        m.insert("long", Keyword::LONG);
+        m.insert("float", Keyword::FLOAT);
+        m.insert("double", Keyword::DOUBLE);
+        m.insert("void", Keyword::VOID);
+        m.insert("signed", Keyword::SIGNED);
+        m.insert("unsigned", Keyword::UNSIGNED);
+        m.insert("typedef", Keyword::TYPEDEF);
+        m.insert("union", Keyword::UNION);
+        m.insert("struct", Keyword::STRUCT);
+
+        // qualifiers
+        m.insert("const", Keyword::CONST);
+        m.insert("volatile", Keyword::VOLATILE);
+
+        // storage classes
+        m.insert("auto", Keyword::AUTO);
+        m.insert("register", Keyword::REGISTER);
+        m.insert("static", Keyword::STATIC);
+        m.insert("extern", Keyword::EXTERN);
+
+        m.insert("sizeof", Keyword::SIZEOF);
+        m
+    };
 }
 
 impl<'a, R: Read> Lexer<'a, R> {
@@ -155,6 +210,23 @@ impl<'a, R: Read> Lexer<'a, R> {
         }
         Ok(Token::Str(literal))
     }
+    fn parse_id(&mut self, start: char) -> Result<Token, String> {
+        let mut id = String::new();
+        id.push(start);
+        while let Some(c) = self.next_char() {
+            if c.is_digit(10) || 'a' <= c && c <= 'z'
+                            || 'A' <= c && c <= 'Z' || c == '_' {
+                id.push(c);
+            } else {
+                self.unput(Some(c));
+                break;
+            }
+        }
+        match KEYWORDS.get::<str>(&id) {
+            Some(keyword) => Ok(Token::Keyword(*keyword)),
+            None => Ok(Token::Id(id))
+        }
+    }
 }
 
 impl<'a, R: Read> Iterator for Lexer<'a, R> {
@@ -185,6 +257,9 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
                 '0'...'9' => {
                     self.unput(Some(c));
                     self.parse_int()
+                },
+                'a'...'z'|'A'...'Z'|'_' => {
+                    self.parse_id(c)
                 },
                 '\'' => self.parse_char(),
                 '"' => self.parse_string(),

@@ -1,3 +1,47 @@
+#[derive(Clone, Copy, Debug)]
+pub enum Keyword {
+    // keywords
+    IF,
+    ELSE,
+    DO,
+    WHILE,
+    FOR,
+    SWITCH,
+    CASE,
+    DEFAULT,
+    BREAK,
+    CONTINUE,
+    RETURN,
+    GOTO,
+
+    // types
+    BOOL,
+    CHAR,
+    SHORT,
+    INT,
+    LONG,
+    FLOAT,
+    DOUBLE,
+    VOID,
+    SIGNED,
+    UNSIGNED,
+    TYPEDEF,
+    UNION,
+    STRUCT,
+
+    // qualifiers
+    CONST,
+    VOLATILE,
+
+    // storage classes
+    AUTO,
+    REGISTER,
+    STATIC,
+    EXTERN,
+
+    SIZEOF
+}
+
 #[derive(Debug)]
 pub enum Token {
     PlusPlus,
@@ -5,14 +49,20 @@ pub enum Token {
     MinusMinus,
     MinusEqual,
     EqualEqual,
+
     Plus,
     Minus,
     Star,
     Divide,
     Equal,
+
+    // literals
     Int(i64),
     Str(String),
-    Char(char)
+    Char(char),
+    Id(String),
+
+    Keyword(Keyword)
 }
 
 // holds where a piece of code came from

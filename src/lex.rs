@@ -121,10 +121,11 @@ impl<'a, R: Read> Lexer<'a, R> {
         let mut err = false;
         loop {
             match self.peek() {
-                Some(c) if '0' <= c && c <= '9' => {
+                Some(c) if c.is_digit(10) => {
                     self.next_char();
                     if !err {
-                        match current.checked_mul(10).and_then(|current| current.checked_add(c as i64 - '0' as i64)) {
+                        match current.checked_mul(10).and_then(|current|
+                               current.checked_add(c as i64 - '0' as i64)) {
                             Some(c) => { current = c; }
                             None => { err = true; }
                         }

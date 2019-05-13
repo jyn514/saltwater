@@ -1,10 +1,16 @@
 #[derive(Debug)]
 pub enum Token {
+    PlusPlus,
+    PlusEqual,
+    MinusMinus,
+    MinusEqual,
+    EqualEqual,
     Plus,
     Minus,
     Star,
     Divide,
     Int(i64)
+    Equal,
 }
 
 // holds where a piece of code came from
@@ -22,4 +28,3 @@ pub struct Locatable<'a, T> {
     pub data: T,
     pub location: Location<'a>
 }
-

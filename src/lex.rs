@@ -25,49 +25,49 @@ lazy_static! {
         let mut m = HashMap::new();
 
         // booleans
-        //m.insert("false", Token::FALSE);
-        //m.insert("true", Token::TRUE);
+        //m.insert("false", Token::False);
+        //m.insert("true", Token::True);
 
         // control flow
-        m.insert("if", Keyword::IF);
-        m.insert("else", Keyword::ELSE);
-        m.insert("do", Keyword::DO);
-        m.insert("while", Keyword::WHILE);
-        m.insert("for", Keyword::FOR);
-        m.insert("switch", Keyword::SWITCH);
-        m.insert("case", Keyword::CASE);
-        m.insert("default", Keyword::DEFAULT);
-        m.insert("break", Keyword::BREAK);
-        m.insert("continue", Keyword::CONTINUE);
-        m.insert("return", Keyword::RETURN);
-        m.insert("goto", Keyword::GOTO);
+        m.insert("if", Keyword::If);
+        m.insert("else", Keyword::Else);
+        m.insert("do", Keyword::Do);
+        m.insert("while", Keyword::While);
+        m.insert("for", Keyword::For);
+        m.insert("switch", Keyword::Switch);
+        m.insert("case", Keyword::Case);
+        m.insert("default", Keyword::Default);
+        m.insert("break", Keyword::Break);
+        m.insert("continue", Keyword::Continue);
+        m.insert("return", Keyword::Return);
+        m.insert("goto", Keyword::Goto);
 
         // types
-        m.insert("bool", Keyword::BOOL);
-        m.insert("char", Keyword::CHAR);
-        m.insert("short", Keyword::SHORT);
-        m.insert("int", Keyword::INT);
-        m.insert("long", Keyword::LONG);
-        m.insert("float", Keyword::FLOAT);
-        m.insert("double", Keyword::DOUBLE);
-        m.insert("void", Keyword::VOID);
-        m.insert("signed", Keyword::SIGNED);
-        m.insert("unsigned", Keyword::UNSIGNED);
-        m.insert("typedef", Keyword::TYPEDEF);
-        m.insert("union", Keyword::UNION);
-        m.insert("struct", Keyword::STRUCT);
+        m.insert("bool", Keyword::Bool);
+        m.insert("char", Keyword::Char);
+        m.insert("short", Keyword::Short);
+        m.insert("int", Keyword::Int);
+        m.insert("long", Keyword::Long);
+        m.insert("float", Keyword::Float);
+        m.insert("double", Keyword::Double);
+        m.insert("void", Keyword::Void);
+        m.insert("signed", Keyword::Signed);
+        m.insert("unsigned", Keyword::Unsigned);
+        m.insert("typedef", Keyword::Typedef);
+        m.insert("union", Keyword::Union);
+        m.insert("struct", Keyword::Struct);
 
         // qualifiers
-        m.insert("const", Keyword::CONST);
-        m.insert("volatile", Keyword::VOLATILE);
+        m.insert("const", Keyword::Const);
+        m.insert("volatile", Keyword::Volatile);
 
         // storage classes
-        m.insert("auto", Keyword::AUTO);
-        m.insert("register", Keyword::REGISTER);
-        m.insert("static", Keyword::STATIC);
-        m.insert("extern", Keyword::EXTERN);
+        m.insert("auto", Keyword::Auto);
+        m.insert("register", Keyword::Register);
+        m.insert("static", Keyword::Static);
+        m.insert("extern", Keyword::Extern);
 
-        m.insert("sizeof", Keyword::SIZEOF);
+        m.insert("sizeof", Keyword::Sizeof);
         m
     };
 }

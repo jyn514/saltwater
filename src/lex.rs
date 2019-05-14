@@ -116,22 +116,27 @@ impl<'a, R: Read> Lexer<'a, R> {
         self.current = self.next_char();
         self.current
     }
-    fn parse_int(&mut self) -> Result<Token, String> {
-        let mut current: i64 = 0;
+    fn parse_int(&mut self, start: char) -> Result<Token, String> {
+        let mut current: i64 = start as i64 - '0' as i64;
         let mut err = false;
-        loop {
+        // check for radix other than 10
+        let radix = if current == 0 {
             match self.peek() {
-                Some(c) if c.is_digit(10) => {
-                    self.next_char();
-                    if !err {
-                        match current.checked_mul(10).and_then(|current|
-                               current.checked_add(c as i64 - '0' as i64)) {
-                            Some(c) => { current = c; }
-                            None => { err = true; }
-                        }
-                    }
-                },
-                _ => { break; }
+                Some('b') => { self.next_char(); 2 },
+                Some('o') => { self.next_char(); 8 },
+                Some('x') => { self.next_char(); 16 },
+                _ => 10
+            }
+        } else { 10 };
+        while let Some(c) = self.peek() {
+            if !c.is_digit(radix) { break; }
+            self.next_char();
+            if !err {
+                match current.checked_mul(radix as i64).and_then(|current|
+                       current.checked_add(c as i64 - '0' as i64)) {
+                    Some(c) => { current = c; }
+                    None => { err = true; }
+                }
             }
         }
         if err {
@@ -273,8 +278,7 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
                 '[' => Ok(Token::LeftBracket),
                 ']' => Ok(Token::RightBracket),
                 '0'...'9' => {
-                    self.unput(Some(c));
-                    self.parse_int()
+                    self.parse_int(c)
                 },
                 'a'...'z'|'A'...'Z'|'_' => {
                     self.parse_id(c)

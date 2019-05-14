@@ -1,45 +1,45 @@
 #[derive(Clone, Copy, Debug)]
 pub enum Keyword {
     // keywords
-    IF,
-    ELSE,
-    DO,
-    WHILE,
-    FOR,
-    SWITCH,
-    CASE,
-    DEFAULT,
-    BREAK,
-    CONTINUE,
-    RETURN,
-    GOTO,
+    If,
+    Else,
+    Do,
+    While,
+    For,
+    Switch,
+    Case,
+    Default,
+    Break,
+    Continue,
+    Return,
+    Goto,
 
     // types
-    BOOL,
-    CHAR,
-    SHORT,
-    INT,
-    LONG,
-    FLOAT,
-    DOUBLE,
-    VOID,
-    SIGNED,
-    UNSIGNED,
-    TYPEDEF,
-    UNION,
-    STRUCT,
+    Bool,
+    Char,
+    Short,
+    Int,
+    Long,
+    Float,
+    Double,
+    Void,
+    Signed,
+    Unsigned,
+    Typedef,
+    Union,
+    Struct,
 
     // qualifiers
-    CONST,
-    VOLATILE,
+    Const,
+    Volatile,
 
     // storage classes
-    AUTO,
-    REGISTER,
-    STATIC,
-    EXTERN,
+    Auto,
+    Register,
+    Static,
+    Extern,
 
-    SIZEOF
+    Sizeof
 }
 
 #[derive(Debug)]

@@ -252,9 +252,26 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
                 '*' => Ok(Token::Star),
                 '/' => Ok(Token::Divide),
                 '=' => Ok(match self.peek() {
-                    Some('=') => Token::EqualEqual,
+                    Some('=') => { self.next_char(); Token::EqualEqual },
                     _ => Token::Equal
                 }),
+                '>' => Ok(match self.peek() {
+                    Some('=') => { self.next_char(); Token::GreaterEqual },
+                    Some('>') => { self.next_char(); Token::ShiftRight },
+                    _ => Token::Greater
+                }),
+                '<' => Ok(match self.peek() {
+                    Some('=') => { self.next_char(); Token::LessEqual },
+                    Some('<') => { self.next_char(); Token::ShiftLeft },
+                    _ => Token::Less
+                }),
+                '{' => Ok(Token::LeftBrace),
+                '}' => Ok(Token::RightBrace),
+                '(' => Ok(Token::LeftParen),
+                ')' => Ok(Token::RightParen),
+                ';' => Ok(Token::Semicolon),
+                '[' => Ok(Token::LeftBracket),
+                ']' => Ok(Token::RightBracket),
                 '0'...'9' => {
                     self.unput(Some(c));
                     self.parse_int()

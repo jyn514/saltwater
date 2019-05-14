@@ -49,12 +49,26 @@ pub enum Token {
     MinusMinus,
     MinusEqual,
     EqualEqual,
+    LessEqual,
+    GreaterEqual,
+    ShiftRight,
+    ShiftLeft,
 
     Plus,
     Minus,
     Star,
     Divide,
     Equal,
+    Less,
+    Greater,
+
+    LeftBrace,  // {
+    RightBrace,
+    LeftBracket,  // [
+    RightBracket,
+    LeftParen,
+    RightParen,
+    Semicolon,
 
     // literals
     Int(i64),

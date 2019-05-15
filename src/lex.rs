@@ -7,6 +7,7 @@ use std::vec::IntoIter;
 
 use super::data::{Keyword, Location, Locatable, Token};
 
+#[derive(Debug)]
 pub struct Lexer<'a, R: Read> {
     location: Location<'a>,
     reader: BufReader<R>,
@@ -307,5 +308,77 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
                 location: location,
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Locatable, Location, Lexer, Token};
+    use std::io::{BufReader, Cursor};
+
+    type LexType<'a> = Locatable<'a, Result<Token, String>>;
+
+    fn lex<'a>(input: String) -> Option<LexType<'a>> {
+        lex_all(input).get(0).map(|x| x.clone())
+    }
+    fn lex_all<'a>(input: String) -> Vec<LexType<'a>> {
+        Lexer::new("<stdin>", BufReader::new(Cursor::new(input))).collect()
+    }
+
+    fn match_data<'a, T>(lexed: Option<LexType<'a>>, closure: T) -> bool
+            where T: Fn(Result<Token, String>) -> bool {
+        match lexed {
+            Some(result) => closure(result.data),
+            None => false
+        }
+    }
+
+    #[test]
+    fn test_plus() {
+        let parse = lex(String::from("+"));
+        assert_eq!(parse, Some(Locatable {
+            data: Ok(Token::Plus),
+            location: Location {
+                file: "<stdin>",
+                line: 1,
+                column: 1
+            }
+        }))
+    }
+
+    #[test]
+    fn test_overflow() {
+        assert!(match lex(String::from("10000000000000000000000")) {
+            Some(lexed) => lexed.data.is_err(),
+            None => false
+        })
+    }
+
+    #[test]
+    fn test_int_constants() {
+        assert!(match_data(lex(String::from("10")), |lexed|
+            lexed == Ok(Token::Int(10))));
+        assert!(match_data(lex(String::from("0x10")), |lexed|
+            lexed == Ok(Token::Int(16))));
+        assert!(match_data(lex(String::from("0b10")), |lexed|
+            lexed == Ok(Token::Int(2))));
+        assert!(match_data(lex(String::from("0o10")), |lexed|
+            lexed == Ok(Token::Int(8))));
+    }
+
+    #[test]
+    // used to have a stack overflow on large consecutive whitespace inputs
+    fn test_lots_of_whitespace() {
+        let mut spaces = Vec::new();
+        spaces.resize(8096, '\n');
+        assert!(lex(spaces.into_iter().collect()) == None)
+    }
+
+    // Integration tests
+    #[test]
+    fn test_for_loop() {
+        assert!(lex_all(String::from("for (int i = 0; i < 100; ++i) {
+            a[i] = i << 2 + i*4;
+            }")).into_iter().all(|x| x.data.is_ok()))
     }
 }

@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Keyword {
     // keywords
     If,
@@ -42,7 +42,7 @@ pub enum Keyword {
     Sizeof
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     PlusPlus,
     PlusEqual,
@@ -81,7 +81,7 @@ pub enum Token {
 
 // holds where a piece of code came from
 // should almost always be immutable
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Location<'a> {
     // if there's a 4 GB input file, we have bigger problems
     pub line: u32,
@@ -89,7 +89,7 @@ pub struct Location<'a> {
     pub file: &'a str
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Locatable<'a, T> {
     pub data: T,
     pub location: Location<'a>

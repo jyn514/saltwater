@@ -116,6 +116,11 @@ impl<'a, R: Read> Lexer<'a, R> {
         self.current = self.next_char();
         self.current
     }
+    fn consume_whitespace(&mut self) {
+        while self.peek().map_or(false, |c| c.is_ascii_whitespace()) {
+            self.next_char();
+        }
+    }
     fn parse_int(&mut self, start: char) -> Result<Token, String> {
         let mut current: i64 = start as i64 - '0' as i64;
         let mut err = false;
@@ -206,14 +211,20 @@ impl<'a, R: Read> Lexer<'a, R> {
     }
     fn parse_string(&mut self) -> Result<Token, String> {
         let mut literal = String::new();
-        loop {
-            match self.parse_single_char(true) {
-                Ok(c) => literal.push(c),
-                Err(CharError::Eof) => return Err(String::from("Missing terminating \" character in string literal")),
-                Err(CharError::Newline) => return Err(String::from("Illegal newline while parsing string literal")),
-                Err(CharError::Terminator) => break,
+        // allow multiple adjacent strings
+        while self.peek() == Some('"') {
+            self.next_char();  // start quote
+            loop {
+                match self.parse_single_char(true) {
+                    Ok(c) => literal.push(c),
+                    Err(CharError::Eof) => return Err(String::from("Missing terminating \" character in string literal")),
+                    Err(CharError::Newline) => return Err(String::from("Illegal newline while parsing string literal")),
+                    Err(CharError::Terminator) => break,
+                }
             }
+            self.consume_whitespace();
         }
+        literal.push('\0');
         Ok(Token::Str(literal))
     }
     fn parse_id(&mut self, start: char) -> Result<Token, String> {
@@ -241,6 +252,7 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
     type Item = Locatable<'a, Result<Token, String>>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        self.consume_whitespace();
         self.next_char().and_then(|c| {
             let location = self.location.clone();
             let data = match c {
@@ -284,9 +296,9 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
                     self.parse_id(c)
                 },
                 '\'' => self.parse_char(),
-                '"' => self.parse_string(),
-                '\r'|'\n'|' ' => {
-                    return self.next();
+                '"' => {
+                    self.unput(Some('"'));
+                    self.parse_string()
                 },
                 _ => Err(String::from("unknown token"))
             };

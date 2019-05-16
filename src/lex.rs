@@ -1,5 +1,6 @@
 use lazy_static;
 
+use core::f64::{INFINITY, NEG_INFINITY};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
 use std::iter::IntoIterator;
@@ -135,20 +136,44 @@ impl<'a, R: Read> Lexer<'a, R> {
             }
         }
     }
-    fn parse_int(&mut self, start: char) -> Result<Token, String> {
-        let mut current: i64 = start as i64 - '0' as i64;
+    fn parse_num(&mut self, start: char, first_run: bool) -> Result<Token, String> {
+        // we keep going on error so we don't get more errors from unconsumed input
         let mut err = false;
-        // check for radix other than 10
-        let radix = if current == 0 {
+        let negative = start == '-';
+
+        // the radix check is funky, it's easier to just make the first character part of
+        // the number proper (instead of '-')
+        let start = if negative {
+            self.next_char()
+            .expect("main loop should ensure '-' is followed by digit if passed to parse_num")
+        } else { start };
+
+        if start == '.' { return self.parse_float(0, 10, negative); }
+        let mut current = start as i64 - '0' as i64;
+
+        // check for radix other than 10 - but if we see '.', use 10
+        let radix = if start == '0' {
             match self.peek() {
                 Some('b') => { self.next_char(); 2 },
                 Some('x') => { self.next_char(); 16 },
+                // float: 0.431
+                Some('.') => 10,
                 _ => 8
             }
         } else { 10 };
-        while let Some(c) = self.peek() {
-            if !c.is_digit(radix) { break; }
-            self.next_char();
+
+        // main loop
+        while let Some(c) = self.next_char() {
+            if c == '.' {
+                if first_run {
+                    return self.parse_float(current, radix, negative);
+                } else {
+                    return Err(String::from("exponents cannot be floating point numbers"));
+                }
+            } else if !c.is_digit(radix) {
+                self.unput(Some(c));
+                break;
+            }
             if !err {
                 match current.checked_mul(radix as i64).and_then(|current|
                        current.checked_add(c as i64 - '0' as i64)) {
@@ -158,9 +183,63 @@ impl<'a, R: Read> Lexer<'a, R> {
             }
         }
         if err {
-            Err(String::from("Overflow while parsing integer literal"))
+            return Err(String::from("overflow while parsing integer literal"));
+        }
+        if negative { current = -current; }
+        if first_run {
+            let exp = self.parse_exponent()?;
+            if exp.is_negative() {
+                // this may truncate
+                // TODO: conversion to f64 might lose precision? need to check
+                Ok(Token::Int((10_f64.powi(exp) * current as f64) as i64))
+            } else {match 10_i64.checked_pow(exp as u32).and_then(|p| p.checked_mul(current)) {
+                Some(i) => Ok(Token::Int(i)),
+                None => Err(String::from("overflow while parsing integer literal"))
+            }}
+        } else { Ok(Token::Int(current)) }
+    }
+    // at this point we've already seen a '.', if we see one again it's an error
+    fn parse_float(&mut self, start: i64, radix: u32, negative: bool) -> Result<Token, String> {
+        let radix_f = radix as f64;
+        let (mut fraction, mut current_base): (f64, f64) = (0.0, 1.0 / radix_f);
+        // parse fraction
+        while let Some(c) = self.peek() {
+            if c.is_digit(radix) && current_base != 0.0 {
+                self.next_char();
+                fraction += (c as i64 - '0' as i64) as f64 * current_base;
+                current_base /= radix_f;
+            } else {
+                break;
+            }
+        }
+        let result = 10_f64.powi(self.parse_exponent()?) * (start as f64 + fraction);
+        if result == INFINITY || result == NEG_INFINITY {
+            Err(String::from("overflow error while parsing floating literal"))
         } else {
-            Ok(Token::Int(current))
+            Ok(Token::Float(if negative { -result } else { result }))
+        }
+    }
+    // should only be called at the end of a number. mostly error handling
+    fn parse_exponent(&mut self) -> Result<i32, String> {
+        if !(self.peek() == Some('e') || self.peek() == Some('E')) {
+            return Ok(0);
+        }
+        self.next_char();
+        let next = self.peek();
+        if !(next.is_some() && (next.unwrap().is_ascii_digit() || next == Some('-'))) {
+            return Err(String::from("exponent for floating literal has no digits"));
+        }
+        let next = self.next_char().unwrap();
+        match self.parse_num(next, false)? {
+            Token::Int(i) => {
+                if i32::min_value() as i64 <= i && i <= i32::max_value() as i64 {
+                    Ok(i as i32)
+                } else {
+                    Err(String::from("only 32-bit exponents are allowed, 64-bit exponents will overflow"))
+                }
+            },
+            _ => panic!("parse_num should never return something besides Token::Int \
+                         when called with first_run: false")
         }
     }
     fn parse_single_char(&mut self, string: bool) -> Result<char, CharError> {
@@ -274,11 +353,14 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
                     Some('+') => { self.next_char(); Token::PlusPlus },
                      _  => Token::Plus
                 }),
-                '-' => Ok(match self.peek() {
-                    Some('=') => { self.next_char(); Token::MinusEqual },
-                    Some('-') => { self.next_char(); Token::MinusMinus },
-                    _ => Token::Minus
-                }),
+                '-' => match self.peek() {
+                    Some('=') => { self.next_char(); Ok(Token::MinusEqual) },
+                    Some('-') => { self.next_char(); Ok(Token::MinusMinus) },
+                    // we have to parse - as part of number so that we can have
+                    // negative exponents after floats
+                    Some(c) if c.is_ascii_digit() => self.parse_num('-', true),
+                    c => { self.unput(c); Ok(Token::Minus) }
+                },
                 '*' => Ok(Token::Star),
                 '/' => match self.next_char() {
                     Some('/') => { self.consume_line_comment(); return self.next(); },
@@ -322,14 +404,15 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
                 '[' => Ok(Token::LeftBracket),
                 ']' => Ok(Token::RightBracket),
                 ',' => Ok(Token::Comma),
-                '.' => Ok(Token::Dot),
+                '.' => match self.peek() {
+                    Some(c) if c.is_ascii_digit() => {
+                        self.parse_num('.', true)
+                    },
+                    _ => Ok(Token::Dot)
+                },
                 '?' => Ok(Token::Question),
-                '0'...'9' => {
-                    self.parse_int(c)
-                },
-                'a'...'z'|'A'...'Z'|'_' => {
-                    self.parse_id(c)
-                },
+                '0'...'9' => self.parse_num(c, true),
+                'a'...'z'|'A'...'Z'|'_' => self.parse_id(c),
                 '\'' => self.parse_char(),
                 '"' => {
                     self.unput(Some('"'));
@@ -389,15 +472,39 @@ mod tests {
     }
 
     #[test]
-    fn test_int_constants() {
+    fn test_num_constants() {
         assert!(match_data(lex(String::from("10")), |lexed|
             lexed == Ok(Token::Int(10))));
         assert!(match_data(lex(String::from("0x10")), |lexed|
             lexed == Ok(Token::Int(16))));
         assert!(match_data(lex(String::from("0b10")), |lexed|
             lexed == Ok(Token::Int(2))));
-        assert!(match_data(lex(String::from("0o10")), |lexed|
+        assert!(match_data(lex(String::from("010")), |lexed|
             lexed == Ok(Token::Int(8))));
+        assert!(match_data(lex(String::from("02")), |lexed|
+            lexed == Ok(Token::Int(2))));
+        assert!(match_data(lex(String::from("0")), |lexed|
+            lexed == Ok(Token::Int(0))));
+        assert!(match_data(lex(String::from("0.1")), |lexed|
+            lexed == Ok(Token::Float(0.1))));
+        assert!(match_data(lex(String::from(".1")), |lexed|
+            lexed == Ok(Token::Float(0.1))));
+        assert!(match_data(lex(String::from("1e10")), |lexed|
+            lexed == Ok(Token::Int(10000000000))));
+        assert!(match_data(lex(String::from("-1")), |lexed|
+            lexed == Ok(Token::Int(-1))));
+        assert!(match_data(lex(String::from("-1e10")), |lexed|
+            lexed == Ok(Token::Int(-10000000000))));
+        assert!(match_data(lex(String::from("-1.2")), |lexed|
+            lexed == Ok(Token::Float(-1.2))));
+        assert!(match_data(lex(String::from("-1.2e10")), |lexed|
+            lexed == Ok(Token::Float(-1.2e10))));
+        assert!(match_data(lex(String::from("-1.2e-1")), |lexed|
+            lexed == Ok(Token::Float(-1.2e-1))));
+        assert!(match_data(lex(String::from("1e-1")), |lexed|
+            lexed == Ok(Token::Int(0))));
+        assert!(match_data(lex(String::from("-1e-1")), |lexed|
+            lexed == Ok(Token::Int(0))))
     }
 
     #[test]

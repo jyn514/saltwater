@@ -142,9 +142,8 @@ impl<'a, R: Read> Lexer<'a, R> {
         let radix = if current == 0 {
             match self.peek() {
                 Some('b') => { self.next_char(); 2 },
-                Some('o') => { self.next_char(); 8 },
                 Some('x') => { self.next_char(); 16 },
-                _ => 10
+                _ => 8
             }
         } else { 10 };
         while let Some(c) = self.peek() {

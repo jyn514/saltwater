@@ -122,6 +122,19 @@ impl<'a, R: Read> Lexer<'a, R> {
             self.next_char();
         }
     }
+    fn consume_line_comment(&mut self) {
+        while let Some(c) = self.next_char() {
+            if c == '\n' { break; }
+        }
+    }
+    fn consume_multi_comment(&mut self) {
+        while let Some(c) = self.next_char() {
+            if c == '*' && self.peek() == Some('/') {
+                self.next_char();
+                break;
+            }
+        }
+    }
     fn parse_int(&mut self, start: char) -> Result<Token, String> {
         let mut current: i64 = start as i64 - '0' as i64;
         let mut err = false;
@@ -268,10 +281,20 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
                     _ => Token::Minus
                 }),
                 '*' => Ok(Token::Star),
-                '/' => Ok(Token::Divide),
+                '/' => match self.next_char() {
+                    Some('/') => { self.consume_line_comment(); return self.next(); },
+                    Some('*') => { self.consume_multi_comment(); return self.next(); },
+                    Some('=') => Ok(Token::DivideEqual),
+                    c => { self.unput(c); Ok(Token::Divide) }
+                },
+                '%' => Ok(Token::Mod),
                 '=' => Ok(match self.peek() {
                     Some('=') => { self.next_char(); Token::EqualEqual },
                     _ => Token::Equal
+                }),
+                '!' => Ok(match self.peek() {
+                    Some('=') => { self.next_char(); Token::NotEqual },
+                    _ => Token::Not
                 }),
                 '>' => Ok(match self.peek() {
                     Some('=') => { self.next_char(); Token::GreaterEqual },
@@ -283,13 +306,25 @@ impl<'a, R: Read> Iterator for Lexer<'a, R> {
                     Some('<') => { self.next_char(); Token::ShiftLeft },
                     _ => Token::Less
                 }),
+                '&' => Ok(match self.peek() {
+                    Some('&') => { self.next_char(); Token::LogicalAnd },
+                    _ => Token::Ampersand
+                }),
+                '|' => Ok(match self.peek() {
+                    Some('|') => { self.next_char(); Token::LogicalOr },
+                    _ => Token::BinaryOr
+                }),
                 '{' => Ok(Token::LeftBrace),
                 '}' => Ok(Token::RightBrace),
                 '(' => Ok(Token::LeftParen),
                 ')' => Ok(Token::RightParen),
                 ';' => Ok(Token::Semicolon),
+                ':' => Ok(Token::Colon),
                 '[' => Ok(Token::LeftBracket),
                 ']' => Ok(Token::RightBracket),
+                ',' => Ok(Token::Comma),
+                '.' => Ok(Token::Dot),
+                '?' => Ok(Token::Question),
                 '0'...'9' => {
                     self.parse_int(c)
                 },

@@ -48,7 +48,9 @@ pub enum Token {
     PlusEqual,
     MinusMinus,
     MinusEqual,
+    DivideEqual,
     EqualEqual,
+    NotEqual,
     LessEqual,
     GreaterEqual,
     ShiftRight,
@@ -58,9 +60,15 @@ pub enum Token {
     Minus,
     Star,
     Divide,
+    Mod,
     Equal,
+    Not,
     Less,
     Greater,
+    Ampersand,
+    LogicalAnd,
+    BinaryOr,
+    LogicalOr,
 
     LeftBrace,  // {
     RightBrace,
@@ -69,6 +77,10 @@ pub enum Token {
     LeftParen,
     RightParen,
     Semicolon,
+    Colon,
+    Comma,
+    Dot,
+    Question,
 
     // literals
     Int(i64),

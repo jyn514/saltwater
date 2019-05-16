@@ -84,6 +84,7 @@ pub enum Token {
 
     // literals
     Int(i64),
+    Float(f64),
     Str(String),
     Char(char),
     Id(String),

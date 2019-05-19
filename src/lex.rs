@@ -2,17 +2,14 @@ use lazy_static;
 
 use core::f64::{INFINITY, NEG_INFINITY};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read};
-use std::iter::IntoIterator;
-use std::vec::IntoIter;
+use std::str::Chars;
 
 use super::data::{Keyword, Location, Locatable, Token};
 
 #[derive(Debug)]
-pub struct Lexer<'a, R: Read> {
+pub struct Lexer<'a> {
     location: Location<'a>,
-    reader: BufReader<R>,
-    iterator: IntoIter<char>,
+    chars: Chars<'a>,
     current: Option<char>
 }
 
@@ -74,16 +71,15 @@ lazy_static! {
     };
 }
 
-impl<'a, R: Read> Lexer<'a, R> {
-    pub fn new(filename: &'a str, stream: BufReader<R>) -> Lexer<'a, R> {
+impl<'a> Lexer<'a> {
+    pub fn new(filename: &'a str, chars: Chars<'a>) -> Lexer<'a> {
         Lexer {
             location: Location {
                 line: 0,
                 column: 0,
                 file: filename
             },
-            reader: stream,
-            iterator: Vec::new().into_iter(),
+            chars: chars,
             current: None
         }
     }
@@ -92,23 +88,14 @@ impl<'a, R: Read> Lexer<'a, R> {
             self.current = None;
             Some(c)
         } else {
-            match self.iterator.next() {
-                Some(c) => {
-                    self.location.column += 1;
-                    Some(c)
-                },
-                None => {
-                    let mut buf = String::new();
-                    if let Err(msg) = self.reader.read_line(&mut buf) {
-                        eprintln!("FATAL: failed to read line: {}", msg);
-                        return None;
-                    }
-                    self.location.line += 1;
-                    self.location.column = 1;
-                    self.iterator = buf.chars().collect::<Vec<_>>().into_iter();
-                    self.iterator.next()
-                }
-            }
+            self.chars.next().map(|x| if x == '\n' {
+                self.location.line += 1;
+                self.location.column = 1;
+                x
+            } else {
+                self.location.column += 1;
+                x
+            })
         }
     }
     fn unput(&mut self, c: Option<char>) {
@@ -338,7 +325,7 @@ impl<'a, R: Read> Lexer<'a, R> {
     }
 }
 
-impl<'a, R: Read> Iterator for Lexer<'a, R> {
+impl<'a> Iterator for Lexer<'a> {
     // option: whether the stream is exhausted
     // result: whether the next lexeme is an error
     type Item = Locatable<'a, Result<Token, String>>;

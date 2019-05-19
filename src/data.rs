@@ -94,7 +94,7 @@ pub enum Token {
 
 // holds where a piece of code came from
 // should almost always be immutable
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Location<'a> {
     // if there's a 4 GB input file, we have bigger problems
     pub line: u32,

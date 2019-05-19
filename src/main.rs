@@ -4,12 +4,14 @@ extern crate lazy_static;
 mod data;
 mod lex;
 
-use std::io::{self, BufReader};
+use std::io::{self, Read};
 
 use lex::Lexer;
 
 fn main() {
-    for token in Lexer::new("<stdin>", BufReader::new(io::stdin())) {
+    let mut buf = String::new();
+    io::stdin().read_to_string(&mut buf).expect("I/O error reading stdin");
+    for token in Lexer::new("<stdin>", buf) {
         println!("{:?}", token);
     }
 }

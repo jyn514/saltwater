@@ -459,7 +459,7 @@ mod tests {
     }
 
     #[test]
-    fn test_num_constants() {
+    fn test_num_literals() {
         assert!(match_data(lex(String::from("10")), |lexed|
             lexed == Ok(Token::Int(10))));
         assert!(match_data(lex(String::from("0x10")), |lexed|
@@ -492,6 +492,15 @@ mod tests {
             lexed == Ok(Token::Int(0))));
         assert!(match_data(lex(String::from("-1e-1")), |lexed|
             lexed == Ok(Token::Int(0))))
+    }
+
+    #[test]
+    fn test_num_errors() {
+        assert!(match_data(lex(String::from("1e")), |t| t.is_err()));
+        assert!(match_data(lex(String::from("1e.")), |t| t.is_err()));
+        assert!(match_data(lex(String::from("1e1.0")), |t| t.is_err()));
+        //assert!(match_data(lex(String::from("1e100000")), |t| t.is_err()));
+        //assert!(match_data(lex(String::from("1e-100000")), |t| t.is_err()));
     }
 
     #[test]

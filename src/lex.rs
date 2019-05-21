@@ -75,7 +75,7 @@ impl<'a> Lexer<'a> {
     pub fn new(filename: &'a str, chars: Chars<'a>) -> Lexer<'a> {
         Lexer {
             location: Location {
-                line: 0,
+                line: 1,
                 column: 0,
                 file: filename
             },

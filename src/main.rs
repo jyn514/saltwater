@@ -3,6 +3,7 @@ extern crate lazy_static;
 
 mod data;
 mod lex;
+mod utils;
 
 use std::env;
 use std::fs::File;

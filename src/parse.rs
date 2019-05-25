@@ -43,6 +43,9 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Iterator for Parser<'a, I> {
     }
 }
 #[inline]
+/* the reason this is such a mess (instead of just putting everything into
+ * the hashmap, which would be much simpler logic) is so we have a Location
+ * to go with every error */
 fn handle_single_decl_specifier<'a>(keyword: Keyword,
                                 storage_class: &mut Option<StorageClass>,
                                 qualifiers: &mut Qualifiers,

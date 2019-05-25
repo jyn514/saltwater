@@ -102,7 +102,10 @@ fn handle_single_decl_specifier<'a>(keyword: Keyword,
         }
     } else if keyword == Keyword::Float || keyword == Keyword::Double {
         if *signed != None {
-
+            errors.push(Locatable {
+                data: "values cannot be both signed and unsigned".to_string(),
+                location: location
+            });
         } else if keyword == Keyword::Float {
             if *ctype == Some(Type::Double) {
                 errors.push(Locatable {
@@ -114,10 +117,37 @@ fn handle_single_decl_specifier<'a>(keyword: Keyword,
         } else {
             *ctype = Some(Type::Double);
         }
+    } else if keyword == Keyword::Void {
+        if ctype.is_some() {
+            errors.push(Locatable {
+                data: "cannot combine 'void' with other type modifiers".to_string(),
+                location: location
+            });
+        } else {
+            *ctype = Some(Type::Void);
+        }
+    // if we get this far, keyword is an int type (char - long)
+    } else if keyword == Keyword::Int {
+        match ctype {
+            Some(Type::Char(_))|Some(Type::Short(_))|Some(Type::Long(_))|Some(Type::Int(_)) => {},
+            Some(_) => errors.push(Locatable {
+                data: "cannot combine 'int' with existing modifiers in declaration specifier".to_string(),
+                location: location
+            }),
+            None => *ctype = Some(Type::Int(true))
+        }
     } else {
-        println!("we think {} is an int type, are we right?", keyword);
+        match ctype {
+            None|Some(Type::Int(_)) => *ctype = Some(Type::try_from(keyword)
+                .expect("keyword should be an integer or integer modifier")),
+            Some(_) => errors.push(Locatable {
+                data: "cannot combine integer modifiers in declaration specifier".to_string(),
+                location: location
+            })
+        }
     }
 }
+
 impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
     // this is an utter hack
     // NOTE: the reason the return type is so weird (Result<_, Locatable<_>)
@@ -160,17 +190,24 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
         if errors.len() != 0 {
             Err(errors.pop().unwrap())
         } else {
-            // TODO: set signed
-            let ctype = ctype.unwrap_or_else(|| {
-                // if there's no next token, they left out part of the
-                // program and we'll throw an error in just a second
-                // besides, it makes getting a location really hard
-                if let Some(locatable) = self.tokens.peek() {
-                    warn(&"type specifier missing, defaults to int".to_string(),
-                         &locatable.location);
+            let ctype = match ctype {
+                Some(Type::Char(ref mut s))|Some(Type::Short(ref mut s))
+                |Some(Type::Int(ref mut s))|Some(Type::Long(ref mut s)) => {
+                    *s = signed.unwrap_or(true);
+                    ctype.unwrap()
+                },
+                Some(_) => ctype.unwrap(),
+                None => {
+                    // if there's no next token, they left out part of the
+                    // program and we'll throw an error in just a second
+                    // besides, it makes getting a location really hard
+                    if let Some(locatable) = self.tokens.peek() {
+                        warn(&"type specifier missing, defaults to int".to_string(),
+                             &locatable.location);
+                    }
+                    Type::Int(true)
                 }
-                Type::Int(true)
-            });
+            };
             Ok((storage_class.unwrap_or(StorageClass::Auto), qualifiers, ctype))
         }
     }
@@ -212,13 +249,10 @@ impl Keyword {
     fn is_decl_specifier(self) -> bool {
         use Keyword::*;
         match self {
-            Unsigned|Signed|Char|Short|Int|Long|Float|Double|
+            Unsigned|Signed|Void|Char|Short|Int|Long|Float|Double|
             Extern|Static|Auto|Register|Const|Volatile => true,
             _ => false
         }
-    }
-    fn is_base_type(self) -> bool {
-        Type::try_from(self).is_ok()
     }
 }
 
@@ -236,5 +270,47 @@ impl TryFrom<Keyword> for Type {
             Keyword::Double => Ok(Double),
             _ => Err(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Parser;
+    use crate::Lexer;
+    use crate::data::{Locatable, Stmt, Type};
+    type ParseType<'a> = Locatable<'a, Result<Stmt, String>>;
+    fn parse<'a>(input: &'a str) -> Option<ParseType<'a>> {
+        parse_all(input).get(0).map(|x| x.clone())
+    }
+    fn parse_all<'a>(input: &'a str) -> Vec<ParseType<'a>> {
+        Parser::new(Lexer::new("<stdin>", input.chars())).collect()
+    }
+    fn match_data<'a, T>(lexed: Option<ParseType<'a>>, closure: T) -> bool
+            where T: Fn(Result<Stmt, String>) -> bool {
+        match lexed {
+            Some(result) => closure(result.data),
+            None => false
+        }
+    }
+    fn match_type<'a>(lexed: Option<ParseType<'a>>, given_type: Type) -> bool {
+        match_data(lexed, |data| match data {
+            Ok(Stmt::Declaration(symbol)) => symbol.c_type == given_type,
+            _ => false
+        })
+    }
+    #[test]
+    fn test_decl_specifiers() {
+        assert!(match_type(parse("char i;"), Type::Char(true)));
+        assert!(match_type(parse("unsigned char i;"), Type::Char(false)));
+        assert!(match_type(parse("signed short i;"), Type::Short(true)));
+        assert!(match_type(parse("unsigned short i;"), Type::Short(false)));
+        assert!(match_type(parse("long i;"), Type::Long(true)));
+        assert!(match_type(parse("long unsigned i;"), Type::Long(false)));
+        assert!(match_type(parse("int i;"), Type::Int(true)));
+        assert!(match_type(parse("signed int i;"), Type::Int(true)));
+        assert!(match_type(parse("unsigned int i;"), Type::Int(false)));
+        assert!(match_type(parse("float f;"), Type::Float));
+        assert!(match_type(parse("double d;"), Type::Double));
+        assert!(match_type(parse("void f();"), Type::Void));
     }
 }

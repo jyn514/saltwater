@@ -4,19 +4,19 @@ use core::f64::{INFINITY, NEG_INFINITY};
 use std::collections::HashMap;
 use std::str::Chars;
 
-use super::data::{Keyword, Location, Locatable, Token};
+use super::data::{Keyword, Locatable, Location, Token};
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
     location: Location<'a>,
     chars: Chars<'a>,
-    current: Option<char>
+    current: Option<char>,
 }
 
 enum CharError {
     Eof,
     Newline,
-    Terminator
+    Terminator,
 }
 
 lazy_static! {
@@ -77,10 +77,10 @@ impl<'a> Lexer<'a> {
             location: Location {
                 line: 1,
                 column: 0,
-                file: filename
+                file: filename,
             },
             chars: chars,
-            current: None
+            current: None,
         }
     }
     fn next_char(&mut self) -> Option<char> {
@@ -88,13 +88,15 @@ impl<'a> Lexer<'a> {
             self.current = None;
             Some(c)
         } else {
-            self.chars.next().map(|x| if x == '\n' {
-                self.location.line += 1;
-                self.location.column = 1;
-                x
-            } else {
-                self.location.column += 1;
-                x
+            self.chars.next().map(|x| {
+                if x == '\n' {
+                    self.location.line += 1;
+                    self.location.column = 1;
+                    x
+                } else {
+                    self.location.column += 1;
+                    x
+                }
             })
         }
     }
@@ -112,7 +114,9 @@ impl<'a> Lexer<'a> {
     }
     fn consume_line_comment(&mut self) {
         while let Some(c) = self.next_char() {
-            if c == '\n' { break; }
+            if c == '\n' {
+                break;
+            }
         }
     }
     fn consume_multi_comment(&mut self) {
@@ -132,22 +136,34 @@ impl<'a> Lexer<'a> {
         // the number proper (instead of '-')
         let start = if negative {
             self.next_char()
-            .expect("main loop should ensure '-' is followed by digit if passed to parse_num")
-        } else { start };
+                .expect("main loop should ensure '-' is followed by digit if passed to parse_num")
+        } else {
+            start
+        };
 
-        if start == '.' { return self.parse_float(0, 10, negative); }
+        if start == '.' {
+            return self.parse_float(0, 10, negative);
+        }
         let mut current = start as i64 - '0' as i64;
 
         // check for radix other than 10 - but if we see '.', use 10
         let radix = if start == '0' {
             match self.peek() {
-                Some('b') => { self.next_char(); 2 },
-                Some('x') => { self.next_char(); 16 },
+                Some('b') => {
+                    self.next_char();
+                    2
+                }
+                Some('x') => {
+                    self.next_char();
+                    16
+                }
                 // float: 0.431
                 Some('.') => 10,
-                _ => 8
+                _ => 8,
             }
-        } else { 10 };
+        } else {
+            10
+        };
 
         // main loop
         while let Some(c) = self.next_char() {
@@ -162,28 +178,43 @@ impl<'a> Lexer<'a> {
                 break;
             }
             if !err {
-                match current.checked_mul(radix as i64).and_then(|current|
-                       current.checked_add(c as i64 - '0' as i64)) {
-                    Some(c) => { current = c; }
-                    None => { err = true; }
+                match current
+                    .checked_mul(radix as i64)
+                    .and_then(|current| current.checked_add(c as i64 - '0' as i64))
+                {
+                    Some(c) => {
+                        current = c;
+                    }
+                    None => {
+                        err = true;
+                    }
                 }
             }
         }
         if err {
             return Err(String::from("overflow while parsing integer literal"));
         }
-        if negative { current = -current; }
+        if negative {
+            current = -current;
+        }
         if first_run {
             let exp = self.parse_exponent()?;
             if exp.is_negative() {
                 // this may truncate
                 // TODO: conversion to f64 might lose precision? need to check
                 Ok(Token::Int((10_f64.powi(exp) * current as f64) as i64))
-            } else {match 10_i64.checked_pow(exp as u32).and_then(|p| p.checked_mul(current)) {
-                Some(i) => Ok(Token::Int(i)),
-                None => Err(String::from("overflow while parsing integer literal"))
-            }}
-        } else { Ok(Token::Int(current)) }
+            } else {
+                match 10_i64
+                    .checked_pow(exp as u32)
+                    .and_then(|p| p.checked_mul(current))
+                {
+                    Some(i) => Ok(Token::Int(i)),
+                    None => Err(String::from("overflow while parsing integer literal")),
+                }
+            }
+        } else {
+            Ok(Token::Int(current))
+        }
     }
     // at this point we've already seen a '.', if we see one again it's an error
     fn parse_float(&mut self, start: i64, radix: u32, negative: bool) -> Result<Token, String> {
@@ -201,7 +232,9 @@ impl<'a> Lexer<'a> {
         }
         let result = 10_f64.powi(self.parse_exponent()?) * (start as f64 + fraction);
         if result == INFINITY || result == NEG_INFINITY {
-            Err(String::from("overflow error while parsing floating literal"))
+            Err(String::from(
+                "overflow error while parsing floating literal",
+            ))
         } else {
             Ok(Token::Float(if negative { -result } else { result }))
         }
@@ -222,11 +255,15 @@ impl<'a> Lexer<'a> {
                 if i32::min_value() as i64 <= i && i <= i32::max_value() as i64 {
                     Ok(i as i32)
                 } else {
-                    Err(String::from("only 32-bit exponents are allowed, 64-bit exponents will overflow"))
+                    Err(String::from(
+                        "only 32-bit exponents are allowed, 64-bit exponents will overflow",
+                    ))
                 }
-            },
-            _ => panic!("parse_num should never return something besides Token::Int \
-                         when called with first_run: false")
+            }
+            _ => panic!(
+                "parse_num should never return something besides Token::Int \
+                 when called with first_run: false"
+            ),
         }
     }
     fn parse_single_char(&mut self, string: bool) -> Result<char, CharError> {
@@ -235,18 +272,18 @@ impl<'a> Lexer<'a> {
             if c == '\\' {
                 if let Some(c) = self.next_char() {
                     Ok(match c {
-                    '\n' => return self.parse_single_char(string),
-                    'n' => '\n',
-                    'r' => '\r',
-                    't' => '\t',
-                    '"' => '"',
-                    '\'' => '\'',
-                    '\\' => '\\',
-                    '\0' => '\0',
-                    'b' => '\x08',
-                    'f' => '\x0c',
-                    // TODO: emit a warning (how?)
-                    _ => c
+                        '\n' => return self.parse_single_char(string),
+                        'n' => '\n',
+                        'r' => '\r',
+                        't' => '\t',
+                        '"' => '"',
+                        '\'' => '\'',
+                        '\\' => '\\',
+                        '\0' => '\0',
+                        'b' => '\x08',
+                        'f' => '\x0c',
+                        // TODO: emit a warning (how?)
+                        _ => c,
                     })
                 } else {
                     Err(CharError::Eof)
@@ -263,24 +300,26 @@ impl<'a> Lexer<'a> {
         }
     }
     fn parse_char(&mut self) -> Result<Token, String> {
-        let (term_err, newline_err) = (Err(String::from("Missing terminating ' character in char literal")),
-                                     Err(String::from("Illegal newline while parsing char literal")));
+        let (term_err, newline_err) = (
+            Err(String::from(
+                "Missing terminating ' character in char literal",
+            )),
+            Err(String::from("Illegal newline while parsing char literal")),
+        );
         match self.parse_single_char(false) {
-            Ok(c) => {
-                match self.next_char() {
-                    Some('\'') => Ok(Token::Char(c)),
-                    Some('\n') => newline_err,
-                    None => term_err,
-                    Some(_) => {
-                        loop {
-                            match self.parse_single_char(false) {
-                                Ok('\'') => break,
-                                Err(_) => break,
-                                _ => {}
-                            }
+            Ok(c) => match self.next_char() {
+                Some('\'') => Ok(Token::Char(c)),
+                Some('\n') => newline_err,
+                None => term_err,
+                Some(_) => {
+                    loop {
+                        match self.parse_single_char(false) {
+                            Ok('\'') => break,
+                            Err(_) => break,
+                            _ => {}
                         }
-                        Err(String::from("Multi-character character literal"))
-                    },
+                    }
+                    Err(String::from("Multi-character character literal"))
                 }
             },
             Err(CharError::Eof) => term_err,
@@ -292,12 +331,18 @@ impl<'a> Lexer<'a> {
         let mut literal = String::new();
         // allow multiple adjacent strings
         while self.peek() == Some('"') {
-            self.next_char();  // start quote
+            self.next_char(); // start quote
             loop {
                 match self.parse_single_char(true) {
                     Ok(c) => literal.push(c),
-                    Err(CharError::Eof) => return Err(String::from("Missing terminating \" character in string literal")),
-                    Err(CharError::Newline) => return Err(String::from("Illegal newline while parsing string literal")),
+                    Err(CharError::Eof) => {
+                        return Err(String::from(
+                            "Missing terminating \" character in string literal",
+                        ))
+                    }
+                    Err(CharError::Newline) => {
+                        return Err(String::from("Illegal newline while parsing string literal"))
+                    }
                     Err(CharError::Terminator) => break,
                 }
             }
@@ -310,8 +355,7 @@ impl<'a> Lexer<'a> {
         let mut id = String::new();
         id.push(start);
         while let Some(c) = self.next_char() {
-            if c.is_digit(10) || 'a' <= c && c <= 'z'
-                            || 'A' <= c && c <= 'Z' || c == '_' {
+            if c.is_digit(10) || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_' {
                 id.push(c);
             } else {
                 self.unput(Some(c));
@@ -320,7 +364,7 @@ impl<'a> Lexer<'a> {
         }
         match KEYWORDS.get::<str>(&id) {
             Some(keyword) => Ok(Token::Keyword(*keyword)),
-            None => Ok(Token::Id(id))
+            None => Ok(Token::Id(id)),
         }
     }
 }
@@ -336,51 +380,99 @@ impl<'a> Iterator for Lexer<'a> {
             let location = self.location.clone();
             let data = match c {
                 '+' => Ok(match self.peek() {
-                    Some('=') => { self.next_char(); Token::PlusEqual },
-                    Some('+') => { self.next_char(); Token::PlusPlus },
-                     _  => Token::Plus
+                    Some('=') => {
+                        self.next_char();
+                        Token::PlusEqual
+                    }
+                    Some('+') => {
+                        self.next_char();
+                        Token::PlusPlus
+                    }
+                    _ => Token::Plus,
                 }),
                 '-' => match self.peek() {
-                    Some('=') => { self.next_char(); Ok(Token::MinusEqual) },
-                    Some('-') => { self.next_char(); Ok(Token::MinusMinus) },
+                    Some('=') => {
+                        self.next_char();
+                        Ok(Token::MinusEqual)
+                    }
+                    Some('-') => {
+                        self.next_char();
+                        Ok(Token::MinusMinus)
+                    }
                     // we have to parse - as part of number so that we can have
                     // negative exponents after floats
                     Some(c) if c.is_ascii_digit() => self.parse_num('-', true),
-                    c => { self.unput(c); Ok(Token::Minus) }
+                    c => {
+                        self.unput(c);
+                        Ok(Token::Minus)
+                    }
                 },
                 '*' => Ok(Token::Star),
                 '/' => match self.next_char() {
-                    Some('/') => { self.consume_line_comment(); return self.next(); },
-                    Some('*') => { self.consume_multi_comment(); return self.next(); },
+                    Some('/') => {
+                        self.consume_line_comment();
+                        return self.next();
+                    }
+                    Some('*') => {
+                        self.consume_multi_comment();
+                        return self.next();
+                    }
                     Some('=') => Ok(Token::DivideEqual),
-                    c => { self.unput(c); Ok(Token::Divide) }
+                    c => {
+                        self.unput(c);
+                        Ok(Token::Divide)
+                    }
                 },
                 '%' => Ok(Token::Mod),
                 '=' => Ok(match self.peek() {
-                    Some('=') => { self.next_char(); Token::EqualEqual },
-                    _ => Token::Equal
+                    Some('=') => {
+                        self.next_char();
+                        Token::EqualEqual
+                    }
+                    _ => Token::Equal,
                 }),
                 '!' => Ok(match self.peek() {
-                    Some('=') => { self.next_char(); Token::NotEqual },
-                    _ => Token::Not
+                    Some('=') => {
+                        self.next_char();
+                        Token::NotEqual
+                    }
+                    _ => Token::Not,
                 }),
                 '>' => Ok(match self.peek() {
-                    Some('=') => { self.next_char(); Token::GreaterEqual },
-                    Some('>') => { self.next_char(); Token::ShiftRight },
-                    _ => Token::Greater
+                    Some('=') => {
+                        self.next_char();
+                        Token::GreaterEqual
+                    }
+                    Some('>') => {
+                        self.next_char();
+                        Token::ShiftRight
+                    }
+                    _ => Token::Greater,
                 }),
                 '<' => Ok(match self.peek() {
-                    Some('=') => { self.next_char(); Token::LessEqual },
-                    Some('<') => { self.next_char(); Token::ShiftLeft },
-                    _ => Token::Less
+                    Some('=') => {
+                        self.next_char();
+                        Token::LessEqual
+                    }
+                    Some('<') => {
+                        self.next_char();
+                        Token::ShiftLeft
+                    }
+                    _ => Token::Less,
                 }),
                 '&' => Ok(match self.peek() {
-                    Some('&') => { self.next_char(); Token::LogicalAnd },
-                    _ => Token::Ampersand
+                    Some('&') => {
+                        self.next_char();
+                        Token::LogicalAnd
+                    }
+                    _ => Token::Ampersand,
                 }),
                 '|' => Ok(match self.peek() {
-                    Some('|') => { self.next_char(); Token::LogicalOr },
-                    _ => Token::BinaryOr
+                    Some('|') => {
+                        self.next_char();
+                        Token::LogicalOr
+                    }
+                    _ => Token::BinaryOr,
                 }),
                 '{' => Ok(Token::LeftBrace),
                 '}' => Ok(Token::RightBrace),
@@ -392,20 +484,18 @@ impl<'a> Iterator for Lexer<'a> {
                 ']' => Ok(Token::RightBracket),
                 ',' => Ok(Token::Comma),
                 '.' => match self.peek() {
-                    Some(c) if c.is_ascii_digit() => {
-                        self.parse_num('.', true)
-                    },
-                    _ => Ok(Token::Dot)
+                    Some(c) if c.is_ascii_digit() => self.parse_num('.', true),
+                    _ => Ok(Token::Dot),
                 },
                 '?' => Ok(Token::Question),
                 '0'...'9' => self.parse_num(c, true),
-                'a'...'z'|'A'...'Z'|'_' => self.parse_id(c),
+                'a'...'z' | 'A'...'Z' | '_' => self.parse_id(c),
                 '\'' => self.parse_char(),
                 '"' => {
                     self.unput(Some('"'));
                     self.parse_string()
-                },
-                _ => Err(String::from("unknown token"))
+                }
+                _ => Err(String::from("unknown token")),
             };
             Some(Self::Item {
                 data: data,
@@ -417,7 +507,7 @@ impl<'a> Iterator for Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Locatable, Location, Lexer, Token};
+    use super::{Lexer, Locatable, Location, Token};
 
     type LexType<'a> = Locatable<'a, Result<Token, String>>;
 
@@ -429,68 +519,57 @@ mod tests {
     }
 
     fn match_data<'a, T>(lexed: Option<LexType<'a>>, closure: T) -> bool
-            where T: Fn(Result<Token, String>) -> bool {
+    where
+        T: Fn(Result<Token, String>) -> bool,
+    {
         match lexed {
             Some(result) => closure(result.data),
-            None => false
+            None => false,
         }
     }
 
     #[test]
     fn test_plus() {
         let parse = lex("+");
-        assert_eq!(parse, Some(Locatable {
-            data: Ok(Token::Plus),
-            location: Location {
-                file: "<stdin>",
-                line: 1,
-                column: 1
-            }
-        }))
+        assert_eq!(
+            parse,
+            Some(Locatable {
+                data: Ok(Token::Plus),
+                location: Location {
+                    file: "<stdin>",
+                    line: 1,
+                    column: 1
+                }
+            })
+        )
     }
 
     #[test]
     fn test_overflow() {
         assert!(match lex("10000000000000000000000") {
             Some(lexed) => lexed.data.is_err(),
-            None => false
+            None => false,
         })
     }
 
     #[test]
     fn test_num_literals() {
-        assert!(match_data(lex("10"), |lexed|
-            lexed == Ok(Token::Int(10))));
-        assert!(match_data(lex("0x10"), |lexed|
-            lexed == Ok(Token::Int(16))));
-        assert!(match_data(lex("0b10"), |lexed|
-            lexed == Ok(Token::Int(2))));
-        assert!(match_data(lex("010"), |lexed|
-            lexed == Ok(Token::Int(8))));
-        assert!(match_data(lex("02"), |lexed|
-            lexed == Ok(Token::Int(2))));
-        assert!(match_data(lex("0"), |lexed|
-            lexed == Ok(Token::Int(0))));
-        assert!(match_data(lex("0.1"), |lexed|
-            lexed == Ok(Token::Float(0.1))));
-        assert!(match_data(lex(".1"), |lexed|
-            lexed == Ok(Token::Float(0.1))));
-        assert!(match_data(lex("1e10"), |lexed|
-            lexed == Ok(Token::Int(10000000000))));
-        assert!(match_data(lex("-1"), |lexed|
-            lexed == Ok(Token::Int(-1))));
-        assert!(match_data(lex("-1e10"), |lexed|
-            lexed == Ok(Token::Int(-10000000000))));
-        assert!(match_data(lex("-1.2"), |lexed|
-            lexed == Ok(Token::Float(-1.2))));
-        assert!(match_data(lex("-1.2e10"), |lexed|
-            lexed == Ok(Token::Float(-1.2e10))));
-        assert!(match_data(lex("-1.2e-1"), |lexed|
-            lexed == Ok(Token::Float(-1.2e-1))));
-        assert!(match_data(lex("1e-1"), |lexed|
-            lexed == Ok(Token::Int(0))));
-        assert!(match_data(lex("-1e-1"), |lexed|
-            lexed == Ok(Token::Int(0))))
+        assert!(match_data(lex("10"), |lexed| lexed == Ok(Token::Int(10))));
+        assert!(match_data(lex("0x10"), |lexed| lexed == Ok(Token::Int(16))));
+        assert!(match_data(lex("0b10"), |lexed| lexed == Ok(Token::Int(2))));
+        assert!(match_data(lex("010"), |lexed| lexed == Ok(Token::Int(8))));
+        assert!(match_data(lex("02"), |lexed| lexed == Ok(Token::Int(2))));
+        assert!(match_data(lex("0"), |lexed| lexed == Ok(Token::Int(0))));
+        assert!(match_data(lex("0.1"), |lexed| lexed == Ok(Token::Float(0.1))));
+        assert!(match_data(lex(".1"), |lexed| lexed == Ok(Token::Float(0.1))));
+        assert!(match_data(lex("1e10"), |lexed| lexed == Ok(Token::Int(10000000000))));
+        assert!(match_data(lex("-1"), |lexed| lexed == Ok(Token::Int(-1))));
+        assert!(match_data(lex("-1e10"), |lexed| lexed == Ok(Token::Int(-10000000000))));
+        assert!(match_data(lex("-1.2"), |lexed| lexed == Ok(Token::Float(-1.2))));
+        assert!(match_data(lex("-1.2e10"), |lexed| lexed == Ok(Token::Float(-1.2e10))));
+        assert!(match_data(lex("-1.2e-1"), |lexed| lexed == Ok(Token::Float(-1.2e-1))));
+        assert!(match_data(lex("1e-1"), |lexed| lexed == Ok(Token::Int(0))));
+        assert!(match_data(lex("-1e-1"), |lexed| lexed == Ok(Token::Int(0))))
     }
 
     #[test]
@@ -513,8 +592,12 @@ mod tests {
     // Integration tests
     #[test]
     fn test_for_loop() {
-        assert!(lex_all("for (int i = 0; i < 100; ++i {
+        assert!(lex_all(
+            "for (int i = 0; i < 100; ++i {
             a[i] = i << 2 + i*4;
-            }").into_iter().all(|x| x.data.is_ok()))
+            }"
+        )
+        .into_iter()
+        .all(|x| x.data.is_ok()))
     }
 }

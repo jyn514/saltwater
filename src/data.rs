@@ -42,7 +42,7 @@ pub enum Keyword {
     Static,
     Extern,
 
-    Sizeof
+    Sizeof,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -73,9 +73,9 @@ pub enum Token {
     BinaryOr,
     LogicalOr,
 
-    LeftBrace,  // {
+    LeftBrace, // {
     RightBrace,
-    LeftBracket,  // [
+    LeftBracket, // [
     RightBracket,
     LeftParen,
     RightParen,
@@ -92,7 +92,7 @@ pub enum Token {
     Char(char),
     Id(String),
 
-    Keyword(Keyword)
+    Keyword(Keyword),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -144,14 +144,14 @@ pub enum Expr {
     // Token: make >, <, <=, ... part of the same variant
     Compare(Box<Expr>, Box<Expr>, Token),
     // Token: allow extended assignment
-    Assign(Box<Expr>, Box<Expr>, Token)
+    Assign(Box<Expr>, Box<Expr>, Token),
 }
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     Void,
-    Char(bool),  // signed or unsigned
+    Char(bool), // signed or unsigned
     Short(bool),
     Int(bool),
     Long(bool),
@@ -163,14 +163,14 @@ pub enum Type {
     Struct(Vec<Symbol>),
     Function(FunctionType),
     Enum(Vec<String>),
-    Bitfield(Vec<BitfieldType>)
+    Bitfield(Vec<BitfieldType>),
 }
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ArrayType {
     Fixed(i32),
-    Unbounded
+    Unbounded,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,7 +178,7 @@ pub enum StorageClass {
     Static = Keyword::Static as isize,
     Extern = Keyword::Extern as isize,
     Auto = Keyword::Auto as isize,
-    Register = Keyword::Register as isize
+    Register = Keyword::Register as isize,
 }
 
 /* structs */
@@ -187,13 +187,13 @@ pub struct Symbol {
     pub id: String,
     pub c_type: Type,
     pub qualifiers: Qualifiers,
-    pub storage_class: StorageClass
+    pub storage_class: StorageClass,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Qualifiers {
     pub volatile: bool,
-    pub c_const: bool
+    pub c_const: bool,
 }
 
 #[allow(dead_code)]
@@ -202,7 +202,7 @@ pub struct Qualifiers {
 pub struct FunctionType {
     pub return_type: Box<Type>,
     pub params: Vec<Type>,
-    pub varargs: bool
+    pub varargs: bool,
 }
 
 #[allow(dead_code)]
@@ -220,22 +220,13 @@ pub struct Location<'a> {
     // if there's a 4 GB input file, we have bigger problems
     pub line: u32,
     pub column: u32,
-    pub file: &'a str
+    pub file: &'a str,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Locatable<'a, T> {
     pub data: T,
-    pub location: Location<'a>
-}
-
-/* constants */
-#[allow(dead_code)]
-impl Qualifiers {
-    pub const NONE: Qualifiers = Qualifiers { volatile: false, c_const: false };
-    pub const VOLATILE: Qualifiers = Qualifiers { volatile: true, c_const: false };
-    pub const CONST: Qualifiers = Qualifiers { volatile: false, c_const: true };
-    pub const VOLATILE_CONST: Qualifiers = Qualifiers { volatile: true, c_const: true };
+    pub location: Location<'a>,
 }
 
 /* impls */
@@ -248,7 +239,7 @@ impl TryFrom<Keyword> for StorageClass {
             Keyword::Static => Ok(Static),
             Keyword::Auto => Ok(Auto),
             Keyword::Register => Ok(Register),
-            _ => Err(value)
+            _ => Err(value),
         }
     }
 }
@@ -270,7 +261,7 @@ impl Display for Type {
         let lower = &format!("{:?}", self).to_lowercase();
         let substr = match lower.find('(') {
             Some(n) => &lower[..n],
-            None => lower.as_str()
+            None => lower.as_str(),
         };
         write!(f, "{}", substr)
     }

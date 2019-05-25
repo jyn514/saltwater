@@ -1,10 +1,11 @@
-use ansi_term::{ANSIString, Colour};
 use crate::data::Location;
+use ansi_term::{ANSIString, Colour};
 
 fn pretty_print(prefix: ANSIString, msg: &str, location: &Location) {
-    eprintln!("{}:{}:{}: {}: {}",
-              location.file, location.line,
-              location.column, prefix, msg);
+    eprintln!(
+        "{}:{}:{}: {}: {}",
+        location.file, location.line, location.column, prefix, msg
+    );
 }
 
 pub fn warn(msg: &str, location: &Location) {

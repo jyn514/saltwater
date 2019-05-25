@@ -11,9 +11,9 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::process;
 
-use utils::error;
 use lex::Lexer;
 use parse::Parser;
+use utils::error;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -39,7 +39,7 @@ fn main() {
     for stmt in compiler {
         match stmt.data {
             Ok(s) => println!("{:?}", s),
-            Err(err) => error(&err, &stmt.location)
+            Err(err) => error(&err, &stmt.location),
         }
     }
 }

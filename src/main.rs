@@ -3,6 +3,7 @@ extern crate lazy_static;
 
 mod data;
 mod lex;
+mod parse;
 mod utils;
 
 use std::env;
@@ -10,10 +11,13 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::process;
 
+use utils::{error, warn};
 use lex::Lexer;
+use parse::Parser;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    // NOTE: only holds valid UTF-8, and will throw an error on invalid input
     let mut buf = String::new();
     let filename = if args.len() > 1 {
         let filename = &args[1];
@@ -31,7 +35,11 @@ fn main() {
         });
         "<stdin>"
     };
-    for token in Lexer::new(&filename, buf.chars()) {
-        println!("{:?}", token);
+    let compiler = Parser::new(Lexer::new(&filename, buf.chars()));
+    for stmt in compiler {
+        match stmt.data {
+            Ok(s) => println!("{:?}", s),
+            Err(err) => error(&err, &stmt.location)
+        }
     }
 }

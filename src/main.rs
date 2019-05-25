@@ -11,7 +11,7 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::process;
 
-use utils::{error, warn};
+use utils::error;
 use lex::Lexer;
 use parse::Parser;
 

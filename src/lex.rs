@@ -422,11 +422,11 @@ mod tests {
 
     type LexType<'a> = Locatable<'a, Result<Token, String>>;
 
-    fn lex<'a>(input: String) -> Option<LexType<'a>> {
+    fn lex<'a>(input: &'a str) -> Option<LexType<'a>> {
         lex_all(input).get(0).map(|x| x.clone())
     }
-    fn lex_all<'a>(input: String) -> Vec<LexType<'a>> {
-        Lexer::new("<stdin>", BufReader::new(Cursor::new(input))).collect()
+    fn lex_all<'a>(input: &'a str) -> Vec<LexType<'a>> {
+        Lexer::new("<stdin>", input.chars()).collect()
     }
 
     fn match_data<'a, T>(lexed: Option<LexType<'a>>, closure: T) -> bool
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_plus() {
-        let parse = lex(String::from("+"));
+        let parse = lex("+");
         assert_eq!(parse, Some(Locatable {
             data: Ok(Token::Plus),
             location: Location {
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_overflow() {
-        assert!(match lex(String::from("10000000000000000000000")) {
+        assert!(match lex("10000000000000000000000") {
             Some(lexed) => lexed.data.is_err(),
             None => false
         })
@@ -460,47 +460,47 @@ mod tests {
 
     #[test]
     fn test_num_literals() {
-        assert!(match_data(lex(String::from("10")), |lexed|
+        assert!(match_data(lex("10"), |lexed|
             lexed == Ok(Token::Int(10))));
-        assert!(match_data(lex(String::from("0x10")), |lexed|
+        assert!(match_data(lex("0x10"), |lexed|
             lexed == Ok(Token::Int(16))));
-        assert!(match_data(lex(String::from("0b10")), |lexed|
+        assert!(match_data(lex("0b10"), |lexed|
             lexed == Ok(Token::Int(2))));
-        assert!(match_data(lex(String::from("010")), |lexed|
+        assert!(match_data(lex("010"), |lexed|
             lexed == Ok(Token::Int(8))));
-        assert!(match_data(lex(String::from("02")), |lexed|
+        assert!(match_data(lex("02"), |lexed|
             lexed == Ok(Token::Int(2))));
-        assert!(match_data(lex(String::from("0")), |lexed|
+        assert!(match_data(lex("0"), |lexed|
             lexed == Ok(Token::Int(0))));
-        assert!(match_data(lex(String::from("0.1")), |lexed|
+        assert!(match_data(lex("0.1"), |lexed|
             lexed == Ok(Token::Float(0.1))));
-        assert!(match_data(lex(String::from(".1")), |lexed|
+        assert!(match_data(lex(".1"), |lexed|
             lexed == Ok(Token::Float(0.1))));
-        assert!(match_data(lex(String::from("1e10")), |lexed|
+        assert!(match_data(lex("1e10"), |lexed|
             lexed == Ok(Token::Int(10000000000))));
-        assert!(match_data(lex(String::from("-1")), |lexed|
+        assert!(match_data(lex("-1"), |lexed|
             lexed == Ok(Token::Int(-1))));
-        assert!(match_data(lex(String::from("-1e10")), |lexed|
+        assert!(match_data(lex("-1e10"), |lexed|
             lexed == Ok(Token::Int(-10000000000))));
-        assert!(match_data(lex(String::from("-1.2")), |lexed|
+        assert!(match_data(lex("-1.2"), |lexed|
             lexed == Ok(Token::Float(-1.2))));
-        assert!(match_data(lex(String::from("-1.2e10")), |lexed|
+        assert!(match_data(lex("-1.2e10"), |lexed|
             lexed == Ok(Token::Float(-1.2e10))));
-        assert!(match_data(lex(String::from("-1.2e-1")), |lexed|
+        assert!(match_data(lex("-1.2e-1"), |lexed|
             lexed == Ok(Token::Float(-1.2e-1))));
-        assert!(match_data(lex(String::from("1e-1")), |lexed|
+        assert!(match_data(lex("1e-1"), |lexed|
             lexed == Ok(Token::Int(0))));
-        assert!(match_data(lex(String::from("-1e-1")), |lexed|
+        assert!(match_data(lex("-1e-1"), |lexed|
             lexed == Ok(Token::Int(0))))
     }
 
     #[test]
     fn test_num_errors() {
-        assert!(match_data(lex(String::from("1e")), |t| t.is_err()));
-        assert!(match_data(lex(String::from("1e.")), |t| t.is_err()));
-        assert!(match_data(lex(String::from("1e1.0")), |t| t.is_err()));
-        //assert!(match_data(lex(String::from("1e100000")), |t| t.is_err()));
-        //assert!(match_data(lex(String::from("1e-100000")), |t| t.is_err()));
+        assert!(match_data(lex("1e"), |t| t.is_err()));
+        assert!(match_data(lex("1e."), |t| t.is_err()));
+        assert!(match_data(lex("1e1.0"), |t| t.is_err()));
+        //assert!(match_data(lex("1e100000"), |t| t.is_err());
+        //assert!(match_data(lex("1e-100000"), |t| t.is_err());
     }
 
     #[test]
@@ -508,14 +508,14 @@ mod tests {
     fn test_lots_of_whitespace() {
         let mut spaces = Vec::new();
         spaces.resize(8096, '\n');
-        assert!(lex(spaces.into_iter().collect()) == None)
+        assert!(lex(&spaces.into_iter().collect::<String>()) == None)
     }
 
     // Integration tests
     #[test]
     fn test_for_loop() {
-        assert!(lex_all(String::from("for (int i = 0; i < 100; ++i) {
+        assert!(lex_all("for (int i = 0; i < 100; ++i {
             a[i] = i << 2 + i*4;
-            }")).into_iter().all(|x| x.data.is_ok()))
+            }").into_iter().all(|x| x.data.is_ok()))
     }
 }

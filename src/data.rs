@@ -173,18 +173,15 @@ pub enum ArrayType {
     Unbounded
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StorageClass {
     Static = Keyword::Static as isize,
     Extern = Keyword::Extern as isize,
     Auto = Keyword::Auto as isize,
-    Typedef = Keyword::Typedef as isize,  // TODO: should this be here?
     Register = Keyword::Register as isize
 }
 
 /* structs */
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Symbol {
     pub id: String,
@@ -193,7 +190,6 @@ pub struct Symbol {
     pub storage_class: StorageClass
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Qualifiers {
     pub volatile: bool,

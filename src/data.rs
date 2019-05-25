@@ -264,3 +264,14 @@ impl Display for StorageClass {
         write!(f, "{}", &format!("{:?}", self).to_lowercase())
     }
 }
+
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let lower = &format!("{:?}", self).to_lowercase();
+        let substr = match lower.find('(') {
+            Some(n) => &lower[..n],
+            None => lower.as_str()
+        };
+        write!(f, "{}", substr)
+    }
+}

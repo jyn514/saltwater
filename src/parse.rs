@@ -102,36 +102,44 @@ fn handle_single_decl_specifier<'a>(keyword: Keyword,
         }
     } else if keyword == Keyword::Float || keyword == Keyword::Double {
         if *signed != None {
+            let s = if signed.unwrap() { "signed" } else { "unsigned" };
             errors.push(Locatable {
-                data: "values cannot be both signed and unsigned".to_string(),
+                data: format!("invalid modifier '{}' for '{}'", s, keyword),
                 location: location
             });
         } else if keyword == Keyword::Float {
-            if *ctype == Some(Type::Double) {
-                errors.push(Locatable {
-                      data: "two or more data types in declaration specifiers".to_string(),
+            match ctype {
+                Some(x) => errors.push(Locatable {
+                      data: format!("cannot combine 'float' with '{}'", x),
                       location: location
-                });
+                }),
+                None => {}
             }
             *ctype = Some(Type::Float);
         } else {
+            match ctype {
+                None|Some(Type::Long(_)) => {}
+                Some(x) => errors.push(Locatable {
+                      data: format!("cannot combine 'double' with '{}'", x),
+                      location: location
+                }),
+            }
             *ctype = Some(Type::Double);
         }
     } else if keyword == Keyword::Void {
-        if ctype.is_some() {
-            errors.push(Locatable {
-                data: "cannot combine 'void' with other type modifiers".to_string(),
+        match ctype {
+            Some(x) => errors.push(Locatable {
+                data: format!("cannot combine 'void' with '{}'", x),
                 location: location
-            });
-        } else {
-            *ctype = Some(Type::Void);
+            }),
+            None => *ctype = Some(Type::Void)
         }
     // if we get this far, keyword is an int type (char - long)
     } else if keyword == Keyword::Int {
         match ctype {
             Some(Type::Char(_))|Some(Type::Short(_))|Some(Type::Long(_))|Some(Type::Int(_)) => {},
-            Some(_) => errors.push(Locatable {
-                data: "cannot combine 'int' with existing modifiers in declaration specifier".to_string(),
+            Some(x) => errors.push(Locatable {
+                data: format!("cannot combine 'int' with '{}'", x),
                 location: location
             }),
             None => *ctype = Some(Type::Int(true))
@@ -140,8 +148,8 @@ fn handle_single_decl_specifier<'a>(keyword: Keyword,
         match ctype {
             None|Some(Type::Int(_)) => *ctype = Some(Type::try_from(keyword)
                 .expect("keyword should be an integer or integer modifier")),
-            Some(_) => errors.push(Locatable {
-                data: "cannot combine integer modifiers in declaration specifier".to_string(),
+            Some(x) => errors.push(Locatable {
+                data: format!("cannot combine '{}' modifier with type '{}'", keyword, x),
                 location: location
             })
         }
@@ -202,10 +210,12 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
                     // program and we'll throw an error in just a second
                     // besides, it makes getting a location really hard
                     if let Some(locatable) = self.tokens.peek() {
-                        warn(&"type specifier missing, defaults to int".to_string(),
-                             &locatable.location);
+                        if signed.is_none() {
+                            warn(&"type specifier missing, defaults to int".to_string(),
+                                 &locatable.location);
+                        }
                     }
-                    Type::Int(true)
+                    Type::Int(signed.unwrap_or(true))
                 }
             };
             Ok((storage_class.unwrap_or(StorageClass::Auto), qualifiers, ctype))
@@ -305,12 +315,34 @@ mod tests {
         assert!(match_type(parse("signed short i;"), Type::Short(true)));
         assert!(match_type(parse("unsigned short i;"), Type::Short(false)));
         assert!(match_type(parse("long i;"), Type::Long(true)));
+        assert!(match_type(parse("long long i;"), Type::Long(true)));
         assert!(match_type(parse("long unsigned i;"), Type::Long(false)));
         assert!(match_type(parse("int i;"), Type::Int(true)));
-        assert!(match_type(parse("signed int i;"), Type::Int(true)));
-        assert!(match_type(parse("unsigned int i;"), Type::Int(false)));
+        assert!(match_type(parse("signed i;"), Type::Int(true)));
+        assert!(match_type(parse("unsigned i;"), Type::Int(false)));
         assert!(match_type(parse("float f;"), Type::Float));
         assert!(match_type(parse("double d;"), Type::Double));
+        assert!(match_type(parse("long double d;"), Type::Double));
         assert!(match_type(parse("void f();"), Type::Void));
+        assert!(match_type(parse("const volatile int f;"), Type::Int(true)));
+    }
+    #[test]
+    fn test_bad_decl_specs() {
+        assert!(parse("char char").unwrap().data.is_err());
+        assert!(parse("char long").unwrap().data.is_err());
+        assert!(parse("long char").unwrap().data.is_err());
+        assert!(parse("float char").unwrap().data.is_err());
+        assert!(parse("float double").unwrap().data.is_err());
+        assert!(parse("double double").unwrap().data.is_err());
+        assert!(parse("double unsigned").unwrap().data.is_err());
+        assert!(parse("short double").unwrap().data.is_err());
+        assert!(parse("int void").unwrap().data.is_err());
+        assert!(parse("void int").unwrap().data.is_err());
+        // default to int if we don't have a type
+        // don't panic if we see duplicate specifiers
+        assert!(match_type(parse("unsigned unsigned"), Type::Int(false)));
+        assert!(match_type(parse("extern extern"), Type::Int(true)));
+        assert!(match_type(parse("const const"), Type::Int(true)));
+        assert!(match_type(parse("const volatile"), Type::Int(true)));
     }
 }

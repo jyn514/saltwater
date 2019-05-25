@@ -2,9 +2,11 @@ use lazy_static;
 
 use core::f64::{INFINITY, NEG_INFINITY};
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::str::Chars;
 
 use super::data::{Keyword, Locatable, Location, Token};
+use super::utils::warn;
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
@@ -79,7 +81,7 @@ impl<'a> Lexer<'a> {
                 column: 0,
                 file: filename,
             },
-            chars: chars,
+            chars,
             current: None,
         }
     }
@@ -179,7 +181,7 @@ impl<'a> Lexer<'a> {
             }
             if !err {
                 match current
-                    .checked_mul(radix as i64)
+                    .checked_mul(i64::from(radix))
                     .and_then(|current| current.checked_add(c as i64 - '0' as i64))
                 {
                     Some(c) => {
@@ -218,7 +220,7 @@ impl<'a> Lexer<'a> {
     }
     // at this point we've already seen a '.', if we see one again it's an error
     fn parse_float(&mut self, start: i64, radix: u32, negative: bool) -> Result<Token, String> {
-        let radix_f = radix as f64;
+        let radix_f = f64::from(radix);
         let (mut fraction, mut current_base): (f64, f64) = (0.0, 1.0 / radix_f);
         // parse fraction
         while let Some(c) = self.peek() {
@@ -251,15 +253,9 @@ impl<'a> Lexer<'a> {
         }
         let next = self.next_char().unwrap();
         match self.parse_num(next, false)? {
-            Token::Int(i) => {
-                if i32::min_value() as i64 <= i && i <= i32::max_value() as i64 {
-                    Ok(i as i32)
-                } else {
-                    Err(String::from(
-                        "only 32-bit exponents are allowed, 64-bit exponents will overflow",
-                    ))
-                }
-            }
+            Token::Int(i) => i32::try_from(i).map_err(|_| {
+                "only 32-bit exponents are allowed, 64-bit exponents will overflow".to_string()
+            }),
             _ => panic!(
                 "parse_num should never return something besides Token::Int \
                  when called with first_run: false"
@@ -282,8 +278,13 @@ impl<'a> Lexer<'a> {
                         '\0' => '\0',
                         'b' => '\x08',
                         'f' => '\x0c',
-                        // TODO: emit a warning (how?)
-                        _ => c,
+                        _ => {
+                            warn(
+                                &format!("unknown character escape '\\{}'", c),
+                                &self.location,
+                            );
+                            c
+                        }
                     })
                 } else {
                     Err(CharError::Eof)
@@ -497,10 +498,7 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 _ => Err(String::from("unknown token")),
             };
-            Some(Self::Item {
-                data: data,
-                location: location,
-            })
+            Some(Self::Item { data, location })
         })
     }
 }

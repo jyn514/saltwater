@@ -102,7 +102,7 @@ fn handle_single_decl_specifier<'a>(
         } else if signed.unwrap() != (keyword == Keyword::Signed) {
             errors.push(Locatable {
                 data: "values cannot be both signed and unsigned".to_string(),
-                location: location,
+                location,
             });
         }
     } else if let Ok(sc) = StorageClass::try_from(keyword) {
@@ -116,7 +116,7 @@ fn handle_single_decl_specifier<'a>(
                     storage_class.unwrap(),
                     sc
                 ),
-                location: location,
+                location,
             });
         }
     } else if keyword == Keyword::Float || keyword == Keyword::Double {
@@ -128,13 +128,13 @@ fn handle_single_decl_specifier<'a>(
             };
             errors.push(Locatable {
                 data: format!("invalid modifier '{}' for '{}'", s, keyword),
-                location: location,
+                location,
             });
         } else if keyword == Keyword::Float {
             match ctype {
                 Some(x) => errors.push(Locatable {
                     data: format!("cannot combine 'float' with '{}'", x),
-                    location: location,
+                    location,
                 }),
                 None => {}
             }
@@ -144,7 +144,7 @@ fn handle_single_decl_specifier<'a>(
                 None | Some(Type::Long(_)) => {}
                 Some(x) => errors.push(Locatable {
                     data: format!("cannot combine 'double' with '{}'", x),
-                    location: location,
+                    location,
                 }),
             }
             *ctype = Some(Type::Double);
@@ -153,7 +153,7 @@ fn handle_single_decl_specifier<'a>(
         match ctype {
             Some(x) => errors.push(Locatable {
                 data: format!("cannot combine 'void' with '{}'", x),
-                location: location,
+                location,
             }),
             None => *ctype = Some(Type::Void),
         }
@@ -164,7 +164,7 @@ fn handle_single_decl_specifier<'a>(
             | Some(Type::Int(_)) => {}
             Some(x) => errors.push(Locatable {
                 data: format!("cannot combine 'int' with '{}'", x),
-                location: location,
+                location,
             }),
             None => *ctype = Some(Type::Int(true)),
         }
@@ -178,7 +178,7 @@ fn handle_single_decl_specifier<'a>(
             }
             Some(x) => errors.push(Locatable {
                 data: format!("cannot combine '{}' modifier with type '{}'", keyword, x),
-                location: location,
+                location,
             }),
         }
     }
@@ -231,7 +231,7 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
             let current = errors.pop().unwrap();
             error(&current.data, &current.location);
         }
-        if errors.len() != 0 {
+        if !errors.is_empty() {
             Err(errors.pop().unwrap())
         } else {
             let ctype = match ctype {
@@ -283,7 +283,7 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
             data: Ok(Stmt::Declaration(Symbol {
                 id: "a".to_string(),
                 c_type: ctype,
-                qualifiers: qualifiers,
+                qualifiers,
                 storage_class: sc,
             })),
             location: Location {

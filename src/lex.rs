@@ -418,7 +418,6 @@ impl<'a> Iterator for Lexer<'a> {
 #[cfg(test)]
 mod tests {
     use super::{Locatable, Location, Lexer, Token};
-    use std::io::{BufReader, Cursor};
 
     type LexType<'a> = Locatable<'a, Result<Token, String>>;
 

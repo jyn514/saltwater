@@ -103,7 +103,7 @@ fn handle_single_decl_specifier<'a>(
             *signed = Some(keyword == Keyword::Signed);
         } else if signed.unwrap() != (keyword == Keyword::Signed) {
             errors.push(Locatable {
-                data: "values cannot be both signed and unsigned".to_string(),
+                data: "types cannot be both signed and unsigned".to_string(),
                 location,
             });
         }

@@ -25,10 +25,6 @@ lazy_static! {
     static ref KEYWORDS: HashMap<&'static str, Keyword> = {
         let mut m = HashMap::new();
 
-        // booleans
-        //m.insert("false", Token::False);
-        //m.insert("true", Token::True);
-
         // control flow
         m.insert("if", Keyword::If);
         m.insert("else", Keyword::Else);
@@ -44,7 +40,7 @@ lazy_static! {
         m.insert("goto", Keyword::Goto);
 
         // types
-        m.insert("bool", Keyword::Bool);
+        m.insert("_Bool", Keyword::Bool);
         m.insert("char", Keyword::Char);
         m.insert("short", Keyword::Short);
         m.insert("int", Keyword::Int);

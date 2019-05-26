@@ -151,6 +151,7 @@ pub enum Expr {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     Void,
+    Bool,
     Char(bool), // signed or unsigned
     Short(bool),
     Int(bool),

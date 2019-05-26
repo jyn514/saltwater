@@ -159,7 +159,7 @@ pub enum Type {
     Float,
     Double,
     Pointer(Box<Type>),
-    Array(ArrayType),
+    Array(Box<Type>, ArrayType),
     Union(Vec<Symbol>),
     Struct(Vec<Symbol>),
     Function(FunctionType),

@@ -312,8 +312,8 @@ impl Keyword {
     fn is_decl_specifier(self) -> bool {
         use Keyword::*;
         match self {
-            Unsigned | Signed | Void | Bool | Char | Short | Int | Long | Float | Double | Extern
-            | Static | Auto | Register | Const | Volatile => true,
+            Unsigned | Signed | Void | Bool | Char | Short | Int | Long | Float | Double
+            | Extern | Static | Auto | Register | Const | Volatile => true,
             _ => false,
         }
     }
@@ -347,7 +347,7 @@ mod tests {
         parse_all(input).get(0).map(|x| x.clone())
     }
     fn parse_all<'a>(input: &'a str) -> Vec<ParseType<'a>> {
-        Parser::new(Lexer::new("<stdin>", input.chars())).collect()
+        Parser::new(Lexer::new("<test suite>", input.chars())).collect()
     }
     fn match_data<'a, T>(lexed: Option<ParseType<'a>>, closure: T) -> bool
     where

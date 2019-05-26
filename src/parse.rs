@@ -312,7 +312,7 @@ impl Keyword {
     fn is_decl_specifier(self) -> bool {
         use Keyword::*;
         match self {
-            Unsigned | Signed | Void | Char | Short | Int | Long | Float | Double | Extern
+            Unsigned | Signed | Void | Bool | Char | Short | Int | Long | Float | Double | Extern
             | Static | Auto | Register | Const | Volatile => true,
             _ => false,
         }
@@ -325,6 +325,7 @@ impl TryFrom<Keyword> for Type {
         use Type::*;
         match keyword {
             Keyword::Void => Ok(Void),
+            Keyword::Bool => Ok(Bool),
             Keyword::Char => Ok(Char(true)),
             Keyword::Short => Ok(Short(true)),
             Keyword::Int => Ok(Int(true)),

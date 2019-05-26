@@ -267,3 +267,53 @@ impl Display for Type {
         write!(f, "{}", substr)
     }
 }
+
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        use Token::*;
+        match self {
+            PlusPlus => write!(f, "++"),
+            PlusEqual => write!(f, "+="),
+            MinusMinus => write!(f, "--"),
+            MinusEqual => write!(f, "+="),
+            DivideEqual => write!(f, "/="),
+            EqualEqual => write!(f, "=="),
+            NotEqual => write!(f, "!="),
+            LessEqual => write!(f, "<="),
+            GreaterEqual => write!(f, ">="),
+            ShiftRight => write!(f, ">>"),
+            ShiftLeft => write!(f, "<<"),
+            Plus => write!(f, "+"),
+            Minus => write!(f, "-"),
+            Star => write!(f, "*"),
+            Divide => write!(f, "/"),
+            Equal => write!(f, "="),
+            Not => write!(f, "!"),
+            Less => write!(f, "<"),
+            Greater => write!(f, ">"),
+            Ampersand => write!(f, "&"),
+            LogicalAnd => write!(f, "&&"),
+            BinaryOr => write!(f, "|"),
+            LogicalOr => write!(f, "||"),
+            LeftBrace => write!(f, "{{"),
+            RightBrace => write!(f, "}}"),
+            LeftBracket => write!(f, "["),
+            RightBracket => write!(f, "]"),
+            LeftParen => write!(f, "("),
+            RightParen => write!(f, ")"),
+            Semicolon => write!(f, ";"),
+            Colon => write!(f, ":"),
+            Comma => write!(f, ","),
+            Dot => write!(f, "."),
+            Question => write!(f, "?"),
+            Mod => write!(f, "%"),
+
+            Int(i) => write!(f, "{}", i),
+            Float(n) => write!(f, "{}", n),
+            Str(s) => write!(f, "\"{}\"", s),
+            Char(c) => write!(f, "{}", c),
+            Id(id) => write!(f, "{}", id),
+            Keyword(k) => write!(f, "{}", k),
+        }
+    }
+}

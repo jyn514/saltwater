@@ -13,6 +13,7 @@ type Lexeme<'a> = Locatable<'a, Result<Token, String>>;
 pub struct Parser<'a, I: Iterator<Item = Lexeme<'a>>> {
     tokens: Peekable<I>,
     pending: VecDeque<Locatable<'a, Result<Stmt, String>>>,
+    current: Option<Lexeme<'a>>,
 }
 
 impl<'a, I> Parser<'a, I>
@@ -23,6 +24,7 @@ where
         Parser {
             tokens: iter.peekable(),
             pending: Default::default(),
+            current: None,
         }
     }
 }
@@ -31,19 +33,19 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Iterator for Parser<'a, I> {
     type Item = Locatable<'a, Result<Stmt, String>>;
     fn next(&mut self) -> Option<Self::Item> {
         self.pending.pop_front().or_else(|| {
-            let token = self.tokens.next()?;
-            match token.data {
+            let Locatable { data, location } = self.next_token()?;
+            match data {
                 Ok(lexed) => match lexed {
                     // NOTE: we do not allow implicit int
                     // https://stackoverflow.com/questions/11064292
                     Token::Keyword(t) if t.is_decl_specifier() => self.parse_decl(t),
                     _ => Some(Locatable {
                         data: Err("not handled".to_string()),
-                        location: token.location,
+                        location: location,
                     }),
                 },
                 Err(err) => {
-                    error(&err, &token.location);
+                    error(&err, &location);
                     // NOTE: returning from closure, not from `next()`
                     self.next()
                 }
@@ -187,6 +189,43 @@ fn handle_single_decl_specifier<'a>(
 }
 
 impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
+    fn next_token(&mut self) -> Option<Lexeme<'a>> {
+        self.current = self.tokens.next();
+        self.current.clone()
+    }
+    fn expect(&mut self, next: Token) -> bool {
+        match self.tokens.peek() {
+            Some(Locatable {
+                data: Ok(token), ..
+            }) if *token == next => {
+                self.next_token();
+                true
+            }
+            Some(Locatable { location, data }) => {
+                self.pending.push_back(Locatable {
+                    location: location.clone(),
+                    data: Err(format!(
+                        "expected '{}', got '{}'",
+                        next,
+                        data.clone().unwrap_or_else(|_|
+                            Token::Id("<lex error>".to_string()))
+                    )),
+                });
+                false
+            }
+            None => {
+                self.pending.push_back(Locatable {
+                    location: self
+                        .current
+                        .clone()
+                        .expect("expect cannot be called at start of program")
+                        .location,
+                    data: Err(format!("expected '{}', got <end-of-file>", next)),
+                });
+                false
+            }
+        }
+    }
     // this is an utter hack
     // NOTE: the reason the return type is so weird (Result<_, Locatable<_>)
     // is because declaration specifiers can never be a statement on their own:
@@ -217,7 +256,7 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
                 Ok(Token::Keyword(k)) if k.is_decl_specifier() => k,
                 _ => break,
             };
-            let locatable = self.tokens.next().unwrap();
+            let locatable = self.next_token().unwrap();
             handle_single_decl_specifier(
                 keyword,
                 &mut storage_class,
@@ -269,14 +308,26 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
             ctype,
         ))
     }
+    /* parse everything after declaration specifiers. can be called recursively */
     fn parse_type(
         &mut self,
         sc: StorageClass,
-        quals: Qualifiers,
-        ctype: Type,
-    ) -> Vec<Locatable<'a, Result<Stmt, String>>> {
-        vec![]
-        //warn(&"declaration does not declare anything".to_string(),
+        quals: &Qualifiers,
+        ctype: &Type,
+    ) -> Option<Locatable<'a, Result<Stmt, String>>> {
+        match self.tokens.peek() {
+            Some(Locatable {
+                data: Ok(Token::LeftParen),
+                ..
+            }) => {
+                self.next_token();
+                let next = self.parse_type(sc, quals, ctype);
+                self.expect(Token::RightParen);
+                next
+            }
+            // TODO!!
+            _ => None,
+        }
     }
     // NOTE: there's some fishiness here. Declarations can have multiple variables,
     // but we typed them as only having one Symbol. Wat do?

@@ -32,20 +32,22 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Iterator for Parser<'a, I> {
     fn next(&mut self) -> Option<Self::Item> {
         self.pending.pop_front().or_else(|| {
             let token = self.tokens.next()?;
-            Some(match token.data {
+            match token.data {
                 Ok(lexed) => match lexed {
+                    // NOTE: we do not allow implicit int
+                    // https://stackoverflow.com/questions/11064292
                     Token::Keyword(t) if t.is_decl_specifier() => self.parse_decl(t),
-                    _ => Locatable {
+                    _ => Some(Locatable {
                         data: Err("not handled".to_string()),
                         location: token.location,
-                    },
+                    }),
                 },
                 Err(err) => {
                     error(&err, &token.location);
                     // NOTE: returning from closure, not from `next()`
-                    return self.next();
+                    self.next()
                 }
-            })
+            }
         })
     }
 }
@@ -229,69 +231,74 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
         }
         while errors.len() > 1 {
             let current = errors.pop().unwrap();
-            error(&current.data, &current.location);
+            self.pending.push_front(Locatable {
+                location: current.location,
+                data: Err(current.data),
+            });
         }
         if !errors.is_empty() {
-            Err(errors.pop().unwrap())
-        } else {
-            let ctype = match ctype {
-                Some(Type::Char(ref mut s))
-                | Some(Type::Short(ref mut s))
-                | Some(Type::Int(ref mut s))
-                | Some(Type::Long(ref mut s)) => {
-                    *s = signed.unwrap_or(true);
-                    ctype.unwrap()
-                }
-                Some(_) => ctype.unwrap(),
-                None => {
-                    // if there's no next token, they left out part of the
-                    // program and we'll throw an error in just a second
-                    // besides, it makes getting a location really hard
-                    if let Some(locatable) = self.tokens.peek() {
-                        if signed.is_none() {
-                            warn(
-                                &"type specifier missing, defaults to int".to_string(),
-                                &locatable.location,
-                            );
-                        }
-                    }
-                    Type::Int(signed.unwrap_or(true))
-                }
-            };
-            Ok((
-                storage_class.unwrap_or(StorageClass::Auto),
-                qualifiers,
-                ctype,
-            ))
+            return Err(errors.pop().unwrap());
         }
+        let ctype = match ctype {
+            Some(Type::Char(ref mut s))
+            | Some(Type::Short(ref mut s))
+            | Some(Type::Int(ref mut s))
+            | Some(Type::Long(ref mut s)) => {
+                *s = signed.unwrap_or(true);
+                ctype.unwrap()
+            }
+            Some(_) => ctype.unwrap(),
+            None => {
+                // if there's no next token, they left out part of the
+                // program and we'll throw an error in just a second
+                // besides, it makes getting a location really hard
+                if let Some(locatable) = self.tokens.peek() {
+                    if signed.is_none() {
+                        warn(
+                            &"type specifier missing, defaults to int".to_string(),
+                            &locatable.location,
+                        );
+                    }
+                }
+                Type::Int(signed.unwrap_or(true))
+            }
+        };
+        Ok((
+            storage_class.unwrap_or(StorageClass::Auto),
+            qualifiers,
+            ctype,
+        ))
+    }
+    fn parse_type(
+        &mut self,
+        sc: StorageClass,
+        quals: Qualifiers,
+        ctype: Type,
+    ) -> Vec<Locatable<'a, Result<Stmt, String>>> {
+        vec![]
+        //warn(&"declaration does not declare anything".to_string(),
     }
     // NOTE: there's some fishiness here. Declarations can have multiple variables,
     // but we typed them as only having one Symbol. Wat do?
     // We push all but one declaration into the 'pending' vector
     // and return the last.
-    fn parse_decl(&mut self, start: Keyword) -> Locatable<'a, Result<Stmt, String>> {
+    fn parse_decl(&mut self, start: Keyword) -> Option<Locatable<'a, Result<Stmt, String>>> {
         let (sc, qualifiers, ctype) = match self.parse_decl_specifiers(start) {
             Ok(tuple) => tuple,
             Err(err) => {
-                return Locatable {
+                return Some(Locatable {
                     data: Err(err.data),
                     location: err.location,
-                }
+                })
             }
         };
-        Locatable {
-            data: Ok(Stmt::Declaration(Symbol {
-                id: "a".to_string(),
-                c_type: ctype,
-                qualifiers,
-                storage_class: sc,
-            })),
-            location: Location {
-                file: "literally made this up",
-                line: 0,
-                column: 0,
-            },
+        let declarations = self.parse_type(sc, qualifiers, ctype);
+        for decl in declarations {
+            self.pending.push_back(decl);
         }
+        // this is empty when we had specifiers without identifiers
+        // e.g. `int;`
+        self.pending.pop_front().or_else(|| self.next())
     }
 }
 

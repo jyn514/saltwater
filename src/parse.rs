@@ -41,7 +41,7 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Iterator for Parser<'a, I> {
                     Token::Keyword(t) if t.is_decl_specifier() => self.parse_decl(t),
                     _ => Some(Locatable {
                         data: Err("not handled".to_string()),
-                        location: location,
+                        location,
                     }),
                 },
                 Err(err) => {
@@ -310,22 +310,37 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
     /* parse everything after declaration specifiers. can be called recursively */
     fn parse_type(
         &mut self,
-        sc: StorageClass,
-        quals: &Qualifiers,
         ctype: &Type,
-    ) -> Option<Locatable<'a, Result<Stmt, String>>> {
-        match self.tokens.peek() {
-            Some(Locatable {
-                data: Ok(Token::LeftParen),
-                ..
-            }) => {
-                self.next_token();
-                let next = self.parse_type(sc, quals, ctype);
-                self.expect(Token::RightParen);
-                next
+    ) -> Option<Locatable<'a, Result<(String, Type), String>>> {
+        if let Some(Locatable {
+            data: Ok(next),
+            location,
+        }) = self.tokens.peek()
+        {
+            match next {
+                Token::LeftParen => {
+                    self.next_token();
+                    let next = self.parse_type(ctype);
+                    self.expect(Token::RightParen);
+                    next
+                }
+                Token::Star => {
+                    self.next_token();
+                    match self.parse_type(ctype) {
+                        Some(Locatable {
+                            location,
+                            data: Ok((id, ctype)),
+                        }) => Some(Locatable {
+                            location,
+                            data: Ok((id, Type::Pointer(Box::new(ctype)))),
+                        }),
+                        x => x,
+                    }
+                }
+                _ => None,
             }
-            // TODO!!
-            _ => None,
+        } else {
+            None
         }
     }
     // NOTE: there's some fishiness here. Declarations can have multiple variables,
@@ -339,15 +354,36 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
                 return Some(Locatable {
                     data: Err(err.data),
                     location: err.location,
-                })
+                });
             }
         };
         let mut has_valid = false;
-        while let Some(decl) = self.parse_type(sc, &qualifiers, &ctype) {
-            if decl.data.is_ok() {
-                has_valid = true;
+        while let Some(Locatable {
+            data: ctype,
+            location,
+        }) = self.parse_type(&ctype)
+        {
+            println!("got decl: {:?}", ctype);
+            match ctype {
+                Ok(decl) => {
+                    has_valid = true;
+                    self.pending.push_back(Locatable {
+                        location,
+                        data: Ok(Stmt::Declaration(Symbol {
+                            storage_class: sc,
+                            qualifiers: qualifiers.clone(),
+                            c_type: decl.1,
+                            id: decl.0,
+                        })),
+                    });
+                }
+                Err(err) => {
+                    self.pending.push_back(Locatable {
+                        location,
+                        data: Err(err),
+                    });
+                }
             }
-            self.pending.push_back(decl);
         }
         let (matched, location) = self.expect(Token::Semicolon);
         if matched && !has_valid {

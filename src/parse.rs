@@ -193,36 +193,35 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
         self.current = self.tokens.next();
         self.current.clone()
     }
-    fn expect(&mut self, next: Token) -> bool {
+    fn expect(&mut self, next: Token) -> (bool, Location<'a>) {
         match self.tokens.peek() {
             Some(Locatable {
                 data: Ok(token), ..
-            }) if *token == next => {
-                self.next_token();
-                true
-            }
+            }) if *token == next => (true, self.next_token().unwrap().location),
             Some(Locatable { location, data }) => {
+                let location = location.clone();
                 self.pending.push_back(Locatable {
                     location: location.clone(),
                     data: Err(format!(
                         "expected '{}', got '{}'",
                         next,
-                        data.clone().unwrap_or_else(|_|
-                            Token::Id("<lex error>".to_string()))
+                        data.clone()
+                            .unwrap_or_else(|_| Token::Id("<lex error>".to_string()))
                     )),
                 });
-                false
+                (false, location)
             }
             None => {
+                let location = self
+                    .current
+                    .clone()
+                    .expect("expect cannot be called at start of program")
+                    .location;
                 self.pending.push_back(Locatable {
-                    location: self
-                        .current
-                        .clone()
-                        .expect("expect cannot be called at start of program")
-                        .location,
+                    location: location.clone(),
                     data: Err(format!("expected '{}', got <end-of-file>", next)),
                 });
-                false
+                (false, location)
             }
         }
     }
@@ -343,9 +342,19 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
                 })
             }
         };
-        let declarations = self.parse_type(sc, qualifiers, ctype);
-        for decl in declarations {
+        let mut has_valid = false;
+        while let Some(decl) = self.parse_type(sc, &qualifiers, &ctype) {
+            if decl.data.is_ok() {
+                has_valid = true;
+            }
             self.pending.push_back(decl);
+        }
+        let (matched, location) = self.expect(Token::Semicolon);
+        if matched && !has_valid {
+            warn(
+                &"declaration does not declare anything".to_string(),
+                &location,
+            );
         }
         // this is empty when we had specifiers without identifiers
         // e.g. `int;`

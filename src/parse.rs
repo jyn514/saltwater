@@ -1,9 +1,11 @@
 use std::collections::{HashSet, VecDeque};
 use std::convert::TryFrom;
 use std::iter::{Iterator, Peekable};
+use std::mem;
 
 use crate::data::{
-    Expr, Keyword, Locatable, Location, Qualifiers, Stmt, StorageClass, Symbol, Token, Type,
+    ArrayType, Expr, Keyword, Locatable, Location, Qualifiers, Stmt, StorageClass, Symbol, Token,
+    Type,
 };
 use crate::utils::{error, warn};
 
@@ -13,7 +15,8 @@ type Lexeme = Locatable<Result<Token, String>>;
 pub struct Parser<I: Iterator<Item = Lexeme>> {
     tokens: Peekable<I>,
     pending: VecDeque<Locatable<Result<Stmt, String>>>,
-    current: Option<Lexeme>,
+    last_location: Option<Location>,
+    current: Option<Locatable<Token>>,
 }
 
 impl<I> Parser<I>
@@ -24,6 +27,7 @@ where
         Parser {
             tokens: iter.peekable(),
             pending: Default::default(),
+            last_location: None,
             current: None,
         }
     }
@@ -33,22 +37,18 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
     type Item = Locatable<Result<Stmt, String>>;
     fn next(&mut self) -> Option<Self::Item> {
         self.pending.pop_front().or_else(|| {
-            let Locatable { data, location } = self.next_token()?;
-            match data {
-                Ok(lexed) => match lexed {
-                    // NOTE: we do not allow implicit int
-                    // https://stackoverflow.com/questions/11064292
-                    Token::Keyword(t) if t.is_decl_specifier() => self.parse_decl(t),
-                    _ => Some(Locatable {
-                        data: Err("not handled".to_string()),
-                        location,
-                    }),
-                },
-                Err(err) => {
-                    error(&err, &location);
-                    // NOTE: returning from closure, not from `next()`
-                    self.next()
-                }
+            let Locatable {
+                data: lexed,
+                location,
+            } = self.next_token()?;
+            match lexed {
+                // NOTE: we do not allow implicit int
+                // https://stackoverflow.com/questions/11064292
+                Token::Keyword(t) if t.is_decl_specifier() => self.parse_decl(t),
+                _ => Some(Locatable {
+                    data: Err("not handled".to_string()),
+                    location,
+                }),
             }
         })
     }
@@ -189,34 +189,73 @@ fn handle_single_decl_specifier(
 }
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
-    fn next_token(&mut self) -> Option<Lexeme> {
-        self.current = self.tokens.next();
-        self.current.clone()
+    fn next_token(&mut self) -> Option<Locatable<Token>> {
+        if self.current.is_some() {
+            mem::replace(&mut self.current, None)
+        } else {
+            match self.tokens.next() {
+                Some(Locatable {
+                    data: Ok(token),
+                    location,
+                }) => {
+                    self.last_location = Some(location.clone());
+                    Some(Locatable {
+                        data: token,
+                        location,
+                    })
+                }
+                None => None,
+                Some(Locatable {
+                    data: Err(err),
+                    location,
+                }) => {
+                    error(&err, &location);
+                    self.last_location = Some(location);
+                    self.next_token()
+                }
+            }
+        }
     }
-    fn expect(&mut self, next: Token) -> (bool, Location) {
-        match self.tokens.peek() {
-            Some(Locatable {
-                data: Ok(token), ..
-            }) if *token == next => (true, self.next_token().unwrap().location),
+    fn peek_token(&mut self) -> Option<&Locatable<Token>> {
+        if self.current.is_none() {
+            self.current = self.next_token();
+        }
+        self.current.as_ref()
+    }
+    fn next_location(&mut self) -> &Location {
+        if self.peek_token().is_some() {
+            &self.peek_token().unwrap().location
+        } else {
+            self.last_location
+                .as_ref()
+                .expect("can't call next_location on an empty file")
+        }
+    }
+    fn expect(&mut self, next: Token) -> (bool, &Location) {
+        match self.peek_token() {
+            Some(Locatable { data, .. }) if *data == next => {
+                self.next_token();
+                (
+                    true,
+                    self.last_location
+                        .as_ref()
+                        .expect("last_location should be set whenever next_token is called"),
+                )
+            }
             Some(Locatable { location, data }) => {
-                let location = location.clone();
+                // since we're only peeking, we can't move the next token
+                let (location, message) = (location.clone(), data.to_string());
                 self.pending.push_back(Locatable {
-                    location: location.clone(),
-                    data: Err(format!(
-                        "expected '{}', got '{}'",
-                        next,
-                        data.clone()
-                            .unwrap_or_else(|_| Token::Id("<lex error>".to_string()))
-                    )),
+                    location,
+                    data: Err(format!("expected '{}', got '{}'", next, message)),
                 });
-                (false, location)
+                (false, self.next_location())
             }
             None => {
                 let location = self
-                    .current
-                    .clone()
-                    .expect("expect cannot be called at start of program")
-                    .location;
+                    .last_location
+                    .as_ref()
+                    .expect("parser.expect cannot be called at start of program");
                 self.pending.push_back(Locatable {
                     location: location.clone(),
                     data: Err(format!("expected '{}', got <end-of-file>", next)),
@@ -250,9 +289,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
         let mut errors = vec![];
         // unsigned const int
-        while let Some(locatable) = self.tokens.peek() {
+        while let Some(locatable) = self.peek_token() {
             let keyword = match locatable.data {
-                Ok(Token::Keyword(k)) if k.is_decl_specifier() => k,
+                Token::Keyword(k) if k.is_decl_specifier() => k,
                 _ => break,
             };
             let locatable = self.next_token().unwrap();
@@ -287,16 +326,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Some(_) => ctype.unwrap(),
             None => {
-                // if there's no next token, they left out part of the
-                // program and we'll throw an error in just a second
-                // besides, it makes getting a location really hard
-                if let Some(locatable) = self.tokens.peek() {
-                    if signed.is_none() {
-                        warn(
-                            &"type specifier missing, defaults to int".to_string(),
-                            &locatable.location,
-                        );
-                    }
+                if signed.is_none() {
+                    warn(
+                        "type specifier missing, defaults to int",
+                        self.next_location(),
+                    );
                 }
                 Type::Int(signed.unwrap_or(true))
             }
@@ -308,16 +342,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ))
     }
     /* parse everything after declaration specifiers. can be called recursively */
-    fn parse_type(
-        &mut self,
-        ctype: &Type,
-    ) -> Option<Locatable<Result<(String, Type), String>>> {
-        if let Some(Locatable {
-            data: Ok(next),
-            ..
-        }) = self.tokens.peek()
-        {
-            let prefix = match next {
+    fn parse_type(&mut self, ctype: &Type) -> Option<Locatable<Result<(String, Type), String>>> {
+        if let Some(Locatable { data, .. }) = self.peek_token() {
+            let prefix = match data {
                 Token::LeftParen => {
                     self.next_token();
                     let next = self.parse_type(ctype);
@@ -336,18 +363,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         }),
                         x => x,
                     }
-                },
+                }
                 Token::Id(_) => {
                     let Locatable { location, data } = self.next_token().unwrap();
                     let id = match data {
-                        Ok(Token::Id(id)) => id,
-                        _ => panic!("how could peek return something different from next?")
+                        Token::Id(id) => id,
+                        _ => panic!("how could peek return something different from next?"),
                     };
                     Some(Locatable {
                         location,
-                        data: Ok((id, ctype.clone()))
+                        data: Ok((id, ctype.clone())),
                     })
-                },
+                }
                 _ => None,
             };
             prefix
@@ -375,7 +402,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             location,
         }) = self.parse_type(&ctype)
         {
-            println!("got decl: {:?}", ctype);
             match ctype {
                 Ok(decl) => {
                     has_valid = true;
@@ -399,10 +425,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         let (matched, location) = self.expect(Token::Semicolon);
         if matched && !has_valid {
-            warn(
-                &"declaration does not declare anything".to_string(),
-                &location,
-            );
+            warn("declaration does not declare anything", &location);
         }
         // this is empty when we had specifiers without identifiers
         // e.g. `int;`

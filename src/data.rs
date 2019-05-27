@@ -318,7 +318,7 @@ impl Display for Token {
 }
 
 impl PartialEq for ArrayType {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&self, _: &Self) -> bool {
         true
     }
 }

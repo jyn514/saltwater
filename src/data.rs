@@ -93,6 +93,9 @@ pub enum Token {
     Id(String),
 
     Keyword(Keyword),
+
+    // three-character tokens (boo!)
+    Ellipsis,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -339,6 +342,8 @@ impl Display for Token {
             Char(c) => write!(f, "{}", c),
             Id(id) => write!(f, "{}", id),
             Keyword(k) => write!(f, "{}", k),
+
+            Ellipsis => write!(f, "..."),
         }
     }
 }

@@ -158,7 +158,7 @@ pub enum Type {
     Long(bool),
     Float,
     Double,
-    Pointer(Box<Type>),
+    Pointer(Box<Type>, Qualifiers),
     Array(Box<Type>, ArrayType),
     Union(Vec<Symbol>),
     Struct(Vec<Symbol>),
@@ -190,7 +190,7 @@ pub struct Symbol {
     pub storage_class: StorageClass,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Qualifiers {
     pub volatile: bool,
     pub c_const: bool,
@@ -230,6 +230,25 @@ pub struct Locatable<T> {
 }
 
 /* impls */
+impl Qualifiers {
+    pub const NONE: Qualifiers = Qualifiers {
+        c_const: false,
+        volatile: false,
+    };
+    pub const VOLATILE: Qualifiers = Qualifiers {
+        c_const: false,
+        volatile: true,
+    };
+    pub const CONST: Qualifiers = Qualifiers {
+        c_const: true,
+        volatile: false,
+    };
+    pub const CONST_VOLATILE: Qualifiers = Qualifiers {
+        c_const: true,
+        volatile: true,
+    };
+}
+
 impl TryFrom<Keyword> for StorageClass {
     type Error = Keyword;
     fn try_from(value: Keyword) -> Result<StorageClass, Keyword> {
@@ -241,6 +260,12 @@ impl TryFrom<Keyword> for StorageClass {
             Keyword::Register => Ok(Register),
             _ => Err(value),
         }
+    }
+}
+
+impl Default for StorageClass {
+    fn default() -> StorageClass {
+        StorageClass::Auto
     }
 }
 

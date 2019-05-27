@@ -506,7 +506,7 @@ mod tests {
     type LexType = Locatable<Result<Token, String>>;
 
     fn lex(input: &str) -> Option<LexType> {
-        lex_all(input).get(0).map(|x| x.clone())
+        lex_all(input).get(0).cloned()
     }
     fn lex_all(input: &str) -> Vec<LexType> {
         Lexer::new("<stdin>".to_string(), input.chars()).collect()

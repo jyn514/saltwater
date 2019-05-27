@@ -7,18 +7,18 @@ use crate::data::{
 };
 use crate::utils::{error, warn};
 
-type Lexeme<'a> = Locatable<'a, Result<Token, String>>;
+type Lexeme = Locatable<Result<Token, String>>;
 
 #[derive(Debug)]
-pub struct Parser<'a, I: Iterator<Item = Lexeme<'a>>> {
+pub struct Parser<I: Iterator<Item = Lexeme>> {
     tokens: Peekable<I>,
-    pending: VecDeque<Locatable<'a, Result<Stmt, String>>>,
-    current: Option<Lexeme<'a>>,
+    pending: VecDeque<Locatable<Result<Stmt, String>>>,
+    current: Option<Lexeme>,
 }
 
-impl<'a, I> Parser<'a, I>
+impl<I> Parser<I>
 where
-    I: Iterator<Item = Lexeme<'a>>,
+    I: Iterator<Item = Lexeme>,
 {
     pub fn new(iter: I) -> Self {
         Parser {
@@ -29,8 +29,8 @@ where
     }
 }
 
-impl<'a, I: Iterator<Item = Lexeme<'a>>> Iterator for Parser<'a, I> {
-    type Item = Locatable<'a, Result<Stmt, String>>;
+impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
+    type Item = Locatable<Result<Stmt, String>>;
     fn next(&mut self) -> Option<Self::Item> {
         self.pending.pop_front().or_else(|| {
             let Locatable { data, location } = self.next_token()?;
@@ -57,15 +57,15 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Iterator for Parser<'a, I> {
 /* the reason this is such a mess (instead of just putting everything into
  * the hashmap, which would be much simpler logic) is so we have a Location
  * to go with every error */
-fn handle_single_decl_specifier<'a>(
+fn handle_single_decl_specifier(
     keyword: Keyword,
     storage_class: &mut Option<StorageClass>,
     qualifiers: &mut Qualifiers,
     keywords: &mut HashSet<Keyword>,
     ctype: &mut Option<Type>,
     signed: &mut Option<bool>,
-    errors: &mut Vec<Locatable<'a, String>>,
-    location: Location<'a>,
+    errors: &mut Vec<Locatable<String>>,
+    location: Location,
 ) {
     if !keywords.insert(keyword) {
         // duplicate
@@ -188,12 +188,12 @@ fn handle_single_decl_specifier<'a>(
     }
 }
 
-impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
-    fn next_token(&mut self) -> Option<Lexeme<'a>> {
+impl<I: Iterator<Item = Lexeme>> Parser<I> {
+    fn next_token(&mut self) -> Option<Lexeme> {
         self.current = self.tokens.next();
         self.current.clone()
     }
-    fn expect(&mut self, next: Token) -> (bool, Location<'a>) {
+    fn expect(&mut self, next: Token) -> (bool, Location) {
         match self.tokens.peek() {
             Some(Locatable {
                 data: Ok(token), ..
@@ -232,7 +232,7 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
     fn parse_decl_specifiers(
         &mut self,
         start: Keyword,
-    ) -> Result<(StorageClass, Qualifiers, Type), Locatable<'a, String>> {
+    ) -> Result<(StorageClass, Qualifiers, Type), Locatable<String>> {
         let mut keywords = HashSet::new();
         keywords.insert(start);
         let mut storage_class = StorageClass::try_from(start).ok();
@@ -311,13 +311,13 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
     fn parse_type(
         &mut self,
         ctype: &Type,
-    ) -> Option<Locatable<'a, Result<(String, Type), String>>> {
+    ) -> Option<Locatable<Result<(String, Type), String>>> {
         if let Some(Locatable {
             data: Ok(next),
-            location,
+            ..
         }) = self.tokens.peek()
         {
-            match next {
+            let prefix = match next {
                 Token::LeftParen => {
                     self.next_token();
                     let next = self.parse_type(ctype);
@@ -336,9 +336,21 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
                         }),
                         x => x,
                     }
-                }
+                },
+                Token::Id(_) => {
+                    let Locatable { location, data } = self.next_token().unwrap();
+                    let id = match data {
+                        Ok(Token::Id(id)) => id,
+                        _ => panic!("how could peek return something different from next?")
+                    };
+                    Some(Locatable {
+                        location,
+                        data: Ok((id, ctype.clone()))
+                    })
+                },
                 _ => None,
-            }
+            };
+            prefix
         } else {
             None
         }
@@ -347,7 +359,7 @@ impl<'a, I: Iterator<Item = Lexeme<'a>>> Parser<'a, I> {
     // but we typed them as only having one Symbol. Wat do?
     // We push all but one declaration into the 'pending' vector
     // and return the last.
-    fn parse_decl(&mut self, start: Keyword) -> Option<Locatable<'a, Result<Stmt, String>>> {
+    fn parse_decl(&mut self, start: Keyword) -> Option<Locatable<Result<Stmt, String>>> {
         let (sc, qualifiers, ctype) = match self.parse_decl_specifiers(start) {
             Ok(tuple) => tuple,
             Err(err) => {
@@ -438,14 +450,14 @@ mod tests {
     use super::Parser;
     use crate::data::{Locatable, Stmt, Type};
     use crate::Lexer;
-    type ParseType<'a> = Locatable<'a, Result<Stmt, String>>;
-    fn parse<'a>(input: &'a str) -> Option<ParseType<'a>> {
+    type ParseType = Locatable<Result<Stmt, String>>;
+    fn parse(input: &str) -> Option<ParseType> {
         parse_all(input).get(0).map(|x| x.clone())
     }
-    fn parse_all<'a>(input: &'a str) -> Vec<ParseType<'a>> {
-        Parser::new(Lexer::new("<test suite>", input.chars())).collect()
+    fn parse_all(input: &str) -> Vec<ParseType> {
+        Parser::new(Lexer::new("<test suite>".to_string(), input.chars())).collect()
     }
-    fn match_data<'a, T>(lexed: Option<ParseType<'a>>, closure: T) -> bool
+    fn match_data<T>(lexed: Option<ParseType>, closure: T) -> bool
     where
         T: Fn(Result<Stmt, String>) -> bool,
     {
@@ -454,7 +466,7 @@ mod tests {
             None => false,
         }
     }
-    fn match_type<'a>(lexed: Option<ParseType<'a>>, given_type: Type) -> bool {
+    fn match_type(lexed: Option<ParseType>, given_type: Type) -> bool {
         match_data(lexed, |data| match data {
             Ok(Stmt::Declaration(symbol)) => symbol.c_type == given_type,
             _ => false,

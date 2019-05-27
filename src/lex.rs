@@ -10,7 +10,7 @@ use super::utils::warn;
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
-    location: Location<'a>,
+    location: Location,
     chars: Chars<'a>,
     current: Option<char>,
 }
@@ -70,7 +70,7 @@ lazy_static! {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(filename: &'a str, chars: Chars<'a>) -> Lexer<'a> {
+    pub fn new(filename: String, chars: Chars<'a>) -> Lexer<'a> {
         Lexer {
             location: Location {
                 line: 1,
@@ -369,7 +369,7 @@ impl<'a> Lexer<'a> {
 impl<'a> Iterator for Lexer<'a> {
     // option: whether the stream is exhausted
     // result: whether the next lexeme is an error
-    type Item = Locatable<'a, Result<Token, String>>;
+    type Item = Locatable<Result<Token, String>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.consume_whitespace();
@@ -503,16 +503,16 @@ impl<'a> Iterator for Lexer<'a> {
 mod tests {
     use super::{Lexer, Locatable, Location, Token};
 
-    type LexType<'a> = Locatable<'a, Result<Token, String>>;
+    type LexType = Locatable<Result<Token, String>>;
 
-    fn lex<'a>(input: &'a str) -> Option<LexType<'a>> {
+    fn lex(input: &str) -> Option<LexType> {
         lex_all(input).get(0).map(|x| x.clone())
     }
-    fn lex_all<'a>(input: &'a str) -> Vec<LexType<'a>> {
-        Lexer::new("<stdin>", input.chars()).collect()
+    fn lex_all(input: &str) -> Vec<LexType> {
+        Lexer::new("<stdin>".to_string(), input.chars()).collect()
     }
 
-    fn match_data<'a, T>(lexed: Option<LexType<'a>>, closure: T) -> bool
+    fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
     where
         T: Fn(Result<Token, String>) -> bool,
     {
@@ -530,7 +530,7 @@ mod tests {
             Some(Locatable {
                 data: Ok(Token::Plus),
                 location: Location {
-                    file: "<stdin>",
+                    file: "<stdin>".to_string(),
                     line: 1,
                     column: 1
                 }

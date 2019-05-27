@@ -24,7 +24,7 @@ fn main() {
         File::open(&filename)
             .and_then(|mut file| file.read_to_string(&mut buf))
             .unwrap_or_else(|err| {
-                eprintln!("Failed to open {}: {}", args[1], err);
+                eprintln!("Failed to open {}: {}", filename, err);
                 process::exit(1);
             });
         filename

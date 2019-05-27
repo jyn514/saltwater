@@ -232,8 +232,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
     }
     fn match_next(&mut self, next: Token) -> Option<Locatable<Token>> {
+        self.match_any(&[next])
+    }
+    fn match_any(&mut self, choices: &[Token]) -> Option<Locatable<Token>> {
         match self.peek_token() {
-            Some(Locatable { data, .. }) if *data == next => Some(self.next_token().unwrap()),
+            Some(Locatable { data, .. }) => {
+                for token in choices {
+                    if token == data {
+                        return self.next_token();
+                    }
+                }
+                None
+            }
             _ => None,
         }
     }
@@ -365,13 +375,35 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
                 Token::Star => {
                     self.next_token();
+                    let mut qualifiers = Qualifiers::NONE;
+                    while let Some(Locatable {
+                        location,
+                        data: Token::Keyword(keyword),
+                    }) = self.match_any(&[
+                        Token::Keyword(Keyword::Const),
+                        Token::Keyword(Keyword::Volatile),
+                    ]) {
+                        if keyword == Keyword::Const {
+                            if qualifiers.c_const {
+                                warn("duplicate 'const' declaration specifier", &location);
+                            } else {
+                                qualifiers.c_const = true;
+                            }
+                        } else if keyword == Keyword::Volatile {
+                            if qualifiers.volatile {
+                                warn("duplicate 'volatile' declaration specifier", &location);
+                            } else {
+                                qualifiers.volatile = true;
+                            }
+                        }
+                    }
                     match self.parse_type(ctype) {
                         Locatable {
                             location,
                             data: Ok((id, ctype)),
                         } => Locatable {
                             location,
-                            data: (id, Type::Pointer(Box::new(ctype))),
+                            data: (id, Type::Pointer(Box::new(ctype), qualifiers)),
                         },
                         x => return x,
                     }
@@ -532,7 +564,7 @@ mod tests {
     use crate::Lexer;
     type ParseType = Locatable<Result<Stmt, String>>;
     fn parse(input: &str) -> Option<ParseType> {
-        parse_all(input).get(0).map(|x| x.clone())
+        parse_all(input).get(0).cloned()
     }
     fn parse_all(input: &str) -> Vec<ParseType> {
         Parser::new(Lexer::new("<test suite>".to_string(), input.chars())).collect()
@@ -572,6 +604,7 @@ mod tests {
     }
     #[test]
     fn test_bad_decl_specs() {
+        assert!(parse("int;").is_none());
         assert!(parse("char char;").unwrap().data.is_err());
         assert!(parse("char long;").unwrap().data.is_err());
         assert!(parse("long char;").unwrap().data.is_err());
@@ -592,7 +625,7 @@ mod tests {
     #[test]
     fn test_complex_types() {
         // this is all super ugly
-        use crate::data::ArrayType;
+        use crate::data::{ArrayType, Qualifiers};
         use std::boxed::Box;
         use Type::*;
         assert!(match_type(
@@ -603,20 +636,47 @@ mod tests {
             parse("unsigned a[]"),
             Array(Box::new(Int(false)), ArrayType::Unbounded)
         ));
-        assert!(match_type(parse("float *a"), Pointer(Box::new(Float))));
+        assert!(match_type(
+            parse("float *a"),
+            Pointer(Box::new(Float), Default::default())
+        ));
+        assert!(match_type(
+            parse("float *const a"),
+            Pointer(Box::new(Float), Qualifiers::CONST)
+        ));
+        assert!(match_type(
+            parse("double *volatile *const a"),
+            Pointer(
+                Box::new(Pointer(Box::new(Double), Qualifiers::CONST)),
+                Qualifiers::VOLATILE
+            )
+        ));
+        assert!(match_type(
+            parse("_Bool *volatile const a"),
+            Pointer(Box::new(Bool), Qualifiers::CONST_VOLATILE)
+        ));
         // cdecl: declare foo as array 10 of pointer to pointer to int
         assert!(match_type(
             parse("char **foo[10];"),
-            Pointer(Box::new(Pointer(Box::new(Array(
-                Box::new(Char(true)),
-                ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
-            )))))
+            Pointer(
+                Box::new(Pointer(
+                    Box::new(Array(
+                        Box::new(Char(true)),
+                        ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
+                    )),
+                    Default::default()
+                )),
+                Default::default()
+            )
         ));
         // cdecl: declare foo as pointer to pointer to array 10 of int
         assert!(match_type(
             parse("int (**foo)[10];"),
             Array(
-                Box::new(Pointer(Box::new(Pointer(Box::new(Int(true)))))),
+                Box::new(Pointer(
+                    Box::new(Pointer(Box::new(Int(true)), Default::default())),
+                    Default::default()
+                )),
                 ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
             )
         ));

@@ -515,21 +515,21 @@ mod tests {
     }
     #[test]
     fn test_bad_decl_specs() {
-        assert!(parse("char char").unwrap().data.is_err());
-        assert!(parse("char long").unwrap().data.is_err());
-        assert!(parse("long char").unwrap().data.is_err());
-        assert!(parse("float char").unwrap().data.is_err());
-        assert!(parse("float double").unwrap().data.is_err());
-        assert!(parse("double double").unwrap().data.is_err());
-        assert!(parse("double unsigned").unwrap().data.is_err());
-        assert!(parse("short double").unwrap().data.is_err());
-        assert!(parse("int void").unwrap().data.is_err());
-        assert!(parse("void int").unwrap().data.is_err());
+        assert!(parse("char char;").unwrap().data.is_err());
+        assert!(parse("char long;").unwrap().data.is_err());
+        assert!(parse("long char;").unwrap().data.is_err());
+        assert!(parse("float char;").unwrap().data.is_err());
+        assert!(parse("float double;").unwrap().data.is_err());
+        assert!(parse("double double;").unwrap().data.is_err());
+        assert!(parse("double unsigned;").unwrap().data.is_err());
+        assert!(parse("short double;").unwrap().data.is_err());
+        assert!(parse("int void;").unwrap().data.is_err());
+        assert!(parse("void int;").unwrap().data.is_err());
         // default to int if we don't have a type
         // don't panic if we see duplicate specifiers
-        assert!(match_type(parse("unsigned unsigned"), Type::Int(false)));
-        assert!(match_type(parse("extern extern"), Type::Int(true)));
-        assert!(match_type(parse("const const"), Type::Int(true)));
-        assert!(match_type(parse("const volatile"), Type::Int(true)));
+        assert!(match_type(parse("unsigned unsigned i;"), Type::Int(false)));
+        assert!(match_type(parse("extern extern i;"), Type::Int(true)));
+        assert!(match_type(parse("const const i;"), Type::Int(true)));
+        assert!(match_type(parse("const volatile i;"), Type::Int(true)));
     }
 }

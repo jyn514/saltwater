@@ -355,7 +355,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     self.next_token();
                     let next = self.parse_type(ctype);
                     self.expect(Token::RightParen);
-                    next
+                    match next.data {
+                        Ok(tuple) => Locatable {
+                            location: next.location,
+                            data: tuple,
+                        },
+                        Err(_) => return next,
+                    }
                 }
                 Token::Star => {
                     self.next_token();
@@ -365,7 +371,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             data: Ok((id, ctype)),
                         } => Locatable {
                             location,
-                            data: Ok((id, Type::Pointer(Box::new(ctype)))),
+                            data: (id, Type::Pointer(Box::new(ctype))),
                         },
                         x => return x,
                     }
@@ -378,7 +384,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     };
                     Locatable {
                         location,
-                        data: Ok((id, ctype.clone())),
+                        data: (id, ctype.clone()),
                     }
                 }
                 x => {
@@ -388,7 +394,43 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     }
                 }
             };
-            prefix
+            // postfix
+            if let Some(Locatable { data, .. }) = self.peek_token() {
+                let Locatable {
+                    location,
+                    data: (id, ctype),
+                } = prefix;
+                match data {
+                    Token::LeftBracket => {
+                        self.expect(Token::LeftBracket);
+                        if self.match_next(Token::RightBracket).is_some() {
+                            Locatable {
+                                location,
+                                data: Ok((id, Type::Array(Box::new(ctype), ArrayType::Unbounded))),
+                            }
+                        } else {
+                            let expr = self.parse_expr();
+                            self.expect(Token::RightBracket);
+                            Locatable {
+                                location,
+                                data: Ok((
+                                    id,
+                                    Type::Array(Box::new(ctype), ArrayType::Fixed(Box::new(expr))),
+                                )),
+                            }
+                        }
+                    }
+                    _ => Locatable {
+                        data: Ok((id, ctype)),
+                        location,
+                    },
+                }
+            } else {
+                Locatable {
+                    location: prefix.location,
+                    data: Ok(prefix.data),
+                }
+            }
         } else {
             Locatable {
                 location: self.next_location().clone(),
@@ -410,7 +452,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             }
         };
-        while let None = self.match_next(Token::Semicolon) {
+        while self.match_next(Token::Semicolon).is_none() {
             let Locatable { location, data } = self.parse_type(&ctype);
             match data {
                 Ok(decl) => {
@@ -431,7 +473,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     });
                 }
             }
-            if let None = self.match_next(Token::Comma) {
+            if self.match_next(Token::Comma).is_none() {
                 self.expect(Token::Semicolon);
                 break;
             }
@@ -486,7 +528,7 @@ impl TryFrom<Keyword> for Type {
 #[cfg(test)]
 mod tests {
     use super::Parser;
-    use crate::data::{Locatable, Stmt, Type};
+    use crate::data::{Expr, Locatable, Stmt, Token, Type};
     use crate::Lexer;
     type ParseType = Locatable<Result<Stmt, String>>;
     fn parse(input: &str) -> Option<ParseType> {
@@ -547,4 +589,37 @@ mod tests {
         assert!(match_type(parse("const const i;"), Type::Int(true)));
         assert!(match_type(parse("const volatile i;"), Type::Int(true)));
     }
+    #[test]
+    fn test_complex_types() {
+        // this is all super ugly
+        use crate::data::ArrayType;
+        use std::boxed::Box;
+        use Type::*;
+        assert!(match_type(
+            parse("int a[]"),
+            Array(Box::new(Int(true)), ArrayType::Unbounded)
+        ));
+        assert!(match_type(
+            parse("unsigned a[]"),
+            Array(Box::new(Int(false)), ArrayType::Unbounded)
+        ));
+        assert!(match_type(parse("float *a"), Pointer(Box::new(Float))));
+        // cdecl: declare foo as array 10 of pointer to pointer to int
+        assert!(match_type(
+            parse("char **foo[10];"),
+            Pointer(Box::new(Pointer(Box::new(Array(
+                Box::new(Char(true)),
+                ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
+            )))))
+        ));
+        // cdecl: declare foo as pointer to pointer to array 10 of int
+        assert!(match_type(
+            parse("int (**foo)[10];"),
+            Array(
+                Box::new(Pointer(Box::new(Pointer(Box::new(Int(true)))))),
+                ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
+            )
+        ));
+    }
+
 }

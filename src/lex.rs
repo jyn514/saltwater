@@ -530,12 +530,21 @@ mod tests {
 
     fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
     where
-        T: Fn(Result<Token, String>) -> bool,
+        T: FnOnce(Result<Token, String>) -> bool,
     {
         match lexed {
             Some(result) => closure(result.data),
             None => false,
         }
+    }
+
+    fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
+        lexed.into_iter().zip(expected).all(|(actual, expected)|
+            match &actual.data {
+                Ok(token) => token == expected,
+                _ => false
+            }
+        )
     }
 
     #[test]
@@ -552,6 +561,18 @@ mod tests {
                 }
             })
         )
+    }
+
+    #[test]
+    fn test_ellipses() {
+        assert!(match_all(&lex_all("...;...;.."), &[
+            Token::Ellipsis,
+            Token::Semicolon,
+            Token::Ellipsis,
+            Token::Semicolon,
+            Token::Dot,
+            Token::Dot,
+        ]));
     }
 
     #[test]

@@ -16,12 +16,12 @@ use parse::Parser;
 use utils::error;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let mut args: Vec<String> = env::args().collect();
     // NOTE: only holds valid UTF-8, and will throw an error on invalid input
     let mut buf = String::new();
     let filename = if args.len() > 1 {
-        let filename = &args[1];
-        File::open(filename)
+        let filename = args.remove(1);
+        File::open(&filename)
             .and_then(|mut file| file.read_to_string(&mut buf))
             .unwrap_or_else(|err| {
                 eprintln!("Failed to open {}: {}", args[1], err);
@@ -33,9 +33,9 @@ fn main() {
             eprintln!("Failed to read stdin: {}", err);
             process::exit(1);
         });
-        "<stdin>"
+        "<stdin>".to_string()
     };
-    let compiler = Parser::new(Lexer::new(&filename, buf.chars()));
+    let compiler = Parser::new(Lexer::new(filename, buf.chars()));
     for stmt in compiler {
         match stmt.data {
             Ok(s) => println!("{:?}", s),

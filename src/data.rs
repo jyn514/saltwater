@@ -167,10 +167,9 @@ pub enum Type {
     Bitfield(Vec<BitfieldType>),
 }
 
-#[allow(dead_code)]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum ArrayType {
-    Fixed(i32),
+    Fixed(Box<Expr>),
     Unbounded,
 }
 
@@ -217,17 +216,17 @@ pub struct BitfieldType {
 // holds where a piece of code came from
 // should almost always be immutable
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Location<'a> {
+pub struct Location {
     // if there's a 4 GB input file, we have bigger problems
     pub line: u32,
     pub column: u32,
-    pub file: &'a str,
+    pub file: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Locatable<'a, T> {
+pub struct Locatable<T> {
     pub data: T,
-    pub location: Location<'a>,
+    pub location: Location,
 }
 
 /* impls */
@@ -317,3 +316,10 @@ impl Display for Token {
         }
     }
 }
+
+impl PartialEq for ArrayType {
+    fn eq(&self, other: &Self) -> bool {
+        true
+    }
+}
+impl Eq for ArrayType {}

@@ -230,6 +230,7 @@ pub struct Locatable<T> {
 }
 
 /* impls */
+#[allow(dead_code)]
 impl Qualifiers {
     pub const NONE: Qualifiers = Qualifiers {
         c_const: false,

@@ -360,7 +360,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* parse everything after declaration specifiers. can be called recursively */
     fn parse_type(&mut self, ctype: &Type) -> Locatable<Result<(String, Type), String>> {
         if let Some(Locatable { data, location }) = self.peek_token() {
-            let prefix = match data {
+            let mut prefix = match data {
                 Token::LeftParen => {
                     self.next_token();
                     let next = self.parse_type(ctype);
@@ -427,41 +427,39 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
             };
             // postfix
-            if let Some(Locatable { data, .. }) = self.peek_token() {
-                let Locatable {
-                    location,
-                    data: (id, ctype),
-                } = prefix;
-                match data {
+            while let Some(Locatable { data, .. }) = self.peek_token() {
+                prefix = match data {
                     Token::LeftBracket => {
                         self.expect(Token::LeftBracket);
                         if self.match_next(Token::RightBracket).is_some() {
                             Locatable {
-                                location,
-                                data: Ok((id, Type::Array(Box::new(ctype), ArrayType::Unbounded))),
+                                location: prefix.location,
+                                data: (
+                                    prefix.data.0,
+                                    Type::Array(Box::new(prefix.data.1), ArrayType::Unbounded),
+                                ),
                             }
                         } else {
                             let expr = self.parse_expr();
                             self.expect(Token::RightBracket);
                             Locatable {
-                                location,
-                                data: Ok((
-                                    id,
-                                    Type::Array(Box::new(ctype), ArrayType::Fixed(Box::new(expr))),
-                                )),
+                                location: prefix.location,
+                                data: (
+                                    prefix.data.0,
+                                    Type::Array(
+                                        Box::new(prefix.data.1),
+                                        ArrayType::Fixed(Box::new(expr)),
+                                    ),
+                                ),
                             }
                         }
                     }
-                    _ => Locatable {
-                        data: Ok((id, ctype)),
-                        location,
-                    },
-                }
-            } else {
-                Locatable {
-                    location: prefix.location,
-                    data: Ok(prefix.data),
-                }
+                    _ => break,
+                };
+            }
+            Locatable {
+                location: prefix.location,
+                data: Ok(prefix.data),
             }
         } else {
             Locatable {
@@ -635,6 +633,16 @@ mod tests {
         assert!(match_type(
             parse("unsigned a[]"),
             Array(Box::new(Int(false)), ArrayType::Unbounded)
+        ));
+        assert!(match_type(
+            parse("_Bool a[][][]"),
+            Array(
+                Box::new(Array(
+                    Box::new(Array(Box::new(Bool), ArrayType::Unbounded),),
+                    ArrayType::Unbounded
+                )),
+                ArrayType::Unbounded
+            )
         ));
         assert!(match_type(
             parse("float *a"),

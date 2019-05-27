@@ -539,12 +539,13 @@ mod tests {
     }
 
     fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
-        lexed.into_iter().zip(expected).all(|(actual, expected)|
-            match &actual.data {
+        lexed
+            .into_iter()
+            .zip(expected)
+            .all(|(actual, expected)| match &actual.data {
                 Ok(token) => token == expected,
-                _ => false
-            }
-        )
+                _ => false,
+            })
     }
 
     #[test]
@@ -565,14 +566,17 @@ mod tests {
 
     #[test]
     fn test_ellipses() {
-        assert!(match_all(&lex_all("...;...;.."), &[
-            Token::Ellipsis,
-            Token::Semicolon,
-            Token::Ellipsis,
-            Token::Semicolon,
-            Token::Dot,
-            Token::Dot,
-        ]));
+        assert!(match_all(
+            &lex_all("...;...;.."),
+            &[
+                Token::Ellipsis,
+                Token::Semicolon,
+                Token::Ellipsis,
+                Token::Semicolon,
+                Token::Dot,
+                Token::Dot,
+            ]
+        ));
     }
 
     #[test]

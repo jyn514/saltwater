@@ -89,7 +89,7 @@ fn handle_single_decl_specifier(
         return;
     }
     // we use `if` instead of `qualifiers.x = keyword == y` because
-    // we don't want to reset it if true
+    // we don't want to reset it if it's already true
     if keyword == Keyword::Const {
         qualifiers.c_const = true;
     } else if keyword == Keyword::Volatile {
@@ -231,6 +231,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 .expect("can't call next_location on an empty file")
         }
     }
+    fn match_next(&mut self, next: Token) -> Option<Locatable<Token>> {
+        match self.peek_token() {
+            Some(Locatable { data, .. }) if *data == next => Some(self.next_token().unwrap()),
+            _ => None,
+        }
+    }
     fn expect(&mut self, next: Token) -> (bool, &Location) {
         match self.peek_token() {
             Some(Locatable { data, .. }) if *data == next => {
@@ -342,8 +348,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ))
     }
     /* parse everything after declaration specifiers. can be called recursively */
-    fn parse_type(&mut self, ctype: &Type) -> Option<Locatable<Result<(String, Type), String>>> {
-        if let Some(Locatable { data, .. }) = self.peek_token() {
+    fn parse_type(&mut self, ctype: &Type) -> Locatable<Result<(String, Type), String>> {
+        if let Some(Locatable { data, location }) = self.peek_token() {
             let prefix = match data {
                 Token::LeftParen => {
                     self.next_token();
@@ -354,14 +360,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Token::Star => {
                     self.next_token();
                     match self.parse_type(ctype) {
-                        Some(Locatable {
+                        Locatable {
                             location,
                             data: Ok((id, ctype)),
-                        }) => Some(Locatable {
+                        } => Locatable {
                             location,
                             data: Ok((id, Type::Pointer(Box::new(ctype)))),
-                        }),
-                        x => x,
+                        },
+                        x => return x,
                     }
                 }
                 Token::Id(_) => {
@@ -370,16 +376,24 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         Token::Id(id) => id,
                         _ => panic!("how could peek return something different from next?"),
                     };
-                    Some(Locatable {
+                    Locatable {
                         location,
                         data: Ok((id, ctype.clone())),
-                    })
+                    }
                 }
-                _ => None,
+                x => {
+                    return Locatable {
+                        location: location.clone(),
+                        data: Err(format!("expected '(', '*', or identifier, got '{}'", x)),
+                    }
+                }
             };
             prefix
         } else {
-            None
+            Locatable {
+                location: self.next_location().clone(),
+                data: Err("expected type, got <end-of-file>".to_string()),
+            }
         }
     }
     // NOTE: there's some fishiness here. Declarations can have multiple variables,
@@ -396,15 +410,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             }
         };
-        let mut has_valid = false;
-        while let Some(Locatable {
-            data: ctype,
-            location,
-        }) = self.parse_type(&ctype)
-        {
-            match ctype {
+        while let None = self.match_next(Token::Semicolon) {
+            let Locatable { location, data } = self.parse_type(&ctype);
+            match data {
                 Ok(decl) => {
-                    has_valid = true;
                     self.pending.push_back(Locatable {
                         location,
                         data: Ok(Stmt::Declaration(Symbol {
@@ -422,14 +431,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     });
                 }
             }
-        }
-        let (matched, location) = self.expect(Token::Semicolon);
-        if matched && !has_valid {
-            warn("declaration does not declare anything", &location);
+            if let None = self.match_next(Token::Comma) {
+                self.expect(Token::Semicolon);
+                break;
+            }
         }
         // this is empty when we had specifiers without identifiers
         // e.g. `int;`
-        self.pending.pop_front().or_else(|| self.next())
+        self.pending.pop_front().or_else(|| {
+            warn(
+                "declaration does not declare anything",
+                self.next_location(),
+            );
+            self.next()
+        })
     }
 }
 

@@ -12,7 +12,10 @@ use super::utils::warn;
 pub struct Lexer<'a> {
     location: Location,
     chars: Chars<'a>,
+    // used for 2-character tokens
     current: Option<char>,
+    // used for 3-character tokens
+    lookahead: Option<char>,
 }
 
 enum CharError {
@@ -79,11 +82,12 @@ impl<'a> Lexer<'a> {
             },
             chars,
             current: None,
+            lookahead: None,
         }
     }
     fn next_char(&mut self) -> Option<char> {
         if let Some(c) = self.current {
-            self.current = None;
+            self.current = self.lookahead.take();
             Some(c)
         } else {
             self.chars.next().map(|x| {
@@ -482,6 +486,18 @@ impl<'a> Iterator for Lexer<'a> {
                 ',' => Ok(Token::Comma),
                 '.' => match self.peek() {
                     Some(c) if c.is_ascii_digit() => self.parse_num('.', true),
+                    Some('.') => {
+                        self.next_char();
+                        if self.peek() == Some('.') {
+                            self.next();
+                            Ok(Token::Ellipsis)
+                        } else {
+                            // backtrack two steps
+                            self.current = Some('.');
+                            self.lookahead = Some('.');
+                            Ok(Token::Dot)
+                        }
+                    }
                     _ => Ok(Token::Dot),
                 },
                 '?' => Ok(Token::Question),

@@ -638,15 +638,15 @@ mod tests {
             parse("_Bool a[][][]"),
             Array(
                 Box::new(Array(
-                    Box::new(Array(Box::new(Bool), ArrayType::Unbounded),),
+                    Box::new(Array(Box::new(Bool), ArrayType::Unbounded)),
                     ArrayType::Unbounded
                 )),
                 ArrayType::Unbounded
             )
         ));
         assert!(match_type(
-            parse("float *a"),
-            Pointer(Box::new(Float), Default::default())
+            parse("void *a"),
+            Pointer(Box::new(Void), Default::default())
         ));
         assert!(match_type(
             parse("float *const a"),

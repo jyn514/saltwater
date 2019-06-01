@@ -4,8 +4,8 @@ use std::iter::{Iterator, Peekable};
 use std::mem;
 
 use crate::data::{
-    ArrayType, Expr, Keyword, Locatable, Location, Qualifiers, Stmt, StorageClass, Symbol, Token,
-    Type,
+    ArrayType, Expr, FunctionType, Keyword, Locatable, Location, Qualifiers, Stmt, StorageClass,
+    Symbol, Token, Type,
 };
 use crate::utils::{error, warn};
 
@@ -357,13 +357,154 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ctype,
         ))
     }
-    /* parse everything after declaration specifiers. can be called recursively */
-    fn parse_type(&mut self, ctype: &Type) -> Locatable<Result<(String, Type), String>> {
+    fn parse_function_decl(&mut self, return_type: Type) -> Type {
+        self.expect(Token::LeftParen);
+        let return_type = Box::new(return_type);
+        let mut params = vec![];
+        let mut errs = VecDeque::new();
+        if self.match_next(Token::RightParen).is_some() {
+            return Type::Function(FunctionType {
+                return_type,
+                params,
+                varargs: false,
+            });
+        }
+        loop {
+            if let Some(locatable) = self.match_next(Token::Ellipsis) {
+                if params.is_empty() {
+                    errs.push_back(Locatable {
+                        location: locatable.location,
+                        data: Err("ISO C requires a parameter before '...'".to_string()),
+                    });
+                }
+                return Type::Function(FunctionType {
+                    return_type,
+                    params,
+                    varargs: true,
+                });
+            }
+            let (start, location) = match self.peek_token() {
+                Some(Locatable {
+                    data: Token::Keyword(k),
+                    ..
+                }) if k.is_decl_specifier() => {
+                    let next = self.next_token().unwrap();
+                    let k = match next.data {
+                        Token::Keyword(k) => k,
+                        _ => panic!("peek should never be different from next"),
+                    };
+                    (k, next.location)
+                }
+                _ => {
+                    errs.push_back(Locatable {
+                        location: self.next_location().clone(),
+                        data: Err("function parameters require types".to_string()),
+                    });
+                    (Keyword::Int, self.next_location().clone())
+                }
+            };
+            let (sc, quals, param_type) = self.parse_decl_specifiers(start).unwrap_or((
+                Default::default(),
+                Default::default(),
+                Type::Int(true),
+            ));
+            let possible_type = self.parse_type(&param_type, true);
+            let (param_name, param_type) = match possible_type.data {
+                Err(x) => {
+                    errs.push_back(Locatable {
+                        location: possible_type.location,
+                        data: Err(x),
+                    });
+                    (None, None)
+                }
+                Ok((Some(id), param_type)) => (Some(id), Some(param_type)),
+                Ok((None, param_type)) => (None, Some(param_type)),
+            };
+            // NOTE: we are more liberal here than gcc or clang,
+            // we allow `int f(auto int);`
+            if sc != StorageClass::Auto {
+                errs.push_back(Locatable {
+                    location, // TODO: use the location of 'start',
+                    data: Err(format!(
+                        "cannot specify storage class '{}' for {}",
+                        sc,
+                        match param_name {
+                            Some(ref name) => format!("parameter {}", name),
+                            None => "unnamed parameter".to_string(),
+                        }
+                    )),
+                });
+            }
+            if let Some(ctype) = param_type {
+                params.push(Symbol {
+                    // I will probably regret this in the future
+                    // default() for String is "",
+                    // which can never be passed in by the lexer
+                    // this also makes checking if the parameter is abstract or not
+                    // easy to check
+                    id: param_name.unwrap_or_default(),
+                    c_type: ctype,
+                    qualifiers: quals,
+                    storage_class: StorageClass::Auto,
+                });
+            }
+            if self.match_next(Token::Comma).is_none() {
+                self.expect(Token::RightParen);
+                // TODO: handle errors (what should the return type be?)
+                //let err = errs.pop_front();
+                self.pending.append(&mut errs);
+                //err.unwrap_or(
+                return Type::Function(FunctionType {
+                    return_type,
+                    params,
+                    varargs: false,
+                });
+            }
+        }
+    }
+    fn parse_postfix_type(
+        &mut self,
+        mut prefix: Locatable<(Option<String>, Type)>,
+    ) -> Locatable<Result<(Option<String>, Type), String>> {
+        // postfix
+        while let Some(Locatable { data, .. }) = self.peek_token() {
+            prefix.data.1 = match data {
+                // array
+                Token::LeftBracket => {
+                    self.expect(Token::LeftBracket);
+                    if self.match_next(Token::RightBracket).is_some() {
+                        Type::Array(Box::new(prefix.data.1), ArrayType::Unbounded)
+                    } else {
+                        let expr = self.parse_expr();
+                        self.expect(Token::RightBracket);
+                        Type::Array(Box::new(prefix.data.1), ArrayType::Fixed(Box::new(expr)))
+                    }
+                }
+                Token::LeftParen => self.parse_function_decl(prefix.data.1),
+                _ => break,
+            };
+        }
+        Locatable {
+            location: prefix.location,
+            data: Ok(prefix.data),
+        }
+    }
+    /* parse everything after declaration specifiers. can be called recursively
+     * allow_abstract: whether to require identifiers in declarators.
+     * method contract: whenever allow_abstract is `false`,
+     *  either an identifier or an error will be returned.
+     * when allow_abstract is `true`, an identifier may or may not be returned.
+     */
+    fn parse_type(
+        &mut self,
+        ctype: &Type,
+        allow_abstract: bool,
+    ) -> Locatable<Result<(Option<String>, Type), String>> {
         if let Some(Locatable { data, location }) = self.peek_token() {
-            let mut prefix = match data {
+            let prefix = match data {
                 Token::LeftParen => {
                     self.next_token();
-                    let next = self.parse_type(ctype);
+                    let next = self.parse_type(ctype, allow_abstract);
                     self.expect(Token::RightParen);
                     match next.data {
                         Ok(tuple) => Locatable {
@@ -397,7 +538,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             }
                         }
                     }
-                    match self.parse_type(ctype) {
+                    match self.parse_type(ctype, allow_abstract) {
                         Locatable {
                             location,
                             data: Ok((id, ctype)),
@@ -416,51 +557,25 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     };
                     Locatable {
                         location,
-                        data: (id, ctype.clone()),
+                        data: (Some(id), ctype.clone()),
                     }
                 }
                 x => {
-                    return Locatable {
-                        location: location.clone(),
-                        data: Err(format!("expected '(', '*', or identifier, got '{}'", x)),
+                    if allow_abstract {
+                        Locatable {
+                            // this location should never be used
+                            location: location.clone(),
+                            data: (None, ctype.clone()),
+                        }
+                    } else {
+                        return Locatable {
+                            location: location.clone(),
+                            data: Err(format!("expected '(', '*', or identifier, got '{}'", x)),
+                        };
                     }
                 }
             };
-            // postfix
-            while let Some(Locatable { data, .. }) = self.peek_token() {
-                prefix = match data {
-                    Token::LeftBracket => {
-                        self.expect(Token::LeftBracket);
-                        if self.match_next(Token::RightBracket).is_some() {
-                            Locatable {
-                                location: prefix.location,
-                                data: (
-                                    prefix.data.0,
-                                    Type::Array(Box::new(prefix.data.1), ArrayType::Unbounded),
-                                ),
-                            }
-                        } else {
-                            let expr = self.parse_expr();
-                            self.expect(Token::RightBracket);
-                            Locatable {
-                                location: prefix.location,
-                                data: (
-                                    prefix.data.0,
-                                    Type::Array(
-                                        Box::new(prefix.data.1),
-                                        ArrayType::Fixed(Box::new(expr)),
-                                    ),
-                                ),
-                            }
-                        }
-                    }
-                    _ => break,
-                };
-            }
-            Locatable {
-                location: prefix.location,
-                data: Ok(prefix.data),
-            }
+            self.parse_postfix_type(prefix)
         } else {
             Locatable {
                 location: self.next_location().clone(),
@@ -483,7 +598,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         };
         while self.match_next(Token::Semicolon).is_none() {
-            let Locatable { location, data } = self.parse_type(&ctype);
+            let Locatable { location, data } = self.parse_type(&ctype, false);
             match data {
                 Ok(decl) => {
                     self.pending.push_back(Locatable {
@@ -492,7 +607,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             storage_class: sc,
                             qualifiers: qualifiers.clone(),
                             c_type: decl.1,
-                            id: decl.0,
+                            id: decl.0.expect(
+                                "parse_type should return id if called with allow_abstract: false",
+                            ),
                         })),
                     });
                 }
@@ -558,7 +675,7 @@ impl TryFrom<Keyword> for Type {
 #[cfg(test)]
 mod tests {
     use super::Parser;
-    use crate::data::{Expr, Locatable, Stmt, Token, Type};
+    use crate::data::{Expr, FunctionType, Locatable, Stmt, Token, Type};
     use crate::Lexer;
     type ParseType = Locatable<Result<Stmt, String>>;
     fn parse(input: &str) -> Option<ParseType> {
@@ -597,7 +714,14 @@ mod tests {
         assert!(match_type(parse("float f;"), Type::Float));
         assert!(match_type(parse("double d;"), Type::Double));
         assert!(match_type(parse("long double d;"), Type::Double));
-        assert!(match_type(parse("void f();"), Type::Void));
+        assert!(match_type(
+            parse("void f();"),
+            Type::Function(FunctionType {
+                return_type: Box::new(Type::Void),
+                params: vec![],
+                varargs: false
+            })
+        ));
         assert!(match_type(parse("const volatile int f;"), Type::Int(true)));
     }
     #[test]

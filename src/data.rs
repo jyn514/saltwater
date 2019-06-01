@@ -203,8 +203,15 @@ pub struct Qualifiers {
 #[derive(Clone, Debug, PartialEq, Eq)]
 // note: old-style declarations are not supported at this time
 pub struct FunctionType {
+    // why Symbol instead of Type?
+    // 1. we need to know qualifiers for the params. if we made that part of Type,
+    //    we'd need qualifiers for every step along the way
+    //    (consider that int a[][][] parses as 4 nested types).
+    // 2. when we do scoping, we need to know the names of formal parameters
+    //    (as opposed to concrete arguments).
+    //    this is as good a place to store them as any.
     pub return_type: Box<Type>,
-    pub params: Vec<Type>,
+    pub params: Vec<Symbol>,
     pub varargs: bool,
 }
 

@@ -61,33 +61,11 @@ fn handle_single_decl_specifier(
     keyword: Keyword,
     storage_class: &mut Option<StorageClass>,
     qualifiers: &mut Qualifiers,
-    keywords: &mut HashSet<Keyword>,
     ctype: &mut Option<Type>,
     signed: &mut Option<bool>,
     errors: &mut Vec<Locatable<String>>,
     location: Location,
 ) {
-    if !keywords.insert(keyword) {
-        // duplicate
-        // we can guess that they just meant to write it once
-        if keyword.is_qualifier()
-            || keyword.is_storage_class()
-            || keyword == Keyword::Signed
-            || keyword == Keyword::Unsigned
-        {
-            warn(
-                &format!("duplicate declaration specifier '{}'", keyword),
-                &location,
-            );
-        // what is `short short` supposed to be?
-        } else if keyword != Keyword::Long {
-            errors.push(Locatable {
-                data: format!("duplicate basic type '{}' in declarator", keyword),
-                location: location.clone(),
-            });
-        }
-        return;
-    }
     // we use `if` instead of `qualifiers.x = keyword == y` because
     // we don't want to reset it if it's already true
     if keyword == Keyword::Const {
@@ -311,16 +289,36 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 _ => break,
             };
             let locatable = self.next_token().unwrap();
-            handle_single_decl_specifier(
-                keyword,
-                &mut storage_class,
-                &mut qualifiers,
-                &mut keywords,
-                &mut ctype,
-                &mut signed,
-                &mut errors,
-                locatable.location,
-            );
+            if keywords.insert(keyword) {
+                handle_single_decl_specifier(
+                    keyword,
+                    &mut storage_class,
+                    &mut qualifiers,
+                    &mut ctype,
+                    &mut signed,
+                    &mut errors,
+                    locatable.location,
+                );
+            } else {
+                // duplicate
+                // we can guess that they just meant to write it once
+                if keyword.is_qualifier()
+                    || keyword.is_storage_class()
+                    || keyword == Keyword::Signed
+                    || keyword == Keyword::Unsigned
+                {
+                    warn(
+                        &format!("duplicate declaration specifier '{}'", keyword),
+                        &locatable.location,
+                    );
+                // what is `short short` supposed to be?
+                } else if keyword != Keyword::Long {
+                    errors.push(Locatable {
+                        data: format!("duplicate basic type '{}' in declarator", keyword),
+                        location: locatable.location,
+                    });
+                }
+            }
         }
         while errors.len() > 1 {
             let current = errors.pop().unwrap();

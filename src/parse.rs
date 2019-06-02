@@ -17,6 +17,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     pending: VecDeque<Locatable<Result<Stmt, String>>>,
     last_location: Option<Location>,
     current: Option<Locatable<Token>>,
+    next: Option<Locatable<Token>>,
 }
 
 impl<I> Parser<I>
@@ -29,6 +30,10 @@ where
             pending: Default::default(),
             last_location: None,
             current: None,
+            // TODO: are we sure we need tokens of lookahead?
+            // this was put here for declarations, so we know the difference between
+            // int (*x) and int (int), but there's probably a workaround
+            next: None,
         }
     }
 }
@@ -89,6 +94,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         // NOTE: we can't just use self.current.map(|x| x.data) because of lifetimes
         match &self.current {
+            Some(x) => Some(&x.data),
+            None => None,
+        }
+    }
+    // TODO: this is mostly copied from peek_token
+    fn peek_next_token(&mut self) -> Option<&Token> {
+        if self.next.is_none() {
+            if self.current.is_none() {
+                self.current = self.next_token();
+            }
+            self.next = self.next_token();
+        }
+        // NOTE: we can't just use self.current.map(|x| x.data) because of lifetimes
+        match &self.next {
             Some(x) => Some(&x.data),
             None => None,
         }
@@ -408,6 +427,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     /*
      * not in original reference, see comments to next function
+     *
+     * rewritten grammar:
+     *   postfix_type:
+     *        '[' ']'
+     *      | '[' constant_expr ']'
+     *      | '(' ')'
+     *      | '(' parameter_type_list ')'
+     *      ;
      */
     fn postfix_type(
         &mut self,
@@ -462,10 +489,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *  ;
      *
      * Because we can't handle left-recursion, we rewrite it as follows:
-     * direct_declarator
+     * direct_abstract_declarator
      *   | identifier postfix_type*
      *   : '(' abstract_declarator ')' postfix_type*
-     *   | postfix_type*
+     *   | postfix_type*  /* only for abstract_declarators */
      *   ;
      *
      * postfix_type:
@@ -486,26 +513,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ) -> Locatable<Result<(Option<String>, Type), String>> {
         let (mut id, mut id_location) = (None, None);
         // we'll pass this to postfix_type in just a second
-        let next = match self.peek_token() {
+        match self.peek_token() {
             Some(Token::Id(_)) => {
                 let Locatable { data, location } = self.next_token().unwrap();
                 id = Some(Self::expect_id(data));
                 id_location = Some(location);
-                self.next_token().map(|x| x.data)
             }
             // handled by postfix_type
-            Some(Token::LeftBracket) if allow_abstract => Some(Token::LeftBracket),
+            Some(Token::LeftBracket) if allow_abstract => {}
             Some(Token::LeftParen) => {
-                self.next_token();
-                match self.peek_token() {
+                // this is the reason we need to save next - otherwise we
+                // consume LeftParen without postfix_type ever seeing it
+                match self.peek_next_token() {
                     // parameter_type_list, leave it for postfix_type
                     // need to check allow_abstract because we haven't seen an ID at
                     // this point
-                    // also, this is the reason we need to save next - otherwise we
-                    // consume LeftParen without postfix_type ever seeing it
-                    Some(Token::Keyword(k)) if k.is_decl_specifier() && allow_abstract => {
-                        Some(Token::LeftParen)
-                    }
+                    Some(Token::Keyword(k)) if k.is_decl_specifier() && allow_abstract => {}
                     // abstract_declarator - could be an error,
                     // but if so we'll catch it later
                     _ => {
@@ -515,10 +538,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             Ok((_id, _ctype)) => {
                                 id = _id;
                                 ctype = _ctype;
+                                id_location = Some(locatable.location);
                             }
                         }
                         self.expect(Token::RightParen);
-                        self.next_token().map(|x| x.data)
                     }
                 }
             }
@@ -535,124 +558,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
             }
         };
-        unimplemented!();
-
-        /*
-        if let Some(data) = self.peek_token() {
-            let prefix = match data {
-                Token::Id(_) => {
-                    let Locatable { location, data } = self.next_token().unwrap();
-                    let id = match data {
-                        Token::Id(id) => id,
-                        _ => panic!("how could peek return something different from next?"),
-                    };
-                    self.postfix_type(Locatable {
-                        location,
-                        data: (Some(id), ctype),
-                    })
-                }
-                Token::LeftParen => {
-                    let Locatable { location, .. } = self.next_token().unwrap();
-                    let next = self.declarator(ctype, allow_abstract);
-                    match self.peek_token() {
-                        Some(Token::RightParen) if allow_abstract => {
-                            return Locatable {
-                                location,
-                                data: Ok((
-                                    None,
-                                    Type::Function(FunctionType {
-                                        // TODO: this is NOT safe to unwrap
-                                        return_type: Box::new(
-                                            next.data.expect("error handling not implemented").1,
-                                        ),
-                                        params: Vec::new(),
-                                        varargs: false,
-                                    }),
-                                )),
-                            };
-                        }
-                        _ => unimplemented!(),
-                        // TODO: function parameters and (declarator)
-                        // function parameters start with declaration specifiers,
-                        // declarators don't
-                    }
-                    self.expect(Token::RightParen);
-                    return next;
-                }
-                Token::LeftBrace if allow_abstract => {
-                    let Locatable { location, .. } = self.next_token().unwrap();
-                    self.postfix_type(Locatable {
-                        location,
-                        data: (None, ctype),
-                    })
-                }
-                x => Locatable {
-                    data: Err(format!("expected '(' or identifier, got '{}'", x)),
-                    location: self.next_location().clone(),
-                },
-            };
-        } else {
-            Locatable {
-                data: Err("expected '(' or identifier, got <end-of-file>".to_string()),
-                location: self.next_location().clone(),
-            }
-        }
-        */
-        /*
-        let prefix = match data {
-            Token::LeftParen => {
-                self.next_token();
-                let next = self.declarator(ctype, allow_abstract);
-                self.expect(Token::RightParen);
-                match next.data {
-                    Ok(tuple) => Locatable {
-                        location: next.location,
-                        data: tuple,
-                    },
-                    Err(_) => return next,
-                }
-            }
-            Token::Star => {
-                match self.declarator(ctype, allow_abstract) {
-                    Locatable {
-                        location,
-                        data: Ok((id, ctype)),
-                    } => Locatable {
-                        location,
-                        data: (id, Type::Pointer(Box::new(ctype), qualifiers)),
-                    },
-                    x => return x,
-                }
-            }
-            Token::Id(_) => {
-                let Locatable { location, data } = self.next_token().unwrap();
-                let id = match data {
-                    Token::Id(id) => id,
-                    _ => panic!("how could peek return something different from next?"),
-                };
-                Locatable {
-                    location,
-                    data: (Some(id), ctype.clone()),
-                }
-            }
-            // TODO: this doesn't look right
-            x => {
-                if allow_abstract {
-                    Locatable {
-                        // this location should never be used
-                        location: self.next_location().clone(),
-                        data: (None, ctype.clone()),
-                    }
-                } else {
-                    return Locatable {
-                        data: Err(format!("expected '(', '*', or identifier, got '{}'", x)),
-                        location: self.next_location().clone(),
-                    };
-                }
-            }
-        };
-        self.postfix_type(prefix)
-        */
+        self.postfix_type(Locatable {
+            data: (id, ctype),
+            location: id_location.unwrap_or(Location {
+                line: 0,
+                column: 0,
+                file: String::from("<internal-error>"),
+            }),
+        })
     }
     /* parse everything after declaration specifiers. can be called recursively
      * allow_abstract: whether to require identifiers in declarators.

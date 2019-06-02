@@ -126,6 +126,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             _ => panic!("peek should never be different from next"),
         }
     }
+    fn expect_id(token: Token) -> String {
+        match token {
+            Token::Id(id) => id,
+            _ => panic!("peek should never be different from next"),
+        }
+    }
     fn expect(&mut self, next: Token) -> (bool, &Location) {
         match self.peek_token() {
             Some(data) if *data == next => {
@@ -282,12 +288,24 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     /*
      * function parameters
-     *
      * reference grammar:
+     *
      *  parameter_type_list:
-     *    parameter_list
-     *  | parameter_list ',' ELIPSIS
-     *  ;
+     *        parameter_list
+     *      | parameter_list ',' ELIPSIS
+     *      ;
+     *
+     *  parameter_list:
+     *        parameter_declaration
+     *      | parameter_list ',' parameter_declaration
+     *      ;
+     *
+     *  parameter_declaration:
+     *        declaration_specifiers declarator
+     *      | declaration_specifiers
+     *      | declaration_specifiers abstract_declarator
+     *      ;
+     *
      */
     fn parameter_type_list(&mut self, return_type: Type) -> Type {
         self.expect(Token::LeftParen);
@@ -333,7 +351,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Default::default(),
                 Type::Int(true),
             ));
-            let possible_type = self.declarator(&param_type, true);
+            // true: allow abstract_declarators
+            let possible_type = self.declarator(param_type, true);
             let (param_name, param_type) = match possible_type.data {
                 Err(x) => {
                     errs.push_back(Locatable {
@@ -418,31 +437,257 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             data: Ok(prefix.data),
         }
     }
+    /*
+     * Originally written as follows:
+     * direct_declarator
+     *  : identifier
+     *  | '(' declarator ')'
+     *  | direct_declarator '[' ']'
+     *  | direct_declarator '[' constant_expr ']'
+     *  | direct_declarator '(' ')'
+     *  | direct_declarator '(' parameter_type_list ')'
+     *  ;
+     *
+     * Additionally, we combine abstract_declarators, because most of the code is the same.
+     * direct_abstract_declarator
+     *  : '(' abstract_declarator ')'
+     *  | '[' ']'
+     *  | '[' constant_expr ']'
+     *  | direct_abstract_declarator '[' ']'
+     *  | direct_abstract_declarator '[' constant_expr ']'
+     *  | '(' ')'
+     *  | '(' parameter_type_list ')'
+     *  | direct_abstract_declarator '(' ')'
+     *  | direct_abstract_declarator '(' parameter_type_list ')'
+     *  ;
+     *
+     * Because we can't handle left-recursion, we rewrite it as follows:
+     * direct_declarator
+     *   | identifier postfix_type*
+     *   : '(' abstract_declarator ')' postfix_type*
+     *   | postfix_type*
+     *   ;
+     *
+     * postfix_type:
+     *   : '[' ']'
+     *   | '[' constant_expr ']'
+     *   | '(' ')'
+     *   | '(' parameter_type_list ')'
+     *   ;
+     *
+     *   How do we tell abstract_declarator and parameter_type_list apart?
+     *   parameter_type_list starts with declaration specifiers, abstract_declarator doesn't:
+     *   https://stackoverflow.com/questions/56410673/how-should-int-fint-be-parsed
+     */
+    fn direct_declarator(
+        &mut self,
+        mut ctype: Type,
+        allow_abstract: bool,
+    ) -> Locatable<Result<(Option<String>, Type), String>> {
+        let (mut id, mut id_location) = (None, None);
+        // we'll pass this to postfix_type in just a second
+        let next = match self.peek_token() {
+            Some(Token::Id(_)) => {
+                let Locatable { data, location } = self.next_token().unwrap();
+                id = Some(Self::expect_id(data));
+                id_location = Some(location);
+                self.next_token().map(|x| x.data)
+            }
+            // handled by postfix_type
+            Some(Token::LeftBracket) if allow_abstract => Some(Token::LeftBracket),
+            Some(Token::LeftParen) => {
+                self.next_token();
+                match self.peek_token() {
+                    // parameter_type_list, leave it for postfix_type
+                    // need to check allow_abstract because we haven't seen an ID at
+                    // this point
+                    // also, this is the reason we need to save next - otherwise we
+                    // consume LeftParen without postfix_type ever seeing it
+                    Some(Token::Keyword(k)) if k.is_decl_specifier() && allow_abstract => {
+                        Some(Token::LeftParen)
+                    }
+                    // abstract_declarator - could be an error,
+                    // but if so we'll catch it later
+                    _ => {
+                        let locatable = self.declarator(ctype, allow_abstract);
+                        match locatable.data {
+                            Err(_) => return locatable,
+                            Ok((_id, _ctype)) => {
+                                id = _id;
+                                ctype = _ctype;
+                            }
+                        }
+                        self.expect(Token::RightParen);
+                        self.next_token().map(|x| x.data)
+                    }
+                }
+            }
+            Some(x) => {
+                return Locatable {
+                    data: Err(format!("expected identifier or '(', got '{}'", x)),
+                    location: self.next_location().clone(),
+                }
+            }
+            None => {
+                return Locatable {
+                    location: self.next_location().clone(),
+                    data: Err("expected identifier or '(', got <end-of-of-file>".to_string()),
+                }
+            }
+        };
+        unimplemented!();
+
+        /*
+        if let Some(data) = self.peek_token() {
+            let prefix = match data {
+                Token::Id(_) => {
+                    let Locatable { location, data } = self.next_token().unwrap();
+                    let id = match data {
+                        Token::Id(id) => id,
+                        _ => panic!("how could peek return something different from next?"),
+                    };
+                    self.postfix_type(Locatable {
+                        location,
+                        data: (Some(id), ctype),
+                    })
+                }
+                Token::LeftParen => {
+                    let Locatable { location, .. } = self.next_token().unwrap();
+                    let next = self.declarator(ctype, allow_abstract);
+                    match self.peek_token() {
+                        Some(Token::RightParen) if allow_abstract => {
+                            return Locatable {
+                                location,
+                                data: Ok((
+                                    None,
+                                    Type::Function(FunctionType {
+                                        // TODO: this is NOT safe to unwrap
+                                        return_type: Box::new(
+                                            next.data.expect("error handling not implemented").1,
+                                        ),
+                                        params: Vec::new(),
+                                        varargs: false,
+                                    }),
+                                )),
+                            };
+                        }
+                        _ => unimplemented!(),
+                        // TODO: function parameters and (declarator)
+                        // function parameters start with declaration specifiers,
+                        // declarators don't
+                    }
+                    self.expect(Token::RightParen);
+                    return next;
+                }
+                Token::LeftBrace if allow_abstract => {
+                    let Locatable { location, .. } = self.next_token().unwrap();
+                    self.postfix_type(Locatable {
+                        location,
+                        data: (None, ctype),
+                    })
+                }
+                x => Locatable {
+                    data: Err(format!("expected '(' or identifier, got '{}'", x)),
+                    location: self.next_location().clone(),
+                },
+            };
+        } else {
+            Locatable {
+                data: Err("expected '(' or identifier, got <end-of-file>".to_string()),
+                location: self.next_location().clone(),
+            }
+        }
+        */
+        /*
+        let prefix = match data {
+            Token::LeftParen => {
+                self.next_token();
+                let next = self.declarator(ctype, allow_abstract);
+                self.expect(Token::RightParen);
+                match next.data {
+                    Ok(tuple) => Locatable {
+                        location: next.location,
+                        data: tuple,
+                    },
+                    Err(_) => return next,
+                }
+            }
+            Token::Star => {
+                match self.declarator(ctype, allow_abstract) {
+                    Locatable {
+                        location,
+                        data: Ok((id, ctype)),
+                    } => Locatable {
+                        location,
+                        data: (id, Type::Pointer(Box::new(ctype), qualifiers)),
+                    },
+                    x => return x,
+                }
+            }
+            Token::Id(_) => {
+                let Locatable { location, data } = self.next_token().unwrap();
+                let id = match data {
+                    Token::Id(id) => id,
+                    _ => panic!("how could peek return something different from next?"),
+                };
+                Locatable {
+                    location,
+                    data: (Some(id), ctype.clone()),
+                }
+            }
+            // TODO: this doesn't look right
+            x => {
+                if allow_abstract {
+                    Locatable {
+                        // this location should never be used
+                        location: self.next_location().clone(),
+                        data: (None, ctype.clone()),
+                    }
+                } else {
+                    return Locatable {
+                        data: Err(format!("expected '(', '*', or identifier, got '{}'", x)),
+                        location: self.next_location().clone(),
+                    };
+                }
+            }
+        };
+        self.postfix_type(prefix)
+        */
+    }
     /* parse everything after declaration specifiers. can be called recursively
      * allow_abstract: whether to require identifiers in declarators.
      * NOTE: whenever allow_abstract is `false`,
      *  either an identifier or an error will be returned.
      * when allow_abstract is `true`, an identifier may or may not be returned.
+     * reference grammar:
+     *
+     *  declarator
+     *      : direct_declarator
+     *      | pointer declarator
+     *      ;
+     *
+     *  direct_declarator
+     *      : identifier
+     *      | '(' declarator ')'
+     *      | direct_declarator '[' ']'
+     *      | direct_declarator '[' constant_expr ']'
+     *      | direct_declarator '(' parameter_type_list ')'
+     *      | direct_declarator '(' ')'
+     *      ;
+     *
+     *  pointer
+     *      : '*' specifier_qualifier_list_opt
+     *      | '&'   /* C++ only */
+     *      ;
+     *
      */
     fn declarator(
         &mut self,
-        ctype: &Type,
+        ctype: Type,
         allow_abstract: bool,
     ) -> Locatable<Result<(Option<String>, Type), String>> {
         if let Some(data) = self.peek_token() {
-            let prefix = match data {
-                Token::LeftParen => {
-                    self.next_token();
-                    let next = self.declarator(ctype, allow_abstract);
-                    self.expect(Token::RightParen);
-                    match next.data {
-                        Ok(tuple) => Locatable {
-                            location: next.location,
-                            data: tuple,
-                        },
-                        Err(_) => return next,
-                    }
-                }
+            match data {
                 Token::Star => {
                     self.next_token();
                     let mut qualifiers = Qualifiers::NONE;
@@ -467,45 +712,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             }
                         }
                     }
-                    match self.declarator(ctype, allow_abstract) {
-                        Locatable {
-                            location,
-                            data: Ok((id, ctype)),
-                        } => Locatable {
-                            location,
-                            data: (id, Type::Pointer(Box::new(ctype), qualifiers)),
-                        },
-                        x => return x,
-                    }
+                    self.declarator(Type::Pointer(Box::new(ctype), qualifiers), allow_abstract)
                 }
-                Token::Id(_) => {
-                    let Locatable { location, data } = self.next_token().unwrap();
-                    let id = match data {
-                        Token::Id(id) => id,
-                        _ => panic!("how could peek return something different from next?"),
-                    };
-                    Locatable {
-                        location,
-                        data: (Some(id), ctype.clone()),
-                    }
-                }
-                // TODO: this doesn't look right
-                x => {
-                    if allow_abstract {
-                        Locatable {
-                            // this location should never be used
-                            location: self.next_location().clone(),
-                            data: (None, ctype.clone()),
-                        }
-                    } else {
-                        return Locatable {
-                            data: Err(format!("expected '(', '*', or identifier, got '{}'", x)),
-                            location: self.next_location().clone(),
-                        };
-                    }
-                }
-            };
-            self.postfix_type(prefix)
+                _ => self.direct_declarator(ctype, allow_abstract),
+            }
         } else {
             Locatable {
                 location: self.next_location().clone(),
@@ -528,7 +738,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         };
         while self.match_next(Token::Semicolon).is_none() {
-            let Locatable { location, data } = self.declarator(&ctype, false);
+            let Locatable { location, data } = self.declarator(ctype.clone(), false);
             match data {
                 Ok(decl) => {
                     self.pending.push_back(Locatable {
@@ -721,8 +931,13 @@ impl TryFrom<Keyword> for Type {
 #[cfg(test)]
 mod tests {
     use super::Parser;
-    use crate::data::{Expr, FunctionType, Locatable, Stmt, Token, Type};
+    use crate::data::{
+        ArrayType, Expr, FunctionType, Locatable, Qualifiers, Stmt, Symbol, Token,
+        Type::{self, *},
+    };
     use crate::Lexer;
+    use std::boxed::Box;
+
     type ParseType = Locatable<Result<Stmt, String>>;
     fn parse(input: &str) -> Option<ParseType> {
         parse_all(input).get(0).cloned()
@@ -791,11 +1006,7 @@ mod tests {
         assert!(match_type(parse("const volatile i;"), Type::Int(true)));
     }
     #[test]
-    fn test_complex_types() {
-        // this is all super ugly
-        use crate::data::{ArrayType, Qualifiers};
-        use std::boxed::Box;
-        use Type::*;
+    fn test_arrays() {
         assert!(match_type(
             parse("int a[]"),
             Array(Box::new(Int(true)), ArrayType::Unbounded)
@@ -814,6 +1025,9 @@ mod tests {
                 ArrayType::Unbounded
             )
         ));
+    }
+    #[test]
+    fn test_pointers() {
         assert!(match_type(
             parse("void *a"),
             Pointer(Box::new(Void), Default::default())
@@ -822,29 +1036,30 @@ mod tests {
             parse("float *const a"),
             Pointer(Box::new(Float), Qualifiers::CONST)
         ));
+        // cdecl: declare a as const pointer to volatile pointer to double
         assert!(match_type(
             parse("double *volatile *const a"),
             Pointer(
-                Box::new(Pointer(Box::new(Double), Qualifiers::CONST)),
-                Qualifiers::VOLATILE
+                Box::new(Pointer(Box::new(Double), Qualifiers::VOLATILE)),
+                Qualifiers::CONST
             )
         ));
         assert!(match_type(
             parse("_Bool *volatile const a"),
             Pointer(Box::new(Bool), Qualifiers::CONST_VOLATILE)
         ));
-        // cdecl: declare foo as array 10 of pointer to pointer to int
+    }
+    #[test]
+    fn test_pointers_and_arrays() {
+        // cdecl: declare foo as array 10 of pointer to pointer to char
         assert!(match_type(
             parse("char **foo[10];"),
-            Pointer(
+            Array(
                 Box::new(Pointer(
-                    Box::new(Array(
-                        Box::new(Char(true)),
-                        ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
-                    )),
+                    Box::new(Pointer(Box::new(Char(true)), Default::default(),)),
                     Default::default()
                 )),
-                Default::default()
+                ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
             )
         ));
         // cdecl: declare foo as pointer to pointer to array 10 of int
@@ -858,6 +1073,56 @@ mod tests {
                 ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
             )
         ));
+    }
+    #[test]
+    fn test_functions() {
+        // cdecl: declare i as pointer to function returning int;
+        assert!(match_type(
+            parse("int (*i)();"),
+            Pointer(
+                Box::new(Function(FunctionType {
+                    return_type: Box::new(Int(true)),
+                    params: vec![],
+                    varargs: false,
+                })),
+                Qualifiers::NONE
+            )
+        ));
+
+        // cdecl: declare bar as const pointer to array 10 of pointer to function (int) returning const pointer to char
+        assert!(match_type(
+            parse("char * const (*(* const bar)[10])(int )"),
+            Pointer(
+                Box::new(Array(
+                    Box::new(Pointer(
+                        Box::new(Function(FunctionType {
+                            return_type: Box::new(Pointer(Box::new(Char(true)), Qualifiers::CONST)),
+                            params: vec![Symbol {
+                                ctype: Int(true),
+                                storage_class: Default::default(),
+                                id: String::new(),
+                                qualifiers: Qualifiers::NONE,
+                            }],
+                            varargs: false,
+                        })),
+                        Qualifiers::NONE
+                    )),
+                    ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
+                )),
+                Qualifiers::CONST
+            )
+        ));
+        /*
+         * int (*(*foo)(void ))[3]
+         * const int (* volatile bar)[64]
+         * char (*(*x())[5])()
+         */
+    }
+    #[test]
+    fn test_decl_errors() {
+        assert!(parse("int").unwrap().data.is_err());
+        // TODO: the error for this is wrong and will be until I implement parse_expr()
+        assert!(parse("int (*f)[;").unwrap().data.is_err());
     }
 
 }

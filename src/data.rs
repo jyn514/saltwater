@@ -188,7 +188,7 @@ pub enum StorageClass {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Symbol {
     pub id: String,
-    pub c_type: Type,
+    pub ctype: Type,
     pub qualifiers: Qualifiers,
     pub storage_class: StorageClass,
 }
@@ -220,7 +220,7 @@ pub struct FunctionType {
 pub struct BitfieldType {
     pub offset: i32,
     pub name: Option<String>,
-    pub c_type: Type,
+    pub ctype: Type,
 }
 
 // holds where a piece of code came from

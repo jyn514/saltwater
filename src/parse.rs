@@ -44,7 +44,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
             match lexed {
                 // NOTE: we do not allow implicit int
                 // https://stackoverflow.com/questions/11064292
-                Token::Keyword(t) if t.is_decl_specifier() => self.parse_decl(t),
+                Token::Keyword(t) if t.is_decl_specifier() => self.declaration(t),
                 _ => Some(Locatable {
                     data: Err("not handled".to_string()),
                     location,
@@ -55,6 +55,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 }
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
+    /* utility functions */
     fn next_token(&mut self) -> Option<Locatable<Token>> {
         if self.current.is_some() {
             mem::replace(&mut self.current, None)
@@ -146,14 +147,35 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         }
     }
-    // this is an utter hack
-    // NOTE: the reason the return type is so weird (Result<_, Locatable<_>)
-    // is because declaration specifiers can never be a statement on their own:
-    // the associated location always belongs to the identifier
-    fn parse_decl_specifiers(
+
+    /* grammar functions
+     * this parser is a top-down, recursive descent parser
+     * and uses a modified version of the ANSI C Yacc grammar published at
+     * https://www.lysator.liu.se/c/ANSI-C-grammar-y.html.
+     * Differences from the original grammar, if present, are noted
+     * before each function.
+     */
+
+    /* this is an utter hack
+     * NOTE: the reason the return type is so weird (Result<_, Locatable<_>)
+     * is because declaration specifiers can never be a statement on their own:
+     * the associated location always belongs to the identifier
+     *
+     * reference grammar:
+     * declaration_specifiers
+     *  : storage_class_specifier
+     *  | storage_class_specifier declaration_specifiers
+     *  | type_specifier
+     *  | type_specifier declaration_specifiers
+     *  | type_qualifier
+     *  | type_qualifier declaration_specifiers
+     *  ;
+     */
+    fn declaration_specifiers(
         &mut self,
         start: Keyword,
     ) -> Result<(StorageClass, Qualifiers, Type), Locatable<String>> {
+        // TODO: initialization is a mess
         let mut keywords = HashSet::new();
         keywords.insert(start);
         let mut storage_class = StorageClass::try_from(start).ok();
@@ -243,7 +265,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ctype,
         ))
     }
-    fn parse_function_decl(&mut self, return_type: Type) -> Type {
+    /*
+     * function parameters
+     *
+     * reference grammar:
+     *  parameter_type_list:
+     *    parameter_list
+     *  | parameter_list ',' ELIPSIS
+     *  ;
+     */
+    fn parameter_type_list(&mut self, return_type: Type) -> Type {
         self.expect(Token::LeftParen);
         let return_type = Box::new(return_type);
         let mut params = vec![];
@@ -289,12 +320,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     (Keyword::Int, self.next_location().clone())
                 }
             };
-            let (sc, quals, param_type) = self.parse_decl_specifiers(start).unwrap_or((
+            let (sc, quals, param_type) = self.declaration_specifiers(start).unwrap_or((
                 Default::default(),
                 Default::default(),
                 Type::Int(true),
             ));
-            let possible_type = self.parse_type(&param_type, true);
+            let possible_type = self.declarator(&param_type, true);
             let (param_name, param_type) = match possible_type.data {
                 Err(x) => {
                     errs.push_back(Locatable {
@@ -329,7 +360,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     // this also makes checking if the parameter is abstract or not
                     // easy to check
                     id: param_name.unwrap_or_default(),
-                    c_type: ctype,
+                    ctype,
                     qualifiers: quals,
                     storage_class: StorageClass::Auto,
                 });
@@ -348,7 +379,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         }
     }
-    fn parse_postfix_type(
+    /*
+     * not in original reference, see comments to next function
+     */
+    fn postfix_type(
         &mut self,
         mut prefix: Locatable<(Option<String>, Type)>,
     ) -> Locatable<Result<(Option<String>, Type), String>> {
@@ -366,7 +400,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         Type::Array(Box::new(prefix.data.1), ArrayType::Fixed(Box::new(expr)))
                     }
                 }
-                Token::LeftParen => self.parse_function_decl(prefix.data.1),
+                Token::LeftParen => self.parameter_type_list(prefix.data.1),
+
                 _ => break,
             };
         }
@@ -377,11 +412,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     /* parse everything after declaration specifiers. can be called recursively
      * allow_abstract: whether to require identifiers in declarators.
-     * method contract: whenever allow_abstract is `false`,
+     * NOTE: whenever allow_abstract is `false`,
      *  either an identifier or an error will be returned.
      * when allow_abstract is `true`, an identifier may or may not be returned.
      */
-    fn parse_type(
+    fn declarator(
         &mut self,
         ctype: &Type,
         allow_abstract: bool,
@@ -390,7 +425,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let prefix = match data {
                 Token::LeftParen => {
                     self.next_token();
-                    let next = self.parse_type(ctype, allow_abstract);
+                    let next = self.declarator(ctype, allow_abstract);
                     self.expect(Token::RightParen);
                     match next.data {
                         Ok(tuple) => Locatable {
@@ -424,7 +459,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             }
                         }
                     }
-                    match self.parse_type(ctype, allow_abstract) {
+                    match self.declarator(ctype, allow_abstract) {
                         Locatable {
                             location,
                             data: Ok((id, ctype)),
@@ -446,6 +481,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         data: (Some(id), ctype.clone()),
                     }
                 }
+                // TODO: this doesn't look right
                 x => {
                     if allow_abstract {
                         Locatable {
@@ -461,7 +497,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     }
                 }
             };
-            self.parse_postfix_type(prefix)
+            self.postfix_type(prefix)
         } else {
             Locatable {
                 location: self.next_location().clone(),
@@ -473,8 +509,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // but we typed them as only having one Symbol. Wat do?
     // We push all but one declaration into the 'pending' vector
     // and return the last.
-    fn parse_decl(&mut self, start: Keyword) -> Option<Locatable<Result<Stmt, String>>> {
-        let (sc, qualifiers, ctype) = match self.parse_decl_specifiers(start) {
+    fn declaration(&mut self, start: Keyword) -> Option<Locatable<Result<Stmt, String>>> {
+        let (sc, qualifiers, ctype) = match self.declaration_specifiers(start) {
             Ok(tuple) => tuple,
             Err(err) => {
                 return Some(Locatable {
@@ -484,7 +520,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         };
         while self.match_next(Token::Semicolon).is_none() {
-            let Locatable { location, data } = self.parse_type(&ctype, false);
+            let Locatable { location, data } = self.declarator(&ctype, false);
             match data {
                 Ok(decl) => {
                     self.pending.push_back(Locatable {
@@ -492,9 +528,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         data: Ok(Stmt::Declaration(Symbol {
                             storage_class: sc,
                             qualifiers: qualifiers.clone(),
-                            c_type: decl.1,
+                            ctype: decl.1,
                             id: decl.0.expect(
-                                "parse_type should return id if called with allow_abstract: false",
+                                "declarator should return id if called with allow_abstract: false",
                             ),
                         })),
                     });
@@ -534,7 +570,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
  * to go with every error
  * INVARIANT: keyword has not been seen before (i.e. not a duplicate)
  */
-fn handle_single_decl_specifier(
+fn declaration_specifier(
     keyword: Keyword,
     storage_class: &mut Option<StorageClass>,
     qualifiers: &mut Qualifiers,
@@ -697,7 +733,7 @@ mod tests {
     }
     fn match_type(lexed: Option<ParseType>, given_type: Type) -> bool {
         match_data(lexed, |data| match data {
-            Ok(Stmt::Declaration(symbol)) => symbol.c_type == given_type,
+            Ok(Stmt::Declaration(symbol)) => symbol.ctype == given_type,
             _ => false,
         })
     }

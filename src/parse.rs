@@ -83,15 +83,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         }
     }
-    fn peek_token(&mut self) -> Option<&Locatable<Token>> {
+    fn peek_token(&mut self) -> Option<&Token> {
         if self.current.is_none() {
             self.current = self.next_token();
         }
-        self.current.as_ref()
+        // NOTE: we can't just use self.current.map(|x| x.data) because of lifetimes
+        match &self.current {
+            Some(x) => Some(&x.data),
+            None => None,
+        }
     }
     fn next_location(&mut self) -> &Location {
         if self.peek_token().is_some() {
-            &self.peek_token().unwrap().location
+            &self.current.as_ref().unwrap().location
         } else {
             self.last_location
                 .as_ref()
@@ -102,21 +106,29 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.match_any(&[next])
     }
     fn match_any(&mut self, choices: &[Token]) -> Option<Locatable<Token>> {
-        match self.peek_token() {
-            Some(Locatable { data, .. }) => {
-                for token in choices {
-                    if token == data {
-                        return self.next_token();
-                    }
+        if let Some(data) = self.peek_token() {
+            for token in choices {
+                if token == data {
+                    return self.next_token();
                 }
-                None
             }
-            _ => None,
+            None
+        } else {
+            None
+        }
+    }
+    /* WARNING: may panic
+     * only use if you are SURE token is a keyword
+     */
+    fn expect_keyword(token: Token) -> Keyword {
+        match token {
+            Token::Keyword(k) => k,
+            _ => panic!("peek should never be different from next"),
         }
     }
     fn expect(&mut self, next: Token) -> (bool, &Location) {
         match self.peek_token() {
-            Some(Locatable { data, .. }) if *data == next => {
+            Some(data) if *data == next => {
                 self.next_token();
                 (
                     true,
@@ -125,9 +137,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         .expect("last_location should be set whenever next_token is called"),
                 )
             }
-            Some(Locatable { location, data }) => {
-                // since we're only peeking, we can't move the next token
-                let (location, message) = (location.clone(), data.to_string());
+            Some(data) => {
+                let message = data.to_string();
+                let location = self.next_location().clone();
                 self.pending.push_back(Locatable {
                     location,
                     data: Err(format!("expected '{}', got '{}'", next, message)),
@@ -193,21 +205,24 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
         let mut errors = vec![];
         // unsigned const int
-        while let Some(locatable) = self.peek_token() {
-            let keyword = match locatable.data {
-                Token::Keyword(k) if k.is_decl_specifier() => k,
-                _ => break,
-            };
-            let locatable = self.next_token().unwrap();
+        while let Some(Token::Keyword(keyword)) = self.peek_token() {
+            if !keyword.is_decl_specifier() {
+                break;
+            }
+            let Locatable {
+                location,
+                data: keyword,
+            } = self.next_token().unwrap();
+            let keyword = Self::expect_keyword(keyword);
             if keywords.insert(keyword) {
-                handle_single_decl_specifier(
+                declaration_specifier(
                     keyword,
                     &mut storage_class,
                     &mut qualifiers,
                     &mut ctype,
                     &mut signed,
                     &mut errors,
-                    locatable.location,
+                    location,
                 );
             } else {
                 // duplicate
@@ -219,13 +234,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 {
                     warn(
                         &format!("duplicate declaration specifier '{}'", keyword),
-                        &locatable.location,
+                        &location,
                     );
                 // what is `short short` supposed to be?
                 } else if keyword != Keyword::Long {
                     errors.push(Locatable {
                         data: format!("duplicate basic type '{}' in declarator", keyword),
-                        location: locatable.location,
+                        location,
                     });
                 }
             }
@@ -301,16 +316,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             }
             let (start, location) = match self.peek_token() {
-                Some(Locatable {
-                    data: Token::Keyword(k),
-                    ..
-                }) if k.is_decl_specifier() => {
+                Some(Token::Keyword(k)) if k.is_decl_specifier() => {
                     let next = self.next_token().unwrap();
-                    let k = match next.data {
-                        Token::Keyword(k) => k,
-                        _ => panic!("peek should never be different from next"),
-                    };
-                    (k, next.location)
+                    (Self::expect_keyword(next.data), next.location)
                 }
                 _ => {
                     errs.push_back(Locatable {
@@ -387,7 +395,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         mut prefix: Locatable<(Option<String>, Type)>,
     ) -> Locatable<Result<(Option<String>, Type), String>> {
         // postfix
-        while let Some(Locatable { data, .. }) = self.peek_token() {
+        while let Some(data) = self.peek_token() {
             prefix.data.1 = match data {
                 // array
                 Token::LeftBracket => {
@@ -421,7 +429,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ctype: &Type,
         allow_abstract: bool,
     ) -> Locatable<Result<(Option<String>, Type), String>> {
-        if let Some(Locatable { data, location }) = self.peek_token() {
+        if let Some(data) = self.peek_token() {
             let prefix = match data {
                 Token::LeftParen => {
                     self.next_token();
@@ -486,13 +494,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     if allow_abstract {
                         Locatable {
                             // this location should never be used
-                            location: location.clone(),
+                            location: self.next_location().clone(),
                             data: (None, ctype.clone()),
                         }
                     } else {
                         return Locatable {
-                            location: location.clone(),
                             data: Err(format!("expected '(', '*', or identifier, got '{}'", x)),
+                            location: self.next_location().clone(),
                         };
                     }
                 }

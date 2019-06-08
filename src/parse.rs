@@ -13,6 +13,8 @@ type Lexeme = Locatable<Result<Token, String>>;
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
+    // we iterate lazily over the tokens, so if we have a program that's mostly valid but
+    // breaks at the end, we don't only show lex errors
     tokens: I,
     // VecDeque supports pop_front with reasonable efficiency
     // this is useful because errors are FIFO
@@ -38,9 +40,6 @@ where
             pending: Default::default(),
             last_location: None,
             current: None,
-            // TODO: are we sure we need tokens of lookahead?
-            // this was put here for declarations, so we know the difference between
-            // int (*x) and int (int), but there's probably a workaround
             next: None,
         }
     }
@@ -150,12 +149,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn expect_keyword(token: Token) -> Keyword {
         match token {
             Token::Keyword(k) => k,
-            _ => panic!("peek should never be different from next"),
-        }
-    }
-    fn expect_id(token: Token) -> String {
-        match token {
-            Token::Id(id) => id,
             _ => panic!("peek should never be different from next"),
         }
     }
@@ -334,17 +327,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      ;
      *
      */
-    fn parameter_type_list(&mut self, return_type: Type) -> Type {
+    fn parameter_type_list(&mut self) -> Result<DeclaratorType, Locatable<String>> {
         self.expect(Token::LeftParen);
-        let return_type = Box::new(return_type);
         let mut params = vec![];
         let mut errs = VecDeque::new();
         if self.match_next(Token::RightParen).is_some() {
-            return Type::Function(FunctionType {
-                return_type,
+            return Ok(DeclaratorType::Function(FunctionDeclarator {
                 params,
                 varargs: false,
-            });
+            }));
         }
         loop {
             if let Some(locatable) = self.match_next(Token::Ellipsis) {
@@ -354,11 +345,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         data: Err("ISO C requires a parameter before '...'".to_string()),
                     });
                 }
-                return Type::Function(FunctionType {
-                    return_type,
+                return Ok(DeclaratorType::Function(FunctionDeclarator {
                     params,
                     varargs: true,
-                });
+                }));
             }
             let (start, location) = match self.peek_token() {
                 Some(Token::Keyword(k)) if k.is_decl_specifier() => {
@@ -373,23 +363,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     (Keyword::Int, self.next_location().clone())
                 }
             };
+            // TODO: handle errors
             let (sc, quals, param_type) = self.declaration_specifiers(start).unwrap_or((
                 Default::default(),
                 Default::default(),
                 Type::Int(true),
             ));
             // true: allow abstract_declarators
-            let possible_type = self.declarator(param_type, true);
-            let (param_name, param_type) = match possible_type.data {
-                Err(x) => {
+            let declarator = match self.declarator(true) {
+                Err(Locatable { location, data }) => {
                     errs.push_back(Locatable {
-                        location: possible_type.location,
-                        data: Err(x),
+                        location,
+                        data: Err(dbg!(data)),
                     });
-                    (None, None)
+                    continue;
                 }
-                Ok((Some(id), param_type)) => (Some(id), Some(param_type)),
-                Ok((None, param_type)) => (None, Some(param_type)),
+                Ok(declarator) => declarator,
             };
             // NOTE: we are more liberal here than gcc or clang,
             // we allow `int f(auto int);`
@@ -399,24 +388,46 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     data: Err(format!(
                         "cannot specify storage class '{}' for {}",
                         sc,
-                        match param_name {
-                            Some(ref name) => format!("parameter {}", name),
-                            None => "unnamed parameter".to_string(),
+                        if let Some(decl) = declarator {
+                            if let Some(ref name) = decl.id() {
+                                format!("parameter {}", name.data)
+                            } else {
+                                "unnamed parameter".to_string()
+                            }
+                        } else {
+                            "<parse-error>".to_string()
                         }
                     )),
                 });
-            }
-            if let Some(ctype) = param_type {
-                params.push(Symbol {
-                    // I will probably regret this in the future
-                    // default() for String is "",
-                    // which can never be passed in by the lexer
-                    // this also makes checking if the parameter is abstract or not
-                    // easy to check
-                    id: param_name.unwrap_or_default(),
-                    ctype,
-                    qualifiers: quals,
-                    storage_class: StorageClass::Auto,
+            } else if let Some(decl) = declarator {
+                let (id, ctype) = decl.parse_type(param_type);
+                // I will probably regret this in the future
+                // default() for String is "",
+                // which can never be passed in by the lexer
+                // this also makes checking if the parameter is abstract or not easy to check
+                let Locatable { location, data } = id.unwrap_or(Locatable {
+                    location: self.next_location().clone(),
+                    data: Default::default(),
+                });
+                params.push(Locatable {
+                    location,
+                    data: Symbol {
+                        id: data,
+                        ctype,
+                        qualifiers: quals,
+                        storage_class: StorageClass::Auto,
+                    },
+                });
+            } else {
+                // abstract param
+                params.push(Locatable {
+                    location: self.next_location().clone(),
+                    data: Symbol {
+                        id: Default::default(),
+                        ctype: param_type,
+                        qualifiers: quals,
+                        storage_class: StorageClass::Auto,
+                    },
                 });
             }
             if self.match_next(Token::Comma).is_none() {
@@ -425,11 +436,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 //let err = errs.pop_front();
                 self.pending.append(&mut errs);
                 //err.unwrap_or(
-                return Type::Function(FunctionType {
-                    return_type,
+                return Ok(DeclaratorType::Function(FunctionDeclarator {
                     params,
                     varargs: false,
-                });
+                }));
             }
         }
     }
@@ -442,35 +452,41 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      | '[' constant_expr ']'
      *      | '(' ')'
      *      | '(' parameter_type_list ')'
+     *      | /* empty */
      *      ;
      */
     fn postfix_type(
         &mut self,
-        mut prefix: Locatable<(Option<String>, Type)>,
-    ) -> Locatable<Result<(Option<String>, Type), String>> {
+        mut prefix: Option<Declarator>,
+    ) -> Result<Option<Declarator>, Locatable<String>> {
         // postfix
         while let Some(data) = self.peek_token() {
-            prefix.data.1 = match data {
+            prefix = match data {
                 // array
                 Token::LeftBracket => {
                     self.expect(Token::LeftBracket);
                     if self.match_next(Token::RightBracket).is_some() {
-                        Type::Array(Box::new(prefix.data.1), ArrayType::Unbounded)
+                        Some(Declarator {
+                            base_type: DeclaratorType::Array(ArrayType::Unbounded),
+                            next: prefix.map(Box::new),
+                        })
                     } else {
                         let expr = self.parse_expr();
                         self.expect(Token::RightBracket);
-                        Type::Array(Box::new(prefix.data.1), ArrayType::Fixed(Box::new(expr)))
+                        Some(Declarator {
+                            base_type: DeclaratorType::Array(ArrayType::Fixed(Box::new(expr))),
+                            next: prefix.map(Box::new),
+                        })
                     }
                 }
-                Token::LeftParen => self.parameter_type_list(prefix.data.1),
-
+                Token::LeftParen => Some(Declarator {
+                    base_type: self.parameter_type_list()?,
+                    next: prefix.map(Box::new),
+                }),
                 _ => break,
             };
         }
-        Locatable {
-            location: prefix.location,
-            data: Ok(prefix.data),
-        }
+        Ok(prefix)
     }
     /*
      * Originally written as follows:
@@ -516,19 +532,24 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn direct_declarator(
         &mut self,
-        mut ctype: Type,
         allow_abstract: bool,
-    ) -> Locatable<Result<(Option<String>, Type), String>> {
-        let (mut id, mut id_location) = (None, None);
+    ) -> Result<Option<Declarator>, Locatable<String>> {
         // we'll pass this to postfix_type in just a second
-        match self.peek_token() {
+        // if None, we didn't find an ID
+        // should only happen if allow_abstract is true
+        let decl: Option<Declarator> = match self.peek_token() {
             Some(Token::Id(_)) => {
                 let Locatable { data, location } = self.next_token().unwrap();
-                id = Some(Self::expect_id(data));
-                id_location = Some(location);
+                match data {
+                    Token::Id(id) => Some(Declarator {
+                        base_type: DeclaratorType::Id(id, location),
+                        next: None,
+                    }),
+                    _ => panic!("peek() should always return the same thing as next()"),
+                }
             }
             // handled by postfix_type
-            Some(Token::LeftBracket) if allow_abstract => {}
+            Some(Token::LeftBracket) if allow_abstract => None,
             Some(Token::LeftParen) => {
                 // this is the reason we need to save next - otherwise we
                 // consume LeftParen without postfix_type ever seeing it
@@ -536,44 +557,31 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     // parameter_type_list, leave it for postfix_type
                     // need to check allow_abstract because we haven't seen an ID at
                     // this point
-                    Some(Token::Keyword(k)) if k.is_decl_specifier() && allow_abstract => {}
+                    Some(Token::Keyword(k)) if k.is_decl_specifier() && allow_abstract => None,
                     // abstract_declarator - could be an error,
                     // but if so we'll catch it later
                     _ => {
-                        let locatable = self.declarator(ctype, allow_abstract);
-                        match locatable.data {
-                            Err(_) => return locatable,
-                            Ok((_id, _ctype)) => {
-                                id = _id;
-                                ctype = _ctype;
-                                id_location = Some(locatable.location);
-                            }
-                        }
+                        let declarator = self.declarator(allow_abstract)?;
                         self.expect(Token::RightParen);
+                        declarator
                     }
                 }
             }
+            _ if allow_abstract => None,
             Some(x) => {
-                return Locatable {
-                    data: Err(format!("expected identifier or '(', got '{}'", x)),
+                return Err(Locatable {
+                    data: format!("expected identifier or '(', got '{}'", x),
                     location: self.next_location().clone(),
-                }
+                })
             }
             None => {
-                return Locatable {
+                return Err(Locatable {
                     location: self.next_location().clone(),
-                    data: Err("expected identifier or '(', got <end-of-of-file>".to_string()),
-                }
+                    data: "expected identifier or '(', got <end-of-of-file>".to_string(),
+                })
             }
         };
-        self.postfix_type(Locatable {
-            data: (id, ctype),
-            location: id_location.unwrap_or(Location {
-                line: 0,
-                column: 0,
-                file: String::from("<internal-error>"),
-            }),
-        })
+        self.postfix_type(decl)
     }
     /* parse everything after declaration specifiers. can be called recursively
      * allow_abstract: whether to require identifiers in declarators.
@@ -604,9 +612,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn declarator(
         &mut self,
-        ctype: Type,
         allow_abstract: bool,
-    ) -> Locatable<Result<(Option<String>, Type), String>> {
+    ) -> Result<Option<Declarator>, Locatable<String>> {
         if let Some(data) = self.peek_token() {
             match data {
                 Token::Star => {
@@ -633,15 +640,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             }
                         }
                     }
-                    self.declarator(Type::Pointer(Box::new(ctype), qualifiers), allow_abstract)
+                    Ok(Some(Declarator {
+                        base_type: DeclaratorType::Pointer(qualifiers),
+                        next: self.declarator(allow_abstract)?.map(Box::new),
+                    }))
                 }
-                _ => self.direct_declarator(ctype, allow_abstract),
+                _ => self.direct_declarator(allow_abstract),
             }
         } else {
-            Locatable {
+            Err(Locatable {
                 location: self.next_location().clone(),
-                data: Err("expected type, got <end-of-file>".to_string()),
-            }
+                data: "expected type, got <end-of-file>".to_string(),
+            })
         }
     }
     // NOTE: there's some fishiness here. Declarations can have multiple variables,
@@ -659,25 +669,28 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         };
         while self.match_next(Token::Semicolon).is_none() {
-            let Locatable { location, data } = self.declarator(ctype.clone(), false);
-            match data {
-                Ok(decl) => {
+            // declarator: Result<Declarator, Locatable<String>>
+            match self.declarator(false) {
+                Ok(Some(decl)) => {
+                    let (id, ctype) = decl.parse_type(ctype.clone());
+                    let Locatable { location, data } = id.unwrap();
                     self.pending.push_back(Locatable {
                         location,
                         data: Ok(Stmt::Declaration(Symbol {
                             storage_class: sc,
                             qualifiers: qualifiers.clone(),
-                            ctype: decl.1,
-                            id: decl.0.expect(
-                                "declarator should return id if called with allow_abstract: false",
-                            ),
+                            ctype,
+                            id: data,
                         })),
                     });
                 }
+                Ok(None) => panic!(
+                    "declarator should never return None when called with allow_abstract: false"
+                ),
                 Err(err) => {
                     self.pending.push_back(Locatable {
-                        location,
-                        data: Err(err),
+                        location: err.location,
+                        data: Err(err.data),
                     });
                 }
             }
@@ -849,6 +862,79 @@ impl TryFrom<Keyword> for Type {
     }
 }
 
+impl TryFrom<(Declarator, StorageClass, Qualifiers, Type)> for Locatable<Symbol> {
+    type Error = String;
+    fn try_from(
+        (declarator, sc, quals, type_specifiers): (Declarator, StorageClass, Qualifiers, Type),
+    ) -> Result<Locatable<Symbol>, String> {
+        let (id, ctype) = declarator.parse_type(type_specifiers);
+        let Locatable { location, data } =
+            id.ok_or("abstract parameter cannot be converted to symbol")?;
+        Ok(Locatable {
+            location,
+            data: Symbol {
+                id: data,
+                ctype,
+                qualifiers: quals,
+                storage_class: StorageClass::Auto,
+            },
+        })
+    }
+}
+
+impl Declarator {
+    fn id(&self) -> Option<Locatable<String>> {
+        dbg!(self);
+        unimplemented!()
+    }
+    // `current` should be only a base type, i.e. something returned by type_specifiers
+    fn parse_type(self, mut current: Type) -> (Option<Locatable<String>>, Type) {
+        use DeclaratorType::*;
+        // TODO(July 2019): make this one call when rust 1.36 comes out
+        let mut declarator = Some(self);
+        let mut identifier = None;
+        while let Some(decl) = declarator {
+            current = match decl.base_type {
+                Id(id, location) => {
+                    identifier = Some(Locatable { data: id, location });
+                    current
+                }
+                Pointer(quals) => Type::Pointer(Box::new(current), quals),
+                Array(arr_type) => Type::Array(Box::new(current), arr_type),
+                Function(func_decl) => Type::Function(FunctionType {
+                    return_type: Box::new(current),
+                    params: func_decl.params.into_iter().map(|x| x.data).collect(),
+                    varargs: func_decl.varargs,
+                }),
+            };
+            declarator = decl.next.map(|x| *x);
+        }
+        (identifier, current)
+    }
+}
+
+#[derive(Clone, Debug)]
+enum DeclaratorType {
+    Id(String, Location),
+    Pointer(Qualifiers),
+    Array(ArrayType),
+    Function(FunctionDeclarator),
+    // enums, unions, structs, and typedefs can't appear in declarators
+}
+
+#[derive(Clone, Debug)]
+struct FunctionDeclarator {
+    // TODO: allow abstract parameters (no names)
+    params: Vec<Locatable<Symbol>>,
+    varargs: bool,
+}
+
+#[derive(Clone, Debug)]
+struct Declarator {
+    base_type: DeclaratorType,
+    next: Option<Box<Declarator>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::Parser;
@@ -968,6 +1054,13 @@ mod tests {
         assert!(match_type(
             parse("_Bool *volatile const a"),
             Pointer(Box::new(Bool), Qualifiers::CONST_VOLATILE)
+        ));
+        assert!(match_type(
+            parse("char (*(*f));"),
+            Pointer(
+                Box::new(Pointer(Box::new(Char(true)), Qualifiers::NONE)),
+                Qualifiers::NONE
+            )
         ));
     }
     #[test]

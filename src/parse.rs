@@ -1090,12 +1090,15 @@ mod tests {
         // cdecl: declare foo as pointer to pointer to array 10 of int
         assert!(match_type(
             parse("int (**foo)[10];"),
-            Array(
+            Pointer(
                 Box::new(Pointer(
-                    Box::new(Pointer(Box::new(Int(true)), Default::default())),
+                    Box::new(Array(
+                        Box::new(Int(true)),
+                        ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
+                    )),
                     Default::default()
                 )),
-                ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
+                Default::default()
             )
         ));
     }
@@ -1113,7 +1116,77 @@ mod tests {
                 Qualifiers::NONE
             )
         ));
-
+        // cdecl: declare i as pointer to function (int, char, float) returning int
+        assert!(match_type(
+            parse("int (*i)(int, char, float);"),
+            Pointer(
+                Box::new(Function(FunctionType {
+                    return_type: Box::new(Int(true)),
+                    params: vec![
+                        Symbol {
+                            id: Default::default(),
+                            ctype: Int(true),
+                            qualifiers: Default::default(),
+                            storage_class: Default::default()
+                        },
+                        Symbol {
+                            id: Default::default(),
+                            ctype: Char(true),
+                            qualifiers: Default::default(),
+                            storage_class: Default::default()
+                        },
+                        Symbol {
+                            id: Default::default(),
+                            ctype: Float,
+                            qualifiers: Default::default(),
+                            storage_class: Default::default()
+                        }
+                    ],
+                    varargs: false,
+                })),
+                Qualifiers::NONE
+            )
+        ));
+        // cdecl: declare i as pointer to function (pointer to function returning int) returning int
+        assert!(match_type(
+            parse("int (*i)(int (*f)());"),
+            Pointer(
+                Box::new(Function(FunctionType {
+                    return_type: Box::new(Int(true)),
+                    params: vec![Symbol {
+                        id: "f".to_string(),
+                        ctype: Pointer(
+                            Box::new(Function(FunctionType {
+                                return_type: Box::new(Int(true)),
+                                params: vec![],
+                                varargs: false
+                            })),
+                            Default::default()
+                        ),
+                        qualifiers: Default::default(),
+                        storage_class: Default::default(),
+                    }],
+                    varargs: false,
+                }),),
+                Default::default()
+            )
+        ));
+        assert!(match_type(
+            parse("int f(int, ...);"),
+            Function(FunctionType {
+                return_type: Box::new(Int(true)),
+                params: vec![Symbol {
+                    id: Default::default(),
+                    ctype: Int(true),
+                    qualifiers: Default::default(),
+                    storage_class: Default::default()
+                }],
+                varargs: true,
+            })
+        ));
+    }
+    #[test]
+    fn test_complex() {
         // cdecl: declare bar as const pointer to array 10 of pointer to function (int) returning const pointer to char
         assert!(match_type(
             parse("char * const (*(* const bar)[10])(int )"),
@@ -1137,11 +1210,59 @@ mod tests {
                 Qualifiers::CONST
             )
         ));
-        /*
-         * int (*(*foo)(void ))[3]
-         * const int (* volatile bar)[64]
-         * char (*(*x())[5])()
-         */
+        // cdecl: declare foo as pointer to function (void) returning pointer to array 3 of int
+        assert!(match_type(
+            parse("int (*(*foo)(void))[10]"),
+            Pointer(
+                Box::new(Function(FunctionType {
+                    return_type: Box::new(Pointer(
+                        Box::new(Array(
+                            Box::new(Int(true)),
+                            ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
+                        )),
+                        Default::default()
+                    )),
+                    params: vec![Symbol {
+                        ctype: Void,
+                        storage_class: Default::default(),
+                        id: Default::default(),
+                        qualifiers: Default::default(),
+                    }],
+                    varargs: false,
+                })),
+                Default::default()
+            )
+        ));
+        // cdecl: declare bar as volatile pointer to array 64 of const int
+        assert!(match_type(
+            parse("const int (* volatile bar)[]"),
+            Pointer(
+                Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),
+                Qualifiers::VOLATILE
+            )
+        ));
+        // cdecl: declare x as function returning pointer to array 5 of pointer to function returning char
+        assert!(match_type(
+            parse("char (*(*x())[])()"),
+            Function(FunctionType {
+                return_type: Box::new(Pointer(
+                    Box::new(Array(
+                        Box::new(Pointer(
+                            Box::new(Function(FunctionType {
+                                return_type: Box::new(Char(true)),
+                                params: vec![],
+                                varargs: false,
+                            })),
+                            Default::default()
+                        )),
+                        ArrayType::Unbounded
+                    )),
+                    Default::default()
+                )),
+                params: vec![],
+                varargs: false,
+            })
+        ));
     }
     #[test]
     fn test_decl_errors() {

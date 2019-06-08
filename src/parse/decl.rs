@@ -1,192 +1,15 @@
 use std::collections::{HashSet, VecDeque};
 use std::convert::TryFrom;
 use std::iter::Iterator;
-use std::mem;
 
+use super::{Lexeme, Parser};
 use crate::data::{
     ArrayType, Expr, FunctionType, Keyword, Locatable, Location, Qualifiers, Stmt, StorageClass,
     Symbol, Token, Type,
 };
-use crate::utils::{error, warn};
-
-type Lexeme = Locatable<Result<Token, String>>;
-
-#[derive(Debug)]
-pub struct Parser<I: Iterator<Item = Lexeme>> {
-    // we iterate lazily over the tokens, so if we have a program that's mostly valid but
-    // breaks at the end, we don't only show lex errors
-    tokens: I,
-    // VecDeque supports pop_front with reasonable efficiency
-    // this is useful because errors are FIFO
-    pending: VecDeque<Locatable<Result<Stmt, String>>>,
-    // in case we get to the end of the file and want to show an error
-    // TODO: are we sure this should be optional?
-    last_location: Option<Location>,
-    // the last token we saw from the Lexer
-    current: Option<Locatable<Token>>,
-    // TODO: are we sure we need 2 tokens of lookahead?
-    // this was put here for declarations, so we know the difference between
-    // int (*x) and int (int), but there's probably a workaround
-    next: Option<Locatable<Token>>,
-}
-
-impl<I> Parser<I>
-where
-    I: Iterator<Item = Lexeme>,
-{
-    pub fn new(iter: I) -> Self {
-        Parser {
-            tokens: iter,
-            pending: Default::default(),
-            last_location: None,
-            current: None,
-            next: None,
-        }
-    }
-}
-
-impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
-    type Item = Locatable<Result<Stmt, String>>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.pending.pop_front().or_else(|| {
-            let Locatable {
-                data: lexed,
-                location,
-            } = self.next_token()?;
-            match lexed {
-                // NOTE: we do not allow implicit int
-                // https://stackoverflow.com/questions/11064292
-                Token::Keyword(t) if t.is_decl_specifier() => self.declaration(t),
-                _ => Some(Locatable {
-                    data: Err("not handled".to_string()),
-                    location,
-                }),
-            }
-        })
-    }
-}
+use crate::utils::warn;
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
-    /* utility functions */
-    fn next_token(&mut self) -> Option<Locatable<Token>> {
-        if self.current.is_some() {
-            let tmp = mem::replace(&mut self.next, None);
-            mem::replace(&mut self.current, tmp)
-        } else {
-            match self.tokens.next() {
-                Some(Locatable {
-                    data: Ok(token),
-                    location,
-                }) => {
-                    self.last_location = Some(location.clone());
-                    Some(Locatable {
-                        data: token,
-                        location,
-                    })
-                }
-                None => None,
-                Some(Locatable {
-                    data: Err(err),
-                    location,
-                }) => {
-                    error(&err, &location);
-                    self.last_location = Some(location);
-                    self.next_token()
-                }
-            }
-        }
-    }
-    fn peek_token(&mut self) -> Option<&Token> {
-        if self.current.is_none() {
-            self.current = mem::replace(&mut self.next, None).or_else(|| self.next_token());
-        }
-        // NOTE: we can't just use self.current.map(|x| x.data) because of lifetimes
-        match &self.current {
-            Some(x) => Some(&x.data),
-            None => None,
-        }
-    }
-    // TODO: this is mostly copied from peek_token
-    fn peek_next_token(&mut self) -> Option<&Token> {
-        if self.next.is_none() {
-            if self.current.is_none() {
-                self.current = self.next_token();
-            }
-            self.next = self.next_token();
-        }
-        // NOTE: we can't just use self.current.map(|x| x.data) because of lifetimes
-        match &self.next {
-            Some(x) => Some(&x.data),
-            None => None,
-        }
-    }
-    fn next_location(&mut self) -> &Location {
-        if self.peek_token().is_some() {
-            &self.current.as_ref().unwrap().location
-        } else {
-            self.last_location
-                .as_ref()
-                .expect("can't call next_location on an empty file")
-        }
-    }
-    fn match_next(&mut self, next: Token) -> Option<Locatable<Token>> {
-        self.match_any(&[next])
-    }
-    fn match_any(&mut self, choices: &[Token]) -> Option<Locatable<Token>> {
-        if let Some(data) = self.peek_token() {
-            for token in choices {
-                if token == data {
-                    return self.next_token();
-                }
-            }
-            None
-        } else {
-            None
-        }
-    }
-    /* WARNING: may panic
-     * only use if you are SURE token is a keyword
-     */
-    fn expect_keyword(token: Token) -> Keyword {
-        match token {
-            Token::Keyword(k) => k,
-            _ => panic!("peek should never be different from next"),
-        }
-    }
-    fn expect(&mut self, next: Token) -> (bool, &Location) {
-        match self.peek_token() {
-            Some(data) if *data == next => {
-                self.next_token();
-                (
-                    true,
-                    self.last_location
-                        .as_ref()
-                        .expect("last_location should be set whenever next_token is called"),
-                )
-            }
-            Some(data) => {
-                let message = data.to_string();
-                let location = self.next_location().clone();
-                self.pending.push_back(Locatable {
-                    location,
-                    data: Err(format!("expected '{}', got '{}'", next, message)),
-                });
-                (false, self.next_location())
-            }
-            None => {
-                let location = self
-                    .last_location
-                    .as_ref()
-                    .expect("parser.expect cannot be called at start of program");
-                self.pending.push_back(Locatable {
-                    location: location.clone(),
-                    data: Err(format!("expected '{}', got <end-of-file>", next)),
-                });
-                (false, location)
-            }
-        }
-    }
-
     /* grammar functions
      * this parser is a top-down, recursive descent parser
      * and uses a modified version of the ANSI C Yacc grammar published at
@@ -194,6 +17,63 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * Differences from the original grammar, if present, are noted
      * before each function.
      */
+
+    /* NOTE: there's some fishiness here. Declarations can have multiple variables,
+     * but we typed them as only having one Symbol. Wat do?
+     * We push all but one declaration into the 'pending' vector
+     * and return the last.
+     */
+    pub fn declaration(&mut self, start: Keyword) -> Option<Locatable<Result<Stmt, String>>> {
+        let (sc, qualifiers, ctype) = match self.declaration_specifiers(start) {
+            Ok(tuple) => tuple,
+            Err(err) => {
+                return Some(Locatable {
+                    data: Err(err.data),
+                    location: err.location,
+                });
+            }
+        };
+        while self.match_next(Token::Semicolon).is_none() {
+            // declarator: Result<Declarator, Locatable<String>>
+            match self.declarator(false) {
+                Ok(Some(decl)) => {
+                    let (id, ctype) = decl.parse_type(ctype.clone());
+                    let Locatable { location, data } = id.unwrap();
+                    self.pending.push_back(Locatable {
+                        location,
+                        data: Ok(Stmt::Declaration(Symbol {
+                            storage_class: sc,
+                            qualifiers: qualifiers.clone(),
+                            ctype,
+                            id: data,
+                        })),
+                    });
+                }
+                Ok(None) => panic!(
+                    "declarator should never return None when called with allow_abstract: false"
+                ),
+                Err(err) => {
+                    self.pending.push_back(Locatable {
+                        location: err.location,
+                        data: Err(err.data),
+                    });
+                }
+            }
+            if self.match_next(Token::Comma).is_none() {
+                self.expect(Token::Semicolon);
+                break;
+            }
+        }
+        // this is empty when we had specifiers without identifiers
+        // e.g. `int;`
+        self.pending.pop_front().or_else(|| {
+            warn(
+                "declaration does not declare anything",
+                self.next_location(),
+            );
+            self.next()
+        })
+    }
 
     /* this is an utter hack
      * NOTE: the reason the return type is so weird (Result<_, Locatable<_>)
@@ -468,20 +348,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     self.expect(Token::LeftBracket);
                     if self.match_next(Token::RightBracket).is_some() {
                         Some(Declarator {
-                            base_type: DeclaratorType::Array(ArrayType::Unbounded),
+                            current: DeclaratorType::Array(ArrayType::Unbounded),
                             next: prefix.map(Box::new),
                         })
                     } else {
                         let expr = self.parse_expr();
                         self.expect(Token::RightBracket);
                         Some(Declarator {
-                            base_type: DeclaratorType::Array(ArrayType::Fixed(Box::new(expr))),
+                            current: DeclaratorType::Array(ArrayType::Fixed(Box::new(expr))),
                             next: prefix.map(Box::new),
                         })
                     }
                 }
                 Token::LeftParen => Some(Declarator {
-                    base_type: self.parameter_type_list()?,
+                    current: self.parameter_type_list()?,
                     next: prefix.map(Box::new),
                 }),
                 _ => break,
@@ -543,7 +423,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let Locatable { data, location } = self.next_token().unwrap();
                 match data {
                     Token::Id(id) => Some(Declarator {
-                        base_type: DeclaratorType::Id(id, location),
+                        current: DeclaratorType::Id(id, location),
                         next: None,
                     }),
                     _ => panic!("peek() should always return the same thing as next()"),
@@ -644,7 +524,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         }
                     }
                     Ok(Some(Declarator {
-                        base_type: DeclaratorType::Pointer(qualifiers),
+                        current: DeclaratorType::Pointer(qualifiers),
                         next: self.declarator(allow_abstract)?.map(Box::new),
                     }))
                 }
@@ -656,61 +536,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 data: "expected declarator, got <end-of-file>".to_string(),
             })
         }
-    }
-    // NOTE: there's some fishiness here. Declarations can have multiple variables,
-    // but we typed them as only having one Symbol. Wat do?
-    // We push all but one declaration into the 'pending' vector
-    // and return the last.
-    fn declaration(&mut self, start: Keyword) -> Option<Locatable<Result<Stmt, String>>> {
-        let (sc, qualifiers, ctype) = match self.declaration_specifiers(start) {
-            Ok(tuple) => tuple,
-            Err(err) => {
-                return Some(Locatable {
-                    data: Err(err.data),
-                    location: err.location,
-                });
-            }
-        };
-        while self.match_next(Token::Semicolon).is_none() {
-            // declarator: Result<Declarator, Locatable<String>>
-            match self.declarator(false) {
-                Ok(Some(decl)) => {
-                    let (id, ctype) = decl.parse_type(ctype.clone());
-                    let Locatable { location, data } = id.unwrap();
-                    self.pending.push_back(Locatable {
-                        location,
-                        data: Ok(Stmt::Declaration(Symbol {
-                            storage_class: sc,
-                            qualifiers: qualifiers.clone(),
-                            ctype,
-                            id: data,
-                        })),
-                    });
-                }
-                Ok(None) => panic!(
-                    "declarator should never return None when called with allow_abstract: false"
-                ),
-                Err(err) => {
-                    self.pending.push_back(Locatable {
-                        location: err.location,
-                        data: Err(err.data),
-                    });
-                }
-            }
-            if self.match_next(Token::Comma).is_none() {
-                self.expect(Token::Semicolon);
-                break;
-            }
-        }
-        // this is empty when we had specifiers without identifiers
-        // e.g. `int;`
-        self.pending.pop_front().or_else(|| {
-            warn(
-                "declaration does not declare anything",
-                self.next_location(),
-            );
-            self.next()
-        })
     }
     fn parse_expr(&mut self) -> Expr {
         // TODO: oh honey
@@ -837,7 +662,7 @@ impl Keyword {
     fn is_storage_class(self) -> bool {
         StorageClass::try_from(self).is_ok()
     }
-    fn is_decl_specifier(self) -> bool {
+    pub fn is_decl_specifier(self) -> bool {
         use Keyword::*;
         match self {
             Unsigned | Signed | Void | Bool | Char | Short | Int | Long | Float | Double
@@ -887,7 +712,7 @@ impl TryFrom<(Declarator, StorageClass, Qualifiers, Type)> for Locatable<Symbol>
 
 impl Declarator {
     fn id(&self) -> Option<Locatable<String>> {
-        match &self.base_type {
+        match &self.current {
             DeclaratorType::Id(id, location) => Some(Locatable {
                 data: id.clone(),
                 location: location.clone(),
@@ -905,7 +730,7 @@ impl Declarator {
         let mut declarator = Some(self);
         let mut identifier = None;
         while let Some(decl) = declarator {
-            current = match decl.base_type {
+            current = match decl.current {
                 Id(id, location) => {
                     identifier = Some(Locatable { data: id, location });
                     current
@@ -935,43 +760,25 @@ enum DeclaratorType {
 
 #[derive(Clone, Debug)]
 struct FunctionDeclarator {
-    // TODO: allow abstract parameters (no names)
     params: Vec<Locatable<Symbol>>,
     varargs: bool,
 }
 
 #[derive(Clone, Debug)]
 struct Declarator {
-    base_type: DeclaratorType,
+    current: DeclaratorType,
     next: Option<Box<Declarator>>,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Parser;
     use crate::data::{
-        ArrayType, Expr, FunctionType, Locatable, Qualifiers, Stmt, Symbol, Token,
+        ArrayType, Expr, FunctionType, Qualifiers, Stmt, Symbol, Token,
         Type::{self, *},
     };
-    use crate::Lexer;
+    use crate::parse::tests::{match_data, parse, ParseType};
     use std::boxed::Box;
 
-    type ParseType = Locatable<Result<Stmt, String>>;
-    fn parse(input: &str) -> Option<ParseType> {
-        parse_all(input).get(0).cloned()
-    }
-    fn parse_all(input: &str) -> Vec<ParseType> {
-        Parser::new(Lexer::new("<test suite>".to_string(), input.chars())).collect()
-    }
-    fn match_data<T>(lexed: Option<ParseType>, closure: T) -> bool
-    where
-        T: Fn(Result<Stmt, String>) -> bool,
-    {
-        match lexed {
-            Some(result) => closure(result.data),
-            None => false,
-        }
-    }
     fn match_type(lexed: Option<ParseType>, given_type: Type) -> bool {
         match_data(lexed, |data| match data {
             Ok(Stmt::Declaration(symbol)) => symbol.ctype == given_type,
@@ -1270,5 +1077,4 @@ mod tests {
         // TODO: the error for this is wrong and will be until I implement parse_expr()
         assert!(parse("int (*f)[;").unwrap().data.is_err());
     }
-
 }

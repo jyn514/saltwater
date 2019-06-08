@@ -70,7 +70,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* utility functions */
     fn next_token(&mut self) -> Option<Locatable<Token>> {
         if self.current.is_some() {
-            mem::replace(&mut self.current, None)
+            let tmp = mem::replace(&mut self.next, None);
+            mem::replace(&mut self.current, tmp)
         } else {
             match self.tokens.next() {
                 Some(Locatable {
@@ -97,7 +98,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn peek_token(&mut self) -> Option<&Token> {
         if self.current.is_none() {
-            self.current = self.next_token();
+            self.current = mem::replace(&mut self.next, None).or_else(|| self.next_token());
         }
         // NOTE: we can't just use self.current.map(|x| x.data) because of lifetimes
         match &self.current {
@@ -374,7 +375,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Err(Locatable { location, data }) => {
                     errs.push_back(Locatable {
                         location,
-                        data: Err(dbg!(data)),
+                        data: Err(data),
                     });
                     continue;
                 }
@@ -561,6 +562,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     // abstract_declarator - could be an error,
                     // but if so we'll catch it later
                     _ => {
+                        // the one we already matched
+                        self.expect(Token::LeftParen);
                         let declarator = self.declarator(allow_abstract)?;
                         self.expect(Token::RightParen);
                         declarator
@@ -650,7 +653,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         } else {
             Err(Locatable {
                 location: self.next_location().clone(),
-                data: "expected type, got <end-of-file>".to_string(),
+                data: "expected declarator, got <end-of-file>".to_string(),
             })
         }
     }
@@ -876,7 +879,7 @@ impl TryFrom<(Declarator, StorageClass, Qualifiers, Type)> for Locatable<Symbol>
                 id: data,
                 ctype,
                 qualifiers: quals,
-                storage_class: StorageClass::Auto,
+                storage_class: sc,
             },
         })
     }
@@ -884,8 +887,16 @@ impl TryFrom<(Declarator, StorageClass, Qualifiers, Type)> for Locatable<Symbol>
 
 impl Declarator {
     fn id(&self) -> Option<Locatable<String>> {
-        dbg!(self);
-        unimplemented!()
+        match &self.base_type {
+            DeclaratorType::Id(id, location) => Some(Locatable {
+                data: id.clone(),
+                location: location.clone(),
+            }),
+            _ => match &self.next {
+                None => None,
+                Some(x) => x.id(),
+            },
+        }
     }
     // `current` should be only a base type, i.e. something returned by type_specifiers
     fn parse_type(self, mut current: Type) -> (Option<Locatable<String>>, Type) {

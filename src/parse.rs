@@ -1,6 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use std::convert::TryFrom;
-use std::iter::{Iterator, Peekable};
+use std::iter::Iterator;
 use std::mem;
 
 use crate::data::{
@@ -13,10 +13,18 @@ type Lexeme = Locatable<Result<Token, String>>;
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
-    tokens: Peekable<I>,
+    tokens: I,
+    // VecDeque supports pop_front with reasonable efficiency
+    // this is useful because errors are FIFO
     pending: VecDeque<Locatable<Result<Stmt, String>>>,
+    // in case we get to the end of the file and want to show an error
+    // TODO: are we sure this should be optional?
     last_location: Option<Location>,
+    // the last token we saw from the Lexer
     current: Option<Locatable<Token>>,
+    // TODO: are we sure we need 2 tokens of lookahead?
+    // this was put here for declarations, so we know the difference between
+    // int (*x) and int (int), but there's probably a workaround
     next: Option<Locatable<Token>>,
 }
 
@@ -26,7 +34,7 @@ where
 {
     pub fn new(iter: I) -> Self {
         Parser {
-            tokens: iter.peekable(),
+            tokens: iter,
             pending: Default::default(),
             last_location: None,
             current: None,

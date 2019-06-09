@@ -194,7 +194,15 @@ mod tests {
 
     pub type ParseType = Locatable<Result<Stmt, String>>;
     pub fn parse(input: &str) -> Option<ParseType> {
-        parse_all(input).get(0).cloned()
+        let mut all = parse_all(input);
+        match all.len() {
+            0 => None,
+            1 => Some(all.remove(0)),
+            n => Some(Locatable {
+                location: all.remove(1).location,
+                data: Err(format!("Expected exactly one statement, got {}", n)),
+            }),
+        }
     }
     pub fn parse_all(input: &str) -> Vec<ParseType> {
         Parser::new(Lexer::new("<test suite>".to_string(), input.chars())).collect()

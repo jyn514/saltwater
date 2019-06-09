@@ -226,6 +226,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         data: Err("ISO C requires a parameter before '...'".to_string()),
                     });
                 }
+                // TODO: have a better error message for `int f(int, ..., int);`
+                self.expect(Token::RightParen);
                 return Ok(DeclaratorType::Function(FunctionDeclarator {
                     params,
                     varargs: true,

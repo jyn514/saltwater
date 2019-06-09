@@ -16,3 +16,18 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 - Codegen (probably to a MIR) - want to match GCC calling convention to allow linking to glibc.
 - Optimization?
 - Assembly/Linking
+
+## Running
+`cargo run` from top level directory.
+Not much works yet, but you can try `static unsigned long *const (*l)(int []);`.
+
+## Testing
+`cargo test`
+
+## Contributing
+The following are all welcome:
+- code reviews
+- issues/feature requests. Note that feature requests should be limited to extensions or better error handling, the compiler will not break backwards compatibility with C.
+- test cases
+
+There is not currently a code of conduct. Please do not do anything that would require me to make one.

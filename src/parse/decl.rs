@@ -833,15 +833,15 @@ mod tests {
     #[test]
     fn test_arrays() {
         assert!(match_type(
-            parse("int a[]"),
+            parse("int a[];"),
             Array(Box::new(Int(true)), ArrayType::Unbounded)
         ));
         assert!(match_type(
-            parse("unsigned a[]"),
+            parse("unsigned a[];"),
             Array(Box::new(Int(false)), ArrayType::Unbounded)
         ));
         assert!(match_type(
-            parse("_Bool a[][][]"),
+            parse("_Bool a[][][];"),
             Array(
                 Box::new(Array(
                     Box::new(Array(Box::new(Bool), ArrayType::Unbounded)),
@@ -854,23 +854,23 @@ mod tests {
     #[test]
     fn test_pointers() {
         assert!(match_type(
-            parse("void *a"),
+            parse("void *a;"),
             Pointer(Box::new(Void), Default::default())
         ));
         assert!(match_type(
-            parse("float *const a"),
+            parse("float *const a;"),
             Pointer(Box::new(Float), Qualifiers::CONST)
         ));
         // cdecl: declare a as const pointer to volatile pointer to double
         assert!(match_type(
-            parse("double *volatile *const a"),
+            parse("double *volatile *const a;"),
             Pointer(
                 Box::new(Pointer(Box::new(Double), Qualifiers::VOLATILE)),
                 Qualifiers::CONST
             )
         ));
         assert!(match_type(
-            parse("_Bool *volatile const a"),
+            parse("_Bool *volatile const a;"),
             Pointer(Box::new(Bool), Qualifiers::CONST_VOLATILE)
         ));
         assert!(match_type(
@@ -996,7 +996,7 @@ mod tests {
     fn test_complex() {
         // cdecl: declare bar as const pointer to array 10 of pointer to function (int) returning const pointer to char
         assert!(match_type(
-            parse("char * const (*(* const bar)[10])(int )"),
+            parse("char * const (*(* const bar)[10])(int );"),
             Pointer(
                 Box::new(Array(
                     Box::new(Pointer(
@@ -1019,7 +1019,7 @@ mod tests {
         ));
         // cdecl: declare foo as pointer to function (void) returning pointer to array 3 of int
         assert!(match_type(
-            parse("int (*(*foo)(void))[10]"),
+            parse("int (*(*foo)(void))[10];"),
             Pointer(
                 Box::new(Function(FunctionType {
                     return_type: Box::new(Pointer(
@@ -1042,7 +1042,7 @@ mod tests {
         ));
         // cdecl: declare bar as volatile pointer to array 64 of const int
         assert!(match_type(
-            parse("const int (* volatile bar)[]"),
+            parse("const int (* volatile bar)[];"),
             Pointer(
                 Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),
                 Qualifiers::VOLATILE
@@ -1050,7 +1050,7 @@ mod tests {
         ));
         // cdecl: declare x as function returning pointer to array 5 of pointer to function returning char
         assert!(match_type(
-            parse("char (*(*x())[])()"),
+            parse("char (*(*x())[])();"),
             Function(FunctionType {
                 return_type: Box::new(Pointer(
                     Box::new(Array(

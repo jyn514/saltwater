@@ -25,50 +25,48 @@ enum CharError {
 }
 
 lazy_static! {
-    static ref KEYWORDS: HashMap<&'static str, Keyword> = {
-        let mut m = HashMap::new();
-
+    static ref KEYWORDS: HashMap<&'static str, Keyword> = map!{
         // control flow
-        m.insert("if", Keyword::If);
-        m.insert("else", Keyword::Else);
-        m.insert("do", Keyword::Do);
-        m.insert("while", Keyword::While);
-        m.insert("for", Keyword::For);
-        m.insert("switch", Keyword::Switch);
-        m.insert("case", Keyword::Case);
-        m.insert("default", Keyword::Default);
-        m.insert("break", Keyword::Break);
-        m.insert("continue", Keyword::Continue);
-        m.insert("return", Keyword::Return);
-        m.insert("goto", Keyword::Goto);
+        "if" => Keyword::If,
+        "else" => Keyword::Else,
+        "do" => Keyword::Do,
+        "while" => Keyword::While,
+        "for" => Keyword::For,
+        "switch" => Keyword::Switch,
+        "case" => Keyword::Case,
+        "default" => Keyword::Default,
+        "break" => Keyword::Break,
+        "continue" => Keyword::Continue,
+        "return" => Keyword::Return,
+        "goto" => Keyword::Goto,
 
         // types
-        m.insert("_Bool", Keyword::Bool);
-        m.insert("char", Keyword::Char);
-        m.insert("short", Keyword::Short);
-        m.insert("int", Keyword::Int);
-        m.insert("long", Keyword::Long);
-        m.insert("float", Keyword::Float);
-        m.insert("double", Keyword::Double);
-        m.insert("void", Keyword::Void);
-        m.insert("signed", Keyword::Signed);
-        m.insert("unsigned", Keyword::Unsigned);
-        m.insert("typedef", Keyword::Typedef);
-        m.insert("union", Keyword::Union);
-        m.insert("struct", Keyword::Struct);
+        "_Bool" => Keyword::Bool,
+        "char" => Keyword::Char,
+        "short" => Keyword::Short,
+        "int" => Keyword::Int,
+        "long" => Keyword::Long,
+        "float" => Keyword::Float,
+        "double" => Keyword::Double,
+        "void" => Keyword::Void,
+        "signed" => Keyword::Signed,
+        "unsigned" => Keyword::Unsigned,
+        "typedef" => Keyword::Typedef,
+        "union" => Keyword::Union,
+        "struct" => Keyword::Struct,
 
         // qualifiers
-        m.insert("const", Keyword::Const);
-        m.insert("volatile", Keyword::Volatile);
+        "const" => Keyword::Const,
+        "volatile" => Keyword::Volatile,
 
         // storage classes
-        m.insert("auto", Keyword::Auto);
-        m.insert("register", Keyword::Register);
-        m.insert("static", Keyword::Static);
-        m.insert("extern", Keyword::Extern);
+        "auto" => Keyword::Auto,
+        "register" => Keyword::Register,
+        "static" => Keyword::Static,
+        "extern" => Keyword::Extern,
 
-        m.insert("sizeof", Keyword::Sizeof);
-        m
+        // compiler intrinsics. so far, just 'sizeof'
+        "sizeof" => Keyword::Sizeof
     };
 }
 

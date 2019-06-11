@@ -2,10 +2,11 @@
 extern crate lazy_static;
 extern crate structopt;
 
+#[macro_use]
+mod utils;
 mod data;
 mod lex;
 mod parse;
-mod utils;
 
 use std::fs::File;
 use std::io::{self, Read};

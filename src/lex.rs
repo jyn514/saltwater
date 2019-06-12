@@ -604,7 +604,7 @@ impl<'a> Iterator for Lexer<'a> {
                     Some('.') => {
                         self.next_char();
                         if self.peek() == Some('.') {
-                            self.next();
+                            self.next_char();
                             Ok(Token::Ellipsis)
                         } else {
                             // backtrack two steps

@@ -778,7 +778,7 @@ mod tests {
         ArrayType, Expr, FunctionType, Qualifiers, Stmt, Symbol, Token,
         Type::{self, *},
     };
-    use crate::parse::tests::{match_data, parse, ParseType};
+    use crate::parse::tests::{match_all, match_data, parse, parse_all, ParseType};
     use std::boxed::Box;
 
     fn match_type(lexed: Option<ParseType>, given_type: Type) -> bool {
@@ -815,16 +815,16 @@ mod tests {
     #[test]
     fn test_bad_decl_specs() {
         assert!(parse("int;").is_none());
-        assert!(parse("char char;").unwrap().data.is_err());
-        assert!(parse("char long;").unwrap().data.is_err());
-        assert!(parse("long char;").unwrap().data.is_err());
-        assert!(parse("float char;").unwrap().data.is_err());
-        assert!(parse("float double;").unwrap().data.is_err());
-        assert!(parse("double double;").unwrap().data.is_err());
-        assert!(parse("double unsigned;").unwrap().data.is_err());
-        assert!(parse("short double;").unwrap().data.is_err());
-        assert!(parse("int void;").unwrap().data.is_err());
-        assert!(parse("void int;").unwrap().data.is_err());
+        assert!(parse("char char i;").unwrap().data.is_err());
+        assert!(parse("char long i;").unwrap().data.is_err());
+        assert!(parse("long char i;").unwrap().data.is_err());
+        assert!(parse("float char i;").unwrap().data.is_err());
+        assert!(parse("float double i;").unwrap().data.is_err());
+        assert!(parse("double double i;").unwrap().data.is_err());
+        assert!(parse("double unsigned i;").unwrap().data.is_err());
+        assert!(parse("short double i;").unwrap().data.is_err());
+        assert!(parse("int void i;").unwrap().data.is_err());
+        assert!(parse("void int i;").unwrap().data.is_err());
         // default to int if we don't have a type
         // don't panic if we see duplicate specifiers
         assert!(match_type(parse("unsigned unsigned i;"), Type::Int(false)));
@@ -1074,8 +1074,43 @@ mod tests {
         ));
     }
     #[test]
+    fn test_multiple() {
+        let parsed = parse_all("int i, j, k;");
+        assert!(parsed.len() == 3);
+        assert!(match_all(parsed.into_iter(), |i| match i {
+            Ok(Stmt::Declaration(symbol)) => symbol.ctype == Type::Int(true),
+            _ => false,
+        }));
+        let mut parsed = parse_all("char *p, c, **pp, f();");
+        assert!(parsed.len() == 4);
+        assert!(match_type(
+            Some(parsed.remove(0)),
+            Type::Pointer(Box::new(Type::Char(true)), Default::default())
+        ));
+        assert!(match_type(Some(parsed.remove(0)), Type::Char(true)));
+        assert!(match_type(
+            Some(parsed.remove(0)),
+            Type::Pointer(
+                Box::new(Type::Pointer(
+                    Box::new(Type::Char(true)),
+                    Default::default()
+                )),
+                Default::default()
+            )
+        ));
+        assert!(match_type(
+            Some(parsed.remove(0)),
+            Type::Function(FunctionType {
+                params: vec![],
+                return_type: Box::new(Type::Char(true)),
+                varargs: false,
+            })
+        ));
+    }
+    #[test]
     fn test_decl_errors() {
         assert!(parse("int").unwrap().data.is_err());
+        assert!(parse("int i").unwrap().data.is_err());
         // TODO: the error for this is wrong and will be until I implement parse_expr()
         assert!(parse("int (*f)[;").unwrap().data.is_err());
     }

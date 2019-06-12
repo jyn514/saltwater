@@ -216,4 +216,11 @@ mod tests {
             None => false,
         }
     }
+    pub fn match_all<I, T>(lexed: I, closure: T) -> bool
+    where
+        I: Iterator<Item = ParseType>,
+        T: Fn(Result<Stmt, String>) -> bool,
+    {
+        lexed.map(|l| l.data).all(closure)
+    }
 }

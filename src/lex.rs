@@ -8,6 +8,25 @@ use std::str::Chars;
 use super::data::{Keyword, Locatable, Location, Token};
 use super::utils::warn;
 
+/// A Lexer takes the source code and turns it into tokens with location information.
+///
+/// Tokens are either literals, keywords, identifiers, or builtin operations.
+/// This allows the parser to worry about fewer things at a time.
+/// Location information is irritating to deal with but allows for better error messages.
+/// This is the reason the filename is mandatory, so that it can be shown in errors.
+/// You may also find the `warn` and `error` functions in `utils.rs` to be useful.
+///
+/// Lexer implements iterator, so you can loop over the tokens.
+///
+/// Examples:
+///
+/// ```
+/// let lexer = Lexer::new("<stdin>".to_string(),
+///                        "int main(void) { char *hello = \"hi\"; }");
+/// for token in lexer {
+///     assert!(token.is_ok());
+/// }
+/// ```
 #[derive(Debug)]
 pub struct Lexer<'a> {
     location: Location,
@@ -71,25 +90,6 @@ lazy_static! {
     };
 }
 
-/// A Lexer takes the source code and turns it into tokens with location information.
-///
-/// Tokens are either literals, keywords, identifiers, or builtin operations.
-/// This allows the parser to worry about fewer things at a time.
-/// Location information is irritating to deal with but allows for better error messages.
-/// This is the reason the filename is mandatory, so that it can be shown in errors.
-/// You may also find the `warn` and `error` functions in `utils.rs` to be useful.
-///
-/// Lexer implements iterator, so you can loop over the tokens.
-///
-/// Examples:
-///
-/// ```
-/// let lexer = Lexer::new("<stdin>".to_string(),
-///                        "int main(void) { char *hello = \"hi\"; }");
-/// for token in lexer {
-///     assert!(token.is_ok());
-/// }
-/// ```
 impl<'a> Lexer<'a> {
     /// Creates a Lexer from a filename and the contents of a file
     pub fn new(filename: String, chars: Chars<'a>) -> Lexer<'a> {

@@ -435,10 +435,13 @@ impl<'a> Lexer<'a> {
             Err(CharError::Terminator) => Err(String::from("Empty character constant")),
         }
     }
-    /// Parse a string literal, starting after the opening quote.
+    /// Parse a string literal, starting before the opening quote.
     ///
     /// Concatenates multiple adjacent literals into one string.
     /// Adds a terminating null character, even if a null character has already been found.
+    ///
+    /// Before: chars{"hello" "you" "it's me" mary}
+    /// After:  chars{mary}
     fn parse_string(&mut self) -> Result<Token, String> {
         let mut literal = String::new();
         // allow multiple adjacent strings
@@ -489,11 +492,20 @@ impl<'a> Iterator for Lexer<'a> {
     // result: whether the next lexeme is an error
     type Item = Locatable<Result<Token, String>>;
 
-    /// The main loop
+    /// Return the next token in the stream.
+    ///
+    /// This iterator never resumes after it is depleted,
+    /// i.e. once it returns None once, it will always return None.
+    ///
+    /// Any item may be an error, but items will always have an associated location.
+    /// The file may be empty to start, in which case the iterator will return None.
     fn next(&mut self) -> Option<Self::Item> {
         self.consume_whitespace();
         self.next_char().and_then(|c| {
+            // this clone is unavoidable, we need to keep self.location
+            // but we also need each token to have a location
             let location = self.location.clone();
+            // this giant switch is most of the logic
             let data = match c {
                 '+' => Ok(match self.peek() {
                     Some('=') => {
@@ -515,7 +527,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.next_char();
                         Ok(Token::MinusMinus)
                     }
-                    // we have to parse - as part of number so that we can have
+                    // we have to parse '-' as part of number so that we can have
                     // negative exponents after floats
                     Some(c) if c.is_ascii_digit() => self.parse_num('-', true),
                     c => {
@@ -527,6 +539,7 @@ impl<'a> Iterator for Lexer<'a> {
                 '/' => match self.next_char() {
                     Some('/') => {
                         self.consume_line_comment();
+                        // TODO: many consecutive comments may cause a stack overflow
                         return self.next();
                     }
                     Some('*') => {

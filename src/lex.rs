@@ -18,6 +18,7 @@ pub struct Lexer<'a> {
     lookahead: Option<char>,
 }
 
+// returned when lexing a string literal
 enum CharError {
     Eof,
     Newline,
@@ -70,11 +71,32 @@ lazy_static! {
     };
 }
 
+/// A Lexer takes the source code and turns it into tokens with location information.
+///
+/// Tokens are either literals, keywords, identifiers, or builtin operations.
+/// This allows the parser to worry about fewer things at a time.
+/// Location information is irritating to deal with but allows for better error messages.
+/// This is the reason the filename is mandatory, so that it can be shown in errors.
+/// You may also find the `warn` and `error` functions in `utils.rs` to be useful.
+///
+/// Lexer implements iterator, so you can loop over the tokens.
+///
+/// Examples:
+///
+/// ```
+/// let lexer = Lexer::new("<stdin>".to_string(),
+///                        "int main(void) { char *hello = \"hi\"; }");
+/// for token in lexer {
+///     assert!(token.is_ok());
+/// }
+/// ```
 impl<'a> Lexer<'a> {
+    /// Creates a Lexer from a filename and the contents of a file
     pub fn new(filename: String, chars: Chars<'a>) -> Lexer<'a> {
         Lexer {
             location: Location {
                 line: 1,
+                // not 1 because we increment column _before_ returning current char
                 column: 0,
                 file: filename,
             },
@@ -83,6 +105,19 @@ impl<'a> Lexer<'a> {
             lookahead: None,
         }
     }
+    /// This lexer is somewhat unique - it reads a single character at a time,
+    /// unlike most lexers which read a token at a time (e.g. string literals).
+    /// This makes some things harder to do than normal, for example integer and float parsing, because
+    /// we can't use the standard library - it expects you to already have the entire string.
+    ///
+    /// This, along with `peek` and `unput` is sort of an iterator within an iterator:
+    /// that loops over `char` instead of `Token`.
+    ///
+    /// Returns the next token in the stream, updating internal location information.
+    /// If a lookahead already exists, use that instead.
+    ///
+    /// All functions should use this instead of `chars` directly.
+    /// Using `chars` will not update location information and may discard lookaheads.
     fn next_char(&mut self) -> Option<char> {
         if let Some(c) = self.current {
             self.current = self.lookahead.take();
@@ -92,26 +127,57 @@ impl<'a> Lexer<'a> {
                 if x == '\n' {
                     self.location.line += 1;
                     self.location.column = 1;
-                    x
                 } else {
                     self.location.column += 1;
-                    x
-                }
+                };
+                x
             })
         }
     }
+    /// Return a character to the stream.
+    /// Can be called at most one time before previous characters will be discarded.
+    /// Use with caution!
+    ///
+    /// Examples:
+    /// ```
+    /// let lexer = Lexer::new(String::new(), "int main(void) {}");
+    /// let first = lexer.next_char();
+    /// assert!(first == Some('i'));
+    /// lexer.unput(first);
+    /// assert!(lexer.next_char() == Some('i'));
+    /// ```
     fn unput(&mut self, c: Option<char>) {
         self.current = c;
     }
+    /// Return the character that would be returned by `next_char`.
+    /// Can be called any number of the times and will still return the same result.
+    ///
+    /// Examples:
+    /// ```
+    /// let lexer = Lexer::new(String::new(), "int main(void) {}");
+    /// assert!(lexer.peek() == Some('i'));
+    /// assert!(lexer.peek() == Some('i'));
+    /// assert!(lexer.peek() == Some('i'));
+    /// assert!(lexer.next_char() == Some('i'));
+    /// assert!(lexer.peek() == Some('n'));
+    /// ```
     fn peek(&mut self) -> Option<char> {
         self.current = self.next_char();
         self.current
     }
+    /// Remove all consecutive whitespace pending in the stream.
+    ///
+    /// Before: chars{"    hello   "}
+    /// After:  chars{"hello   "}
     fn consume_whitespace(&mut self) {
         while self.peek().map_or(false, |c| c.is_ascii_whitespace()) {
             self.next_char();
         }
     }
+    /// Remove all characters between now and the next '\n' character.
+    ///
+    /// Before: chars{"blah `invalid tokens``\nhello // blah"}
+    /// After:  chars{"hello // blah"}
     fn consume_line_comment(&mut self) {
         while let Some(c) = self.next_char() {
             if c == '\n' {
@@ -119,6 +185,12 @@ impl<'a> Lexer<'a> {
             }
         }
     }
+    /// Remove a multi-line C-style comment, i.e. until the next '*/'.
+    ///
+    /// TODO: show an error if the file ends before the comment has been closed.
+    ///
+    /// Before: chars{"hello this is a lot of text */ int main(){}"}
+    /// After:  chars{" int main(){}"}
     fn consume_multi_comment(&mut self) {
         while let Some(c) = self.next_char() {
             if c == '*' && self.peek() == Some('/') {
@@ -127,23 +199,50 @@ impl<'a> Lexer<'a> {
             }
         }
     }
-    fn parse_num(&mut self, start: char, first_run: bool) -> Result<Token, String> {
+    /// Parse a number literal, given the starting character and whether floats are allowed.
+    ///
+    /// A number matches the following regex:
+    /// `-?({digits}\.{digits}|{digits}|\.{digits})([eE]-?{digits})?`
+    /// where {digits} is the regex `([0-9]*|0x[0-9a-f]+)`
+    ///
+    /// NOTE: A-F is not allowed for hex digits and a-f _is_ allowed for the
+    /// fractional part of the number.
+    /// NOTE: Floats are not allowed for exponents.
+    /// NOTE: '-' is parsed as part of the number instead of a unary operator in order to make
+    /// exponents easy to parse.
+    /// TODO: return an error enum instead of Strings
+    ///
+    /// Since most of the code is the same for integers and floats, we use the same
+    /// function for both and just pass in a flag that says whether floats are allowed.
+    ///
+    /// I spent way too much time on this.
+    fn parse_num(&mut self, start: char, allow_float: bool) -> Result<Token, String> {
         // we keep going on error so we don't get more errors from unconsumed input
+        // for example, if we stopped halfway through 10000000000000000000 because of
+        // overflow, we'd get a bogus Token::Int(0).
         let mut err = false;
-        let negative = start == '-';
-
         // the radix check is funky, it's easier to just make the first character part of
         // the number proper (instead of '-')
-        let start = if negative {
-            self.next_char()
-                .expect("main loop should ensure '-' is followed by digit if passed to parse_num")
+        let (start, negative) = if start == '-' {
+            (
+                self.next_char().expect(
+                    "main loop should ensure '-' is followed by digit if passed to parse_num",
+                ),
+                true,
+            )
         } else {
-            start
+            (start, false)
         };
 
         if start == '.' {
+            assert!(allow_float);
             return self.parse_float(0, 10, negative);
         }
+        // start - '0' breaks for hex digits
+        assert!(
+            '0' as i64 <= start as i64 && start as i64 <= '9' as i64,
+            "main loop should only pass [-.0-9] as start to parse_num"
+        );
         let mut current = start as i64 - '0' as i64;
 
         // check for radix other than 10 - but if we see '.', use 10
@@ -159,16 +258,17 @@ impl<'a> Lexer<'a> {
                 }
                 // float: 0.431
                 Some('.') => 10,
+                // octal: 0755 => 493
                 _ => 8,
             }
         } else {
             10
         };
 
-        // main loop
+        // main loop (the first {digits} in the regex)
         while let Some(c) = self.next_char() {
             if c == '.' {
-                if first_run {
+                if allow_float {
                     return self.parse_float(current, radix, negative);
                 } else {
                     return Err(String::from("exponents cannot be floating point numbers"));
@@ -178,26 +278,25 @@ impl<'a> Lexer<'a> {
                 break;
             }
             if !err {
+                // catch overflow
                 match current
                     .checked_mul(i64::from(radix))
                     .and_then(|current| current.checked_add(c as i64 - '0' as i64))
                 {
-                    Some(c) => {
-                        current = c;
-                    }
-                    None => {
-                        err = true;
-                    }
+                    Some(c) => current = c,
+                    None => err = true,
                 }
             }
         }
         if err {
             return Err(String::from("overflow while parsing integer literal"));
         }
+        // doing this anywhere else is just painful. that's also the reason we pass
+        // `negative` to `parse_float`
         if negative {
             current = -current;
         }
-        if first_run {
+        if allow_float {
             let exp = self.parse_exponent()?;
             if exp.is_negative() {
                 // this may truncate
@@ -220,7 +319,7 @@ impl<'a> Lexer<'a> {
     fn parse_float(&mut self, start: i64, radix: u32, negative: bool) -> Result<Token, String> {
         let radix_f = f64::from(radix);
         let (mut fraction, mut current_base): (f64, f64) = (0.0, 1.0 / radix_f);
-        // parse fraction
+        // parse fraction: second {digits} in regex
         while let Some(c) = self.peek() {
             if c.is_digit(radix) && current_base != 0.0 {
                 self.next_char();
@@ -256,10 +355,16 @@ impl<'a> Lexer<'a> {
             }),
             _ => panic!(
                 "parse_num should never return something besides Token::Int \
-                 when called with first_run: false"
+                 when called with allow_float: false"
             ),
         }
     }
+    /// Read a logical character, which may be a character escape.
+    ///
+    /// Has a side effect: will call `warn` if it sees an invalid escape.
+    ///
+    /// Before: chars{"\b'"}
+    /// After:  chars{"'"}
     fn parse_single_char(&mut self, string: bool) -> Result<char, CharError> {
         let terminator = if string { '"' } else { '\'' };
         if let Some(c) = self.next_char() {
@@ -298,6 +403,10 @@ impl<'a> Lexer<'a> {
             Err(CharError::Eof)
         }
     }
+    /// Parse a character literal, starting after the opening quote.
+    ///
+    /// Before: chars{"\0' blah"}
+    /// After:  chars{" blah"}
     fn parse_char(&mut self) -> Result<Token, String> {
         let (term_err, newline_err) = (
             Err(String::from(
@@ -326,6 +435,10 @@ impl<'a> Lexer<'a> {
             Err(CharError::Terminator) => Err(String::from("Empty character constant")),
         }
     }
+    /// Parse a string literal, starting after the opening quote.
+    ///
+    /// Concatenates multiple adjacent literals into one string.
+    /// Adds a terminating null character, even if a null character has already been found.
     fn parse_string(&mut self) -> Result<Token, String> {
         let mut literal = String::new();
         // allow multiple adjacent strings
@@ -350,6 +463,9 @@ impl<'a> Lexer<'a> {
         literal.push('\0');
         Ok(Token::Str(literal))
     }
+    /// Parse an identifier or keyword, given the starting letter.
+    ///
+    /// Identifiers match the following regex: `[a-zA-Z_][a-zA-Z0-9_]*`
     fn parse_id(&mut self, start: char) -> Result<Token, String> {
         let mut id = String::new();
         id.push(start);
@@ -373,6 +489,7 @@ impl<'a> Iterator for Lexer<'a> {
     // result: whether the next lexeme is an error
     type Item = Locatable<Result<Token, String>>;
 
+    /// The main loop
     fn next(&mut self) -> Option<Self::Item> {
         self.consume_whitespace();
         self.next_char().and_then(|c| {

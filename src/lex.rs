@@ -378,7 +378,7 @@ impl<'a> Lexer<'a> {
                         '"' => '"',
                         '\'' => '\'',
                         '\\' => '\\',
-                        '\0' => '\0',
+                        '0' => '\0',
                         'b' => '\x08',
                         'f' => '\x0c',
                         _ => {
@@ -666,6 +666,16 @@ mod tests {
         }
     }
 
+    fn match_char(lexed: Option<LexType>, expected: char) -> bool {
+        match_data(lexed, |c| c == Ok(Token::Char(expected)))
+    }
+
+    fn match_str(lexed: Option<LexType>, expected: &str) -> bool {
+        let mut string = expected.to_string();
+        string.push('\0');
+        match_data(lexed, |c| c == Ok(Token::Str(string)))
+    }
+
     fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
         lexed
             .into_iter()
@@ -750,6 +760,45 @@ mod tests {
         let mut spaces = Vec::new();
         spaces.resize(8096, '\n');
         assert!(lex(&spaces.into_iter().collect::<String>()) == None)
+    }
+    #[test]
+    fn test_comments() {
+        assert!(lex("/* this is a comment /* /* /* */").is_none());
+        assert!(lex("// this is a comment // /// // ").is_none());
+        assert!(
+            lex_all(
+                "/* make sure it finds things _after_ comments */
+        int i;"
+            )
+            .len()
+                == 3
+        );
+    }
+    #[test]
+    fn test_characters() {
+        assert!(match_char(lex("'a'"), 'a'));
+        assert!(match_char(lex("'0'"), '0'));
+        assert!(match_char(lex("'\\0'"), '\0'));
+        assert!(match_char(lex("'\\\\'"), '\\'));
+        assert!(match_char(lex("'\\n'"), '\n'));
+        assert!(match_char(lex("'\\r'"), '\r'));
+        assert!(match_char(lex("'\\\"'"), '"'));
+        assert!(match_char(lex("'\\''"), '\''));
+        assert!(match_char(lex("'\\b'"), '\x08'));
+        assert!(match_char(lex("'\\f'"), '\x0c'));
+        assert!(match_char(lex("'\\t'"), '\t'));
+    }
+    #[test]
+    fn test_strings() {
+        assert!(match_str(
+            lex("\"this is a sample string\""),
+            "this is a sample string"
+        ));
+        assert!(match_str(
+            lex("\"consecutive \" \"strings\""),
+            "consecutive strings"
+        ));
+        assert!(match_str(lex("\"string with \\0\""), "string with \0"));
     }
 
     // Integration tests

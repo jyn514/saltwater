@@ -18,6 +18,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * before each function.
      */
 
+    // TODO: type_name
+    /// type_name
+    ///     : specifier_qualifier_list
+    ///     | specifier_qualifier_list abstract_declarator
+    ///     ;
+    fn type_name(&mut self) -> Result<Stmt, Locatable<String>> {
+        unimplemented!();
+    }
+
     /* NOTE: there's some fishiness here. Declarations can have multiple variables,
      * but we typed them as only having one Symbol. Wat do?
      * We push all but one declaration into the 'pending' vector
@@ -664,6 +673,7 @@ impl Keyword {
     fn is_storage_class(self) -> bool {
         StorageClass::try_from(self).is_ok()
     }
+    // TODO: catch structs, enums, and typedefs
     pub fn is_decl_specifier(self) -> bool {
         use Keyword::*;
         match self {
@@ -913,6 +923,14 @@ mod tests {
     }
     #[test]
     fn test_functions() {
+        assert!(match_type(
+            parse("void *f();"),
+            Function(FunctionType {
+                return_type: Box::new(Pointer(Box::new(Type::Void), Default::default())),
+                params: vec![],
+                varargs: false,
+            })
+        ));
         // cdecl: declare i as pointer to function returning int;
         assert!(match_type(
             parse("int (*i)();"),

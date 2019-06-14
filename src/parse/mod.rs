@@ -1,4 +1,5 @@
 mod decl;
+mod expr;
 
 use std::collections::VecDeque;
 use std::iter::Iterator;

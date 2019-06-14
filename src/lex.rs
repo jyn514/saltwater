@@ -565,7 +565,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.next_char();
                         Token::NotEqual
                     }
-                    _ => Token::Not,
+                    _ => Token::LogicalNot,
                 }),
                 '>' => Ok(match self.peek() {
                     Some('=') => {
@@ -607,10 +607,11 @@ impl<'a> Iterator for Lexer<'a> {
                 '}' => Ok(Token::RightBrace),
                 '(' => Ok(Token::LeftParen),
                 ')' => Ok(Token::RightParen),
-                ';' => Ok(Token::Semicolon),
-                ':' => Ok(Token::Colon),
                 '[' => Ok(Token::LeftBracket),
                 ']' => Ok(Token::RightBracket),
+                '~' => Ok(Token::BinaryNot),
+                ':' => Ok(Token::Colon),
+                ';' => Ok(Token::Semicolon),
                 ',' => Ok(Token::Comma),
                 '.' => match self.peek() {
                     Some(c) if c.is_ascii_digit() => self.parse_num('.', true),

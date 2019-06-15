@@ -165,6 +165,24 @@ impl<'a> Lexer<'a> {
         self.current = self.next_char();
         self.current
     }
+    /// If the next character is `item`, consume it and return true.
+    /// Otherwise, return false.
+    ///
+    /// Examples:
+    /// ```
+    /// let lexer = Lexer::new(String::new(), "int main(void) {}");
+    /// assert!(lexer.match_next('i'));
+    /// assert!(lexer.match_next('n'));
+    /// assert!(lexer.next_char() == Some('t'));
+    /// ```
+    fn match_next(&mut self, item: char) -> bool {
+        if self.peek().map_or(false, |c| c == item) {
+            self.next_char();
+            true
+        } else {
+            false
+        }
+    }
     /// Remove all consecutive whitespace pending in the stream.
     ///
     /// Before: chars{"    hello   "}
@@ -535,7 +553,13 @@ impl<'a> Iterator for Lexer<'a> {
                         Ok(Token::Minus)
                     }
                 },
-                '*' => Ok(Token::Star),
+                '*' => match self.peek() {
+                    Some('=') => {
+                        self.next_char();
+                        Ok(Token::StarEqual)
+                    }
+                    _ => Ok(Token::Star),
+                },
                 '/' => match self.next_char() {
                     Some('/') => {
                         self.consume_line_comment();
@@ -552,7 +576,18 @@ impl<'a> Iterator for Lexer<'a> {
                         Ok(Token::Divide)
                     }
                 },
-                '%' => Ok(Token::Mod),
+                '%' => Ok(match self.peek() {
+                    Some('=') => {
+                        self.next_char();
+                        Token::ModEqual
+                    }
+                    _ => Token::Mod,
+                }),
+                '^' => Ok(if self.match_next('=') {
+                    Token::XorEqual
+                } else {
+                    Token::Xor
+                }),
                 '=' => Ok(match self.peek() {
                     Some('=') => {
                         self.next_char();
@@ -574,7 +609,11 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                     Some('>') => {
                         self.next_char();
-                        Token::ShiftRight
+                        if self.match_next('=') {
+                            Token::RightEqual
+                        } else {
+                            Token::ShiftRight
+                        }
                     }
                     _ => Token::Greater,
                 }),
@@ -585,7 +624,11 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                     Some('<') => {
                         self.next_char();
-                        Token::ShiftLeft
+                        if self.match_next('=') {
+                            Token::LeftEqual
+                        } else {
+                            Token::ShiftLeft
+                        }
                     }
                     _ => Token::Less,
                 }),
@@ -594,12 +637,20 @@ impl<'a> Iterator for Lexer<'a> {
                         self.next_char();
                         Token::LogicalAnd
                     }
+                    Some('=') => {
+                        self.next_char();
+                        Token::AndEqual
+                    }
                     _ => Token::Ampersand,
                 }),
                 '|' => Ok(match self.peek() {
                     Some('|') => {
                         self.next_char();
                         Token::LogicalOr
+                    }
+                    Some('=') => {
+                        self.next_char();
+                        Token::OrEqual
                     }
                     _ => Token::BinaryOr,
                 }),

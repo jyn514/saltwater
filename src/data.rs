@@ -48,22 +48,30 @@ pub enum Keyword {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     PlusPlus,
-    PlusEqual,
     MinusMinus,
+
+    PlusEqual,
     MinusEqual,
+    StarEqual,
     DivideEqual,
+    ModEqual,
+    LeftEqual,  // <<=
+    RightEqual, // >>=
+    AndEqual,
+    OrEqual,
+    XorEqual, // ^=
+
     EqualEqual,
     NotEqual,
     LessEqual,
     GreaterEqual,
-    ShiftRight,
-    ShiftLeft,
 
     Plus,
     Minus,
     Star,
     Divide,
     Mod,
+    Xor,
     Equal,
     Less,
     Greater,
@@ -73,6 +81,8 @@ pub enum Token {
     LogicalOr,
     BinaryNot,  // ~
     LogicalNot, // !
+    ShiftRight,
+    ShiftLeft,
 
     LeftBrace, // {
     RightBrace,
@@ -312,7 +322,14 @@ impl Display for Token {
             PlusEqual => write!(f, "+="),
             MinusMinus => write!(f, "--"),
             MinusEqual => write!(f, "+="),
+            StarEqual => write!(f, "*="),
             DivideEqual => write!(f, "/="),
+            ModEqual => write!(f, "%="),
+            AndEqual => write!(f, "&="),
+            OrEqual => write!(f, "|="),
+            XorEqual => write!(f, "^="),
+            LeftEqual => write!(f, "<<="),
+            RightEqual => write!(f, ">>="),
             EqualEqual => write!(f, "=="),
             NotEqual => write!(f, "!="),
             LessEqual => write!(f, "<="),
@@ -323,6 +340,7 @@ impl Display for Token {
             Minus => write!(f, "-"),
             Star => write!(f, "*"),
             Divide => write!(f, "/"),
+            Xor => write!(f, "^"),
             Equal => write!(f, "="),
             Less => write!(f, "<"),
             Greater => write!(f, ">"),

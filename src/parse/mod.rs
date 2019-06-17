@@ -127,13 +127,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 .expect("can't call next_location on an empty file")
         }
     }
-    fn match_next(&mut self, next: Token) -> Option<Locatable<Token>> {
+    fn match_next(&mut self, next: &Token) -> Option<Locatable<Token>> {
         self.match_any(&[next])
     }
-    fn match_any(&mut self, choices: &[Token]) -> Option<Locatable<Token>> {
+    fn match_any(&mut self, choices: &[&Token]) -> Option<Locatable<Token>> {
         if let Some(data) = self.peek_token() {
             for token in choices {
-                if token == data {
+                if *token == data {
                     return self.next_token();
                 }
             }

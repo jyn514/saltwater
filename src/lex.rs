@@ -545,6 +545,10 @@ impl<'a> Iterator for Lexer<'a> {
                         self.next_char();
                         Ok(Token::MinusMinus)
                     }
+                    Some('>') => {
+                        self.next_char();
+                        Ok(Token::StructDeref)
+                    }
                     // we have to parse '-' as part of number so that we can have
                     // negative exponents after floats
                     Some(c) if c.is_ascii_digit() => self.parse_num('-', true),

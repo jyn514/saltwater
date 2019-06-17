@@ -5,8 +5,8 @@ use std::mem;
 
 use super::{Lexeme, Parser};
 use crate::data::{
-    ArrayType, Expr, FunctionType, Keyword, Locatable, Location, Qualifiers, Stmt, StorageClass,
-    Symbol, Token, Type,
+    ArrayType, FunctionType, Keyword, Locatable, Location, Qualifiers, Stmt, StorageClass, Symbol,
+    Token, Type,
 };
 use crate::utils::warn;
 
@@ -18,6 +18,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * Differences from the original grammar, if present, are noted
      * before each function.
      */
+
+    // TODO: type_name
+    /// type_name
+    ///     : specifier_qualifier_list
+    ///     | specifier_qualifier_list abstract_declarator
+    ///     ;
+    pub fn type_name(&mut self) -> Result<Locatable<Type>, Locatable<String>> {
+        unimplemented!();
+    }
 
     /* NOTE: there's some fishiness here. Declarations can have multiple variables,
      * but we typed them as only having one Symbol. Wat do?

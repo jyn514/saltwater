@@ -4,8 +4,8 @@ use std::iter::Iterator;
 
 use super::{Lexeme, Parser};
 use crate::data::{
-    ArrayType, Expr, FunctionType, Keyword, Locatable, Location, Qualifiers, Stmt, StorageClass,
-    Symbol, Token, Type,
+    ArrayType, FunctionType, Keyword, Locatable, Location, Qualifiers, Stmt, StorageClass, Symbol,
+    Token, Type,
 };
 use crate::utils::warn;
 
@@ -23,7 +23,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///     : specifier_qualifier_list
     ///     | specifier_qualifier_list abstract_declarator
     ///     ;
-    fn type_name(&mut self) -> Result<Stmt, Locatable<String>> {
+    pub fn type_name(&mut self) -> Result<Locatable<Type>, Locatable<String>> {
         unimplemented!();
     }
 

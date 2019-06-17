@@ -164,10 +164,7 @@ pub struct Expr {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprType {
     Id(Token),
-    Int(Token),
-    Float(Token),
-    Char(Token),
-    Str(Token),
+    Literal(Token),
     Array(Box<Expr>, Box<Expr>),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, Token),
@@ -276,7 +273,7 @@ pub struct BitfieldType {
 
 // holds where a piece of code came from
 // should almost always be immutable
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Location {
     // if there's a 4 GB input file, we have bigger problems
     pub line: u32,
@@ -309,6 +306,51 @@ impl Qualifiers {
         c_const: true,
         volatile: true,
     };
+}
+
+impl Type {
+    /// https://stackoverflow.com/questions/14821936/what-is-a-scalar-object-in-c#14822074
+    pub fn is_scalar(&self) -> bool {
+        use Type::*;
+        match self {
+            Char(_) | Short(_) | Int(_) | Long(_) | Float | Double | Pointer(_, _) | Enum(_) => {
+                true
+            }
+            _ => false,
+        }
+    }
+    pub fn is_integral(&self) -> bool {
+        use Type::*;
+        match self {
+            Char(_) | Short(_) | Int(_) | Long(_) => true,
+            _ => false,
+        }
+    }
+    pub fn is_floating(&self) -> bool {
+        match self {
+            Type::Float | Type::Double => true,
+            _ => false,
+        }
+    }
+    pub fn is_arithmetic(&self) -> bool {
+        self.is_integral() || self.is_floating()
+    }
+    pub fn is_pointer(&self) -> bool {
+        match self {
+            Type::Pointer(_, _) => true,
+            _ => false,
+        }
+    }
+}
+
+pub fn zero() -> Expr {
+    Expr {
+        ctype: Type::Int(true),
+        constexpr: true,
+        expr: ExprType::Literal(Token::Int(0)),
+        lval: false,
+        location: Default::default(),
+    }
 }
 
 impl TryFrom<Keyword> for StorageClass {

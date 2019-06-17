@@ -105,8 +105,9 @@ pub enum Token {
 
     Keyword(Keyword),
 
-    // three-character tokens (boo!)
+    // Misc
     Ellipsis,
+    StructDeref, // ->
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -128,9 +129,40 @@ pub enum Stmt {
     Return(Expr),
 }
 
+/// Holds the metadata for an expression.
+///
+/// This should be the datatype you use in APIs, etc.
+/// because it is more useful than the raw ExprType.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Expr {
+    /// expr: holds the actual expression
+    pub expr: ExprType,
+
+    /// ctype: holds the type of the expression
+    pub ctype: Type,
+
+    /// constexpr: whether a value can be constant-folded at compile-time
+    ///
+    /// unrelated to the `const` keyword
+    /// INVARIANT: c_const can never true if lval is false
+    pub constexpr: bool,
+
+    /// lval: whether an expression can be assigned to
+    ///
+    /// for example, variables, array elements, and pointer dereferences are lvals,
+    /// but literals, functions, and addresses cannot
+    pub lval: bool,
+
+    /// location: the best approximation of where the expression is
+    ///
+    /// usually points to the location of the operation symbol, or the literal if not
+    /// operations is being performed
+    pub location: Location,
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
-pub enum Expr {
+pub enum ExprType {
     Id(Token),
     Int(Token),
     Float(Token),
@@ -148,17 +180,25 @@ pub enum Expr {
     Negate(Box<Expr>),
     LogicalNot(Box<Expr>),
     BitwiseNot(Box<Expr>),
+    LogicalOr(Box<Expr>, Box<Expr>),
+    BitwiseOr(Box<Expr>, Box<Expr>),
+    LogicalAnd(Box<Expr>, Box<Expr>),
+    BitwiseAnd(Box<Expr>, Box<Expr>),
+    Xor(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
     Mod(Box<Expr>, Box<Expr>),
     Add(Box<Expr>, Box<Expr>),
-    Subtract(Box<Expr>, Box<Expr>),
+    Sub(Box<Expr>, Box<Expr>),
     // bool: left or right
     Shift(Box<Expr>, Box<Expr>, bool),
     // Token: make >, <, <=, ... part of the same variant
     Compare(Box<Expr>, Box<Expr>, Token),
     // Token: allow extended assignment
     Assign(Box<Expr>, Box<Expr>, Token),
+    // Ternary: if ? then : else
+    Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
+    Comma(Box<Expr>, Box<Expr>),
 }
 
 #[allow(dead_code)]
@@ -371,6 +411,7 @@ impl Display for Token {
             Keyword(k) => write!(f, "{}", k),
 
             Ellipsis => write!(f, "..."),
+            StructDeref => write!(f, "->"),
         }
     }
 }

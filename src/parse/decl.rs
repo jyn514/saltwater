@@ -42,7 +42,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             }
         };
-        while self.match_next(Token::Semicolon).is_none() {
+        while self.match_next(&Token::Semicolon).is_none() {
             // declarator: Result<Declarator, Locatable<String>>
             match self.declarator(false) {
                 Ok(Some(decl)) => {
@@ -68,7 +68,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     });
                 }
             }
-            if self.match_next(Token::Comma).is_none() {
+            if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon);
                 break;
             }
@@ -221,14 +221,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.expect(Token::LeftParen);
         let mut params = vec![];
         let mut errs = VecDeque::new();
-        if self.match_next(Token::RightParen).is_some() {
+        if self.match_next(&Token::RightParen).is_some() {
             return Ok(DeclaratorType::Function(FunctionDeclarator {
                 params,
                 varargs: false,
             }));
         }
         loop {
-            if let Some(locatable) = self.match_next(Token::Ellipsis) {
+            if let Some(locatable) = self.match_next(&Token::Ellipsis) {
                 if params.is_empty() {
                     errs.push_back(Locatable {
                         location: locatable.location,
@@ -322,7 +322,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     },
                 });
             }
-            if self.match_next(Token::Comma).is_none() {
+            if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::RightParen);
                 // TODO: handle errors (what should the return type be?)
                 //let err = errs.pop_front();
@@ -357,7 +357,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // array
                 Token::LeftBracket => {
                     self.expect(Token::LeftBracket);
-                    if self.match_next(Token::RightBracket).is_some() {
+                    if self.match_next(&Token::RightBracket).is_some() {
                         Some(Declarator {
                             current: DeclaratorType::Array(ArrayType::Unbounded),
                             next: prefix.map(Box::new),
@@ -517,8 +517,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         location,
                         data: Token::Keyword(keyword),
                     }) = self.match_any(&[
-                        Token::Keyword(Keyword::Const),
-                        Token::Keyword(Keyword::Volatile),
+                        &Token::Keyword(Keyword::Const),
+                        &Token::Keyword(Keyword::Volatile),
                     ]) {
                         if keyword == Keyword::Const {
                             if qualifiers.c_const {

@@ -897,24 +897,21 @@ mod tests {
     fn test_pointers_and_arrays() {
         // cdecl: declare foo as array 10 of pointer to pointer to char
         assert!(match_type(
-            parse("char **foo[10];"),
+            parse("char **foo[];"),
             Array(
                 Box::new(Pointer(
                     Box::new(Pointer(Box::new(Char(true)), Default::default(),)),
                     Default::default()
                 )),
-                ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
+                ArrayType::Unbounded,
             )
         ));
         // cdecl: declare foo as pointer to pointer to array 10 of int
         assert!(match_type(
-            parse("int (**foo)[10];"),
+            parse("int (**foo)[];"),
             Pointer(
                 Box::new(Pointer(
-                    Box::new(Array(
-                        Box::new(Int(true)),
-                        ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
-                    )),
+                    Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),
                     Default::default()
                 )),
                 Default::default()
@@ -1016,7 +1013,7 @@ mod tests {
     fn test_complex() {
         // cdecl: declare bar as const pointer to array 10 of pointer to function (int) returning const pointer to char
         assert!(match_type(
-            parse("char * const (*(* const bar)[10])(int );"),
+            parse("char * const (*(* const bar)[])(int );"),
             Pointer(
                 Box::new(Array(
                     Box::new(Pointer(
@@ -1032,21 +1029,18 @@ mod tests {
                         })),
                         Qualifiers::NONE
                     )),
-                    ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
+                    ArrayType::Unbounded,
                 )),
                 Qualifiers::CONST
             )
         ));
         // cdecl: declare foo as pointer to function (void) returning pointer to array 3 of int
         assert!(match_type(
-            parse("int (*(*foo)(void))[10];"),
+            parse("int (*(*foo)(void))[];"),
             Pointer(
                 Box::new(Function(FunctionType {
                     return_type: Box::new(Pointer(
-                        Box::new(Array(
-                            Box::new(Int(true)),
-                            ArrayType::Fixed(Box::new(Expr::Int(Token::Int(10))))
-                        )),
+                        Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),
                         Default::default()
                     )),
                     params: vec![Symbol {

@@ -386,6 +386,7 @@ impl Display for StorageClass {
 }
 
 impl Display for Type {
+    // TODO: this will break badly for anything that's not a primitive
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let lower = &format!("{:?}", self).to_lowercase();
         let substr = match lower.find('(') {

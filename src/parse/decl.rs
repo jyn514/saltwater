@@ -24,7 +24,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///     | specifier_qualifier_list abstract_declarator
     ///     ;
     pub fn type_name(&mut self) -> Result<Locatable<Type>, Locatable<String>> {
-        unimplemented!();
+        unimplemented!("need to add specifier_qualifier_list, should be as easy as adding a flag to disallow storage classes");
     }
 
     /* NOTE: there's some fishiness here. Declarations can have multiple variables,

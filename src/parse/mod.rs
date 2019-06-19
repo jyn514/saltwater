@@ -188,6 +188,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         }
     }
+    /// replace `self.current` with `item`
+    /// replace `self.next` with `self.current`
+    /// the previous value of `self.next` is lost
+    fn unput(&mut self, item: Option<Locatable<Token>>) {
+        let tmp = mem::replace(&mut self.current, item);
+        mem::replace(&mut self.next, tmp);
+    }
 }
 
 #[cfg(test)]

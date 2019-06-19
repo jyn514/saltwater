@@ -163,7 +163,7 @@ pub struct Expr {
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprType {
-    Id(Token),
+    Id(Symbol),
     Literal(Token),
     Array(Box<Expr>, Box<Expr>),
     FuncCall(Box<Expr>, Vec<Expr>),
@@ -171,7 +171,7 @@ pub enum ExprType {
     // pre/post inc/dec-rement
     Increment(Box<Expr>, bool, bool),
     Cast(Box<Expr>, Type),
-    Sizeof(Box<Expr>),
+    Sizeof(Type),
     Ref(Box<Expr>),
     Deref(Box<Expr>),
     Negate(Box<Expr>),

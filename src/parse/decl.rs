@@ -363,12 +363,26 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             next: prefix.map(Box::new),
                         })
                     } else {
-                        let expr = self.parse_expr();
+                        let expr = self.constant_expr()?;
                         self.expect(Token::RightBracket);
-                        Some(Declarator {
-                            current: DeclaratorType::Array(ArrayType::Fixed(Box::new(expr))),
-                            next: prefix.map(Box::new),
-                        })
+                        // TODO: allow any integer type
+                        // also TODO: look up the rules for this in the C standard
+                        if expr.ctype == Type::Int(true) {
+                            Some(Declarator {
+                                current: DeclaratorType::Array(ArrayType::Fixed(Box::new(expr))),
+                                next: prefix.map(Box::new),
+                            })
+                        } else {
+                            // TODO: parse the rest of the declarator before
+                            // complaining about a type mismatch
+                            return Err(Locatable {
+                                location: expr.location,
+                                data: format!(
+                                    "size of array has non-integer type '{}'",
+                                    expr.ctype
+                                ),
+                            });
+                        }
                     }
                 }
                 Token::LeftParen => Some(Declarator {
@@ -534,6 +548,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             }
                         }
                     }
+                    // TODO: this is wrong
+                    // const int *i; declares a pointer to const data: the pointer can
+                    // be modified but the data cannot.
+                    // int *const i; declares a const pointer to data: the data can be
+                    // modified but the pointer cannot.
+                    // We have this backwards.
                     Ok(Some(Declarator {
                         current: DeclaratorType::Pointer(qualifiers),
                         next: self.declarator(allow_abstract)?.map(Box::new),
@@ -547,11 +567,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 data: "expected declarator, got <end-of-file>".to_string(),
             })
         }
-    }
-    fn parse_expr(&mut self) -> Expr {
-        // TODO: oh honey
-        self.next_token();
-        Expr::Int(Token::Int(10))
     }
 }
 
@@ -785,7 +800,7 @@ struct Declarator {
 #[cfg(test)]
 mod tests {
     use crate::data::{
-        ArrayType, Expr, FunctionType, Qualifiers, Stmt, Symbol, Token,
+        ArrayType, Expr, ExprType, FunctionType, Qualifiers, Stmt, Symbol, Token,
         Type::{self, *},
     };
     use crate::parse::tests::{match_all, match_data, parse, parse_all, ParseType};

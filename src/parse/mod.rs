@@ -67,32 +67,36 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* utility functions */
+    // don't use this, use next_token instead
+    fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
+        match self.tokens.next() {
+            Some(Locatable {
+                data: Ok(token),
+                location,
+            }) => {
+                self.last_location = Some(location.clone());
+                Some(Locatable {
+                    data: token,
+                    location,
+                })
+            }
+            None => None,
+            Some(Locatable {
+                data: Err(err),
+                location,
+            }) => {
+                error(&err, &location);
+                self.last_location = Some(location);
+                self.__impl_next_token()
+            }
+        }
+    }
     fn next_token(&mut self) -> Option<Locatable<Token>> {
         if self.current.is_some() {
             let tmp = mem::replace(&mut self.next, None);
             mem::replace(&mut self.current, tmp)
         } else {
-            match self.tokens.next() {
-                Some(Locatable {
-                    data: Ok(token),
-                    location,
-                }) => {
-                    self.last_location = Some(location.clone());
-                    Some(Locatable {
-                        data: token,
-                        location,
-                    })
-                }
-                None => None,
-                Some(Locatable {
-                    data: Err(err),
-                    location,
-                }) => {
-                    error(&err, &location);
-                    self.last_location = Some(location);
-                    self.next_token()
-                }
-            }
+            self.__impl_next_token()
         }
     }
     fn peek_token(&mut self) -> Option<&Token> {
@@ -109,9 +113,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn peek_next_token(&mut self) -> Option<&Token> {
         if self.next.is_none() {
             if self.current.is_none() {
-                self.current = self.next_token();
+                self.current = self.__impl_next_token();
             }
-            self.next = self.next_token();
+            self.next = self.__impl_next_token();
         }
         // NOTE: we can't just use self.current.map(|x| x.data) because of lifetimes
         match &self.next {

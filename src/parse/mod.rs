@@ -157,7 +157,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn expect(&mut self, next: Token) -> (bool, &Location) {
         match self.peek_token() {
-            Some(data) if *data == next => {
+            Some(data) if mem::discriminant(&next) == mem::discriminant(data) => {
                 self.next_token();
                 (
                     true,
@@ -208,9 +208,11 @@ mod tests {
             }),
         }
     }
+    #[inline]
     pub fn parse_all(input: &str) -> Vec<ParseType> {
-        Parser::new(Lexer::new("<test suite>".to_string(), input.chars())).collect()
+        parser(input).collect()
     }
+    #[inline]
     pub fn match_data<T>(lexed: Option<ParseType>, closure: T) -> bool
     where
         T: Fn(Result<Stmt, String>) -> bool,
@@ -220,11 +222,29 @@ mod tests {
             None => false,
         }
     }
+    #[inline]
     pub fn match_all<I, T>(lexed: I, closure: T) -> bool
     where
         I: Iterator<Item = ParseType>,
         T: Fn(Result<Stmt, String>) -> bool,
     {
         lexed.map(|l| l.data).all(closure)
+    }
+    #[inline]
+    fn parser(input: &str) -> Parser<Lexer> {
+        Parser::new(Lexer::new("<test suite>".to_string(), input.chars()))
+    }
+    #[test]
+    fn peek() {
+        use crate::data::{Keyword, Token};
+        let mut instance = parser("int a[(int)1];");
+        assert!(instance.next_token().unwrap().data == Token::Keyword(Keyword::Int));
+        assert!(instance.next_token().unwrap().data == Token::Id("a".to_string()));
+        assert!(instance.peek_token() == Some(&Token::LeftBracket));
+        assert!(instance.peek_next_token() == Some(&Token::LeftParen));
+        assert!(instance.peek_token() == Some(&Token::LeftBracket));
+        assert!(instance.next_token().unwrap().data == Token::LeftBracket);
+        assert!(instance.next_token().unwrap().data == Token::LeftParen);
+        assert!(instance.next_token().unwrap().data == Token::Keyword(Keyword::Int));
     }
 }

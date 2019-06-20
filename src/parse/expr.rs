@@ -955,4 +955,14 @@ mod tests {
         assert!(parsed == Ok(super::int_literal(1, get_location(&parsed))));
         let parsed = parse_expr("x");
     }
+    #[test]
+    fn test_mul() {
+        assert!(parse_expr("1*1.0").unwrap().ctype == Type::Float);
+        assert!(parse_expr("1*2.0 / 1.3").unwrap().ctype == Type::Float);
+        assert!(parse_expr("3%2").unwrap().ctype == Type::Int(true));
+    }
+    #[test]
+    fn test_type_errors() {
+        assert!(parse_expr("1 % 2.0").is_err());
+    }
 }

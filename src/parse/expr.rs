@@ -529,7 +529,24 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         use Token::*;
         if let Some(Locatable { location, data }) = self.next_token() {
             match data {
-                Id(name) => unimplemented!("need to add scope before variables can be parsed"),
+                Id(name) => match self.scope.get(&name) {
+                    None => Err(Locatable {
+                        location,
+                        data: format!("use of undeclared identifier '{}'", name),
+                    }),
+                    Some(symbol) => Ok(Expr {
+                        // TODO: this clone will get expensive fast
+                        expr: ExprType::Id(symbol.clone()),
+                        // TODO: check if symbol is constexpr
+                        // in particular, I would love for this to compile:
+                        // `int a = 5; int b[a];`
+                        // NOTE: neither GCC nor Clang accept that
+                        constexpr: false,
+                        ctype: symbol.ctype.clone(),
+                        lval: true,
+                        location,
+                    }),
+                },
                 Str(literal) => Ok(string_literal(literal, location)),
                 Int(literal) => Ok(int_literal(literal, location)),
                 Float(literal) => Ok(float_literal(literal, location)),

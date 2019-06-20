@@ -367,7 +367,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         self.expect(Token::RightBracket);
                         // TODO: allow any integer type
                         // also TODO: look up the rules for this in the C standard
-                        if expr.ctype == Type::Int(true) {
+                        if expr.ctype.is_integral() {
                             Some(Declarator {
                                 current: DeclaratorType::Array(ArrayType::Fixed(Box::new(expr))),
                                 next: prefix.map(Box::new),

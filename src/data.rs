@@ -322,7 +322,7 @@ impl Type {
     pub fn is_integral(&self) -> bool {
         use Type::*;
         match self {
-            Char(_) | Short(_) | Int(_) | Long(_) => true,
+            Bool | Char(_) | Short(_) | Int(_) | Long(_) => true,
             _ => false,
         }
     }

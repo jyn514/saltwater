@@ -327,19 +327,28 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Self::cast_expr,
             &[&Token::Star, &Token::Divide, &Token::Mod],
             |left, right, token| {
+                let ctype = Type::binary_promote(&left.ctype, &right.ctype);
                 let type_bound = if token.data == Token::Mod {
                     Type::is_integral
                 } else {
                     Type::is_arithmetic
                 };
-                let bad_type = if !type_bound(&left.ctype) {
-                    Some(left.ctype.clone())
-                } else if !type_bound(&right.ctype) {
-                    Some(right.ctype.clone())
+                if type_bound(&ctype) {
+                    Ok(Expr {
+                        ctype,
+                        location: token.location,
+                        constexpr: left.constexpr && right.constexpr,
+                        lval: false,
+                        expr: match token.data {
+                            Token::Star => ExprType::Mul(left, right),
+                            Token::Divide => ExprType::Div(left, right),
+                            Token::Mod => ExprType::Mod(left, right),
+                            _ => panic!(
+                                "left_associate_binary_op should only return tokens given to it"
+                            ),
+                        },
+                    })
                 } else {
-                    None
-                };
-                if let Some(ctype) = bad_type {
                     Err(Locatable {
                         location: token.location,
                         data: format!(
@@ -352,21 +361,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             token.data,
                             ctype
                         ),
-                    })
-                } else {
-                    Ok(Expr {
-                        location: token.location,
-                        constexpr: left.constexpr && right.constexpr,
-                        lval: false,
-                        ctype: left.ctype.clone(),
-                        expr: match token.data {
-                            Token::Star => ExprType::Mul(left, right),
-                            Token::Divide => ExprType::Div(left, right),
-                            Token::Mod => ExprType::Mod(left, right),
-                            _ => panic!(
-                                "left_associate_binary_op should only return tokens given to it"
-                            ),
-                        },
                     })
                 }
             },
@@ -848,22 +842,21 @@ impl Type {
     ///
     /// Trying to promote derived types (pointers, functions, etc.) is an error.
     /// Pointer arithmetic should not promote either argument, see 6.5.6 of the C standard.
-    fn binary_promote(left: Type, right: Type) -> (Type, Type) {
+    fn binary_promote(left: &Type, right: &Type) -> Type {
         use Type::*;
-        if left == Double || right == Double {
-            return (Double, Double); // toil and trouble
-        } else if left == Float || right == Float {
-            return (Float, Float);
+        if *left == Double || *right == Double {
+            return Double; // toil and trouble
+        } else if *left == Float || *right == Float {
+            return Float;
         }
         let signs = (left.sign(), right.sign());
         // same sign
         if signs.0 == signs.1 {
-            let ctype = if left.rank() >= right.rank() {
-                left
+            return if left.rank() >= right.rank() {
+                left.clone()
             } else {
-                right
+                right.clone()
             };
-            return (ctype.clone(), ctype);
         };
         let (signed, unsigned) = if signs.0 {
             (left, right)
@@ -871,9 +864,9 @@ impl Type {
             (right, left)
         };
         if signed.can_represent(&unsigned) {
-            (signed.clone(), signed)
+            signed.clone()
         } else {
-            (unsigned.clone(), unsigned)
+            unsigned.clone()
         }
     }
     /// Return whether self is a signed type.

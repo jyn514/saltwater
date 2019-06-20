@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::{self, Display, Formatter};
 
@@ -271,6 +272,12 @@ pub struct BitfieldType {
     pub ctype: Type,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Scope {
+    parent: Option<Box<Scope>>,
+    variables: HashMap<String, Symbol>,
+}
+
 // holds where a piece of code came from
 // should almost always be immutable
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -340,6 +347,33 @@ impl Type {
             Type::Pointer(_, _) => true,
             _ => false,
         }
+    }
+}
+
+impl Scope {
+    pub fn with_parent(parent: Scope) -> Scope {
+        Scope {
+            parent: Some(Box::new(parent)),
+            variables: HashMap::new(),
+        }
+    }
+    pub fn discard(self) -> Option<Scope> {
+        self.parent.map(|p| *p)
+    }
+    pub fn get(&self, name: &str) -> Option<&Symbol> {
+        let immediate = self.get_immediate(name);
+        if let Some(parent) = &self.parent {
+            immediate.or_else(|| parent.get(name))
+        } else {
+            immediate
+        }
+    }
+    // returns whether the _immediate_ scope contains `name`
+    pub fn insert(&mut self, name: String, symbol: Symbol) -> Option<Symbol> {
+        self.variables.insert(name, symbol)
+    }
+    pub fn get_immediate(&self, name: &str) -> Option<&Symbol> {
+        self.variables.get(name)
     }
 }
 

@@ -5,13 +5,15 @@ use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{Keyword, Locatable, Location, Stmt, Token};
+use crate::data::{Keyword, Locatable, Location, Scope, Stmt, Token};
 use crate::utils::error;
 
 type Lexeme = Locatable<Result<Token, String>>;
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
+    // the variables that have been declared
+    scope: Scope,
     // we iterate lazily over the tokens, so if we have a program that's mostly valid but
     // breaks at the end, we don't only show lex errors
     tokens: I,
@@ -35,6 +37,7 @@ where
 {
     pub fn new(iter: I) -> Self {
         Parser {
+            scope: Default::default(),
             tokens: iter,
             pending: Default::default(),
             last_location: None,
@@ -55,7 +58,22 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
             match lexed {
                 // NOTE: we do not allow implicit int
                 // https://stackoverflow.com/questions/11064292
-                Token::Keyword(t) if t.is_decl_specifier() => self.declaration(t),
+                Token::Keyword(t) if t.is_decl_specifier() => {
+                    let decl = self.declaration(t)?;
+                    if let Ok(Stmt::Declaration(symbol)) = &decl.data {
+                        if self
+                            .scope
+                            .insert(symbol.id.clone(), symbol.clone())
+                            .is_some()
+                        {
+                            return Some(Locatable {
+                                location,
+                                data: Err(format!("redefinition of '{}'", symbol.id)),
+                            });
+                        }
+                    }
+                    Some(decl)
+                }
                 _ => Some(Locatable {
                     data: Err("not handled".to_string()),
                     location,

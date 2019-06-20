@@ -144,7 +144,7 @@ pub struct Expr {
     /// constexpr: whether a value can be constant-folded at compile-time
     ///
     /// unrelated to the `const` keyword
-    /// INVARIANT: c_const can never true if lval is false
+    /// NOTE: can sometimes be true at the same time as `lval` (e.g. for constant arrays)
     pub constexpr: bool,
 
     /// lval: whether an expression can be assigned to
@@ -155,8 +155,9 @@ pub struct Expr {
 
     /// location: the best approximation of where the expression is
     ///
-    /// usually points to the location of the operation symbol, or the literal if not
+    /// usually points to the location of the operation symbol, or the literal if no
     /// operations is being performed
+    /// implicit operations should point to the child expression
     pub location: Location,
 }
 

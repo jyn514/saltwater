@@ -295,12 +295,61 @@ impl Display for StorageClass {
 
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let lower = &format!("{:?}", self).to_lowercase();
-        let substr = match lower.find('(') {
-            Some(n) => &lower[..n],
-            None => lower.as_str(),
-        };
-        write!(f, "{}", substr)
+        use Type::*;
+        match self {
+            Char(signed) | Short(signed) | Int(signed) | Long(signed) => {
+                let lower = &format!("{:?}", self).to_lowercase();
+                let substr = match lower.find('(') {
+                    Some(n) => &lower[..n],
+                    None => lower.as_str(),
+                };
+                write!(f, "{}{}", if *signed { "" } else { "unsigned " }, substr)
+            }
+            Bool | Float | Double | Void => write!(f, "{}", format!("{:?}", self).to_lowercase()),
+            Pointer(to, Qualifiers { c_const, volatile }) => write!(
+                f,
+                "*{}{}",
+                match (c_const, volatile) {
+                    (true, true) => "const volatile ",
+                    (true, false) => "const ",
+                    (false, true) => "volatile ",
+                    (false, false) => "",
+                },
+                to,
+            ),
+            Array(of, size) => write!(
+                f,
+                "{}[{}]",
+                of,
+                match size {
+                    // TODO: don't use debug formatting here
+                    ArrayType::Fixed(expr) => format!("{:?}", expr),
+                    ArrayType::Unbounded => String::new(),
+                }
+            ),
+            Function(FunctionType {
+                return_type,
+                params,
+                varargs,
+            }) => {
+                write!(f, "{}", return_type)?;
+                // https://stackoverflow.com/a/30325430
+                let mut comma_seperated = " (".to_string();
+                for param in params {
+                    comma_seperated.push_str(&param.ctype.to_string());
+                    comma_seperated.push_str(", ");
+                }
+                if *varargs {
+                    comma_seperated.push_str("...");
+                } else if !params.is_empty() {
+                    comma_seperated.pop();
+                    comma_seperated.pop();
+                }
+                comma_seperated.push(')');
+                write!(f, "{}", comma_seperated)
+            }
+            Union(_) | Struct(_) | Enum(_) | Bitfield(_) => unimplemented!(),
+        }
     }
 }
 

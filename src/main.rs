@@ -54,7 +54,7 @@ fn main() {
     if opt.debug_lex {
         for lexeme in Lexer::new(filename.clone(), buf.chars()) {
             match lexeme.data {
-                Ok(l) => println!("{:?}", l),
+                Ok(l) => println!("{:#?}", l),
                 Err(err) => error(&err, &lexeme.location),
             }
         }
@@ -62,7 +62,7 @@ fn main() {
     let compiler = Parser::new(Lexer::new(filename, buf.chars()));
     for stmt in compiler {
         match stmt.data {
-            Ok(s) => println!("{:?}", s),
+            Ok(s) => println!("{:#?}", s),
             Err(err) => error(&err, &stmt.location),
         }
     }

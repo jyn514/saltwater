@@ -349,6 +349,12 @@ impl Type {
             _ => false,
         }
     }
+    pub fn is_function(&self) -> bool {
+        match self {
+            Type::Function(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl Scope {

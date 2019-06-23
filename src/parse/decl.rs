@@ -37,7 +37,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             // declarator: Result<Declarator, Locatable<String>>
             match self.declarator(false) {
                 Ok(Some(decl)) => {
-                    let (id, ctype) = decl.parse_type(ctype.clone());
+                    let (id, ctype) = match decl.parse_type(ctype.clone()) {
+                        Err(err) => {
+                            return Some(Locatable {
+                                location: err.location,
+                                data: Err(err.data),
+                            })
+                        }
+                        Ok((id, ctype)) => (id, ctype),
+                    };
                     let Locatable { location, data } = id.unwrap();
                     self.pending.push_back(Locatable {
                         location,
@@ -283,7 +291,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     )),
                 });
             } else if let Some(decl) = declarator {
-                let (id, ctype) = decl.parse_type(param_type);
+                let (id, ctype) = decl.parse_type(param_type)?;
                 // I will probably regret this in the future
                 // default() for String is "",
                 // which can never be passed in by the lexer
@@ -693,13 +701,15 @@ impl TryFrom<Keyword> for Type {
 }
 
 impl TryFrom<(Declarator, StorageClass, Qualifiers, Type)> for Locatable<Symbol> {
-    type Error = String;
+    type Error = Locatable<String>;
     fn try_from(
         (declarator, sc, quals, type_specifiers): (Declarator, StorageClass, Qualifiers, Type),
-    ) -> Result<Locatable<Symbol>, String> {
-        let (id, ctype) = declarator.parse_type(type_specifiers);
-        let Locatable { location, data } =
-            id.ok_or("abstract parameter cannot be converted to symbol")?;
+    ) -> Result<Locatable<Symbol>, Locatable<String>> {
+        let (id, ctype) = declarator.parse_type(type_specifiers)?;
+        let Locatable { location, data } = id.ok_or(Locatable {
+            location: Default::default(),
+            data: "abstract parameter cannot be converted to symbol".to_string(),
+        })?;
         Ok(Locatable {
             location,
             data: Symbol {
@@ -726,7 +736,10 @@ impl Declarator {
         }
     }
     // `current` should be only a base type, i.e. something returned by type_specifiers
-    fn parse_type(self, mut current: Type) -> (Option<Locatable<String>>, Type) {
+    fn parse_type(
+        self,
+        mut current: Type,
+    ) -> Result<(Option<Locatable<String>>, Type), Locatable<String>> {
         use DeclaratorType::*;
         // TODO(July 2019): make this one call when rust 1.36 comes out
         let mut declarator = Some(self);
@@ -738,16 +751,35 @@ impl Declarator {
                     current
                 }
                 Pointer(quals) => Type::Pointer(Box::new(current), quals),
-                Array(arr_type) => Type::Array(Box::new(current), arr_type),
-                Function(func_decl) => Type::Function(FunctionType {
-                    return_type: Box::new(current),
-                    params: func_decl.params.into_iter().map(|x| x.data).collect(),
-                    varargs: func_decl.varargs,
-                }),
+                Array(arr_type) => match current {
+                    Type::Function(_) => {
+                        return Err(Locatable {
+                            data: format!("array cannot contain function type '{}'", current),
+                            location: identifier.map_or(Default::default(), |id| id.location),
+                        });
+                    }
+                    _ => Type::Array(Box::new(current), arr_type),
+                },
+                Function(func_decl) => match current {
+                    Type::Function(_) | Type::Array(_, _) => {
+                        return Err(Locatable {
+                            data: format!(
+                                "functions cannot return function or array type '{}'",
+                                current
+                            ),
+                            location: identifier.map_or(Default::default(), |id| id.location),
+                        })
+                    }
+                    _ => Type::Function(FunctionType {
+                        return_type: Box::new(current),
+                        params: func_decl.params.into_iter().map(|x| x.data).collect(),
+                        varargs: func_decl.varargs,
+                    }),
+                },
             };
             declarator = decl.next.map(|x| *x);
         }
-        (identifier, current)
+        Ok((identifier, current))
     }
 }
 
@@ -1109,8 +1141,13 @@ mod tests {
     }
     #[test]
     fn test_decl_errors() {
+        // no semicolon
         assert!(parse("int").unwrap().data.is_err());
         assert!(parse("int i").unwrap().data.is_err());
+        // type error: cannot have array of functions or function returning array
+        assert!(parse("int f()[];").unwrap().data.is_err());
+        assert!(parse("int f[]();").unwrap().data.is_err());
+        assert!(parse("int f()();").unwrap().data.is_err());
         // TODO: the error for this is wrong and will be until I implement parse_expr()
         assert!(parse("int (*f)[;").unwrap().data.is_err());
     }

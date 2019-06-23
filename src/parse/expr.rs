@@ -209,7 +209,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.integral_left_associative_binary_op(
             Self::exclusive_or_expr,
             &[&Token::BinaryOr],
-            default_expr(ExprType::BitwiseOr),
+            Expr::default_expr(ExprType::BitwiseOr),
         )
     }
 
@@ -221,7 +221,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.integral_left_associative_binary_op(
             Self::and_expr,
             &[&Token::Xor],
-            default_expr(ExprType::Xor),
+            Expr::default_expr(ExprType::Xor),
         )
     }
 
@@ -233,7 +233,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.integral_left_associative_binary_op(
             Self::equality_expr,
             &[&Token::Ampersand],
-            default_expr(ExprType::BitwiseAnd),
+            Expr::default_expr(ExprType::BitwiseAnd),
         )
     }
 
@@ -246,7 +246,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.left_associative_binary_op(
             Self::relational_expr,
             &[&Token::EqualEqual, &Token::NotEqual],
-            relational_expr,
+            Expr::relational_expr,
         )
     }
 
@@ -266,7 +266,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 &Token::LessEqual,
                 &Token::GreaterEqual,
             ],
-            relational_expr,
+            Expr::relational_expr,
         )
     }
 
@@ -401,12 +401,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(Token::PlusPlus) => {
                 let Locatable { location, .. } = self.next_token().unwrap();
                 let expr = self.unary_expr()?;
-                increment_op(true, true, expr, location)
+                Expr::increment_op(true, true, expr, location)
             }
             Some(Token::MinusMinus) => {
                 let Locatable { location, .. } = self.next_token().unwrap();
                 let expr = self.unary_expr()?;
-                increment_op(true, false, expr, location)
+                Expr::increment_op(true, false, expr, location)
             }
             Some(Token::Keyword(Keyword::Sizeof)) => {
                 self.next_token();
@@ -484,11 +484,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
                 Token::PlusPlus => {
                     let Locatable { location, .. } = self.next_token().unwrap();
-                    increment_op(false, true, expr, location)
+                    Expr::increment_op(false, true, expr, location)
                 }
                 Token::MinusMinus => {
                     let Locatable { location, .. } = self.next_token().unwrap();
-                    increment_op(false, false, expr, location)
+                    Expr::increment_op(false, false, expr, location)
                 }
                 _ => {
                     self.unput(Some(Locatable {
@@ -547,9 +547,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         location,
                     }),
                 },
-                Str(literal) => Ok(string_literal(literal, location)),
-                Int(literal) => Ok(int_literal(literal, location)),
-                Float(literal) => Ok(float_literal(literal, location)),
+                Str(literal) => Ok(Expr::string_literal(literal, location)),
+                Int(literal) => Ok(Expr::int_literal(literal, location)),
+                Float(literal) => Ok(Expr::float_literal(literal, location)),
                 LeftParen => {
                     let expr = self.expr();
                     self.expect(RightParen);
@@ -692,97 +692,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
 }
 
-/* stateless helper functions */
-
-fn increment_op(prefix: bool, increment: bool, expr: Expr, location: Location) -> ExprResult {
-    if !expr.is_modifiable_lval() {
-        Err(Locatable {
-            location: expr.location,
-            data: "expression is not assignable".to_string(),
-        })
-    } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
-        Err(Locatable {
-            location: expr.location,
-            data: format!(
-                "cannot increment or decrement value of type '{}'",
-                expr.ctype
-            ),
-        })
-    } else {
-        Ok(Expr {
-            constexpr: expr.constexpr,
-            lval: true,
-            ctype: expr.ctype.clone(),
-            // true, false: pre-decrement
-            expr: ExprType::Increment(Box::new(expr), prefix, increment),
-            location,
-        })
-    }
-}
-
-// convenience method for constructing an Expr
-fn default_expr<C>(constructor: C) -> impl Fn(Box<Expr>, Box<Expr>, Locatable<Token>) -> ExprResult
-where
-    C: Fn(Box<Expr>, Box<Expr>) -> ExprType,
-{
-    move |left: Box<Expr>, right: Box<Expr>, token: Locatable<Token>| {
-        Ok(Expr {
-            location: token.location,
-            ctype: left.ctype.clone(),
-            constexpr: left.constexpr && right.constexpr,
-            lval: false,
-            expr: constructor(left, right),
-        })
-    }
-}
-
-// helper function since == and > have almost identical logic
-fn relational_expr(left: Box<Expr>, right: Box<Expr>, token: Locatable<Token>) -> ExprResult {
-    // TODO: binary promote operands
-    Ok(Expr {
-        constexpr: left.constexpr && right.constexpr,
-        lval: false,
-        location: token.location,
-        ctype: Type::Bool,
-        expr: ExprType::Compare(left, right, token.data),
-    })
-}
-
-// this and the next few '*_literal' functions make unit tests more convenient
-fn int_literal(value: i64, location: Location) -> Expr {
-    literal(
-        Type::Int(true),
-        location,
-        ExprType::Literal(Token::Int(value)),
-    )
-}
-
-fn float_literal(value: f64, location: Location) -> Expr {
-    literal(
-        Type::Float,
-        location,
-        ExprType::Literal(Token::Float(value)),
-    )
-}
-
-fn string_literal(value: String, location: Location) -> Expr {
-    literal(
-        Type::for_string_literal(value.len()),
-        location,
-        ExprType::Literal(Token::Str(value)),
-    )
-}
-
-fn literal(ctype: Type, location: Location, expr: ExprType) -> Expr {
-    Expr {
-        constexpr: true,
-        lval: false,
-        ctype,
-        location,
-        expr,
-    }
-}
-
 impl Token {
     fn is_unary_operator(&self) -> bool {
         match self {
@@ -805,6 +714,7 @@ impl Token {
     }
 }
 
+/* stateless helper functions */
 impl Expr {
     /// See section 6.3.2.1 of the C Standard. In particular:
     /// "A modifiable lvalue is an lvalue that does not have array type,
@@ -828,6 +738,8 @@ impl Expr {
     // Convert an expression to _Bool. Section 6.3.1.3 of the C standard:
     // "When any scalar value is converted to _Bool,
     // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
+    //
+    // if (expr)
     fn truthy(expr: Expr) -> Expr {
         Expr {
             constexpr: expr.constexpr,
@@ -835,6 +747,98 @@ impl Expr {
             location: expr.location.clone(),
             ctype: Type::Int(true),
             expr: ExprType::Compare(Box::new(expr), Box::new(zero()), Token::NotEqual),
+        }
+    }
+    /// p + 1 where p is a pointer
+    fn pointer_arithmetic_op(left: Expr, right: Expr, addition: bool) -> ExprResult {
+        unimplemented!("pointer arithmetic not implemented")
+    }
+    /// x + 5, f() where f is a function pointer
+    fn implicit_deref_op(expr: Expr) -> ExprResult {
+        unimplemented!("implicit variable dereferences")
+    }
+    fn increment_op(prefix: bool, increment: bool, expr: Expr, location: Location) -> ExprResult {
+        if !expr.is_modifiable_lval() {
+            Err(Locatable {
+                location: expr.location,
+                data: "expression is not assignable".to_string(),
+            })
+        } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
+            Err(Locatable {
+                location: expr.location,
+                data: format!(
+                    "cannot increment or decrement value of type '{}'",
+                    expr.ctype
+                ),
+            })
+        } else {
+            Ok(Expr {
+                constexpr: expr.constexpr,
+                lval: true,
+                ctype: expr.ctype.clone(),
+                // true, false: pre-decrement
+                expr: ExprType::Increment(Box::new(expr), prefix, increment),
+                location,
+            })
+        }
+    }
+    // convenience method for constructing an Expr
+    fn default_expr<C>(
+        constructor: C,
+    ) -> impl Fn(Box<Expr>, Box<Expr>, Locatable<Token>) -> ExprResult
+    where
+        C: Fn(Box<Expr>, Box<Expr>) -> ExprType,
+    {
+        move |left: Box<Expr>, right: Box<Expr>, token: Locatable<Token>| {
+            Ok(Expr {
+                location: token.location,
+                ctype: left.ctype.clone(),
+                constexpr: left.constexpr && right.constexpr,
+                lval: false,
+                expr: constructor(left, right),
+            })
+        }
+    }
+    // helper function since == and > have almost identical logic
+    fn relational_expr(left: Box<Expr>, right: Box<Expr>, token: Locatable<Token>) -> ExprResult {
+        // TODO: binary promote operands
+        Ok(Expr {
+            constexpr: left.constexpr && right.constexpr,
+            lval: false,
+            location: token.location,
+            ctype: Type::Bool,
+            expr: ExprType::Compare(left, right, token.data),
+        })
+    }
+    // this and the next few '*_literal' functions make unit tests more convenient
+    fn int_literal(value: i64, location: Location) -> Expr {
+        Expr::literal(
+            Type::Int(true),
+            location,
+            ExprType::Literal(Token::Int(value)),
+        )
+    }
+    fn float_literal(value: f64, location: Location) -> Expr {
+        Expr::literal(
+            Type::Float,
+            location,
+            ExprType::Literal(Token::Float(value)),
+        )
+    }
+    fn string_literal(value: String, location: Location) -> Expr {
+        Expr::literal(
+            Type::for_string_literal(value.len()),
+            location,
+            ExprType::Literal(Token::Str(value)),
+        )
+    }
+    fn literal(ctype: Type, location: Location, expr: ExprType) -> Expr {
+        Expr {
+            constexpr: true,
+            lval: false,
+            ctype,
+            location,
+            expr,
         }
     }
 }
@@ -937,7 +941,7 @@ impl Type {
         // are 2^64 characters long. it wouldn't even fit onto disk!
         Type::Array(
             Box::new(Type::Char(true)),
-            ArrayType::Fixed(Box::new(int_literal(len as i64, Default::default()))),
+            ArrayType::Fixed(Box::new(Expr::int_literal(len as i64, Default::default()))),
         )
     }
 }
@@ -967,18 +971,19 @@ mod tests {
     }
     #[test]
     fn test_primaries() {
-        assert!(test_literal(141, super::int_literal));
+        assert!(test_literal(141, Expr::int_literal));
         let parsed = parse_expr("\"hi there\"");
+
         assert!(
             parsed
-                == Ok(super::string_literal(
+                == Ok(Expr::string_literal(
                     "hi there\0".to_string(),
                     get_location(&parsed)
                 ))
         );
-        assert!(test_literal(1.5, super::float_literal));
+        assert!(test_literal(1.5, Expr::float_literal));
         let parsed = parse_expr("(1)");
-        assert!(parsed == Ok(super::int_literal(1, get_location(&parsed))));
+        assert!(parsed == Ok(Expr::int_literal(1, get_location(&parsed))));
         let x = Symbol {
             ctype: Type::Int(true),
             id: "x".to_string(),

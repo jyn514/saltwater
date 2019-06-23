@@ -818,7 +818,7 @@ impl Expr {
             // p = 5;
             ExprType::Id(sym) => sym.qualifiers.c_const,
             // *p = 1;
-            ExprType::Deref(expr) => match &self.ctype {
+            ExprType::Deref(_) => match &self.ctype {
                 Type::Pointer(_, quals) => quals.c_const,
                 _ => panic!("only pointers can be dereferenced"),
             },

@@ -842,6 +842,15 @@ impl Expr {
 /// Implicit conversions.
 /// These are handled here and no other part of the compiler deals with them directly.
 impl Type {
+    pub fn integer_promote(from: Type, to: Type) -> Result<Type, ()> {
+        if !(from.is_integral() && to.is_integral()) {
+            Err(())
+        } else if from.rank() >= to.rank() {
+            Ok(from)
+        } else {
+            Ok(to)
+        }
+    }
     /// Perform the 'usual arithmetic conversions' from 6.3.1.8 of the C standard.
     ///
     /// Algorithm:

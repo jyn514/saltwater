@@ -370,8 +370,8 @@ impl Scope {
         }
     }
     // returns whether the _immediate_ scope contains `name`
-    pub fn insert(&mut self, name: String, symbol: Symbol) -> Option<Symbol> {
-        self.variables.insert(name, symbol)
+    pub fn insert(&mut self, symbol: Symbol) -> Option<Symbol> {
+        self.variables.insert(symbol.id.clone(), symbol)
     }
     pub fn get_immediate(&self, name: &str) -> Option<&Symbol> {
         self.variables.get(name)

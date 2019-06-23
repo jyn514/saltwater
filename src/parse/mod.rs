@@ -61,11 +61,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                 Token::Keyword(t) if t.is_decl_specifier() => {
                     let decl = self.declaration(t)?;
                     if let Ok(Stmt::Declaration(symbol)) = &decl.data {
-                        if self
-                            .scope
-                            .insert(symbol.id.clone(), symbol.clone())
-                            .is_some()
-                        {
+                        if self.scope.insert(symbol.clone()).is_some() {
                             return Some(Locatable {
                                 location,
                                 data: Err(format!("redefinition of '{}'", symbol.id)),
@@ -257,7 +253,7 @@ mod tests {
         lexed.map(|l| l.data).all(closure)
     }
     #[inline]
-    fn parser(input: &str) -> Parser<Lexer> {
+    pub fn parser(input: &str) -> Parser<Lexer> {
         Parser::new(Lexer::new("<test suite>".to_string(), input.chars()))
     }
     #[test]

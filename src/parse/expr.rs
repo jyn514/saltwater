@@ -954,7 +954,7 @@ mod tests {
     }
     fn get_location(expr: &ExprResult) -> Location {
         match expr {
-            Err(_) => Default::default(),
+            Err(ref err) => err.location.clone(),
             Ok(ref l) => l.location.clone(),
         }
     }
@@ -979,7 +979,27 @@ mod tests {
         assert!(test_literal(1.5, super::float_literal));
         let parsed = parse_expr("(1)");
         assert!(parsed == Ok(super::int_literal(1, get_location(&parsed))));
-        let parsed = parse_expr("x");
+        let x = Symbol {
+            ctype: Type::Int(true),
+            id: "x".to_string(),
+            qualifiers: Default::default(),
+            storage_class: Default::default(),
+        };
+        let mut scope: Scope = Default::default();
+        scope.insert(x.clone());
+        let mut scope_parser = parser("x");
+        scope_parser.scope = scope;
+        let parsed = scope_parser.expr();
+        assert!(
+            parsed
+                == Ok(Expr {
+                    location: get_location(&parsed),
+                    ctype: Type::Int(true),
+                    constexpr: false,
+                    lval: true,
+                    expr: ExprType::Id(x)
+                })
+        );
     }
     #[test]
     fn test_mul() {

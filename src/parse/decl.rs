@@ -1,6 +1,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::convert::TryFrom;
 use std::iter::Iterator;
+use std::mem;
 
 use super::{Lexeme, Parser};
 use crate::data::{
@@ -740,22 +741,52 @@ impl Declarator {
                 Pointer(quals) => Type::Pointer(Box::new(current), quals),
                 Array(arr_type) => match current {
                     Type::Function(_) => {
+                        let Locatable {
+                            data: name,
+                            location,
+                        } = identifier.unwrap_or_else(|| Locatable {
+                            location: location.clone(),
+                            data: "a".to_string(),
+                        });
                         return Err(Locatable {
-                            data: format!("array cannot contain function type '{}'", current),
-                            location: identifier.map_or_else(|| location.clone(), |id| id.location),
+                            data: format!(
+                                "array cannot contain function type '{}'. \
+                                 help: try array of pointer to function: (*{}[])()",
+                                current, name
+                            ),
+                            location,
                         });
                     }
                     _ => Type::Array(Box::new(current), arr_type),
                 },
                 Function(func_decl) => match current {
                     Type::Function(_) | Type::Array(_, _) => {
+                        let func = mem::discriminant(&current)
+                            == mem::discriminant(&Type::Function(FunctionType {
+                                varargs: false,
+                                return_type: Box::new(Type::Int(true)),
+                                params: vec![],
+                            }));
+                        let Locatable {
+                            data: name,
+                            location,
+                        } = identifier.unwrap_or_else(|| Locatable {
+                            location: location.clone(),
+                            data: "f".to_string(),
+                        });
+                        let (typename, help) = if func {
+                            ("other functions", format!("(*{}())()", name))
+                        } else {
+                            ("arrays", format!("*{}()", name))
+                        };
                         return Err(Locatable {
                             data: format!(
-                                "functions cannot return function or array type '{}'",
-                                current
+                                "functions cannot return {}: '{}'. \
+                                 help: try returning a pointer instead: {}",
+                                typename, current, help,
                             ),
-                            location: identifier.map_or_else(|| location.clone(), |id| id.location),
-                        })
+                            location,
+                        });
                     }
                     _ => Type::Function(FunctionType {
                         return_type: Box::new(current),

@@ -775,13 +775,13 @@ impl Declarator {
                             data: "f".to_string(),
                         });
                         let (typename, help) = if func {
-                            ("other functions", format!("(*{}())()", name))
+                            ("function", format!("(*{}())()", name))
                         } else {
-                            ("arrays", format!("*{}()", name))
+                            ("array", format!("*{}()", name))
                         };
                         return Err(Locatable {
                             data: format!(
-                                "functions cannot return {}: '{}'. \
+                                "functions cannot return {} type '{}'. \
                                  help: try returning a pointer instead: {}",
                                 typename, current, help,
                             ),

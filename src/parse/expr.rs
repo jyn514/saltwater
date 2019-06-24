@@ -468,11 +468,62 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }) = self.next_token()
         {
             match token {
-                Token::LeftBracket => unimplemented!("TODO: array indexing"),
+                // a[i] desugars to *(a + i)
+                Token::LeftBracket => {
+                    let index = self.expr()?;
+                    let sum = Expr::pointer_arithmetic_op(expr, index, true)?;
+                    Expr::deref_op(sum)
+                }
+                // function call
                 Token::LeftParen => {
-                    let args = self.argument_expr_list_opt();
+                    let args = self.argument_expr_list_opt()?;
                     self.expect(Token::RightParen);
-                    unimplemented!("TODO: function calls");
+                    // if fp is a function pointer, fp() desugars to (*fp)()
+                    let expr = match expr.ctype {
+                        Type::Pointer(ref pointee, _) if pointee.is_function() => {
+                            Expr::implicit_deref_op(expr)?
+                        }
+                        _ => expr,
+                    };
+                    let functype = match expr.ctype {
+                        Type::Function(ref functype) => functype,
+                        _ => {
+                            return Err(Locatable {
+                                data: format!(
+                                    "called object of type '{}' is not a function",
+                                    expr.ctype
+                                ),
+                                location,
+                            })
+                        }
+                    };
+                    if args.len() != functype.params.len() {
+                        return Err(Locatable {
+                            data: format!(
+                                "too {} arguments to function call: expected {}, have {}",
+                                if args.len() > functype.params.len() {
+                                    "many"
+                                } else {
+                                    "few"
+                                },
+                                functype.params.len(),
+                                args.len(),
+                            ),
+                            location,
+                        });
+                    }
+                    let promoted_args: Vec<Expr> = args
+                        .into_iter()
+                        .zip(&functype.params)
+                        .map(|(arg, expected)| Expr::implicit_convert_op(arg, &expected.ctype))
+                        .collect::<Result<_, Locatable<String>>>()?;
+                    Ok(Expr {
+                        location,
+                        constexpr: false,
+                        lval: false, // no move semantics here!
+                        ctype: *functype.return_type.clone(),
+                        expr: ExprType::FuncCall(Box::new(expr), promoted_args),
+                    })
                 }
                 Token::Dot => {
                     let member = self.expect(Token::Id(Default::default()));
@@ -507,15 +558,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// : /* empty */
     /// | assignment_expr (',' assignment_expr)*
     /// ;
-    fn argument_expr_list_opt(&mut self) -> Vec<ExprResult> {
+    fn argument_expr_list_opt(&mut self) -> Result<Vec<Expr>, Locatable<String>> {
         if self.peek_token() == Some(&Token::RightParen) {
-            return vec![];
+            return Ok(vec![]);
         }
-        let mut args = vec![self.assignment_expr()];
+        let mut args = vec![self.assignment_expr()?];
         while self.match_next(&Token::Comma).is_some() {
-            args.push(self.assignment_expr());
+            args.push(self.assignment_expr()?);
         }
-        args
+        Ok(args)
     }
 
     /// primary_expr
@@ -753,9 +804,16 @@ impl Expr {
     fn pointer_arithmetic_op(left: Expr, right: Expr, addition: bool) -> ExprResult {
         unimplemented!("pointer arithmetic not implemented")
     }
+    /// *p where p is a pointer
+    fn deref_op(expr: Expr) -> ExprResult {
+        unimplemented!("dereference operator")
+    }
     /// x + 5, f() where f is a function pointer
     fn implicit_deref_op(expr: Expr) -> ExprResult {
         unimplemented!("implicit variable dereferences")
+    }
+    fn implicit_convert_op(expr: Expr, ctype: &Type) -> ExprResult {
+        unimplemented!("implicit type conversion")
     }
     fn increment_op(prefix: bool, increment: bool, expr: Expr, location: Location) -> ExprResult {
         if !expr.is_modifiable_lval() {
@@ -969,6 +1027,15 @@ mod tests {
         let parsed = parse_expr(&token.to_string());
         parsed == Ok(parse_literal(token, get_location(&parsed)))
     }
+    fn parser_with_scope<'a>(input: &'a str, variables: &[&Symbol]) -> Parser<Lexer<'a>> {
+        let mut parser = parser(input);
+        let mut scope = Scope::new();
+        for var in variables {
+            scope.insert((*var).clone());
+        }
+        parser.scope = scope;
+        parser
+    }
     #[test]
     fn test_primaries() {
         assert!(test_literal(141, Expr::int_literal));
@@ -1011,6 +1078,29 @@ mod tests {
         assert!(parse_expr("1*1.0").unwrap().ctype == Type::Float);
         assert!(parse_expr("1*2.0 / 1.3").unwrap().ctype == Type::Float);
         assert!(parse_expr("3%2").unwrap().ctype == Type::Int(true));
+    }
+    #[test]
+    fn test_funcall() {
+        let f = Symbol {
+            id: "f".to_string(),
+            qualifiers: Default::default(),
+            storage_class: Default::default(),
+            ctype: Type::Function(FunctionType {
+                params: vec![],
+                return_type: Box::new(Type::Int(true)),
+                varargs: false,
+            }),
+        };
+        let mut parser = parser_with_scope("f(1, 2, 3)", &[&f]);
+        assert!(parser.expr().is_err());
+        let mut parser = parser_with_scope("f()", &[&f]);
+        assert!(match parser.expr() {
+            Ok(Expr {
+                expr: ExprType::FuncCall(_, _),
+                ..
+            }) => true,
+            _ => false,
+        });
     }
     #[test]
     fn test_type_errors() {

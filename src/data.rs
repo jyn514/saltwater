@@ -358,6 +358,12 @@ impl Type {
 }
 
 impl Scope {
+    pub fn new() -> Scope {
+        Scope {
+            parent: None,
+            variables: HashMap::new(),
+        }
+    }
     pub fn with_parent(parent: Scope) -> Scope {
         Scope {
             parent: Some(Box::new(parent)),

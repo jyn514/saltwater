@@ -19,13 +19,46 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * before each function.
      */
 
-    // TODO: type_name
     /// type_name
     ///     : specifier_qualifier_list
     ///     | specifier_qualifier_list abstract_declarator
     ///     ;
-    pub fn type_name(&mut self) -> Result<Locatable<Type>, Locatable<String>> {
-        unimplemented!();
+    ///
+    /// where specifier_qualifier_list: (type_specifier | type_qualifier)+
+    pub fn type_name(
+        &mut self,
+        keyword: Keyword,
+    ) -> Result<Locatable<(Type, Qualifiers)>, Locatable<String>> {
+        let (sc, qualifiers, ctype) = self.declaration_specifiers(keyword)?;
+        if sc != StorageClass::Auto {
+            return Err(Locatable {
+                // TODO
+                location: self.last_location.as_ref().unwrap().clone(),
+                data: "type cannot have a storage class".to_string(),
+            });
+        }
+        let ctype = match self.declarator(true)? {
+            None => ctype,
+            Some(decl) => {
+                let (id, ctype) = decl.parse_type(ctype, &self.last_location.as_ref().unwrap())?;
+                if let Some(Locatable {
+                    location,
+                    data: name,
+                }) = id
+                {
+                    return Err(Locatable {
+                        location,
+                        data: format!("abstract types cannot have an identifier (got '{}')", name),
+                    });
+                } else {
+                    ctype
+                }
+            }
+        };
+        Ok(Locatable {
+            location: self.last_location.as_ref().unwrap().clone(),
+            data: (ctype, qualifiers),
+        })
     }
 
     /* NOTE: there's some fishiness here. Declarations can have multiple variables,

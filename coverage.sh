@@ -1,3 +1,4 @@
+#!/bin/sh
 cargo test --no-run
 rm target/debug/compiler-*.d
 kcov --verify target/cov target/debug/compiler-*

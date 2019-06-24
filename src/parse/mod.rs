@@ -269,4 +269,15 @@ mod tests {
         assert!(instance.next_token().unwrap().data == Token::LeftParen);
         assert!(instance.next_token().unwrap().data == Token::Keyword(Keyword::Int));
     }
+    #[test]
+    fn multiple_declaration() {
+        let mut decls = parse_all("int a; int a;");
+        assert!(decls.len() == 2);
+        assert!(decls.pop().unwrap().data.is_err());
+        assert!(decls.pop().unwrap().data.is_ok());
+        let mut decls = parse_all("int a; char *a[];");
+        assert!(decls.len() == 2);
+        assert!(decls.pop().unwrap().data.is_err());
+        assert!(decls.pop().unwrap().data.is_ok());
+    }
 }

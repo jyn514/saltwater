@@ -5,8 +5,8 @@ use std::mem;
 
 use super::{Lexeme, Parser};
 use crate::data::{
-    ArrayType, FunctionType, Keyword, Locatable, Location, Qualifiers, Stmt, StorageClass, Symbol,
-    Token, Type,
+    ArrayType, Expr, ExprType, FunctionType, Keyword, Locatable, Location, Qualifiers, Stmt,
+    StorageClass, Symbol, Token, Type,
 };
 use crate::utils::warn;
 
@@ -568,7 +568,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn parse_expr(&mut self) -> Expr {
         // TODO: oh honey
         self.next_token();
-        Expr::Int(Token::Int(10))
+        Expr {
+            expr: ExprType::Literal(Token::Int(10)),
+            ctype: Type::Int(true),
+            lval: false,
+            constexpr: true,
+            location: Default::default(),
+        }
     }
 }
 

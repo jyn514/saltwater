@@ -43,10 +43,10 @@ fn main() {
     #[cfg(not(feature = "better_parsing"))]
     let opt = {
         let mut args = env::args();
-        let first = args.next().unwrap_or("-".to_string());
+        let first = args.next().unwrap_or_else(|| "-".to_string());
         let debug = first == "-d";
         let filename = if debug {
-            args.next().unwrap_or("-".to_string())
+            args.next().unwrap_or_else(|| "-".to_string())
         } else {
             first
         };

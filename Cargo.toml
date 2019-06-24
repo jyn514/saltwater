@@ -8,7 +8,12 @@ description = "A C compiler written in Rust, with a focus on good error messages
 [dependencies]
 lazy_static = "1"
 ansi_term = "0.11"
-structopt = "0.2"
+
+structopt = { version = "0.2", optional = true }
 
 [profile.release]
 lto = true
+
+[features]
+# it _is_ much nicer, but it also has about 50 dependencies
+better_parsing = ["structopt"]

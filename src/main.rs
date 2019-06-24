@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate lazy_static;
+#[cfg(feature = "better_parsing")]
 extern crate structopt;
+#[cfg(feature = "better_parsing")]
+use structopt::StructOpt;
 
 #[macro_use]
 pub mod utils;
@@ -8,31 +11,50 @@ pub mod data;
 pub mod lex;
 pub mod parse;
 
+#[cfg(not(feature = "better_parsing"))]
+use std::env;
 use std::fs::File;
 use std::io::{self, Read};
 use std::process;
-
-use structopt::StructOpt;
 
 use lex::Lexer;
 use parse::Parser;
 use utils::error;
 
-#[derive(StructOpt, Debug)]
+#[cfg_attr(feature = "better_parsing", derive(StructOpt, Debug))]
 struct Opt {
     /// The file to read C source from.
     ///
     /// "-" means stdin (use ./- to read a file called '-').
     /// Only one file at a time is currently accepted.
-    #[structopt(name = "FILE", default_value = "-", parse(from_str))]
+    #[cfg_attr(
+        feature = "better_parsing",
+        structopt(name = "FILE", default_value = "-", parse(from_str))
+    )]
     filename: String,
     /// If set, print all tokens found by the lexer in addition to compiling.
-    #[structopt(short = "d", long = "debug-lex")]
+    #[cfg_attr(feature = "better_parsing", structopt(short = "d", long = "debug-lex"))]
     debug_lex: bool,
 }
 
 fn main() {
+    #[cfg(feature = "better_parsing")]
     let opt = Opt::from_args();
+    #[cfg(not(feature = "better_parsing"))]
+    let opt = {
+        let mut args = env::args();
+        let first = args.next().unwrap_or("-".to_string());
+        let debug = first == "-d";
+        let filename = if debug {
+            args.next().unwrap_or("-".to_string())
+        } else {
+            first
+        };
+        Opt {
+            filename,
+            debug_lex: debug,
+        }
+    };
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
     let filename = if opt.filename == "-" {

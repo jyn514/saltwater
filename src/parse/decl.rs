@@ -102,29 +102,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ctype: Type,
     ) -> Result<Locatable<Stmt>, Locatable<String>> {
         // declarator: Result<Symbol, Locatable<String>>
-        let symbol = match self.declarator(false)? {
-            Some(decl) => {
-                let (id, ctype) =
-                    decl.parse_type(ctype.clone(), &self.last_location.as_ref().unwrap())?;
-                let Locatable { location, data } = id.unwrap();
-                Locatable {
-                    location,
-                    data: Symbol {
-                        storage_class: sc,
-                        qualifiers: qualifiers.clone(),
-                        ctype,
-                        id: data,
-                    },
-                }
-            }
-            None => {
-                panic!("declarator should never return None when called with allow_abstract: false")
-            }
-        };
+        let decl = self
+            .declarator(false)?
+            .expect("declarator should never return None when called with allow_abstract: false");
+        let (id, ctype) = decl.parse_type(ctype.clone(), &self.last_location.as_ref().unwrap())?;
+        let id = id.expect("declarator should return id when called with allow_abstract: false");
         Ok(Locatable {
-            location: symbol.location,
+            location: id.location,
             data: Stmt::Declaration(Box::new(Declaration {
-                symbol: symbol.data,
+                symbol: Symbol {
+                    storage_class: sc,
+                    qualifiers: qualifiers.clone(),
+                    ctype,
+                    id: id.data,
+                },
                 init: None,
             })),
         })

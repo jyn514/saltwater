@@ -5,8 +5,8 @@ use std::mem;
 
 use super::{Lexeme, Parser};
 use crate::data::{
-    ArrayType, Expr, ExprType, FunctionType, Keyword, Locatable, Location, Qualifiers, Stmt,
-    StorageClass, Symbol, Token, Type,
+    ArrayType, Declaration, Expr, ExprType, FunctionType, Initializer, Keyword, Locatable,
+    Location, Qualifiers, Stmt, StorageClass, Symbol, Token, Type,
 };
 use crate::utils::warn;
 
@@ -66,68 +66,73 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
-    pub fn declaration(&mut self, start: Keyword) -> Option<Locatable<Result<Stmt, String>>> {
+    pub fn declaration(
+        &mut self,
+        start: Keyword,
+    ) -> Option<Result<Locatable<Stmt>, Locatable<String>>> {
         let (sc, qualifiers, ctype) = match self.declaration_specifiers(start) {
-            Ok(tuple) => tuple,
-            Err(err) => {
-                return Some(Locatable {
-                    data: Err(err.data),
-                    location: err.location,
-                });
-            }
+            Err(x) => return Some(Err(x)),
+            Ok(x) => x,
         };
-        while self.match_next(&Token::Semicolon).is_none() {
-            // declarator: Result<Declarator, Locatable<String>>
-            match self.declarator(false) {
-                Ok(Some(decl)) => {
-                    let (id, ctype) = match decl
-                        .parse_type(ctype.clone(), &self.last_location.as_ref().unwrap())
-                    {
-                        Err(err) => {
-                            return Some(Locatable {
-                                location: err.location,
-                                data: Err(err.data),
-                            })
-                        }
-                        Ok((id, ctype)) => (id, ctype),
-                    };
-                    let Locatable { location, data } = id.unwrap();
-                    self.pending.push_back(Locatable {
-                        location,
-                        data: Ok(Stmt::Declaration(Symbol {
-                            storage_class: sc,
-                            qualifiers: qualifiers.clone(),
-                            ctype,
-                            id: data,
-                        })),
-                    });
-                }
-                Ok(None) => panic!(
-                    "declarator should never return None when called with allow_abstract: false"
-                ),
-                Err(err) => {
-                    self.pending.push_back(Locatable {
-                        location: err.location,
-                        data: Err(err.data),
-                    });
-                }
-            }
+        if self.match_next(&Token::Semicolon).is_some() {
+            warn(
+                "declaration does not declare anything",
+                self.next_location(),
+            );
+            return None;
+        }
+        loop {
+            let decl = self.init_declarator(sc, qualifiers.clone(), ctype.clone());
+            self.pending.push_back(decl);
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon);
                 break;
             }
         }
-        // this is empty when we had specifiers without identifiers
-        // e.g. `int;`
-        self.pending.pop_front().or_else(|| {
-            warn(
-                "declaration does not declare anything",
-                self.next_location(),
-            );
-            self.next()
-        })
+        Some(
+            self.pending
+                .pop_front()
+                .expect("if we entered the loop, there should be at least one declaration"),
+        )
     }
-
+    fn init_declarator(
+        &mut self,
+        sc: StorageClass,
+        qualifiers: Qualifiers,
+        ctype: Type,
+    ) -> Result<Locatable<Stmt>, Locatable<String>> {
+        // declarator: Result<Symbol, Locatable<String>>
+        let symbol = match self.declarator(false)? {
+            Some(decl) => {
+                let (id, ctype) =
+                    decl.parse_type(ctype.clone(), &self.last_location.as_ref().unwrap())?;
+                let Locatable { location, data } = id.unwrap();
+                Locatable {
+                    location,
+                    data: Symbol {
+                        storage_class: sc,
+                        qualifiers: qualifiers.clone(),
+                        ctype,
+                        id: data,
+                    },
+                }
+            }
+            None => {
+                panic!("declarator should never return None when called with allow_abstract: false")
+            }
+        };
+        Ok(Locatable {
+            location: symbol.location,
+            data: Stmt::Declaration(Box::new(Declaration {
+                symbol: symbol.data,
+                init: None,
+            })),
+        })
+        /*
+        let initializer = self.initializer();
+        unimplemented!()
+        */
+    }
     /* this is an utter hack
      * NOTE: the reason the return type is so weird (Result<_, Locatable<_>)
      * is because declaration specifiers can never be a statement on their own:
@@ -207,10 +212,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         while errors.len() > 1 {
             let current = errors.pop().unwrap();
-            self.pending.push_front(Locatable {
-                location: current.location,
-                data: Err(current.data),
-            });
+            self.pending.push_front(Err(current));
         }
         if !errors.is_empty() {
             return Err(errors.pop().unwrap());
@@ -264,7 +266,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn parameter_type_list(&mut self) -> Result<DeclaratorType, Locatable<String>> {
         self.expect(Token::LeftParen);
         let mut params = vec![];
-        let mut errs = VecDeque::new();
+        let mut errs: VecDeque<Result<_, Locatable<String>>> = VecDeque::new();
         if self.match_next(&Token::RightParen).is_some() {
             return Ok(DeclaratorType::Function(FunctionDeclarator {
                 params,
@@ -274,10 +276,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         loop {
             if let Some(locatable) = self.match_next(&Token::Ellipsis) {
                 if params.is_empty() {
-                    errs.push_back(Locatable {
+                    errs.push_back(Err(Locatable {
                         location: locatable.location,
-                        data: Err("ISO C requires a parameter before '...'".to_string()),
-                    });
+                        data: "ISO C requires a parameter before '...'".to_string(),
+                    }));
                 }
                 // TODO: have a better error message for `int f(int, ..., int);`
                 self.expect(Token::RightParen);
@@ -292,10 +294,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     (Self::expect_keyword(next.data), next.location)
                 }
                 _ => {
-                    errs.push_back(Locatable {
+                    errs.push_back(Err(Locatable {
                         location: self.next_location().clone(),
-                        data: Err("function parameters require types".to_string()),
-                    });
+                        data: "function parameters require types".to_string(),
+                    }));
                     (Keyword::Int, self.next_location().clone())
                 }
             };
@@ -307,11 +309,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ));
             // true: allow abstract_declarators
             let declarator = match self.declarator(true) {
-                Err(Locatable { location, data }) => {
-                    errs.push_back(Locatable {
-                        location,
-                        data: Err(data),
-                    });
+                Err(x) => {
+                    errs.push_back(Err(x));
                     continue;
                 }
                 Ok(declarator) => declarator,
@@ -319,9 +318,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             // NOTE: we are more liberal here than gcc or clang,
             // we allow `int f(auto int);`
             if sc != StorageClass::Auto {
-                errs.push_back(Locatable {
+                errs.push_back(Err(Locatable {
                     location, // TODO: use the location of 'start',
-                    data: Err(format!(
+                    data: format!(
                         "cannot specify storage class '{}' for {}",
                         sc,
                         if let Some(decl) = declarator {
@@ -333,8 +332,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         } else {
                             "<parse-error>".to_string()
                         }
-                    )),
-                });
+                    ),
+                }));
             } else if let Some(decl) = declarator {
                 let (id, ctype) = decl.parse_type(
                     param_type,
@@ -597,6 +596,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 data: "expected declarator, got <end-of-file>".to_string(),
             })
         }
+    }
+    fn initializer(&mut self) -> Initializer {
+        unimplemented!();
     }
     fn parse_expr(&mut self) -> Expr {
         // TODO: oh honey
@@ -881,7 +883,7 @@ mod tests {
 
     fn match_type(lexed: Option<ParseType>, given_type: Type) -> bool {
         match_data(lexed, |data| match data {
-            Ok(Stmt::Declaration(symbol)) => symbol.ctype == given_type,
+            Stmt::Declaration(decl) => decl.symbol.ctype == given_type,
             _ => false,
         })
     }
@@ -913,16 +915,16 @@ mod tests {
     #[test]
     fn test_bad_decl_specs() {
         assert!(parse("int;").is_none());
-        assert!(parse("char char i;").unwrap().data.is_err());
-        assert!(parse("char long i;").unwrap().data.is_err());
-        assert!(parse("long char i;").unwrap().data.is_err());
-        assert!(parse("float char i;").unwrap().data.is_err());
-        assert!(parse("float double i;").unwrap().data.is_err());
-        assert!(parse("double double i;").unwrap().data.is_err());
-        assert!(parse("double unsigned i;").unwrap().data.is_err());
-        assert!(parse("short double i;").unwrap().data.is_err());
-        assert!(parse("int void i;").unwrap().data.is_err());
-        assert!(parse("void int i;").unwrap().data.is_err());
+        assert!(parse("char char i;").unwrap().is_err());
+        assert!(parse("char long i;").unwrap().is_err());
+        assert!(parse("long char i;").unwrap().is_err());
+        assert!(parse("float char i;").unwrap().is_err());
+        assert!(parse("float double i;").unwrap().is_err());
+        assert!(parse("double double i;").unwrap().is_err());
+        assert!(parse("double unsigned i;").unwrap().is_err());
+        assert!(parse("short double i;").unwrap().is_err());
+        assert!(parse("int void i;").unwrap().is_err());
+        assert!(parse("void int i;").unwrap().is_err());
         // default to int if we don't have a type
         // don't panic if we see duplicate specifiers
         assert!(match_type(parse("unsigned unsigned i;"), Type::Int(false)));
@@ -1170,7 +1172,7 @@ mod tests {
         let parsed = parse_all("int i, j, k;");
         assert!(parsed.len() == 3);
         assert!(match_all(parsed.into_iter(), |i| match i {
-            Ok(Stmt::Declaration(symbol)) => symbol.ctype == Type::Int(true),
+            Stmt::Declaration(decl) => decl.symbol.ctype == Type::Int(true),
             _ => false,
         }));
         let mut parsed = parse_all("char *p, c, **pp, f();");
@@ -1202,13 +1204,13 @@ mod tests {
     #[test]
     fn test_decl_errors() {
         // no semicolon
-        assert!(parse("int").unwrap().data.is_err());
-        assert!(parse("int i").unwrap().data.is_err());
+        assert!(parse("int").unwrap().is_err());
+        assert!(parse("int i").unwrap().is_err());
         // type error: cannot have array of functions or function returning array
-        assert!(parse("int f()[];").unwrap().data.is_err());
-        assert!(parse("int f[]();").unwrap().data.is_err());
-        assert!(parse("int f()();").unwrap().data.is_err());
+        assert!(parse("int f()[];").unwrap().is_err());
+        assert!(parse("int f[]();").unwrap().is_err());
+        assert!(parse("int f()();").unwrap().is_err());
         // TODO: the error for this is wrong and will be until I implement parse_expr()
-        assert!(parse("int (*f)[;").unwrap().data.is_err());
+        assert!(parse("int (*f)[;").unwrap().is_err());
     }
 }

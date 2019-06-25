@@ -121,12 +121,25 @@ pub enum Stmt {
     Label(String),
     Case(Expr),
     Default,
-    Declaration(Symbol),
+    Declaration(Box<Declaration>),
     Expr(Expr),
     Goto(String),
     Continue,
     Break,
     Return(Expr),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Declaration {
+    pub symbol: Symbol,
+    pub init: Option<Initializer>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Initializer {
+    Scalar(Expr),                      // int i = 5;
+    CompoundStatement(Vec<Stmt>),      // int f() { return 0; }
+    InitializerList(Vec<Initializer>), // int a[] = { 1, 2, 3 };
 }
 
 /// Holds the metadata for an expression.

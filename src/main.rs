@@ -84,9 +84,9 @@ fn main() {
     }
     let compiler = Parser::new(Lexer::new(filename, buf.chars()));
     for stmt in compiler {
-        match stmt.data {
-            Ok(s) => println!("{:#?}", s),
-            Err(err) => error(&err, &stmt.location),
+        match stmt {
+            Ok(s) => println!("{:#?}", s.data),
+            Err(err) => error(&err.data, &err.location),
         }
     }
 }

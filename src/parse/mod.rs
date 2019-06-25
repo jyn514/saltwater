@@ -16,7 +16,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     tokens: I,
     // VecDeque supports pop_front with reasonable efficiency
     // this is useful because errors are FIFO
-    pending: VecDeque<Locatable<Result<Stmt, String>>>,
+    pending: VecDeque<Result<Locatable<Stmt>, Locatable<String>>>,
     // in case we get to the end of the file and want to show an error
     // TODO: are we sure this should be optional?
     last_location: Option<Location>,
@@ -44,7 +44,21 @@ where
 }
 
 impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
-    type Item = Locatable<Result<Stmt, String>>;
+    type Item = Result<Locatable<Stmt>, Locatable<String>>;
+    /// translation_unit
+    /// : external_declaration
+    /// | translation_unit external_declaration
+    /// ;
+    ///
+    /// external_declaration
+    /// : function_definition
+    /// | declaration
+    /// ;
+    ///
+    /// function_definition
+    /// : declarator compound_statement
+    /// | declaration_specifiers declarator compound_statement
+    /// ;
     fn next(&mut self) -> Option<Self::Item> {
         self.pending.pop_front().or_else(|| {
             let Locatable {
@@ -55,10 +69,10 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                 // NOTE: we do not allow implicit int
                 // https://stackoverflow.com/questions/11064292
                 Token::Keyword(t) if t.is_decl_specifier() => self.declaration(t),
-                _ => Some(Locatable {
-                    data: Err("not handled".to_string()),
+                _ => Some(Err(Locatable {
+                    data: "not handled".to_string(),
                     location,
-                }),
+                })),
             }
         })
     }
@@ -69,25 +83,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // don't use this, use next_token instead
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
         match self.tokens.next() {
-            Some(Locatable {
-                data: Ok(token),
-                location,
-            }) => {
-                self.last_location = Some(location.clone());
-                Some(Locatable {
-                    data: token,
-                    location,
-                })
-            }
+            Some(x) => match x.data {
+                Ok(token) => {
+                    self.last_location = Some(x.location.clone());
+                    Some(Locatable {
+                        location: x.location,
+                        data: token,
+                    })
+                }
+                Err(err) => {
+                    error(&err, &x.location);
+                    self.last_location = Some(x.location);
+                    self.__impl_next_token()
+                }
+            },
             None => None,
-            Some(Locatable {
-                data: Err(err),
-                location,
-            }) => {
-                error(&err, &location);
-                self.last_location = Some(location);
-                self.__impl_next_token()
-            }
         }
     }
     fn next_token(&mut self) -> Option<Locatable<Token>> {
@@ -169,10 +179,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(data) => {
                 let message = data.to_string();
                 let location = self.next_location().clone();
-                self.pending.push_back(Locatable {
+                self.pending.push_back(Err(Locatable {
                     location,
-                    data: Err(format!("expected '{}', got '{}'", next, message)),
-                });
+                    data: format!("expected '{}', got '{}'", next, message),
+                }));
                 (false, self.next_location())
             }
             None => {
@@ -180,10 +190,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     .last_location
                     .as_ref()
                     .expect("parser.expect cannot be called at start of program");
-                self.pending.push_back(Locatable {
+                self.pending.push_back(Err(Locatable {
                     location: location.clone(),
-                    data: Err(format!("expected '{}', got <end-of-file>", next)),
-                });
+                    data: format!("expected '{}', got <end-of-file>", next),
+                }));
                 (false, location)
             }
         }
@@ -203,16 +213,19 @@ mod tests {
     use crate::data::{Locatable, Stmt};
     use crate::lex::Lexer;
 
-    pub type ParseType = Locatable<Result<Stmt, String>>;
+    pub type ParseType = Result<Locatable<Stmt>, Locatable<String>>;
     pub fn parse(input: &str) -> Option<ParseType> {
         let mut all = parse_all(input);
         match all.len() {
             0 => None,
             1 => Some(all.remove(0)),
-            n => Some(Locatable {
-                location: all.remove(1).location,
-                data: Err(format!("Expected exactly one statement, got {}", n)),
-            }),
+            n => Some(Err(Locatable {
+                location: match all.remove(1) {
+                    Ok(x) => x.location,
+                    Err(x) => x.location,
+                },
+                data: format!("Expected exactly one statement, got {}", n),
+            })),
         }
     }
     #[inline]
@@ -222,20 +235,23 @@ mod tests {
     #[inline]
     pub fn match_data<T>(lexed: Option<ParseType>, closure: T) -> bool
     where
-        T: Fn(Result<Stmt, String>) -> bool,
+        T: Fn(Stmt) -> bool,
     {
         match lexed {
-            Some(result) => closure(result.data),
-            None => false,
+            Some(Ok(stmt)) => closure(stmt.data),
+            _ => false,
         }
     }
     #[inline]
-    pub fn match_all<I, T>(lexed: I, closure: T) -> bool
+    pub fn match_all<I, T>(mut lexed: I, closure: T) -> bool
     where
         I: Iterator<Item = ParseType>,
-        T: Fn(Result<Stmt, String>) -> bool,
+        T: Fn(Stmt) -> bool,
     {
-        lexed.map(|l| l.data).all(closure)
+        lexed.all(|l| match l {
+            Ok(stmt) => closure(stmt.data),
+            _ => false,
+        })
     }
     #[inline]
     fn parser(input: &str) -> Parser<Lexer> {

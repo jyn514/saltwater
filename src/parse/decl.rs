@@ -5,8 +5,8 @@ use std::mem;
 
 use super::{Lexeme, Parser};
 use crate::data::{
-    ArrayType, Declaration, Expr, ExprType, FunctionType, Initializer, Keyword, Locatable,
-    Location, Qualifiers, Stmt, StorageClass, Symbol, Token, Type,
+    ArrayType, Expr, ExprType, FunctionType, Initializer, Keyword, Locatable, Location, Qualifiers,
+    Stmt, StorageClass, Symbol, Token, Type,
 };
 use crate::utils::warn;
 
@@ -107,22 +107,25 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .expect("declarator should never return None when called with allow_abstract: false");
         let (id, ctype) = decl.parse_type(ctype.clone(), &self.last_location.as_ref().unwrap())?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
+        let symbol = Symbol {
+            storage_class: sc,
+            qualifiers: qualifiers.clone(),
+            ctype,
+            id: id.data,
+        };
+        let init = if let Some(init) = self.initializer() {
+            match init? {
+                Initializer::CompoundStatement(stmts) => unimplemented!(),
+                Initializer::InitializerList(list) => unimplemented!(),
+                Initializer::Scalar(expr) => unimplemented!(),
+            }
+        } else {
+            None
+        };
         Ok(Locatable {
+            data: Stmt::Declaration(Box::new(symbol), init),
             location: id.location,
-            data: Stmt::Declaration(Box::new(Declaration {
-                symbol: Symbol {
-                    storage_class: sc,
-                    qualifiers: qualifiers.clone(),
-                    ctype,
-                    id: id.data,
-                },
-                init: None,
-            })),
         })
-        /*
-        let initializer = self.initializer();
-        unimplemented!()
-        */
     }
     /* this is an utter hack
      * NOTE: the reason the return type is so weird (Result<_, Locatable<_>)
@@ -588,8 +591,48 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             })
         }
     }
-    fn initializer(&mut self) -> Initializer {
-        unimplemented!();
+    /// initializer
+    ///     : assignment_expr
+    ///     | '{' initializer_list ','? '}'
+    ///     ;
+    ///
+    /// initializer_list
+    ///     : initializer
+    ///     | initializer_list ',' initializer
+    ///     ;
+    ///
+    /// Rewritten as
+    /// initializer: assignment_expr
+    ///     | '{' initializer (',' initializer)* ','? '}'
+    ///
+    /// We also catch function bodies here, which normally aren't allowed in initializers; we
+    /// have some custom logic in init_declarator to deal with it
+    fn initializer(&mut self) -> Option<Result<Initializer, Locatable<String>>> {
+        if self.peek_token() == Some(&Token::LeftBrace) {
+            // function body
+            match self.compound_statement() {
+                Err(err) => Some(Err(err)),
+                Ok(stmt) => Some(Ok(Initializer::CompoundStatement(stmt))),
+            }
+        } else if self.match_next(&Token::Equal).is_some() {
+            // initializer_list
+            if self.match_next(&Token::LeftBrace).is_some() {
+                let mut elements = vec![];
+                while let Some(init) = self.initializer() {
+                    match init {
+                        Ok(init) => elements.push(init),
+                        x => return Some(x),
+                    }
+                }
+                self.expect(Token::RightBrace);
+                Some(Ok(Initializer::InitializerList(elements)))
+            } else {
+                // assignment_expr
+                Some(Ok(Initializer::Scalar(self.parse_expr())))
+            }
+        } else {
+            None
+        }
     }
     fn parse_expr(&mut self) -> Expr {
         // TODO: oh honey
@@ -874,7 +917,7 @@ mod tests {
 
     fn match_type(lexed: Option<ParseType>, given_type: Type) -> bool {
         match_data(lexed, |data| match data {
-            Stmt::Declaration(decl) => decl.symbol.ctype == given_type,
+            Stmt::Declaration(symbol, _) => symbol.ctype == given_type,
             _ => false,
         })
     }
@@ -1163,7 +1206,7 @@ mod tests {
         let parsed = parse_all("int i, j, k;");
         assert!(parsed.len() == 3);
         assert!(match_all(parsed.into_iter(), |i| match i {
-            Stmt::Declaration(decl) => decl.symbol.ctype == Type::Int(true),
+            Stmt::Declaration(symbol, _) => symbol.ctype == Type::Int(true),
             _ => false,
         }));
         let mut parsed = parse_all("char *p, c, **pp, f();");

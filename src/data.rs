@@ -121,18 +121,12 @@ pub enum Stmt {
     Label(String),
     Case(Expr),
     Default,
-    Declaration(Box<Declaration>),
+    Declaration(Box<Symbol>, Option<Initializer>),
     Expr(Expr),
     Goto(String),
     Continue,
     Break,
     Return(Expr),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Declaration {
-    pub symbol: Symbol,
-    pub init: Option<Initializer>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -76,8 +76,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             return None;
         }
         loop {
-            let decl = self.init_declarator(sc, qualifiers.clone(), ctype.clone());
-            self.pending.push_back(decl);
+            let decl = match self.init_declarator(sc, qualifiers.clone(), ctype.clone()) {
+                Err(err) => return Some(Err(err)),
+                Ok(decl) => decl,
+            };
+            let (is_func, has_init) = match decl.data {
+                Stmt::Declaration(ref symbol, ref init) => {
+                    (symbol.ctype.is_function(), init.is_some())
+                }
+                _ => panic!("init_declarator should return declaration"),
+            };
+            self.pending.push_back(Ok(decl));
+            if is_func && has_init {
+                break;
+            }
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon);
                 break;
@@ -101,17 +113,26 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .expect("declarator should never return None when called with allow_abstract: false");
         let (id, ctype) = decl.parse_type(ctype.clone(), &self.last_location.as_ref().unwrap())?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
+        let init = match self.initializer()? {
+            Some(Initializer::CompoundStatement(stmts)) => {
+                if !ctype.is_function() {
+                    return Err(Locatable {
+                        location: id.location,
+                        data: format!("only functions can have a compound statement as an initializer, got '{}'", ctype)
+                    });
+                }
+                Some(Initializer::CompoundStatement(stmts))
+            }
+            Some(Initializer::InitializerList(list)) => unimplemented!(),
+            Some(Initializer::Scalar(expr)) => unimplemented!(),
+            None => None,
+        };
         let symbol = Symbol {
             storage_class: sc,
-            qualifiers: qualifiers.clone(),
+            qualifiers,
             ctype,
             id: id.data,
         };
-        let init = self.initializer()?.map(|init| match init {
-            Initializer::CompoundStatement(stmts) => unimplemented!(),
-            Initializer::InitializerList(list) => unimplemented!(),
-            Initializer::Scalar(expr) => unimplemented!(),
-        });
         Ok(Locatable {
             data: Stmt::Declaration(Box::new(symbol), init),
             location: id.location,

@@ -1,17 +1,20 @@
 mod decl;
+mod expr;
 mod stmt;
 
 use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{Keyword, Locatable, Location, Stmt, Token};
+use crate::data::{Keyword, Locatable, Location, Scope, Stmt, Token};
 use crate::utils::error;
 
 type Lexeme = Locatable<Result<Token, String>>;
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
+    // the variables that have been declared
+    scope: Scope,
     // we iterate lazily over the tokens, so if we have a program that's mostly valid but
     // breaks at the end, we don't only show lex errors
     tokens: I,
@@ -35,6 +38,7 @@ where
 {
     pub fn new(iter: I) -> Self {
         Parser {
+            scope: Default::default(),
             tokens: iter,
             pending: Default::default(),
             last_location: None,
@@ -62,17 +66,33 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
     /// ;
     fn next(&mut self) -> Option<Self::Item> {
         self.pending.pop_front().or_else(|| {
-            let Locatable {
-                data: lexed,
-                location,
-            } = self.next_token()?;
-            match lexed {
+            let locatable = self.next_token()?;
+            match locatable.data {
                 // NOTE: we do not allow implicit int
                 // https://stackoverflow.com/questions/11064292
-                Token::Keyword(t) if t.is_decl_specifier() => self.declaration(t),
+                Token::Keyword(t) if t.is_decl_specifier() => {
+                    self.unput(Some(locatable));
+                    let decl = match self.declaration() {
+                        Some(Ok(decl)) => decl,
+                        None => return self.next(),
+                        x => return x,
+                    };
+                    if let Stmt::Declaration(ref symbol, _) = decl.data {
+                        if self.scope.insert(*symbol.clone()).is_some() {
+                            Some(Err(Locatable {
+                                location: decl.location,
+                                data: format!("redefinition of '{}'", symbol.id),
+                            }))
+                        } else {
+                            Some(Ok(decl))
+                        }
+                    } else {
+                        panic!("expected parser::declaration to return a declaration");
+                    }
+                }
                 _ => Some(Err(Locatable {
                     data: "not handled".to_string(),
-                    location,
+                    location: locatable.location,
                 })),
             }
         })
@@ -157,26 +177,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             None
         }
     }
-    /* WARNING: may panic
-     * only use if you are SURE token is a keyword
-     */
-    fn expect_keyword(token: Token) -> Keyword {
-        match token {
-            Token::Keyword(k) => k,
-            _ => panic!("peek should never be different from next"),
-        }
-    }
-    fn expect(&mut self, next: Token) -> (bool, &Location) {
+    fn expect(&mut self, next: Token) -> Option<Locatable<Token>> {
         match self.peek_token() {
-            Some(data) if mem::discriminant(&next) == mem::discriminant(data) => {
-                self.next_token();
-                (
-                    true,
-                    self.last_location
-                        .as_ref()
-                        .expect("last_location should be set whenever next_token is called"),
-                )
-            }
+            Some(data) if mem::discriminant(&next) == mem::discriminant(data) => self.next_token(),
             Some(data) => {
                 let message = data.to_string();
                 let location = self.next_location().clone();
@@ -184,18 +187,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location,
                     data: format!("expected '{}', got '{}'", next, message),
                 }));
-                (false, self.next_location())
+                None
             }
             None => {
                 let location = self
                     .last_location
                     .as_ref()
-                    .expect("parser.expect cannot be called at start of program");
+                    .expect("parser.expect cannot be called at start of program")
+                    .clone();
                 self.pending.push_back(Err(Locatable {
-                    location: location.clone(),
+                    location,
                     data: format!("expected '{}', got <end-of-file>", next),
                 }));
-                (false, location)
+                None
             }
         }
     }
@@ -255,7 +259,7 @@ mod tests {
         })
     }
     #[inline]
-    fn parser(input: &str) -> Parser<Lexer> {
+    pub fn parser(input: &str) -> Parser<Lexer> {
         Parser::new(Lexer::new("<test suite>".to_string(), input.chars()))
     }
     #[test]
@@ -270,5 +274,16 @@ mod tests {
         assert!(instance.next_token().unwrap().data == Token::LeftBracket);
         assert!(instance.next_token().unwrap().data == Token::LeftParen);
         assert!(instance.next_token().unwrap().data == Token::Keyword(Keyword::Int));
+    }
+    #[test]
+    fn multiple_declaration() {
+        let mut decls = parse_all("int a; int a;");
+        assert!(decls.len() == 2);
+        assert!(decls.pop().unwrap().is_err());
+        assert!(decls.pop().unwrap().is_ok());
+        let mut decls = parse_all("int a; char *a[];");
+        assert!(decls.len() == 2);
+        assert!(decls.pop().unwrap().is_err());
+        assert!(decls.pop().unwrap().is_ok());
     }
 }

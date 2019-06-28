@@ -7,7 +7,7 @@ use std::iter::Iterator;
 use std::mem;
 
 use crate::data::{Keyword, Locatable, Location, Scope, Stmt, Token};
-use crate::utils::error;
+use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
 
@@ -68,6 +68,10 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
         self.pending.pop_front().or_else(|| {
             let locatable = self.next_token()?;
             match locatable.data {
+                Token::Semicolon => {
+                    warn("extraneous semicolon at top level", &locatable.location);
+                    self.next()
+                }
                 // NOTE: we do not allow implicit int
                 // https://stackoverflow.com/questions/11064292
                 Token::Keyword(t) if t.is_decl_specifier() => {
@@ -90,8 +94,12 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                         panic!("expected parser::declaration to return a declaration");
                     }
                 }
+                Token::Id(id) => Some(Err(Locatable {
+                    data: format!("expected declaration specifier, got variable '{}'. help: this compiler does not allow implicit int, try 'int {}' instead", id, id),
+                    location: locatable.location,
+                })),
                 _ => Some(Err(Locatable {
-                    data: "not handled".to_string(),
+                    data: "expected declaration specifier".to_string(),
                     location: locatable.location,
                 })),
             }

@@ -325,15 +325,23 @@ impl Qualifiers {
 
 impl Type {
     /// https://stackoverflow.com/questions/14821936/what-is-a-scalar-object-in-c#14822074
+    #[inline]
     pub fn is_scalar(&self) -> bool {
         use Type::*;
         match self {
-            Char(_) | Short(_) | Int(_) | Long(_) | Float | Double | Pointer(_, _) | Enum(_) => {
-                true
-            }
+            Enum(_) => true,
+            k if k.is_arithmetic() || k.is_pointer() => true,
             _ => false,
         }
     }
+    #[inline]
+    pub fn is_bool(&self) -> bool {
+        match self {
+            Type::Bool => true,
+            _ => false,
+        }
+    }
+    #[inline]
     pub fn is_integral(&self) -> bool {
         use Type::*;
         match self {
@@ -341,21 +349,25 @@ impl Type {
             _ => false,
         }
     }
+    #[inline]
     pub fn is_floating(&self) -> bool {
         match self {
             Type::Float | Type::Double => true,
             _ => false,
         }
     }
+    #[inline]
     pub fn is_arithmetic(&self) -> bool {
         self.is_integral() || self.is_floating()
     }
+    #[inline]
     pub fn is_pointer(&self) -> bool {
         match self {
             Type::Pointer(_, _) => true,
             _ => false,
         }
     }
+    #[inline]
     pub fn is_function(&self) -> bool {
         match self {
             Type::Function(_) => true,

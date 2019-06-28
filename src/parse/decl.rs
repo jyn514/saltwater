@@ -87,6 +87,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 _ => panic!("init_declarator should return declaration"),
             };
             self.pending.push_back(Ok(decl));
+            // NOTE: does not adhere to the standard, allows `int i, f() {}`
+            // TODO: have different logic for '=' and '{' initializers
             if is_func && has_init {
                 break;
             }
@@ -124,7 +126,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Some(Initializer::CompoundStatement(stmts))
             }
             Some(Initializer::InitializerList(list)) => unimplemented!(),
-            Some(Initializer::Scalar(expr)) => unimplemented!(),
+            Some(Initializer::Scalar(expr)) => {
+                let expr = Expr::cast_op(expr, &ctype)?;
+                Some(Initializer::Scalar(expr))
+            }
             None => None,
         };
         let symbol = Symbol {
@@ -501,14 +506,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             _ if allow_abstract => None,
             Some(x) => {
                 return Err(Locatable {
-                    data: format!("expected identifier or '(', got '{}'", x),
+                    data: format!("expected variable name or '(', got '{}'", x),
                     location: self.next_location().clone(),
                 })
             }
             None => {
                 return Err(Locatable {
                     location: self.next_location().clone(),
-                    data: "expected identifier or '(', got <end-of-of-file>".to_string(),
+                    data: "expected variable name or '(', got <end-of-of-file>".to_string(),
                 })
             }
         };

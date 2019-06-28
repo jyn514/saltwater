@@ -515,7 +515,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let promoted_args: Vec<Expr> = args
                         .into_iter()
                         .zip(&functype.params)
-                        .map(|(arg, expected)| Expr::implicit_convert_op(arg, &expected.ctype))
+                        .map(|(arg, expected)| Expr::cast_op(arg, &expected.ctype))
                         .collect::<Result<_, Locatable<String>>>()?;
                     Ok(Expr {
                         location,
@@ -767,6 +767,13 @@ impl Token {
 
 /* stateless helper functions */
 impl Expr {
+    fn is_null(&self) -> bool {
+        self.ctype.is_pointer()
+            && match self.expr {
+                ExprType::Literal(Token::Int(0)) => true,
+                _ => false,
+            }
+    }
     /// See section 6.3.2.1 of the C Standard. In particular:
     /// "A modifiable lvalue is an lvalue that does not have array type,
     /// does not  have an incomplete type, does not have a const-qualified type,
@@ -812,8 +819,35 @@ impl Expr {
     fn implicit_deref_op(expr: Expr) -> ExprResult {
         unimplemented!("implicit variable dereferences")
     }
-    fn implicit_convert_op(expr: Expr, ctype: &Type) -> ExprResult {
-        unimplemented!("implicit type conversion")
+    // Simple assignment rules, section 6.5.16.1 of the C standard
+    pub fn cast_op(expr: Expr, ctype: &Type) -> ExprResult {
+        if expr.ctype == *ctype {
+            Ok(expr)
+        } else if expr.ctype.is_arithmetic() && ctype.is_arithmetic()
+            || expr.is_null() && ctype.is_pointer()
+            || expr.ctype.is_pointer() && ctype.is_bool()
+            || expr.ctype.is_pointer()
+                && match ctype {
+                    Type::Pointer(t, quals) => match **t {
+                        Type::Void => true, // quals == expr.ctype.quals,
+                        _ => false,
+                    },
+                    _ => false,
+                }
+        {
+            Ok(Expr {
+                location: expr.location.clone(),
+                constexpr: expr.constexpr,
+                expr: ExprType::Cast(Box::new(expr), ctype.clone()),
+                lval: false,
+                ctype: ctype.clone(),
+            })
+        } else {
+            Err(Locatable {
+                location: expr.location,
+                data: format!("cannot convert '{}' to '{}'", expr.ctype, ctype),
+            })
+        }
     }
     fn increment_op(prefix: bool, increment: bool, expr: Expr, location: Location) -> ExprResult {
         if !expr.is_modifiable_lval() {

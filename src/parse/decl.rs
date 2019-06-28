@@ -25,11 +25,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///     ;
     ///
     /// where specifier_qualifier_list: (type_specifier | type_qualifier)+
-    pub fn type_name(
-        &mut self,
-        keyword: Keyword,
-    ) -> Result<Locatable<(Type, Qualifiers)>, Locatable<String>> {
-        let (sc, qualifiers, ctype) = self.declaration_specifiers(keyword)?;
+    pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, Locatable<String>> {
+        let (sc, qualifiers, ctype) = self.declaration_specifiers()?;
         if sc != StorageClass::Auto {
             return Err(Locatable {
                 // TODO
@@ -66,11 +63,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
-    pub fn declaration(
-        &mut self,
-        start: Keyword,
-    ) -> Option<Result<Locatable<Stmt>, Locatable<String>>> {
-        let (sc, qualifiers, ctype) = match self.declaration_specifiers(start) {
+    pub fn declaration(&mut self) -> Option<Result<Locatable<Stmt>, Locatable<String>>> {
+        let (sc, qualifiers, ctype) = match self.declaration_specifiers() {
             Err(x) => return Some(Err(x)),
             Ok(x) => x,
         };
@@ -113,15 +107,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ctype,
             id: id.data,
         };
-        let init = if let Some(init) = self.initializer() {
-            match init? {
-                Initializer::CompoundStatement(stmts) => unimplemented!(),
-                Initializer::InitializerList(list) => unimplemented!(),
-                Initializer::Scalar(expr) => unimplemented!(),
-            }
-        } else {
-            None
-        };
+        let init = self.initializer()?.map(|init| match init {
+            Initializer::CompoundStatement(stmts) => unimplemented!(),
+            Initializer::InitializerList(list) => unimplemented!(),
+            Initializer::Scalar(expr) => unimplemented!(),
+        });
         Ok(Locatable {
             data: Stmt::Declaration(Box::new(symbol), init),
             location: id.location,
@@ -144,35 +134,23 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn declaration_specifiers(
         &mut self,
-        start: Keyword,
     ) -> Result<(StorageClass, Qualifiers, Type), Locatable<String>> {
         // TODO: initialization is a mess
         let mut keywords = HashSet::new();
-        keywords.insert(start);
-        let mut storage_class = StorageClass::try_from(start).ok();
-        let mut qualifiers = Qualifiers {
-            c_const: start == Keyword::Const,
-            volatile: start == Keyword::Volatile,
-        };
-        let mut ctype = Type::try_from(start).ok();
-        let mut signed = if start == Keyword::Signed {
-            Some(true)
-        } else if start == Keyword::Unsigned {
-            Some(false)
-        } else {
-            None
-        };
+        let mut storage_class = None;
+        let mut qualifiers = Qualifiers::NONE;
+        let mut ctype = None;
+        let mut signed = None;
         let mut errors = vec![];
         // unsigned const int
-        while let Some(Token::Keyword(keyword)) = self.peek_token() {
-            if !keyword.is_decl_specifier() {
-                break;
-            }
-            let Locatable {
-                location,
-                data: keyword,
-            } = self.next_token().unwrap();
-            let keyword = Self::expect_keyword(keyword);
+        while let Some(locatable) = self.next_token() {
+            let (location, keyword) = match locatable.data {
+                Token::Keyword(k) if k.is_decl_specifier() => (locatable.location, k),
+                _ => {
+                    self.unput(Some(locatable));
+                    break;
+                }
+            };
             if keywords.insert(keyword) {
                 declaration_specifier(
                     keyword,
@@ -258,9 +236,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *
      */
     fn parameter_type_list(&mut self) -> Result<DeclaratorType, Locatable<String>> {
-        self.expect(Token::LeftParen);
+        let start = self.expect(Token::LeftParen);
         let mut params = vec![];
-        let mut errs: VecDeque<Result<_, Locatable<String>>> = VecDeque::new();
+        let mut errs = VecDeque::new();
         if self.match_next(&Token::RightParen).is_some() {
             return Ok(DeclaratorType::Function(FunctionDeclarator {
                 params,
@@ -282,25 +260,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     varargs: true,
                 }));
             }
-            let (start, location) = match self.peek_token() {
-                Some(Token::Keyword(k)) if k.is_decl_specifier() => {
-                    let next = self.next_token().unwrap();
-                    (Self::expect_keyword(next.data), next.location)
-                }
-                _ => {
-                    errs.push_back(Err(Locatable {
-                        location: self.next_location().clone(),
-                        data: "function parameters require types".to_string(),
-                    }));
-                    (Keyword::Int, self.next_location().clone())
-                }
-            };
-            // TODO: handle errors
-            let (sc, quals, param_type) = self.declaration_specifiers(start).unwrap_or((
-                Default::default(),
-                Default::default(),
-                Type::Int(true),
-            ));
+            let (sc, quals, param_type) = self.declaration_specifiers()?;
             // true: allow abstract_declarators
             let declarator = match self.declarator(true) {
                 Err(x) => {
@@ -309,15 +269,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
                 Ok(declarator) => declarator,
             };
-            // NOTE: we are more liberal here than gcc or clang,
-            // we allow `int f(auto int);`
             if sc != StorageClass::Auto {
                 errs.push_back(Err(Locatable {
-                    location, // TODO: use the location of 'start',
+                    location: self.last_location.as_ref().unwrap().clone(),
                     data: format!(
                         "cannot specify storage class '{}' for {}",
                         sc,
-                        if let Some(decl) = declarator {
+                        if let Some(ref decl) = declarator {
                             if let Some(ref name) = decl.id() {
                                 format!("parameter {}", name.data)
                             } else {
@@ -328,13 +286,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         }
                     ),
                 }));
-            } else if let Some(decl) = declarator {
+            }
+            if let Some(decl) = declarator {
                 let (id, ctype) = decl.parse_type(
                     param_type,
                     &self
                         .last_location
                         .as_ref()
-                        .expect("If we see a token, there should be at least one stored locaiton"),
+                        .expect("If we see a token, there should be at least one stored location"),
                 )?;
                 // I will probably regret this in the future
                 // default() for String is "",
@@ -406,12 +365,26 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             next: prefix.map(Box::new),
                         })
                     } else {
-                        let expr = self.parse_expr();
+                        let expr = self.constant_expr()?;
                         self.expect(Token::RightBracket);
-                        Some(Declarator {
-                            current: DeclaratorType::Array(ArrayType::Fixed(Box::new(expr))),
-                            next: prefix.map(Box::new),
-                        })
+                        // TODO: allow any integer type
+                        // also TODO: look up the rules for this in the C standard
+                        if expr.ctype.is_integral() {
+                            Some(Declarator {
+                                current: DeclaratorType::Array(ArrayType::Fixed(Box::new(expr))),
+                                next: prefix.map(Box::new),
+                            })
+                        } else {
+                            // TODO: parse the rest of the declarator before
+                            // complaining about a type mismatch
+                            return Err(Locatable {
+                                location: expr.location,
+                                data: format!(
+                                    "size of array has non-integer type '{}'",
+                                    expr.ctype
+                                ),
+                            });
+                        }
                     }
                 }
                 Token::LeftParen => Some(Declarator {
@@ -577,6 +550,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             }
                         }
                     }
+                    // TODO: this is wrong
+                    // const int *i; declares a pointer to const data: the pointer can
+                    // be modified but the data cannot.
+                    // int *const i; declares a const pointer to data: the data can be
+                    // modified but the pointer cannot.
+                    // We have this backwards.
                     Ok(Some(Declarator {
                         current: DeclaratorType::Pointer(qualifiers),
                         next: self.declarator(allow_abstract)?.map(Box::new),
@@ -607,42 +586,27 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// We also catch function bodies here, which normally aren't allowed in initializers; we
     /// have some custom logic in init_declarator to deal with it
-    fn initializer(&mut self) -> Option<Result<Initializer, Locatable<String>>> {
+    fn initializer(&mut self) -> Result<Option<Initializer>, Locatable<String>> {
         if self.peek_token() == Some(&Token::LeftBrace) {
             // function body
-            match self.compound_statement() {
-                Err(err) => Some(Err(err)),
-                Ok(stmt) => Some(Ok(Initializer::CompoundStatement(stmt))),
-            }
+            Ok(Some(Initializer::CompoundStatement(
+                self.compound_statement()?,
+            )))
         } else if self.match_next(&Token::Equal).is_some() {
             // initializer_list
             if self.match_next(&Token::LeftBrace).is_some() {
                 let mut elements = vec![];
-                while let Some(init) = self.initializer() {
-                    match init {
-                        Ok(init) => elements.push(init),
-                        x => return Some(x),
-                    }
+                while let Some(init) = self.initializer()? {
+                    elements.push(init);
                 }
                 self.expect(Token::RightBrace);
-                Some(Ok(Initializer::InitializerList(elements)))
+                Ok(Some(Initializer::InitializerList(elements)))
             } else {
                 // assignment_expr
-                Some(Ok(Initializer::Scalar(self.parse_expr())))
+                Ok(Some(Initializer::Scalar(self.expr()?)))
             }
         } else {
-            None
-        }
-    }
-    fn parse_expr(&mut self) -> Expr {
-        // TODO: oh honey
-        self.next_token();
-        Expr {
-            expr: ExprType::Literal(Token::Int(10)),
-            ctype: Type::Int(true),
-            lval: false,
-            constexpr: true,
-            location: Default::default(),
+            Ok(None)
         }
     }
 }
@@ -765,6 +729,7 @@ impl Keyword {
     fn is_storage_class(self) -> bool {
         StorageClass::try_from(self).is_ok()
     }
+    // TODO: catch structs, enums, and typedefs
     pub fn is_decl_specifier(self) -> bool {
         use Keyword::*;
         match self {
@@ -909,7 +874,7 @@ struct Declarator {
 #[cfg(test)]
 mod tests {
     use crate::data::{
-        ArrayType, Expr, FunctionType, Qualifiers, Stmt, Symbol, Token,
+        ArrayType, Expr, ExprType, FunctionType, Qualifiers, Stmt, Symbol, Token,
         Type::{self, *},
     };
     use crate::parse::tests::{match_all, match_data, parse, parse_all, ParseType};
@@ -1044,6 +1009,14 @@ mod tests {
     }
     #[test]
     fn test_functions() {
+        assert!(match_type(
+            parse("void *f();"),
+            Function(FunctionType {
+                return_type: Box::new(Pointer(Box::new(Type::Void), Default::default())),
+                params: vec![],
+                varargs: false,
+            })
+        ));
         // cdecl: declare i as pointer to function returning int;
         assert!(match_type(
             parse("int (*i)();"),

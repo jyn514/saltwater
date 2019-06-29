@@ -4,6 +4,16 @@ use crate::data::*;
 type ExprResult = Result<Expr, Locatable<String>>;
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
+    /// expr_opt: expr ';' | ';'
+    pub fn expr_opt(&mut self, token: Token) -> Option<ExprResult> {
+        if self.match_next(&token).is_some() {
+            None
+        } else {
+            let expr = self.expr();
+            self.expect(token);
+            Some(expr)
+        }
+    }
     /// expr(): Parse an expression.
     ///
     /// In programming language terminology, an 'expression' is anything that has a value.
@@ -798,13 +808,23 @@ impl Expr {
     // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
     //
     // if (expr)
-    fn truthy(expr: Expr) -> Expr {
-        Expr {
-            constexpr: expr.constexpr,
-            lval: false,
-            location: expr.location.clone(),
-            ctype: Type::Int(true),
-            expr: ExprType::Compare(Box::new(expr), Box::new(zero()), Token::NotEqual),
+    pub fn truthy(self) -> Result<Expr, Locatable<String>> {
+        if !self.ctype.is_scalar() {
+            Err(Locatable {
+                location: self.location,
+                data: format!(
+                    "expression of type '{}' cannot be converted to bool",
+                    self.ctype
+                ),
+            })
+        } else {
+            Ok(Expr {
+                constexpr: self.constexpr,
+                lval: false,
+                location: self.location.clone(),
+                ctype: Type::Bool,
+                expr: ExprType::Compare(Box::new(self), Box::new(zero()), Token::NotEqual),
+            })
         }
     }
     /// p + 1 where p is a pointer

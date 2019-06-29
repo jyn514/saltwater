@@ -112,22 +112,27 @@ pub enum Token {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[allow(dead_code)]
 pub enum Stmt {
+    Compound(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     Do(Box<Stmt>, Expr),
     While(Expr, Box<Stmt>),
     For(Box<Stmt>, Expr, Box<Stmt>, Box<Stmt>),
     Switch(Expr, Box<Stmt>),
-    Label(String),
+    Label(String, Box<Option<Stmt>>),
     Case(Expr),
     Default,
-    Declaration(Box<Symbol>, Option<Initializer>),
     Expr(Expr),
     Goto(String),
     Continue,
     Break,
     Return(Expr),
+}
+
+#[derive(Clone, Debug)]
+pub struct Declaration {
+    pub symbol: Symbol,
+    pub init: Option<Initializer>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -169,7 +174,6 @@ pub struct Expr {
     pub location: Location,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprType {
     Id(Symbol),
@@ -207,7 +211,6 @@ pub enum ExprType {
     Comma(Box<Expr>, Box<Expr>),
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     Void,
@@ -256,7 +259,6 @@ pub struct Qualifiers {
     pub c_const: bool,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 // note: old-style declarations are not supported at this time
 pub struct FunctionType {

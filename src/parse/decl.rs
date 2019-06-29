@@ -5,8 +5,8 @@ use std::mem;
 
 use super::{Lexeme, Parser};
 use crate::data::{
-    ArrayType, Expr, ExprType, FunctionType, Initializer, Keyword, Locatable, Location, Qualifiers,
-    Stmt, StorageClass, Symbol, Token, Type,
+    ArrayType, Declaration, Expr, FunctionType, Initializer, Keyword, Locatable, Location,
+    Qualifiers, Stmt, StorageClass, Symbol, Token, Type,
 };
 use crate::utils::warn;
 
@@ -63,7 +63,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
-    pub fn declaration(&mut self) -> Option<Result<Locatable<Stmt>, Locatable<String>>> {
+    pub fn declaration(&mut self) -> Option<Result<Locatable<Declaration>, Locatable<String>>> {
         let (sc, qualifiers, ctype) = match self.declaration_specifiers() {
             Err(x) => return Some(Err(x)),
             Ok(x) => x,
@@ -80,12 +80,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Err(err) => return Some(Err(err)),
                 Ok(decl) => decl,
             };
-            let (is_func, has_init) = match decl.data {
-                Stmt::Declaration(ref symbol, ref init) => {
-                    (symbol.ctype.is_function(), init.is_some())
-                }
-                _ => panic!("init_declarator should return declaration"),
-            };
+            let (is_func, has_init) = (
+                decl.data.symbol.ctype.is_function(),
+                decl.data.init.is_some(),
+            );
             self.pending.push_back(Ok(decl));
             // NOTE: does not adhere to the standard, allows `int i, f() {}`
             // TODO: have different logic for '=' and '{' initializers
@@ -108,7 +106,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         sc: StorageClass,
         qualifiers: Qualifiers,
         ctype: Type,
-    ) -> Result<Locatable<Stmt>, Locatable<String>> {
+    ) -> Result<Locatable<Declaration>, Locatable<String>> {
         // declarator: Result<Symbol, Locatable<String>>
         let decl = self
             .declarator(false)?
@@ -139,7 +137,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             id: id.data,
         };
         Ok(Locatable {
-            data: Stmt::Declaration(Box::new(symbol), init),
+            data: Declaration { symbol, init },
             location: id.location,
         })
     }
@@ -262,7 +260,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *
      */
     fn parameter_type_list(&mut self) -> Result<DeclaratorType, Locatable<String>> {
-        let start = self.expect(Token::LeftParen);
+        self.expect(Token::LeftParen);
         let mut params = vec![];
         let mut errs = VecDeque::new();
         if self.match_next(&Token::RightParen).is_some() {
@@ -616,7 +614,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if self.peek_token() == Some(&Token::LeftBrace) {
             // function body
             Ok(Some(Initializer::CompoundStatement(
-                self.compound_statement()?,
+                match self.compound_statement()? {
+                    Stmt::Compound(stmts) => stmts,
+                    x => panic!("expected compound_statement to return compound statement, got '{:#?}' instead", x)
+                }
             )))
         } else if self.match_next(&Token::Equal).is_some() {
             // initializer_list
@@ -872,7 +873,14 @@ impl Declarator {
             };
             declarator = decl.next.map(|x| *x);
         }
-        Ok((identifier, current))
+        if current == Type::Void {
+            Err(Locatable {
+                data: "variables cannot have type 'void'".to_string(),
+                location: identifier.map_or_else(|| location.clone(), |l| l.location),
+            })
+        } else {
+            Ok((identifier, current))
+        }
     }
 }
 
@@ -900,17 +908,14 @@ struct Declarator {
 #[cfg(test)]
 mod tests {
     use crate::data::{
-        ArrayType, Expr, ExprType, FunctionType, Qualifiers, Stmt, Symbol, Token,
+        ArrayType, FunctionType, Qualifiers, Symbol,
         Type::{self, *},
     };
     use crate::parse::tests::{match_all, match_data, parse, parse_all, ParseType};
     use std::boxed::Box;
 
     fn match_type(lexed: Option<ParseType>, given_type: Type) -> bool {
-        match_data(lexed, |data| match data {
-            Stmt::Declaration(symbol, _) => symbol.ctype == given_type,
-            _ => false,
-        })
+        match_data(lexed, |data| data.symbol.ctype == given_type)
     }
     #[test]
     fn test_decl_specifiers() {
@@ -1204,10 +1209,7 @@ mod tests {
     fn test_multiple() {
         let parsed = parse_all("int i, j, k;");
         assert!(parsed.len() == 3);
-        assert!(match_all(parsed.into_iter(), |i| match i {
-            Stmt::Declaration(symbol, _) => symbol.ctype == Type::Int(true),
-            _ => false,
-        }));
+        assert!(match_all(parsed.into_iter(), |i| i.symbol.ctype == Type::Int(true)));
         let mut parsed = parse_all("char *p, c, **pp, f();");
         assert!(parsed.len() == 4);
         assert!(match_type(

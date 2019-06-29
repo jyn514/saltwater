@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{Keyword, Locatable, Location, Scope, Stmt, Token};
+use crate::data::{Declaration, Keyword, Locatable, Location, Scope, Token};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
@@ -20,7 +20,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     tokens: I,
     // VecDeque supports pop_front with reasonable efficiency
     // this is useful because errors are FIFO
-    pending: VecDeque<Result<Locatable<Stmt>, Locatable<String>>>,
+    pending: VecDeque<Result<Locatable<Declaration>, Locatable<String>>>,
     // in case we get to the end of the file and want to show an error
     // TODO: are we sure this should be optional?
     last_location: Option<Location>,
@@ -49,7 +49,7 @@ where
 }
 
 impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
-    type Item = Result<Locatable<Stmt>, Locatable<String>>;
+    type Item = Result<Locatable<Declaration>, Locatable<String>>;
     /// translation_unit
     /// : external_declaration
     /// | translation_unit external_declaration
@@ -81,25 +81,21 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                         None => return self.next(),
                         x => return x,
                     };
-                    if let Stmt::Declaration(ref symbol, _) = decl.data {
-                        if self.scope.insert(*symbol.clone()).is_some() {
-                            Some(Err(Locatable {
-                                location: decl.location,
-                                data: format!("redefinition of '{}'", symbol.id),
-                            }))
-                        } else {
-                            Some(Ok(decl))
-                        }
+                    if self.scope.insert(decl.data.symbol.clone()).is_some() {
+                        Some(Err(Locatable {
+                            location: decl.location,
+                            data: format!("redefinition of '{}'", decl.data.symbol.id),
+                        }))
                     } else {
-                        panic!("expected parser::declaration to return a declaration");
+                        Some(Ok(decl))
                     }
                 }
                 Token::Id(id) => Some(Err(Locatable {
                     data: format!("expected declaration specifier, got variable '{}'. help: this compiler does not allow implicit int, try 'int {}' instead", id, id),
                     location: locatable.location,
                 })),
-                _ => Some(Err(Locatable {
-                    data: "expected declaration specifier".to_string(),
+                x => Some(Err(Locatable {
+                    data: format!("expected declaration specifier, got '{}'", x),
                     location: locatable.location,
                 })),
             }
@@ -186,8 +182,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
     }
     fn expect(&mut self, next: Token) -> Option<Locatable<Token>> {
+        if let Token::Keyword(n) = next {
+            if let Some(Token::Keyword(p)) = self.peek_token() {
+                if n == *p {
+                    return self.next_token();
+                }
+            }
+        }
         match self.peek_token() {
-            Some(data) if mem::discriminant(&next) == mem::discriminant(data) => self.next_token(),
+            Some(data)
+                if mem::discriminant(data) == mem::discriminant(&next)
+                    && mem::discriminant(data)
+                        != mem::discriminant(&Token::Keyword(Keyword::Void)) =>
+            {
+                self.next_token()
+            }
             Some(data) => {
                 let message = data.to_string();
                 let location = self.next_location().clone();
@@ -223,10 +232,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 #[cfg(test)]
 mod tests {
     use super::Parser;
-    use crate::data::{Locatable, Stmt};
+    use crate::data::{Declaration, Locatable};
     use crate::lex::Lexer;
 
-    pub type ParseType = Result<Locatable<Stmt>, Locatable<String>>;
+    pub type ParseType = Result<Locatable<Declaration>, Locatable<String>>;
     pub fn parse(input: &str) -> Option<ParseType> {
         let mut all = parse_all(input);
         match all.len() {
@@ -248,10 +257,10 @@ mod tests {
     #[inline]
     pub fn match_data<T>(lexed: Option<ParseType>, closure: T) -> bool
     where
-        T: Fn(Stmt) -> bool,
+        T: Fn(Declaration) -> bool,
     {
         match lexed {
-            Some(Ok(stmt)) => closure(stmt.data),
+            Some(Ok(decl)) => closure(decl.data),
             _ => false,
         }
     }
@@ -259,10 +268,10 @@ mod tests {
     pub fn match_all<I, T>(mut lexed: I, closure: T) -> bool
     where
         I: Iterator<Item = ParseType>,
-        T: Fn(Stmt) -> bool,
+        T: Fn(Declaration) -> bool,
     {
         lexed.all(|l| match l {
-            Ok(stmt) => closure(stmt.data),
+            Ok(decl) => closure(decl.data),
             _ => false,
         })
     }

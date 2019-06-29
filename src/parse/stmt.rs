@@ -72,11 +72,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     match locatable.data {
                         Token::Id(id) => Some(Ok(Stmt::Label(
                             id,
-                            Box::new(match self.statement() {
-                                Some(Ok(x)) => Some(x),
+                            match self.statement() {
+                                Some(Ok(x)) => Some(Box::new(x)),
                                 Some(Err(err)) => return Some(Err(err)),
                                 None => None,
-                            }),
+                            },
                         ))),
                         _ => panic!("peek should always be the same as next"),
                     }

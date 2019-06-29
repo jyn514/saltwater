@@ -119,7 +119,7 @@ pub enum Stmt {
     While(Expr, Box<Stmt>),
     For(Box<Stmt>, Expr, Box<Stmt>, Box<Stmt>),
     Switch(Expr, Box<Stmt>),
-    Label(String, Box<Option<Stmt>>),
+    Label(String, Option<Box<Stmt>>),
     Case(Expr),
     Default,
     Expr(Expr),

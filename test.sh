@@ -1,5 +1,4 @@
-set -e
-set -v
+set -ev
 cargo fmt -- --check
-cargo clippy
+cargo clippy -- -D clippy:all
 cargo test

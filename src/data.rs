@@ -116,7 +116,7 @@ pub enum Stmt {
     Compound(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     Do(Box<Stmt>, Expr),
-    While(Expr, Box<Stmt>),
+    While(Expr, Option<Box<Stmt>>),
     For(Box<Stmt>, Expr, Box<Stmt>, Box<Stmt>),
     Switch(Expr, Box<Stmt>),
     Label(String, Option<Box<Stmt>>),
@@ -251,6 +251,7 @@ pub struct Symbol {
     pub ctype: Type,
     pub qualifiers: Qualifiers,
     pub storage_class: StorageClass,
+    pub init: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -298,13 +299,21 @@ pub struct Location {
     pub file: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Locatable<T> {
     pub data: T,
     pub location: Location,
 }
 
 /* impls */
+impl<T: PartialEq> PartialEq for Locatable<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
+}
+
+impl<T: Eq> Eq for Locatable<T> {}
+
 #[allow(dead_code)]
 impl Qualifiers {
     pub const NONE: Qualifiers = Qualifiers {

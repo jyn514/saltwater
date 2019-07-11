@@ -5,13 +5,13 @@ type ExprResult = Result<Expr, Locatable<String>>;
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// expr_opt: expr ';' | ';'
-    pub fn expr_opt(&mut self, token: Token) -> Option<ExprResult> {
+    pub fn expr_opt(&mut self, token: Token) -> Result<Option<Expr>, Locatable<String>> {
         if self.match_next(&token).is_some() {
-            None
+            Ok(None)
         } else {
-            let expr = self.expr();
+            let expr = self.expr()?;
             self.expect(token);
-            Some(expr)
+            Ok(Some(expr))
         }
     }
     /// expr(): Parse an expression.
@@ -446,12 +446,27 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Some(op) if op.is_unary_operator() => {
                 let Locatable { location, data: op } = self.next_token().unwrap();
-                let expr = self.cast_expr();
+                let expr = self.cast_expr()?;
                 match op {
                     Token::Ampersand => unimplemented!("address of"),
                     Token::Star => unimplemented!("dereference"),
                     Token::Plus => unimplemented!("unary plus, does nothing but make it an rval"),
-                    Token::Minus => unimplemented!("unary minus"),
+                    Token::Minus => {
+                        if !expr.ctype.is_arithmetic() {
+                            Err(Locatable {
+                                data: format!("cannot use unary minus on expression of non-arithmetic type '{}'", expr.ctype),
+                                location: expr.location
+                            })
+                        } else {
+                            Ok(Expr {
+                                lval: false,
+                                ctype: expr.ctype.clone(),
+                                constexpr: expr.constexpr,
+                                location: expr.location.clone(),
+                                expr: ExprType::Negate(Box::new(expr)),
+                            })
+                        }
+                    }
                     Token::BinaryNot => unimplemented!("binary not"),
                     Token::LogicalNot => unimplemented!("logical not"),
                     x => panic!("didn't expect '{}' to be an unary operand", x),
@@ -827,6 +842,9 @@ impl Expr {
             })
         }
     }
+    pub fn logical_not(self) -> Result<Expr, Locatable<String>> {
+        unimplemented!("logical not")
+    }
     /// p + 1 where p is a pointer
     fn pointer_arithmetic_op(left: Expr, right: Expr, addition: bool) -> ExprResult {
         unimplemented!("pointer arithmetic not implemented")
@@ -1110,6 +1128,7 @@ mod tests {
             id: "x".to_string(),
             qualifiers: Default::default(),
             storage_class: Default::default(),
+            init: false,
         };
         let mut scope: Scope = Default::default();
         scope.insert(x.clone());
@@ -1137,6 +1156,7 @@ mod tests {
     fn test_funcall() {
         let f = Symbol {
             id: "f".to_string(),
+            init: false,
             qualifiers: Default::default(),
             storage_class: Default::default(),
             ctype: Type::Function(FunctionType {

@@ -72,32 +72,11 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                     warn("extraneous semicolon at top level", &locatable.location);
                     self.next()
                 }
-                // NOTE: we do not allow implicit int
-                // https://stackoverflow.com/questions/11064292
-                Token::Keyword(t) if t.is_decl_specifier() => {
+                _ => {
                     self.unput(Some(locatable));
-                    let decl = match self.declaration() {
-                        Some(Ok(decl)) => decl,
-                        None => return self.next(),
-                        x => return x,
-                    };
-                    if self.scope.insert(decl.data.symbol.clone()).is_some() {
-                        Some(Err(Locatable {
-                            location: decl.location,
-                            data: format!("redefinition of '{}'", decl.data.symbol.id),
-                        }))
-                    } else {
-                        Some(Ok(decl))
-                    }
+                    // If declaration is None, we saw an empty specifier
+                    self.declaration().or_else(|| self.next())
                 }
-                Token::Id(id) => Some(Err(Locatable {
-                    data: format!("expected declaration specifier, got variable '{}'. help: this compiler does not allow implicit int, try 'int {}' instead", id, id),
-                    location: locatable.location,
-                })),
-                x => Some(Err(Locatable {
-                    data: format!("expected declaration specifier, got '{}'", x),
-                    location: locatable.location,
-                })),
             }
         })
     }
@@ -181,6 +160,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             None
         }
     }
+    /*
+     * If we're in an invalid state, try to recover.
+     * Consume tokens until the end of a statement - either ';' or '}'
+     */
+    fn panic(&mut self) {
+        loop {
+            match self.peek_token() {
+                None | Some(Token::Semicolon) | Some(Token::RightBrace) => break,
+                _ => {}
+            }
+        }
+    }
     fn expect(&mut self, next: Token) -> Option<Locatable<Token>> {
         if let Token::Keyword(n) = next {
             if let Some(Token::Keyword(p)) = self.peek_token() {
@@ -204,6 +195,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location,
                     data: format!("expected '{}', got '{}'", next, message),
                 }));
+                self.panic();
                 None
             }
             None => {

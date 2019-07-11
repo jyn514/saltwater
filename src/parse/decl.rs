@@ -80,6 +80,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Err(err) => return Some(Err(err)),
                 Ok(decl) => decl,
             };
+            match self.scope.insert(decl.data.symbol.clone()) {
+                None => {}
+                Some(ref symbol) if symbol.init => {}
+                Some(_) => {
+                    return Some(Err(Locatable {
+                        location: decl.location,
+                        data: format!("redefinition of '{}'", decl.data.symbol.id),
+                    }))
+                }
+            }
             let (is_func, has_init) = (
                 decl.data.symbol.ctype.is_function(),
                 decl.data.init.is_some(),
@@ -135,6 +145,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             qualifiers,
             ctype,
             id: id.data,
+            init: init.is_some(),
         };
         Ok(Locatable {
             data: Declaration { symbol, init },
@@ -334,6 +345,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         ctype,
                         qualifiers: quals,
                         storage_class: StorageClass::Auto,
+                        init: true,
                     },
                 });
             } else {
@@ -345,6 +357,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         ctype: param_type,
                         qualifiers: quals,
                         storage_class: StorageClass::Auto,
+                        init: true,
                     },
                 });
             }
@@ -503,10 +516,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             _ if allow_abstract => None,
             Some(x) => {
-                return Err(Locatable {
+                let err = Err(Locatable {
                     data: format!("expected variable name or '(', got '{}'", x),
                     location: self.next_location().clone(),
-                })
+                });
+                self.panic();
+                return err;
             }
             None => {
                 return Err(Locatable {
@@ -615,7 +630,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             // function body
             Ok(Some(Initializer::CompoundStatement(
                 match self.compound_statement()? {
-                    Stmt::Compound(stmts) => stmts,
+                    Some(Stmt::Compound(stmts)) => stmts,
+                    None => vec![],
                     x => panic!("expected compound_statement to return compound statement, got '{:#?}' instead", x)
                 }
             )))
@@ -1071,18 +1087,21 @@ mod tests {
                             id: Default::default(),
                             ctype: Int(true),
                             qualifiers: Default::default(),
+                            init: true,
                             storage_class: Default::default()
                         },
                         Symbol {
                             id: Default::default(),
                             ctype: Char(true),
                             qualifiers: Default::default(),
+                            init: true,
                             storage_class: Default::default()
                         },
                         Symbol {
                             id: Default::default(),
                             ctype: Float,
                             qualifiers: Default::default(),
+                            init: true,
                             storage_class: Default::default()
                         }
                     ],
@@ -1109,6 +1128,7 @@ mod tests {
                         ),
                         qualifiers: Default::default(),
                         storage_class: Default::default(),
+                        init: true,
                     }],
                     varargs: false,
                 }),),
@@ -1123,6 +1143,7 @@ mod tests {
                     id: Default::default(),
                     ctype: Int(true),
                     qualifiers: Default::default(),
+                    init: true,
                     storage_class: Default::default()
                 }],
                 varargs: true,
@@ -1144,6 +1165,7 @@ mod tests {
                                 storage_class: Default::default(),
                                 id: String::new(),
                                 qualifiers: Qualifiers::NONE,
+                                init: true,
                             }],
                             varargs: false,
                         })),
@@ -1168,6 +1190,7 @@ mod tests {
                         storage_class: Default::default(),
                         id: Default::default(),
                         qualifiers: Default::default(),
+                        init: true,
                     }],
                     varargs: false,
                 })),
@@ -1237,6 +1260,34 @@ mod tests {
         ));
     }
     #[test]
+    fn test_no_specifiers() {
+        let parsed = parse_all("i, j, k;");
+        assert!(parsed.len() == 3);
+        assert!(match_all(parsed.into_iter(), |i| i.symbol.ctype == Type::Int(true)));
+        let mut parsed = parse_all("*p, c, **pp, f();");
+        assert!(parsed.len() == 4);
+        assert!(match_type(
+            Some(parsed.remove(0)),
+            Type::Pointer(Box::new(Type::Int(true)), Default::default())
+        ));
+        assert!(match_type(Some(parsed.remove(0)), Type::Int(true)));
+        assert!(match_type(
+            Some(parsed.remove(0)),
+            Type::Pointer(
+                Box::new(Type::Pointer(Box::new(Type::Int(true)), Default::default())),
+                Default::default()
+            )
+        ));
+        assert!(match_type(
+            Some(parsed.remove(0)),
+            Type::Function(FunctionType {
+                params: vec![],
+                return_type: Box::new(Type::Int(true)),
+                varargs: false,
+            })
+        ));
+    }
+    #[test]
     fn test_decl_errors() {
         // no semicolon
         assert!(parse("int").unwrap().is_err());
@@ -1245,7 +1296,6 @@ mod tests {
         assert!(parse("int f()[];").unwrap().is_err());
         assert!(parse("int f[]();").unwrap().is_err());
         assert!(parse("int f()();").unwrap().is_err());
-        // TODO: the error for this is wrong and will be until I implement parse_expr()
         assert!(parse("int (*f)[;").unwrap().is_err());
     }
 }

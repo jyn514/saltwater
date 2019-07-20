@@ -25,8 +25,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///     ;
     ///
     /// where specifier_qualifier_list: (type_specifier | type_qualifier)+
+    ///
+    /// Used for casts and `sizeof` builtin.
     pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, Locatable<String>> {
-        let (sc, qualifiers, ctype) = self.declaration_specifiers()?;
+        let (sc, qualifiers, ctype) = self.declaration_specifiers(false)?;
         if sc != StorageClass::Auto {
             return Err(Locatable {
                 // TODO
@@ -64,7 +66,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * and return the last.
      */
     pub fn declaration(&mut self) -> Option<Result<Locatable<Declaration>, Locatable<String>>> {
-        let (sc, qualifiers, ctype) = match self.declaration_specifiers() {
+        let (sc, qualifiers, ctype) = match self.declaration_specifiers(true) {
             Err(x) => return Some(Err(x)),
             Ok(x) => x,
         };
@@ -169,6 +171,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn declaration_specifiers(
         &mut self,
+        file_scope: bool,
     ) -> Result<(StorageClass, Qualifiers, Type), Locatable<String>> {
         // TODO: initialization is a mess
         let mut keywords = HashSet::new();
@@ -244,7 +247,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         };
         Ok((
-            storage_class.unwrap_or(StorageClass::Auto),
+            storage_class.unwrap_or(if file_scope {
+                StorageClass::Extern
+            } else {
+                StorageClass::Auto
+            }),
             qualifiers,
             ctype,
         ))
@@ -295,7 +302,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     varargs: true,
                 }));
             }
-            let (sc, quals, param_type) = self.declaration_specifiers()?;
+            let (sc, quals, param_type) = self.declaration_specifiers(false)?;
             // true: allow abstract_declarators
             let declarator = match self.declarator(true) {
                 Err(x) => {

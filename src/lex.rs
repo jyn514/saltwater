@@ -519,7 +519,26 @@ impl<'a> Iterator for Lexer<'a> {
     /// The file may be empty to start, in which case the iterator will return None.
     fn next(&mut self) -> Option<Self::Item> {
         self.consume_whitespace();
-        self.next_char().and_then(|c| {
+        let mut c = self.next_char();;
+        // avoid stack overflow on lots of comments
+        while c == Some('/') {
+            c = match self.peek() {
+                Some('/') => {
+                    self.consume_line_comment();
+                    self.consume_whitespace();
+                    self.next_char()
+                }
+                Some('*') => {
+                    // discard '*' so /*/ doesn't look like a complete comment
+                    self.next_char();
+                    self.consume_multi_comment();
+                    self.consume_whitespace();
+                    self.next_char()
+                }
+                _ => break,
+            }
+        }
+        c.and_then(|c| {
             // this clone is unavoidable, we need to keep self.location
             // but we also need each token to have a location
             let location = self.location.clone();
@@ -565,15 +584,6 @@ impl<'a> Iterator for Lexer<'a> {
                     _ => Ok(Token::Star),
                 },
                 '/' => match self.next_char() {
-                    Some('/') => {
-                        self.consume_line_comment();
-                        // TODO: many consecutive comments may cause a stack overflow
-                        return self.next();
-                    }
-                    Some('*') => {
-                        self.consume_multi_comment();
-                        return self.next();
-                    }
                     Some('=') => Ok(Token::DivideEqual),
                     c => {
                         self.unput(c);
@@ -810,17 +820,25 @@ mod tests {
         //assert!(match_data(lex("1e-100000"), |t| t.is_err());
     }
 
+    fn lots_of(c: char) -> String {
+        let mut buf = Vec::new();
+        buf.resize(8096, c);
+        buf.into_iter().collect()
+    }
+
     #[test]
     // used to have a stack overflow on large consecutive whitespace inputs
     fn test_lots_of_whitespace() {
-        let mut spaces = Vec::new();
-        spaces.resize(8096, '\n');
-        assert!(lex(&spaces.into_iter().collect::<String>()) == None)
+        assert!(lex(&lots_of(' ')) == None);
+        assert!(lex(&lots_of('\t')) == None);
+        assert!(lex(&lots_of('\n')) == None);
     }
+
     #[test]
     fn test_comments() {
         assert!(lex("/* this is a comment /* /* /* */").is_none());
         assert!(lex("// this is a comment // /// // ").is_none());
+        assert!(lex("/*/ this is part of the comment */").is_none());
         assert!(
             lex_all(
                 "/* make sure it finds things _after_ comments */
@@ -829,6 +847,11 @@ mod tests {
             .len()
                 == 3
         );
+        let bad_comment = lex("/* unterminated comments are an error ");
+        //assert!(bad_comment.is_some() && bad_comment.unwrap().data.is_err());
+        // check for stack overflow
+        assert!(lex(&"//".repeat(10_000)) == None);
+        assert!(lex(&"/* */".repeat(10_000)) == None);
     }
     #[test]
     fn test_characters() {

@@ -66,12 +66,12 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
     /// ;
     fn next(&mut self) -> Option<Self::Item> {
         self.pending.pop_front().or_else(|| {
+            while let Some(locatable) = self.match_next(&Token::Semicolon) {
+                warn("extraneous semicolon at top level", &locatable.location);
+            }
             let locatable = self.next_token()?;
             match locatable.data {
-                Token::Semicolon => {
-                    warn("extraneous semicolon at top level", &locatable.location);
-                    self.next()
-                }
+                Token::Semicolon => panic!("should have been caught by previous loop"),
                 _ => {
                     self.unput(Some(locatable));
                     // If declaration is None, we saw an empty specifier
@@ -294,5 +294,12 @@ mod tests {
         assert!(decls.len() == 2);
         assert!(decls.pop().unwrap().is_err());
         assert!(decls.pop().unwrap().is_ok());
+    }
+    #[test]
+    fn semicolons() {
+        let mut buf = Vec::new();
+        buf.resize(1_000_000, ';');
+        let buf: String = buf.into_iter().collect();
+        assert!(parse(&buf).is_none());
     }
 }

@@ -126,7 +126,7 @@ pub enum Stmt {
     Goto(String),
     Continue,
     Break,
-    Return(Expr),
+    Return(Option<Expr>),
 }
 
 #[derive(Clone, Debug)]
@@ -242,6 +242,53 @@ pub enum StorageClass {
     Extern = Keyword::Extern as isize,
     Auto = Keyword::Auto as isize,
     Register = Keyword::Register as isize,
+}
+
+pub enum Mir {
+    StaticInit(Address, Initializer),
+    Add(Val, Val),
+    Sub(Val, Val),
+    Mul(Val, Val),
+    Div(Val, Val),
+    Mod(Val, Val),
+    Xor(Val, Val),
+    LeftShift(Val, Val),
+    RightShift(Val, Val),
+    Equal(Val, Val),
+    Less(Val, Val),
+    LessEqual(Val, Val),
+    Greater(Val, Val),
+    GreaterEqual(Val, Val),
+    Not(Val),
+    Load(Val, Reg, Address),
+    Store(Val, Reg, Address),
+    Jmp(i64, Val),
+    Jne(Reg, Address),
+    FuncCall(Val, Vec<Val>),
+}
+
+pub type Reg = i64;
+pub type Address = i64;
+
+pub struct Val {
+    storage: MirStore,
+    atype: AssemblyType,
+}
+
+pub enum MirStore {
+    Constant(i64),
+    Reg(Reg),
+}
+
+pub enum AssemblyType {
+    Bit,
+    Byte,
+    Short,
+    Int,
+    Long,
+    Float,
+    Double,
+    Address, // may not be the same as Int on all architectures
 }
 
 /* structs */
@@ -591,3 +638,20 @@ impl PartialEq for ArrayType {
     }
 }
 impl Eq for ArrayType {}
+
+impl From<Type> for AssemblyType {
+    fn from(ctype: Type) -> AssemblyType {
+        use AssemblyType::*;
+        match ctype {
+            Type::Bool => Bit,
+            Type::Char(_) => Byte,
+            Type::Short(_) => Short,
+            Type::Int(_) => Int,
+            Type::Long(_) => Long,
+            Type::Float => Float,
+            Type::Double => Double,
+            Type::Pointer(_, _) | Type::Array(_, _) | Type::Function(_) => Address,
+            x => unimplemented!("type conversion from C type to assembly"),
+        }
+    }
+}

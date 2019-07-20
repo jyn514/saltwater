@@ -685,8 +685,8 @@ impl<'a> Iterator for Lexer<'a> {
                     _ => Ok(Token::Dot),
                 },
                 '?' => Ok(Token::Question),
-                '0'...'9' => self.parse_num(c, true),
-                'a'...'z' | 'A'...'Z' | '_' => self.parse_id(c),
+                '0'..='9' => self.parse_num(c, true),
+                'a'..='z' | 'A'..='Z' | '_' => self.parse_id(c),
                 '\'' => self.parse_char(),
                 '"' => {
                     self.unput(Some('"'));

@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 #[macro_use]
 extern crate lazy_static;
 #[cfg(feature = "better_parsing")]
@@ -10,6 +12,7 @@ pub mod utils;
 mod backend;
 pub mod data;
 pub mod lex;
+pub mod mir;
 pub mod parse;
 
 #[cfg(not(feature = "better_parsing"))]

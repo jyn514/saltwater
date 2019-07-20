@@ -234,7 +234,14 @@ mod tests {
         parser(stmt).statement()
     }
     #[test]
+    // NOTE: this seems to be one of the few tests that checks that the location
+    // is correct. If it starts failing, maybe look at the lexer first
+    // NOTE: the debug output will be lost in a sea of 'extraneous semicolon' warnings
+    // until I fix the error architecture.
+    // Try `cargo test -- --nocapture 2>&1 | grep -v semicolon` in the meantime
     fn test_expr_stmt() {
-        assert!(parse_stmt("1;") == Ok(Some(Stmt::Expr(parser("1").expr().unwrap()))));
+        let parsed = parse_stmt("1;");
+        let expected = Ok(Some(Stmt::Expr(parser("1").expr().unwrap())));
+        assert!(dbg!(parsed) == dbg!(expected))
     }
 }

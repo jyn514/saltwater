@@ -8,12 +8,12 @@ extern crate structopt;
 use structopt::StructOpt;
 
 #[macro_use]
-pub mod utils;
+mod utils;
 mod backend;
-pub mod data;
-pub mod lex;
-pub mod mir;
-pub mod parse;
+mod data;
+mod lex;
+mod mir;
+mod parse;
 
 #[cfg(not(feature = "better_parsing"))]
 use std::env;

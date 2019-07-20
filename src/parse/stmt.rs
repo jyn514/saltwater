@@ -60,7 +60,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Keyword::Goto => Ok(Some(self.goto_statement()?)),
                 Keyword::Continue => unimplemented!(),
                 Keyword::Break => unimplemented!(),
-                Keyword::Return => unimplemented!(),
+                Keyword::Return => {
+                    self.next_token();
+                    Ok(Some(Stmt::Return(self.expr_opt(Token::Semicolon)?)))
+                }
                 x => {
                     if !x.is_decl_specifier() {
                         panic!("unrecognized keyword '{}' while parsing statement", x);

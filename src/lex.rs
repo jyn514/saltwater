@@ -702,7 +702,7 @@ impl<'a> Iterator for Lexer<'a> {
                     self.unput(Some('"'));
                     self.parse_string()
                 }
-                _ => Err(String::from("unknown token")),
+                x => Err(format!("unknown token {:?}", x)),
             };
             Some(Self::Item { data, location })
         })

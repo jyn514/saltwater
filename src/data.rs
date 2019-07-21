@@ -387,6 +387,44 @@ impl Type {
     }
 }
 
+pub enum LengthError {
+    Unbounded,
+    Dynamic,
+    NonIntegral,
+}
+
+impl ArrayType {
+    pub fn length(&self) -> Result<u32, LengthError> {
+        match self {
+            ArrayType::Unbounded => Err(LengthError::Unbounded),
+            ArrayType::Fixed(expr) => {
+                if !expr.ctype.is_integral() {
+                    return Err(LengthError::NonIntegral);
+                }
+                unimplemented!("constant folding and dynamic array length");
+            }
+        }
+    }
+}
+
+impl From<LengthError> for String {
+    fn from(err: LengthError) -> String {
+        let s: &'static str = err.into();
+        s.to_string()
+    }
+}
+
+impl From<LengthError> for &'static str {
+    fn from(err: LengthError) -> &'static str {
+        use LengthError::*;
+        match err {
+            Unbounded => "Cannot take the length of unbounded array type",
+            Dynamic => "Length of variable-length array cannot be known at compile time",
+            NonIntegral => "The length of an array must be an integer",
+        }
+    }
+}
+
 impl Scope {
     pub fn new() -> Scope {
         Scope {

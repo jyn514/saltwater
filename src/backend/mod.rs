@@ -189,31 +189,9 @@ impl TryFrom<Type> for types::BasicTypeEnum {
             // What Clang does is cast it to the type of the largest member,
             // and then cast every element of the union as it is accessed.
             // See https://stackoverflow.com/questions/19549942/extracting-a-value-from-an-union#19550613
-            Union(members) => {
-                let mut iter = members.into_iter().map(|m| m.ctype);
-                let initial = iter
-                    .next()
-                    .expect("parser should ensure all unions have at least one member");
-
-                // taken from https://doc.rust-lang.org/src/core/iter/traits/iterator.rs.html#2591
-                // short-circuiting version of iter.max_by_key
-
-                // if this gives an error, return it immediately
-                // avoids .sizeof not being called if there's only one element
-                initial.sizeof()?;
-
-                iter.try_fold(
-                    initial,
-                    |current: Type, next: Type| -> Result<Type, String> {
-                        if current.sizeof()? >= next.sizeof()? {
-                            Ok(current)
-                        } else {
-                            Ok(next)
-                        }
-                    },
-                )?
-                .try_into()
-            }
+            Union(members) => try_max_by_key(members.into_iter().map(|m| m.ctype), Type::sizeof)
+                .expect("parser should ensure all unions have at least one member")?
+                .try_into(),
             Void | Bitfield(_) | Function(_) => Err(format!("{} is not a basic type", ty)),
         }
     }
@@ -245,4 +223,27 @@ impl TryFrom<Type> for AnyTypeEnum {
             Bitfield(_) => unimplemented!("bitfield to llvm type"),
         }
     }
+}
+
+/// partially taken from
+/// https://doc.rust-lang.org/src/core/iter/traits/iterator.rs.html#2591
+/// short-circuiting version of iter.max_by_key
+fn try_max_by_key<I, T, C, R, F>(mut iter: I, mut f: F) -> Option<Result<T, R>>
+where
+    I: Iterator<Item = T>,
+    C: std::cmp::Ord,
+    F: FnMut(&T) -> Result<C, R>,
+{
+    iter.next().map(|initial| {
+        // if this gives an error, return it immediately
+        // avoids f not being called if there's only one element
+        f(&initial)?;
+        iter.try_fold(initial, |current, next| {
+            if f(&current)? >= f(&next)? {
+                Ok(current)
+            } else {
+                Ok(next)
+            }
+        })
+    })
 }

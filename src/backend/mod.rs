@@ -7,21 +7,12 @@ use inkwell::AddressSpace;
 use crate::data::Type;
 use Type::*;
 
-// TODO: these are hard-coded for x64
-// https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
-const FLOAT_SIZE: u32 = 4;
-const DOUBLE_SIZE: u32 = 8;
-
-const LONG_SIZE: u32 = 8;
-const INT_SIZE: u32 = 4;
-const SHORT_SIZE: u32 = 2;
 // NOTE: this is required by the standard to always be one
 const CHAR_SIZE: u32 = 1;
-const BOOL_SIZE: u32 = 1;
 
-const PTR_SIZE: u32 = 8;
-
-const CHAR_BIT: u32 = 8; // number of bits in a byte
+// TODO: allow this to be configured at runtime
+mod x64;
+pub use x64::*;
 
 impl Type {
     pub fn can_represent(&self, other: &Type) -> bool {
@@ -101,7 +92,6 @@ macro_rules! int_width {
     ( $x: expr ) => {
         // see http://llvm.org/doxygen/Type_8cpp_source.html#l00239,
         // if this is a known type it's treated as if we'd gone through the proper function
-        // call
         Ok(types::IntType::custom_width_int_type($x).as_basic_type_enum())
     };
 }

@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-
 #[cfg(feature = "better_parsing")]
 extern crate structopt;
 #[cfg(feature = "better_parsing")]

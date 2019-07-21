@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 use std::process;
 
 #[macro_use]

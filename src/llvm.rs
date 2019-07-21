@@ -119,10 +119,3 @@ impl LLVMCompiler {
         unimplemented!("static initialization")
     }
 }
-
-impl TryFrom<Type> for BasicTypeEnum {
-    type Error = Locatable<String>;
-    fn try_from(ty: Type) -> Result<Self, Self::Error> {
-        unimplemented!();
-    }
-}

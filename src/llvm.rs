@@ -75,13 +75,28 @@ impl LLVMCompiler {
                 });
             }
         };
-        let params = func_type
-            .params
-            .into_iter()
-            .map(|param| param.ctype.try_into())
-            .collect::<Result<Vec<BasicTypeEnum>, _>>()?;
-        let llvm_type: LLVMFunctionType =
-            BasicTypeEnum::try_from(*func_type.return_type)?.fn_type(&params, func_type.varargs);
+        let params = if func_type.params.len() == 1 && func_type.params[0].ctype == Type::Void {
+            // no arguments
+            Vec::new()
+        } else {
+            func_type
+                .params
+                .into_iter()
+                // TODO: this gives absolutely horrifying error messages
+                .map(|param| {
+                    param.ctype.try_into().map_err(|err| Locatable {
+                        data: err,
+                        location: location.clone(),
+                    })
+                })
+                .collect::<Result<Vec<BasicTypeEnum>, Locatable<String>>>()?
+        };
+        let llvm_type: LLVMFunctionType = BasicTypeEnum::try_from(*func_type.return_type)
+            .map_err(|err| Locatable {
+                data: err,
+                location,
+            })?
+            .fn_type(&params, func_type.varargs);
         let func = self.module.add_function(&id, llvm_type, Some(linkage));
 
         let stmts = match init {

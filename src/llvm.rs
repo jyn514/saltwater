@@ -39,6 +39,12 @@ pub fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Locatable
             }
         }
     }
+    if let Err(err) = compiler.module.verify() {
+        panic!(
+            "unknown compile error when generating LLVM bitcode: {}",
+            err
+        );
+    }
     Ok(compiler.module)
 }
 

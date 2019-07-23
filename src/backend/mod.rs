@@ -1,6 +1,7 @@
 use std::cmp::max;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 
+use inkwell::context::Context;
 use inkwell::types::{self, AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, FloatType};
 use inkwell::AddressSpace;
 
@@ -89,10 +90,10 @@ impl Type {
 
 // create a integer type of size `x`
 macro_rules! int_width {
-    ( $x: expr ) => {
+    ( $x: expr, $context: expr ) => {
         // see http://llvm.org/doxygen/Type_8cpp_source.html#l00239,
         // if this is a known type it's treated as if we'd gone through the proper function
-        Ok(types::IntType::custom_width_int_type($x).as_basic_type_enum())
+        Ok($context.custom_width_int_type($x).as_basic_type_enum())
     };
 }
 
@@ -127,6 +128,7 @@ impl ToPointerType for AnyTypeEnum {
             ptr_type,
             addr,
             VoidType,
+            // TODO: pointer needs to be handled specially
             PointerType,
             FloatType,
             IntType,
@@ -154,36 +156,39 @@ impl ToArrayType for BasicTypeEnum {
     }
 }
 
-impl TryFrom<Type> for types::BasicTypeEnum {
-    type Error = String;
-    fn try_from(ty: Type) -> Result<Self, Self::Error> {
-        match ty {
-            Bool => int_width!(BOOL_SIZE),
-            Char(_) => int_width!(CHAR_SIZE),
-            Short(_) => int_width!(SHORT_SIZE),
-            Int(_) => int_width!(INT_SIZE),
-            Long(_) => int_width!(LONG_SIZE),
-            Enum(_) => int_width!(ty.sizeof()?),
+impl Type {
+    pub fn into_llvm_basic(self, context: &Context) -> Result<BasicTypeEnum, String> {
+        match self {
+            Bool => int_width!(BOOL_SIZE, context),
+            Char(_) => int_width!(CHAR_SIZE, context),
+            Short(_) => int_width!(SHORT_SIZE, context),
+            Int(_) => int_width!(INT_SIZE, context),
+            Long(_) => int_width!(LONG_SIZE, context),
+            Enum(_) => int_width!(self.sizeof()?, context),
 
             // TODO: this is hard-coded for x64 because LLVM doesn't allow specifying a
             // custom type
-            Float => Ok(FloatType::f32_type().as_basic_type_enum()),
-            Double => Ok(FloatType::f64_type().as_basic_type_enum()),
+            Float => Ok(context.f32_type().as_basic_type_enum()),
+            Double => Ok(context.f64_type().as_basic_type_enum()),
 
             // derived types
-            Pointer(t, _) => Ok(AnyTypeEnum::try_from(*t)?
+            Pointer(t, _) => Ok(t
+                .into_llvm(context)?
                 .ptr_type(AddressSpace::Generic)
                 .as_basic_type_enum()),
-            Array(t, l) => Ok(BasicTypeEnum::try_from(*t)?
+            Array(t, l) => Ok(t
+                .into_llvm_basic(context)?
                 .array_type(l.length()?)
                 .as_basic_type_enum()),
             Struct(members) => {
                 let llvm_elements: Vec<BasicTypeEnum> = members
                     .into_iter()
-                    .map(|m| m.ctype.try_into())
-                    .collect::<Result<_, Self::Error>>()?;
+                    .map(|m| m.ctype.into_llvm_basic(context))
+                    .collect::<Result<_, String>>()?;
                 // TODO: allow struct packing
-                Ok(types::StructType::struct_type(&llvm_elements, false).as_basic_type_enum())
+                Ok(context
+                    .struct_type(&llvm_elements, false)
+                    .as_basic_type_enum())
             }
             // LLVM does not have a union type.
             // What Clang does is cast it to the type of the largest member,
@@ -191,16 +196,12 @@ impl TryFrom<Type> for types::BasicTypeEnum {
             // See https://stackoverflow.com/questions/19549942/extracting-a-value-from-an-union#19550613
             Union(members) => try_max_by_key(members.into_iter().map(|m| m.ctype), Type::sizeof)
                 .expect("parser should ensure all unions have at least one member")?
-                .try_into(),
-            Void | Bitfield(_) | Function(_) => Err(format!("{} is not a basic type", ty)),
+                .into_llvm_basic(context),
+            Void | Bitfield(_) | Function(_) => Err(format!("{} is not a basic type", self)),
         }
     }
-}
-
-impl TryFrom<Type> for AnyTypeEnum {
-    type Error = String;
-    fn try_from(ty: Type) -> Result<AnyTypeEnum, Self::Error> {
-        match ty {
+    pub fn into_llvm(self, context: &Context) -> Result<AnyTypeEnum, String> {
+        match self {
             // basic types (according to LLVM)
             Bool
             | Char(_)
@@ -213,11 +214,11 @@ impl TryFrom<Type> for AnyTypeEnum {
             | Pointer(_, _)
             | Array(_, _)
             | Struct(_)
-            | Union(_) => Ok(types::BasicTypeEnum::try_from(ty)?.as_any_type_enum()),
+            | Union(_) => Ok(self.into_llvm_basic(context)?.as_any_type_enum()),
             // any type
-            Void => Ok(types::VoidType::void_type().as_any_type_enum()),
+            Void => Ok(context.void_type().as_any_type_enum()),
             Function(_) => unimplemented!("functions to LLVM type"),
-            //Function(func_type) => Ok(types::BasicTypeEnum::try_from(ty)?.func_type())
+            //Function(func_type) => Ok(ty.to_llvm_basic()?.func_type())
             // It looks like LLVM has a bitfield type but it isn't exposed by the
             // Inkwell API? See https://stackoverflow.com/questions/25058213/how-to-spot-a-bit-field-with-clang
             Bitfield(_) => unimplemented!("bitfield to llvm type"),

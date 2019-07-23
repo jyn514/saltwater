@@ -1,5 +1,3 @@
-use std::convert::{TryFrom, TryInto};
-
 use inkwell::{
     context::Context,
     module::Linkage,
@@ -82,16 +80,20 @@ impl LLVMCompiler {
             func_type
                 .params
                 .into_iter()
-                // TODO: this gives absolutely horrifying error messages
                 .map(|param| {
-                    param.ctype.try_into().map_err(|err| Locatable {
-                        data: err,
-                        location: location.clone(),
-                    })
+                    param
+                        .ctype
+                        .into_llvm_basic(&self.context)
+                        .map_err(|err| Locatable {
+                            data: err,
+                            location: location.clone(),
+                        })
                 })
                 .collect::<Result<Vec<BasicTypeEnum>, Locatable<String>>>()?
         };
-        let llvm_type: LLVMFunctionType = BasicTypeEnum::try_from(*func_type.return_type)
+        let llvm_type: LLVMFunctionType = func_type
+            .return_type
+            .into_llvm_basic(&self.context)
             .map_err(|err| Locatable {
                 data: err,
                 location,

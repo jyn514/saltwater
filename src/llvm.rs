@@ -17,12 +17,10 @@ struct LLVMCompiler {
     // TODO: allow compiling multiple modules with the same compiler struct?
     module: Module,
     builder: Builder,
-    static_init: i64,
-    addr: i64,
-    reg: i64,
     label: i64,
 }
 
+/// Compile a program from a high level IR to an Inkwell Module
 pub fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Locatable<String>> {
     let mut compiler = LLVMCompiler::new();
     for decl in program {
@@ -58,9 +56,6 @@ impl LLVMCompiler {
             module: context.create_module(thread.name().unwrap_or("<default-module>")),
             builder: context.create_builder(),
             context,
-            static_init: 0,
-            addr: 0,
-            reg: 0,
             label: 0,
         }
     }

@@ -5,7 +5,7 @@ use inkwell::context::Context;
 use inkwell::types::{self, AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, FloatType};
 use inkwell::AddressSpace;
 
-use crate::data::Type;
+use crate::data::{Type, INT_POINTER};
 use Type::*;
 
 // NOTE: this is required by the standard to always be one
@@ -88,15 +88,6 @@ impl Type {
     }
 }
 
-// create a integer type of size `x`
-macro_rules! int_width {
-    ( $x: expr, $context: expr ) => {
-        // see http://llvm.org/doxygen/Type_8cpp_source.html#l00239,
-        // if this is a known type it's treated as if we'd gone through the proper function
-        Ok($context.custom_width_int_type($x).as_basic_type_enum())
-    };
-}
-
 // given an enum $enum with some variants that share a method,
 // call that method on each of them
 // useful if each variant of an enum has that method but the enum doesn't implement
@@ -107,9 +98,10 @@ macro_rules! gen_calls {
       // with arbitrary arguments
       $args: tt,
       // for an arbitrary number of variants
-      $( $id: ident ),* ) => {
+      $( $variant: path ),*
+    ) => {
         match $enum {
-            $( $id(t) => t.$method($args), )*
+            $( $variant(t) => t.$method($args), )*
         }
     }
 }
@@ -120,6 +112,33 @@ trait ToPointerType {
 trait ToArrayType {
     fn array_type(&self, array_size: u32) -> types::ArrayType;
 }
+impl ToPointerType for BasicTypeEnum {
+    fn ptr_type(&self, addr: AddressSpace) -> types::PointerType {
+        use BasicTypeEnum::*;
+        gen_calls!(
+            self,
+            ptr_type,
+            addr,
+            FloatType,
+            IntType,
+            PointerType,
+            StructType,
+            VectorType,
+            ArrayType
+        )
+    }
+}
+impl ToPointerType for types::VoidType {
+    fn ptr_type(&self, addr: AddressSpace) -> types::PointerType {
+        self.get_context()
+            .custom_width_int_type(
+                INT_POINTER
+                    .sizeof()
+                    .expect("pointers should always have a valid size"),
+            )
+            .ptr_type(AddressSpace::Generic)
+    }
+}
 impl ToPointerType for AnyTypeEnum {
     fn ptr_type(&self, addr: AddressSpace) -> types::PointerType {
         use AnyTypeEnum::*;
@@ -127,15 +146,14 @@ impl ToPointerType for AnyTypeEnum {
             self,
             ptr_type,
             addr,
-            VoidType,
-            // TODO: pointer needs to be handled specially
-            PointerType,
             FloatType,
             IntType,
-            FunctionType,
+            PointerType,
             StructType,
             VectorType,
-            ArrayType
+            ArrayType,
+            FunctionType,
+            VoidType
         )
     }
 }
@@ -159,12 +177,9 @@ impl ToArrayType for BasicTypeEnum {
 impl Type {
     pub fn into_llvm_basic(self, context: &Context) -> Result<BasicTypeEnum, String> {
         match self {
-            Bool => int_width!(BOOL_SIZE, context),
-            Char(_) => int_width!(CHAR_SIZE, context),
-            Short(_) => int_width!(SHORT_SIZE, context),
-            Int(_) => int_width!(INT_SIZE, context),
-            Long(_) => int_width!(LONG_SIZE, context),
-            Enum(_) => int_width!(self.sizeof()?, context),
+            Bool | Char(_) | Short(_) | Int(_) | Long(_) | Enum(_) => Ok(context
+                .custom_width_int_type(self.sizeof()?)
+                .as_basic_type_enum()),
 
             // TODO: this is hard-coded for x64 because LLVM doesn't allow specifying a
             // custom type

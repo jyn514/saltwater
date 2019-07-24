@@ -334,6 +334,10 @@ impl Qualifiers {
     };
 }
 
+lazy_static! {
+    pub static ref INT_POINTER: Type =
+        { Type::Pointer(Box::new(Type::Int(true)), Qualifiers::NONE) };
+}
 impl Type {
     /// https://stackoverflow.com/questions/14821936/what-is-a-scalar-object-in-c#14822074
     #[inline]

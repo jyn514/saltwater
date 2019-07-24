@@ -1,9 +1,10 @@
 use inkwell::{
+    builder::Builder,
     context::Context,
     module::Linkage,
     module::Module,
     types::{BasicType, BasicTypeEnum, FunctionType as LLVMFunctionType},
-    values,
+    values::{BasicValue, BasicValueEnum, FunctionValue},
 };
 
 use crate::data::{
@@ -15,6 +16,7 @@ struct LLVMCompiler {
     context: Context,
     // TODO: allow compiling multiple modules with the same compiler struct?
     module: Module,
+    builder: Builder,
     static_init: i64,
     addr: i64,
     reg: i64,
@@ -51,8 +53,10 @@ pub fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Locatable
 impl LLVMCompiler {
     fn new() -> LLVMCompiler {
         let context = Context::create();
+        let thread = std::thread::current();
         LLVMCompiler {
-            module: context.create_module("<default-module>"),
+            module: context.create_module(thread.name().unwrap_or("<default-module>")),
+            builder: context.create_builder(),
             context,
             static_init: 0,
             addr: 0,
@@ -106,6 +110,8 @@ impl LLVMCompiler {
             })?
             .fn_type(&params, func_type.varargs);
         let func = self.module.add_function(&id, llvm_type, Some(linkage));
+        let func_start = self.context.append_basic_block(&func, &id);
+        self.builder.position_at_end(&func_start);
 
         let stmts = match init {
             Initializer::CompoundStatement(stmts) => stmts,
@@ -114,14 +120,18 @@ impl LLVMCompiler {
         self.compile_all(stmts, func);
         Ok(())
     }
-    fn compile_all(&mut self, stmts: Vec<Stmt>, func: values::FunctionValue) {
+    fn compile_all(&mut self, stmts: Vec<Stmt>, func: FunctionValue) {
         for stmt in stmts {
             self.compile_stmt(stmt, func);
         }
     }
-    fn compile_stmt(&mut self, stmt: Stmt, func: values::FunctionValue) {
+    fn compile_stmt(&mut self, stmt: Stmt, func: FunctionValue) {
         match stmt {
             Stmt::Compound(stmts) => self.compile_all(stmts, func),
+            Stmt::Return(expr) => {
+                let compiled = expr.map(|e| self.compile_expr(e));
+                self.builder.build_return(compiled.as_ref().map(|v| v as _));
+            }
             Stmt::If(condition, body, otherwise) => {
                 let jmp_if_false = self.label;
                 self.label += 1;
@@ -130,8 +140,9 @@ impl LLVMCompiler {
             _ => unimplemented!("almost every statement"),
         }
     }
-    fn compile_expr(&mut self, expr: Expr) -> Box<values::BasicValue> {
-        Box::new(self.context.i64_type().const_zero())
+    fn compile_expr(&mut self, expr: Expr) -> BasicValueEnum {
+        self.context.i32_type().const_zero().as_basic_value_enum()
+        //unimplemented!("compiling expressions");
     }
     fn store_static(&mut self, symbol: Symbol, init: Initializer, location: Location) {
         /*

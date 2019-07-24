@@ -21,10 +21,12 @@ use super::utils::warn;
 /// Examples:
 ///
 /// ```
+/// use compiler::Lexer;
+///
 /// let lexer = Lexer::new("<stdin>".to_string(),
-///                        "int main(void) { char *hello = \"hi\"; }");
+///                        "int main(void) { char *hello = \"hi\"; }".chars());
 /// for token in lexer {
-///     assert!(token.is_ok());
+///     assert!(token.data.is_ok());
 /// }
 /// ```
 #[derive(Debug)]
@@ -118,7 +120,18 @@ impl<'a> Lexer<'a> {
     ///
     /// All functions should use this instead of `chars` directly.
     /// Using `chars` will not update location information and may discard lookaheads.
-    fn next_char(&mut self) -> Option<char> {
+    ///
+    /// Example:
+    /// ```
+    /// use compiler::Lexer;
+    ///
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars());
+    /// assert!(lexer.next_char() == Some('i'));
+    /// assert!(lexer.next_char() == Some('n'));
+    /// assert!(lexer.next_char() == Some('t'));
+    /// assert!(lexer.next_char() == Some(' '));
+    /// ```
+    pub fn next_char(&mut self) -> Option<char> {
         if let Some(c) = self.current {
             self.current = self.lookahead.take();
             Some(c)
@@ -140,13 +153,15 @@ impl<'a> Lexer<'a> {
     ///
     /// Examples:
     /// ```
-    /// let lexer = Lexer::new(String::new(), "int main(void) {}");
+    /// use compiler::Lexer;
+    ///
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars());
     /// let first = lexer.next_char();
     /// assert!(first == Some('i'));
     /// lexer.unput(first);
     /// assert!(lexer.next_char() == Some('i'));
     /// ```
-    fn unput(&mut self, c: Option<char>) {
+    pub fn unput(&mut self, c: Option<char>) {
         self.current = c;
     }
     /// Return the character that would be returned by `next_char`.
@@ -154,14 +169,16 @@ impl<'a> Lexer<'a> {
     ///
     /// Examples:
     /// ```
-    /// let lexer = Lexer::new(String::new(), "int main(void) {}");
+    /// use compiler::Lexer;
+    ///
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars());
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.next_char() == Some('i'));
     /// assert!(lexer.peek() == Some('n'));
     /// ```
-    fn peek(&mut self) -> Option<char> {
+    pub fn peek(&mut self) -> Option<char> {
         self.current = self.next_char();
         self.current
     }
@@ -170,12 +187,14 @@ impl<'a> Lexer<'a> {
     ///
     /// Examples:
     /// ```
-    /// let lexer = Lexer::new(String::new(), "int main(void) {}");
+    /// use compiler::Lexer;
+    ///
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars());
     /// assert!(lexer.match_next('i'));
     /// assert!(lexer.match_next('n'));
     /// assert!(lexer.next_char() == Some('t'));
     /// ```
-    fn match_next(&mut self, item: char) -> bool {
+    pub fn match_next(&mut self, item: char) -> bool {
         if self.peek().map_or(false, |c| c == item) {
             self.next_char();
             true

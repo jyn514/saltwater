@@ -1047,14 +1047,15 @@ impl Type {
     ///
     /// Examples:
     /// ```
-    /// use data::Type::*;
-    /// assert!(Long.rank() > Int.rank());
-    /// assert!(Int.rank() > Short.rank());
-    /// assert!(Short.rank() > Char.rank());
-    /// assert!(Char.rank() > Bool.rank());
-    /// assert!(Long.rank() > Bool.rank());
+    /// use compiler::data::Type::*;
+    /// assert!(Long(true).rank() > Int(true).rank());
+    /// assert!(Int(false).rank() > Short(false).rank());
+    /// assert!(Short(true).rank() > Char(true).rank());
+    /// assert!(Char(true).rank() > Bool.rank());
+    /// assert!(Long(false).rank() > Bool.rank());
+    /// assert!(Long(true).rank() == Long(false).rank());
     /// ```
-    fn rank(&self) -> usize {
+    pub fn rank(&self) -> usize {
         use Type::*;
         match self {
             Bool => 0,

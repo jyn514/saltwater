@@ -6,15 +6,15 @@ use std::process;
 extern crate lazy_static;
 use inkwell::module::Module;
 
-use data::{Declaration, Locatable};
-use lex::Lexer;
-use parse::Parser;
+pub use data::{Declaration, Locatable};
+pub use lex::Lexer;
+pub use parse::Parser;
 use utils::error;
 
 #[macro_use]
 mod utils;
 mod backend;
-mod data;
+pub mod data;
 mod lex;
 mod llvm;
 mod parse;

@@ -27,14 +27,14 @@ impl Type {
     // convert to LLVM type and call t.size_of()
     pub fn sizeof(&self) -> Result<u32, &'static str> {
         match self {
-            Bool => Ok(BOOL_SIZE),
-            Char(_) => Ok(CHAR_SIZE),
-            Short(_) => Ok(SHORT_SIZE),
-            Int(_) => Ok(INT_SIZE),
-            Long(_) => Ok(LONG_SIZE),
-            Float => Ok(FLOAT_SIZE),
-            Double => Ok(DOUBLE_SIZE),
-            Pointer(_, _) => Ok(PTR_SIZE),
+            Bool => Ok(BOOL_SIZE * CHAR_BIT),
+            Char(_) => Ok(CHAR_SIZE * CHAR_BIT),
+            Short(_) => Ok(SHORT_SIZE * CHAR_BIT),
+            Int(_) => Ok(INT_SIZE * CHAR_BIT),
+            Long(_) => Ok(LONG_SIZE * CHAR_BIT),
+            Float => Ok(FLOAT_SIZE * CHAR_BIT),
+            Double => Ok(DOUBLE_SIZE * CHAR_BIT),
+            Pointer(_, _) => Ok(PTR_SIZE * CHAR_BIT),
             // now for the hard ones
             Array(t, l) => t.sizeof().and_then(|n| Ok(n * l.length()?)),
             Enum(symbols) => {

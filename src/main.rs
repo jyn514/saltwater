@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::process;
 
-use compiler::compile;
+use compiler::compile_and_assemble;
 
 #[cfg_attr(feature = "better_parsing", derive(StructOpt, Debug))]
 struct Opt {
@@ -64,7 +64,5 @@ fn main() {
             });
         filename
     };
-    let module = dbg!(compile(buf, filename, opt.debug_lex));
-    let asm_buf = dbg!(module.write_bitcode_to_memory());
-    let obj_file = dbg!(asm_buf.create_object_file());
+    compile_and_assemble(buf, filename, opt.debug_lex).expect("compile failed");
 }

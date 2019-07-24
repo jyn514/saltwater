@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::convert::TryInto;
 
 use inkwell::context::Context;
-use inkwell::types::{self, AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, FloatType};
+use inkwell::types::{self, AnyType, AnyTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::AddressSpace;
 
 use crate::data::{Type, INT_POINTER};

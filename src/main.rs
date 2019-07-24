@@ -64,5 +64,7 @@ fn main() {
             });
         filename
     };
-    let module = compile(buf, filename, opt.debug_lex);
+    let module = dbg!(compile(buf, filename, opt.debug_lex));
+    let asm_buf = dbg!(module.write_bitcode_to_memory());
+    let obj_file = dbg!(asm_buf.create_object_file());
 }

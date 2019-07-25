@@ -1,9 +1,9 @@
 #![allow(unused_variables)]
 
+use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
-#[cfg(target_family = "unix")]
-use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::process::{self, Command, Stdio};
 
 #[macro_use]
@@ -41,12 +41,15 @@ impl From<Locatable<String>> for CompileError {
     }
 }
 
+/// Bridges the gap between the Rust type system of Inkwell to the
+/// C type system of LLVM
+/// Also links the resulting object file using the host `cc`
 pub fn compile_and_assemble(
     buf: String,
     filename: String,
     debug_lex: bool,
 ) -> Result<(), CompileError> {
-    let module = compile(buf, filename, debug_lex);
+    let module = compile(buf, filename.clone(), debug_lex);
     module.print_to_stderr();
     let bitcode = dbg!(module.write_bitcode_to_memory());
     let mut llc = Command::new("llc")
@@ -60,16 +63,22 @@ pub fn compile_and_assemble(
         stdin.write_all(bitcode.as_slice())?
     }
     let output = llc.wait_with_output()?;
-    fs::write("a.o", output.stdout)?;
-    let ld = Command::new("ld").arg("a.o").spawn()?;
-    #[cfg(target_family = "unix")]
-    {
-        let a_out = fs::File::open("a.out")?;
-        let mut permissions = a_out.metadata()?.permissions();
-        let allow_exec = permissions.mode() | 1;
-        permissions.set_mode(allow_exec);
-        a_out.set_permissions(permissions)?;
-    }
+
+    let obj_filename = Path::new(&filename)
+        .file_stem()
+        .map(|stem| {
+            let mut stem = stem.to_os_string();
+            stem.push(".o");
+            stem
+        })
+        .unwrap_or_else(|| OsString::from("a.o"));
+    let mut tmp_file = std::env::temp_dir();
+    tmp_file.push(obj_filename);
+
+    fs::write(&tmp_file, output.stdout)?;
+    let cc = Command::new("cc")
+        .args(&[&tmp_file, Path::new("-o"), Path::new("a.out")])
+        .spawn()?;
     Ok(())
 }
 

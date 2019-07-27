@@ -1,28 +1,32 @@
-use inkwell::{
-    builder::Builder,
-    context::Context,
-    module::Linkage,
-    module::Module,
-    types::{BasicType, BasicTypeEnum, FunctionType as LLVMFunctionType},
-    values::{BasicValue, BasicValueEnum, FunctionValue},
+use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Value};
+use cranelift_codegen::{
+    self as codegen,
+    ir::{function::Function, ExternalName, InstBuilder},
+    isa,
+    settings::{self, Configurable},
 };
+use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
+use cranelift_module::{self, Linkage, Module as CraneliftModule};
 
+use crate::backend::TARGET;
 use crate::data::{
     Declaration, Expr, FunctionType, Initializer, Locatable, Location, Qualifiers, Stmt,
     StorageClass, Symbol, Type,
 };
 
+type Module = CraneliftModule<FaerieBackend>;
+
 struct LLVMCompiler {
-    context: Context,
     // TODO: allow compiling multiple modules with the same compiler struct?
     module: Module,
-    builder: Builder,
-    label: i64,
 }
 
-/// Compile a program from a high level IR to an Inkwell Module
+/// Compile a program from a high level IR to a Cranelift Module
 pub fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Locatable<String>> {
-    let mut compiler = LLVMCompiler::new();
+    let name = program
+        .first()
+        .map_or_else(|| "<empty>".to_string(), |decl| decl.data.symbol.id.clone());
+    let mut compiler = LLVMCompiler::new(name);
     for decl in program {
         if let Some(init) = decl.data.init {
             match decl.data.symbol.ctype {
@@ -39,24 +43,47 @@ pub fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Locatable
             }
         }
     }
+    /*
     if let Err(err) = compiler.module.verify() {
         panic!(
             "unknown compile error when generating LLVM bitcode: {}",
             err
         );
     }
+    */
     Ok(compiler.module)
 }
 
 impl LLVMCompiler {
-    fn new() -> LLVMCompiler {
-        let context = Context::create();
-        let thread = std::thread::current();
+    fn new(name: String) -> LLVMCompiler {
+        let mut flags_builder = settings::builder();
+        // allow creating shared libraries
+        flags_builder
+            .enable("is_pic")
+            .expect("is_pic should be a valid option");
+        // use debug assertions
+        flags_builder
+            .enable("enable_verifier")
+            .expect("enable_verifier should be a valid option");
+        // compile quickly, but without optimizations
+        flags_builder
+            .set("opt_level", "fastest")
+            .expect("opt_level: fastest should be a valid option");
+
+        let isa = isa::lookup(TARGET.clone())
+            .unwrap_or_else(|_| panic!("platform not supported: {}", *TARGET))
+            .finish(settings::Flags::new(flags_builder));
+
+        let builder = FaerieBuilder::new(
+            isa,
+            name,
+            FaerieTrapCollection::Disabled,
+            cranelift_module::default_libcall_names(),
+        )
+        .expect("unknown error creating module");
+
         LLVMCompiler {
-            module: context.create_module(thread.name().unwrap_or("<default-module>")),
-            builder: context.create_builder(),
-            context,
-            label: 0,
+            module: Module::new(builder),
         }
     }
     fn compile_func(
@@ -69,8 +96,8 @@ impl LLVMCompiler {
         location: Location,
     ) -> Result<(), Locatable<String>> {
         let linkage = match sc {
-            StorageClass::Extern => Linkage::External,
-            StorageClass::Static => Linkage::Private,
+            StorageClass::Extern => Linkage::Export,
+            StorageClass::Static => Linkage::Local,
             StorageClass::Auto | StorageClass::Register => {
                 return Err(Locatable {
                     data: format!("illegal storage class {} for function {}", sc, id),
@@ -78,65 +105,102 @@ impl LLVMCompiler {
                 });
             }
         };
-        let params = if func_type.params.len() == 1 && func_type.params[0].ctype == Type::Void {
-            // no arguments
-            Vec::new()
-        } else {
-            func_type
-                .params
-                .into_iter()
-                .map(|param| {
-                    param
-                        .ctype
-                        .into_llvm_basic(&self.context)
-                        .map_err(|err| Locatable {
-                            data: err,
-                            location: location.clone(),
-                        })
-                })
-                .collect::<Result<Vec<BasicTypeEnum>, Locatable<String>>>()?
-        };
-        let llvm_type: LLVMFunctionType = func_type
-            .return_type
-            .into_llvm_basic(&self.context)
-            .map_err(|err| Locatable {
-                data: err,
-                location,
-            })?
-            .fn_type(&params, func_type.varargs);
-        let func = self.module.add_function(&id, llvm_type, Some(linkage));
-        let func_start = self.context.append_basic_block(&func, &id);
-        self.builder.position_at_end(&func_start);
+        let signature = func_type.signature(location)?;
+        let func_id = self
+            .module
+            .declare_function(&id, linkage, &signature)
+            .expect("should not have an error declaring a function");
+        // external name is meant to be a lookup in a symbol table,
+        // but we just give it garbage values
+        let mut func = Function::with_name_signature(ExternalName::user(0, 0), signature);
+
+        // this context is just boiler plate
+        let mut ctx = FunctionBuilderContext::new();
+        let mut builder = FunctionBuilder::new(&mut func, &mut ctx);
+
+        let func_start = builder.create_ebb();
+        builder.append_ebb_params_for_function_params(func_start);
+        builder.switch_to_block(func_start);
 
         let stmts = match init {
             Initializer::CompoundStatement(stmts) => stmts,
             x => panic!("expected compound statement from parser, got '{:#?}'", x),
         };
-        self.compile_all(stmts, func);
+        self.compile_all(stmts, &mut builder)?;
+
+        let flags = settings::Flags::new(settings::builder());
+        codegen::verify_function(&func, &flags).expect("should not have a compile error");
+
+        let mut ctx = codegen::Context::for_function(func);
+        self.module
+            .define_function(func_id, &mut ctx)
+            .expect("should not have an error defining a function");
         Ok(())
     }
-    fn compile_all(&mut self, stmts: Vec<Stmt>, func: FunctionValue) {
+    fn compile_all(
+        &mut self,
+        stmts: Vec<Stmt>,
+        builder: &mut FunctionBuilder,
+    ) -> Result<(), Locatable<String>> {
         for stmt in stmts {
-            self.compile_stmt(stmt, func);
+            self.compile_stmt(stmt, builder)?;
         }
+        Ok(())
     }
-    fn compile_stmt(&mut self, stmt: Stmt, func: FunctionValue) {
+    fn compile_stmt(
+        &mut self,
+        stmt: Stmt,
+        builder: &mut FunctionBuilder,
+    ) -> Result<(), Locatable<String>> {
         match stmt {
-            Stmt::Compound(stmts) => self.compile_all(stmts, func),
+            Stmt::Compound(stmts) => self.compile_all(stmts, builder)?,
             Stmt::Return(expr) => {
-                let compiled = expr.map(|e| self.compile_expr(e));
-                self.builder.build_return(compiled.as_ref().map(|v| v as _));
+                let mut ret = vec![];
+                if let Some(e) = expr {
+                    ret.push(self.compile_expr(e, builder)?);
+                }
+                builder.ins().return_(&ret);
             }
             Stmt::If(condition, body, otherwise) => {
-                let jmp_if_false = self.label;
-                self.label += 1;
+                // If condtion is zero:
+                //      If else_block exists, jump to else_block + compile_all
+                //      Otherwise, jump to end_block
+                //  Otherwise:
+                //      Fallthrough to if_body + compile_all
+                //      If else_block exists, jump to end_block + compile_all
+                //      Otherwise, fallthrough to end_block
+                /*
+                let condition = self.compile_expr(condition);
+                let (if_body, end_body) = (builder.create_ebb(), builder.create_ebb());
+                let target = if let Some(o) = otherwise {
+                    let else_body = builder.create_ebb();
+                    builder.switch_to_block(else_body);
+                    self.compile_all(o, builder);
+                    builder.switch_to_block(
+                    else_body
+                } else {
+                    end_body
+                };
+                builder.ins().brz(condtion, target, &[]);
+                */
+                unimplemented!("if statements");
                 //let reg = self.compile_expr(condition);
             }
             _ => unimplemented!("almost every statement"),
-        }
+        };
+        Ok(())
     }
-    fn compile_expr(&mut self, expr: Expr) -> BasicValueEnum {
-        self.context.i32_type().const_zero().as_basic_value_enum()
+    fn compile_expr(
+        &mut self,
+        expr: Expr,
+        builder: &mut FunctionBuilder,
+    ) -> Result<Value, Locatable<String>> {
+        let location = expr.location;
+        let ir_type = expr.ctype.into_llvm_basic().map_err(|err| Locatable {
+            data: err,
+            location,
+        })?;
+        Ok(builder.ins().iconst(ir_type, 0))
         //unimplemented!("compiling expressions");
     }
     fn store_static(&mut self, symbol: Symbol, init: Initializer, location: Location) {

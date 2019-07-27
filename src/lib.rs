@@ -22,8 +22,8 @@ use utils::error;
 mod utils;
 mod backend;
 pub mod data;
+mod ir;
 mod lex;
-mod llvm;
 mod parse;
 
 #[derive(Debug)]
@@ -99,7 +99,7 @@ pub fn compile(buf: String, filename: String, debug_lex: bool) -> Product {
     // What's happening here is the function has type `fn(...) -> !`,
     // but when it's called, that's coerced to `!`,
     // so the closure has type `fn(...) -> i32`
-    llvm::compile(hir).unwrap_or_else(|e| err_exit(e)).finish()
+    ir::compile(hir).unwrap_or_else(|e| err_exit(e)).finish()
 }
 
 fn err_exit(err: Locatable<String>) -> ! {

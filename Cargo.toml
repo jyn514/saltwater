@@ -12,7 +12,13 @@ license = "BSD-3-Clause"
 [dependencies]
 lazy_static = "1"
 ansi_term = "0.11"
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm6-0" }
+cranelift = "0.36"
+cranelift-codegen = "0.36"
+cranelift-entity = "0.36"
+cranelift-faerie = "0.36"
+cranelift-module = "0.36"
+failure = "0.1"
+target-lexicon = "0.4"
 
 structopt = { version = "0.2", optional = true }
 

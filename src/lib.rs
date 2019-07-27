@@ -1,14 +1,17 @@
 #![allow(unused_variables)]
 
-use std::ffi::OsString;
-use std::fs;
-use std::io::{self, Write};
+use std::fs::File;
+use std::io;
 use std::path::Path;
-use std::process::{self, Command, Stdio};
+use std::process::{self, Command};
 
 #[macro_use]
 extern crate lazy_static;
-use inkwell::module::Module;
+use cranelift_faerie::FaerieBackend;
+use cranelift_module::Backend;
+use failure::Error;
+
+pub type Product = <FaerieBackend as Backend>::Product;
 
 pub use data::{Declaration, Locatable};
 pub use lex::Lexer;
@@ -26,6 +29,7 @@ mod parse;
 #[derive(Debug)]
 pub enum CompileError {
     Semantic(Locatable<String>),
+    Platform(Error),
     IO(io::Error),
 }
 
@@ -49,40 +53,26 @@ pub fn compile_and_assemble(
     filename: String,
     debug_lex: bool,
 ) -> Result<(), CompileError> {
-    let module = compile(buf, filename.clone(), debug_lex);
-    module.print_to_stderr();
-    let bitcode = dbg!(module.write_bitcode_to_memory());
-    let mut llc = Command::new("llc")
-        .arg("-filetype=obj")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("failed to run llvm assembler, do you have llvm installed?");
-    {
-        let stdin = llc.stdin.as_mut().unwrap();
-        stdin.write_all(bitcode.as_slice())?
-    }
-    let output = llc.wait_with_output()?;
+    let product = compile(buf, filename.clone(), debug_lex);
 
-    let obj_filename = Path::new(&filename)
-        .file_stem()
-        .map(|stem| {
-            let mut stem = stem.to_os_string();
-            stem.push(".o");
-            stem
-        })
-        .unwrap_or_else(|| OsString::from("a.o"));
+    let obj_filename = Path::new(&filename).with_extension("o");
     let mut tmp_file = std::env::temp_dir();
     tmp_file.push(obj_filename);
 
-    fs::write(&tmp_file, output.stdout)?;
+    let file = File::create(&tmp_file)?;
+    product.write(file).map_err(CompileError::Platform)?;
+    // make sure the file gets flushed
+    // TODO: file a bug so that errors can get checked here
+    //mem::drop(file);
+
+    // link the .o file
     let cc = Command::new("cc")
         .args(&[&tmp_file, Path::new("-o"), Path::new("a.out")])
         .spawn()?;
     Ok(())
 }
 
-pub fn compile(buf: String, filename: String, debug_lex: bool) -> Module {
+pub fn compile(buf: String, filename: String, debug_lex: bool) -> Product {
     if debug_lex {
         for lexeme in Lexer::new(filename.clone(), buf.chars()) {
             match lexeme.data {
@@ -109,7 +99,7 @@ pub fn compile(buf: String, filename: String, debug_lex: bool) -> Module {
     // What's happening here is the function has type `fn(...) -> !`,
     // but when it's called, that's coerced to `!`,
     // so the closure has type `fn(...) -> i32`
-    llvm::compile(hir).unwrap_or_else(|e| err_exit(e))
+    llvm::compile(hir).unwrap_or_else(|e| err_exit(e)).finish()
 }
 
 fn err_exit(err: Locatable<String>) -> ! {

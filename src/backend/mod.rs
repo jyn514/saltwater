@@ -1,17 +1,24 @@
 use std::cmp::max;
 use std::convert::TryInto;
 
-use inkwell::context::Context;
-use inkwell::types::{self, AnyType, AnyTypeEnum, BasicType, BasicTypeEnum};
-use inkwell::AddressSpace;
+use cranelift_codegen::ir::types::{self, Type as IrType};
+use cranelift_codegen::ir::{AbiParam, Signature};
+use cranelift_codegen::isa::CallConv;
+use target_lexicon::Triple;
 
-use crate::data::{Type, INT_POINTER};
+use crate::data::{FunctionType, Locatable, Location, Type};
 use Type::*;
 
 // NOTE: this is required by the standard to always be one
-const CHAR_SIZE: u32 = 1;
+const CHAR_SIZE: u16 = 1;
 
 // TODO: allow this to be configured at runtime
+lazy_static! {
+    // TODO: make this `const` when
+    // https://github.com/CraneStation/target-lexicon/pull/19 is merged
+    pub static ref TARGET: Triple = Triple::host();
+    pub static ref CALLING_CONVENTION: CallConv = CallConv::triple_default(&TARGET);
+}
 mod x64;
 pub use x64::*;
 
@@ -23,18 +30,19 @@ impl Type {
             other
         )
     }
+
     // TODO: instead of doing this manually,
     // convert to LLVM type and call t.size_of()
-    pub fn sizeof(&self) -> Result<u32, &'static str> {
+    pub fn sizeof(&self) -> Result<SIZE_T, &'static str> {
         match self {
-            Bool => Ok(BOOL_SIZE * CHAR_BIT),
-            Char(_) => Ok(CHAR_SIZE * CHAR_BIT),
-            Short(_) => Ok(SHORT_SIZE * CHAR_BIT),
-            Int(_) => Ok(INT_SIZE * CHAR_BIT),
-            Long(_) => Ok(LONG_SIZE * CHAR_BIT),
-            Float => Ok(FLOAT_SIZE * CHAR_BIT),
-            Double => Ok(DOUBLE_SIZE * CHAR_BIT),
-            Pointer(_, _) => Ok(PTR_SIZE * CHAR_BIT),
+            Bool => Ok(BOOL_SIZE.into()),
+            Char(_) => Ok(CHAR_SIZE.into()),
+            Short(_) => Ok(SHORT_SIZE.into()),
+            Int(_) => Ok(INT_SIZE.into()),
+            Long(_) => Ok(LONG_SIZE.into()),
+            Float => Ok(FLOAT_SIZE.into()),
+            Double => Ok(DOUBLE_SIZE.into()),
+            Pointer(_, _) => Ok(PTR_SIZE.into()),
             // now for the hard ones
             Array(t, l) => t.sizeof().and_then(|n| Ok(n * l.length()?)),
             Enum(symbols) => {
@@ -66,7 +74,7 @@ impl Type {
     }
     // TODO: instead of doing this manually,
     // convert to LLVM type and call t.size_of()
-    pub fn alignof(&self) -> Result<u32, &'static str> {
+    pub fn alignof(&self) -> Result<SIZE_T, &'static str> {
         match self {
             Bool
             | Char(_)
@@ -86,124 +94,39 @@ impl Type {
             Void => Err("cannot take `alignof` void"),
         }
     }
-}
-
-// given an enum $enum with some variants that share a method,
-// call that method on each of them
-// useful if each variant of an enum has that method but the enum doesn't implement
-// a trait giving you access to it
-macro_rules! gen_calls {
-    // an enum to match and a method to call on all variants
-    ( $enum: expr, $method: ident,
-      // with arbitrary arguments
-      $args: tt,
-      // for an arbitrary number of variants
-      $( $variant: path ),*
-    ) => {
-        match $enum {
-            $( $variant(t) => t.$method($args), )*
-        }
-    }
-}
-
-trait ToPointerType {
-    fn ptr_type(&self, address_space: AddressSpace) -> types::PointerType;
-}
-trait ToArrayType {
-    fn array_type(&self, array_size: u32) -> types::ArrayType;
-}
-impl ToPointerType for BasicTypeEnum {
-    fn ptr_type(&self, addr: AddressSpace) -> types::PointerType {
-        use BasicTypeEnum::*;
-        gen_calls!(
-            self,
-            ptr_type,
-            addr,
-            FloatType,
-            IntType,
-            PointerType,
-            StructType,
-            VectorType,
-            ArrayType
-        )
-    }
-}
-impl ToPointerType for types::VoidType {
-    fn ptr_type(&self, addr: AddressSpace) -> types::PointerType {
-        self.get_context()
-            .custom_width_int_type(
-                INT_POINTER
-                    .sizeof()
-                    .expect("pointers should always have a valid size"),
-            )
-            .ptr_type(AddressSpace::Generic)
-    }
-}
-impl ToPointerType for AnyTypeEnum {
-    fn ptr_type(&self, addr: AddressSpace) -> types::PointerType {
-        use AnyTypeEnum::*;
-        gen_calls!(
-            self,
-            ptr_type,
-            addr,
-            FloatType,
-            IntType,
-            PointerType,
-            StructType,
-            VectorType,
-            ArrayType,
-            FunctionType,
-            VoidType
-        )
-    }
-}
-impl ToArrayType for BasicTypeEnum {
-    fn array_type(&self, array_size: u32) -> types::ArrayType {
-        use BasicTypeEnum::*;
-        gen_calls!(
-            self,
-            array_type,
-            array_size,
-            PointerType,
-            FloatType,
-            IntType,
-            StructType,
-            VectorType,
-            ArrayType
-        )
-    }
-}
-
-impl Type {
-    pub fn into_llvm_basic(self, context: &Context) -> Result<BasicTypeEnum, String> {
+    pub fn into_llvm_basic(self) -> Result<IrType, String> {
         match self {
-            Bool | Char(_) | Short(_) | Int(_) | Long(_) | Enum(_) => Ok(context
-                .custom_width_int_type(self.sizeof()?)
-                .as_basic_type_enum()),
+            // Integers
+            Bool | Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_) => {
+                let int_size = SIZE_T::from(CHAR_BIT)
+                    * self
+                        .sizeof()
+                        .expect("integers should always have a valid size");
+                Ok(IrType::int(int_size.try_into().unwrap_or_else(|_| {
+                    panic!(
+                        "integers should never have a size larger than {}",
+                        i16::max_value()
+                    )
+                }))
+                .unwrap_or_else(|| panic!("unsupported size for IR: {}", int_size)))
+            }
 
+            // Floats
             // TODO: this is hard-coded for x64 because LLVM doesn't allow specifying a
             // custom type
-            Float => Ok(context.f32_type().as_basic_type_enum()),
-            Double => Ok(context.f64_type().as_basic_type_enum()),
+            Float => Ok(types::F32),
+            Double => Ok(types::F64),
 
-            // derived types
-            Pointer(t, _) => Ok(t
-                .into_llvm(context)?
-                .ptr_type(AddressSpace::Generic)
-                .as_basic_type_enum()),
-            Array(t, l) => Ok(t
-                .into_llvm_basic(context)?
-                .array_type(l.length()?)
-                .as_basic_type_enum()),
+            // Aggregates
+            // arrays decay to pointers at the assembly level
+            Array(t, l) => Ok(IrType::int(PTR_SIZE * CHAR_BIT)
+                .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE))),
             Struct(members) => {
-                let llvm_elements: Vec<BasicTypeEnum> = members
+                let llvm_elements: Vec<_> = members
                     .into_iter()
-                    .map(|m| m.ctype.into_llvm_basic(context))
+                    .map(|m| m.ctype.into_llvm_basic())
                     .collect::<Result<_, String>>()?;
-                // TODO: allow struct packing
-                Ok(context
-                    .struct_type(&llvm_elements, false)
-                    .as_basic_type_enum())
+                unimplemented!("struct type -> IR");
             }
             // LLVM does not have a union type.
             // What Clang does is cast it to the type of the largest member,
@@ -211,11 +134,12 @@ impl Type {
             // See https://stackoverflow.com/questions/19549942/extracting-a-value-from-an-union#19550613
             Union(members) => try_max_by_key(members.into_iter().map(|m| m.ctype), Type::sizeof)
                 .expect("parser should ensure all unions have at least one member")?
-                .into_llvm_basic(context),
-            Void | Bitfield(_) | Function(_) => Err(format!("{} is not a basic type", self)),
+                .into_llvm_basic(),
+            Bitfield(_) => unimplemented!("bitfield to llvm type"),
+            Void | Function(_) => Err(format!("{} is not a basic type", self)),
         }
     }
-    pub fn into_llvm(self, context: &Context) -> Result<AnyTypeEnum, String> {
+    pub fn into_llvm(self) -> Result<IrType, String> {
         match self {
             // basic types (according to LLVM)
             Bool
@@ -229,15 +153,54 @@ impl Type {
             | Pointer(_, _)
             | Array(_, _)
             | Struct(_)
-            | Union(_) => Ok(self.into_llvm_basic(context)?.as_any_type_enum()),
-            // any type
-            Void => Ok(context.void_type().as_any_type_enum()),
+            | Bitfield(_)
+            | Union(_) => self.into_llvm_basic(),
+            // void cannot be loaded or stored
+            Void => Ok(types::INVALID),
+            // I don't think Cranelift IR has a representation for functions
             Function(_) => unimplemented!("functions to LLVM type"),
             //Function(func_type) => Ok(ty.to_llvm_basic()?.func_type())
-            // It looks like LLVM has a bitfield type but it isn't exposed by the
-            // Inkwell API? See https://stackoverflow.com/questions/25058213/how-to-spot-a-bit-field-with-clang
-            Bitfield(_) => unimplemented!("bitfield to llvm type"),
         }
+    }
+}
+
+impl FunctionType {
+    pub fn signature(self, location: Location) -> Result<Signature, Locatable<String>> {
+        let params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
+            // no arguments
+            Vec::new()
+        } else {
+            self.params
+                .into_iter()
+                .map(|param| {
+                    param
+                        .ctype
+                        .into_llvm_basic()
+                        .map(AbiParam::new)
+                        .map_err(|err| Locatable {
+                            data: err,
+                            location: location.clone(),
+                        })
+                })
+                .collect::<Result<Vec<_>, Locatable<String>>>()?
+        };
+        let return_type = if *self.return_type == Type::Void {
+            vec![]
+        } else {
+            vec![self
+                .return_type
+                .into_llvm_basic()
+                .map(AbiParam::new)
+                .map_err(|err| Locatable {
+                    data: err,
+                    location,
+                })?]
+        };
+        Ok(Signature {
+            call_conv: *CALLING_CONVENTION,
+            params,
+            returns: return_type,
+        })
     }
 }
 

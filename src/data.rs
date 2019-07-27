@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::{self, Display, Formatter};
 
+use crate::backend::SIZE_T;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Keyword {
     // keywords
@@ -398,7 +400,7 @@ pub enum LengthError {
 }
 
 impl ArrayType {
-    pub fn length(&self) -> Result<u32, LengthError> {
+    pub fn length(&self) -> Result<SIZE_T, LengthError> {
         match self {
             ArrayType::Unbounded => Err(LengthError::Unbounded),
             ArrayType::Fixed(expr) => {

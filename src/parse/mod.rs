@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{Declaration, Keyword, Locatable, Location, Scope, Token};
+use crate::data::{Declaration, FunctionType, Keyword, Locatable, Location, Scope, Symbol, Token};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
@@ -30,6 +30,10 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     // this was put here for declarations, so we know the difference between
     // int (*x) and int (int), but there's probably a workaround
     next: Option<Locatable<Token>>,
+    // the function we are currently compiling.
+    // if `None`, we are in global scope.
+    // used for checking return types
+    current_function: Option<Symbol>,
 }
 
 impl<I> Parser<I>
@@ -44,6 +48,7 @@ where
             last_location: None,
             current: None,
             next: None,
+            current_function: None,
         }
     }
 }

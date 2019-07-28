@@ -20,7 +20,7 @@ lazy_static! {
     pub static ref CALLING_CONVENTION: CallConv = CallConv::triple_default(&TARGET);
 }
 mod x64;
-pub use x64::*;
+pub(crate) use x64::*;
 
 impl Type {
     pub fn can_represent(&self, other: &Type) -> bool {

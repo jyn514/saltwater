@@ -227,8 +227,8 @@ mod tests {
     use crate::data::{Declaration, Locatable};
     use crate::lex::Lexer;
 
-    pub type ParseType = Result<Locatable<Declaration>, Locatable<String>>;
-    pub fn parse(input: &str) -> Option<ParseType> {
+    pub(crate) type ParseType = Result<Locatable<Declaration>, Locatable<String>>;
+    pub(crate) fn parse(input: &str) -> Option<ParseType> {
         let mut all = parse_all(input);
         match all.len() {
             0 => None,
@@ -243,11 +243,11 @@ mod tests {
         }
     }
     #[inline]
-    pub fn parse_all(input: &str) -> Vec<ParseType> {
+    pub(crate) fn parse_all(input: &str) -> Vec<ParseType> {
         parser(input).collect()
     }
     #[inline]
-    pub fn match_data<T>(lexed: Option<ParseType>, closure: T) -> bool
+    pub(crate) fn match_data<T>(lexed: Option<ParseType>, closure: T) -> bool
     where
         T: Fn(Declaration) -> bool,
     {
@@ -257,7 +257,7 @@ mod tests {
         }
     }
     #[inline]
-    pub fn match_all<I, T>(mut lexed: I, closure: T) -> bool
+    pub(crate) fn match_all<I, T>(mut lexed: I, closure: T) -> bool
     where
         I: Iterator<Item = ParseType>,
         T: Fn(Declaration) -> bool,
@@ -268,7 +268,7 @@ mod tests {
         })
     }
     #[inline]
-    pub fn parser(input: &str) -> Parser<Lexer> {
+    pub(crate) fn parser(input: &str) -> Parser<Lexer> {
         Parser::new(Lexer::new("<test suite>".to_string(), input.chars()))
     }
     #[test]

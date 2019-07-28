@@ -1,4 +1,8 @@
 #![allow(unused_variables)]
+#![warn(variant_size_differences)]
+#![warn(unreachable_pub)]
+#![warn(deprecated_in_future)]
+#![forbid(unsafe_code)]
 
 use std::io::{self, Write};
 use std::path::Path;

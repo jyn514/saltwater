@@ -22,7 +22,7 @@ struct LLVMCompiler {
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
-pub fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Locatable<String>> {
+pub(crate) fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Locatable<String>> {
     let name = program
         .first()
         .map_or_else(|| "<empty>".to_string(), |decl| decl.data.symbol.id.clone());
@@ -43,14 +43,6 @@ pub fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Locatable
             }
         }
     }
-    /*
-    if let Err(err) = compiler.module.verify() {
-        panic!(
-            "unknown compile error when generating LLVM bitcode: {}",
-            err
-        );
-    }
-    */
     Ok(compiler.module)
 }
 

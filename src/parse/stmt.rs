@@ -204,7 +204,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let controlling_expr = self.expr_opt(Token::Semicolon)?.map(Expr::truthy);
         let iter_expr = self.expr_opt(Token::RightParen);
         let body = self.statement();
-        unimplemented!();
+        unimplemented!("for loops");
     }
     /// goto_statement: GOTO identifier ';'
     fn goto_statement(&mut self) -> StmtResult {

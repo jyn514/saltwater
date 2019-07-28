@@ -1,7 +1,6 @@
 #![allow(unused_variables)]
 
-use std::fs::File;
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 use std::process::{self, Command};
 
@@ -10,6 +9,7 @@ extern crate lazy_static;
 use cranelift_faerie::FaerieBackend;
 use cranelift_module::Backend;
 use failure::Error;
+use tempfile::NamedTempFile;
 
 pub type Product = <FaerieBackend as Backend>::Product;
 
@@ -52,24 +52,27 @@ pub fn compile_and_assemble(
     buf: String,
     filename: String,
     debug_lex: bool,
+    output_file: &Path,
 ) -> Result<(), CompileError> {
     let product = compile(buf, filename.clone(), debug_lex);
 
-    let obj_filename = Path::new(&filename).with_extension("o");
-    let mut tmp_file = std::env::temp_dir();
-    tmp_file.push(obj_filename);
+    let mut tmp_file = NamedTempFile::new().expect("should be able to create temp file");
 
-    let file = File::create(&tmp_file)?;
-    product.write(file).map_err(CompileError::Platform)?;
-    // make sure the file gets flushed
-    // TODO: file a bug so that errors can get checked here
-    //mem::drop(file);
+    let bytes = product.emit().map_err(CompileError::Platform)?;
+    tmp_file.write_all(&bytes).map_err(CompileError::IO)?;
 
     // link the .o file
-    let cc = Command::new("cc")
-        .args(&[&tmp_file, Path::new("-o"), Path::new("a.out")])
-        .spawn()?;
-    Ok(())
+    let status = Command::new("cc")
+        .args(&[&tmp_file.path(), Path::new("-o"), output_file])
+        .status()?;
+    if !status.success() {
+        Err(CompileError::IO(io::Error::new(
+            io::ErrorKind::Other,
+            "linking program failed",
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 pub fn compile(buf: String, filename: String, debug_lex: bool) -> Product {

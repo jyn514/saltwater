@@ -7,6 +7,7 @@ use structopt::StructOpt;
 use std::env;
 use std::fs::File;
 use std::io::{self, Read};
+use std::path::Path;
 use std::process;
 
 use compiler::compile_and_assemble;
@@ -64,5 +65,6 @@ fn main() {
             });
         filename
     };
-    compile_and_assemble(buf, filename, opt.debug_lex).expect("compile failed");
+    compile_and_assemble(buf, filename, opt.debug_lex, &Path::new("a.out"))
+        .expect("compile failed");
 }

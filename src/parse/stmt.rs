@@ -1,5 +1,5 @@
 use super::{Lexeme, Parser};
-use crate::data::{Expr, Keyword, Locatable, Location, Stmt, Token};
+use crate::data::{Expr, Keyword, Locatable, Location, Stmt, Token, Type};
 use crate::utils::warn;
 use std::iter::Iterator;
 
@@ -60,10 +60,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Keyword::Goto => Ok(Some(self.goto_statement()?)),
                 Keyword::Continue => unimplemented!(),
                 Keyword::Break => unimplemented!(),
-                Keyword::Return => {
-                    self.next_token();
-                    Ok(Some(Stmt::Return(self.expr_opt(Token::Semicolon)?)))
-                }
+                Keyword::Return => Ok(Some(self.return_statement()?)),
                 x => {
                     if !x.is_decl_specifier() {
                         panic!("unrecognized keyword '{}' while parsing statement", x);
@@ -86,15 +83,40 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Ok(Some(Stmt::Expr(self.expr()?)))
                 }
             }
-            _ => {
-                if self.match_next(&Token::Semicolon).is_some() {
-                    Ok(None)
-                } else {
-                    let expr = self.expr()?;
-                    self.expect(Token::Semicolon);
-                    Ok(Some(Stmt::Expr(expr)))
-                }
+            Some(Token::Semicolon) => {
+                self.next_token();
+                Ok(None)
             }
+            _ => {
+                let expr = self.expr()?;
+                self.expect(Token::Semicolon);
+                Ok(Some(Stmt::Expr(expr)))
+            }
+        }
+    }
+    fn return_statement(&mut self) -> StmtResult {
+        let ret_token = self.expect(Token::Keyword(Keyword::Return)).unwrap();
+        let expr = self.expr_opt(Token::Semicolon)?;
+        let current = self
+            .current_function
+            .as_ref()
+            .expect("should have current_function set when parsing statements");
+        let func_type = match current.ctype {
+            Type::Function(ref f) => f,
+            _ => panic!("current_function should be a function"),
+        };
+        let should_ret = *func_type.return_type != Type::Void;
+        match (expr, should_ret) {
+            (None, false) => Ok(Stmt::Return(None)),
+            (None, true) => Err(Locatable {
+                data: format!("function '{}' does not return a value", current.id),
+                location: ret_token.location,
+            }),
+            (Some(expr), false) => Err(Locatable {
+                data: format!("void function '{}' should not return a value", current.id),
+                location: expr.location,
+            }),
+            (Some(expr), true) => Ok(Stmt::Return(Some(expr))),
         }
     }
     /// if_statement:

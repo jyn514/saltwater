@@ -125,6 +125,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .expect("declarator should never return None when called with allow_abstract: false");
         let (id, ctype) = decl.parse_type(ctype.clone(), &self.last_location.as_ref().unwrap())?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
+        if self.current_function.is_some() {
+            return Err(Locatable {
+                location: id.location,
+                data: format!(
+                    "functions cannot be nested. hint: try declaring {} as `static` at file scope",
+                    id.data
+                ),
+            });
+        }
+        self.current_function = Some(Symbol {
+            storage_class: sc,
+            qualifiers,
+            ctype: ctype.clone(),
+            id: id.data,
+            init: false,
+        });
         let init = match self.initializer()? {
             Some(Initializer::CompoundStatement(stmts)) => {
                 if !ctype.is_function() {
@@ -142,13 +158,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             None => None,
         };
-        let symbol = Symbol {
-            storage_class: sc,
-            qualifiers,
-            ctype,
-            id: id.data,
-            init: init.is_some(),
-        };
+        let mut symbol = self
+            .current_function
+            .take()
+            .expect("initializer should not modify parser.current_function");
+        symbol.init = init.is_some();
         Ok(Locatable {
             data: Declaration { symbol, init },
             location: id.location,

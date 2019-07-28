@@ -1,4 +1,4 @@
-use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Value};
+use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Type as IrType, Value};
 use cranelift_codegen::{
     self as codegen,
     ir::{function::Function, ExternalName, InstBuilder},
@@ -10,8 +10,8 @@ use cranelift_module::{self, Linkage, Module as CraneliftModule};
 
 use crate::backend::TARGET;
 use crate::data::{
-    Declaration, Expr, FunctionType, Initializer, Locatable, Location, Qualifiers, Stmt,
-    StorageClass, Symbol, Type,
+    Declaration, Expr, ExprType, FunctionType, Initializer, Locatable, Location, Qualifiers, Stmt,
+    StorageClass, Symbol, Token, Type,
 };
 
 type Module = CraneliftModule<FaerieBackend>;
@@ -200,8 +200,22 @@ impl LLVMCompiler {
             data: err,
             location,
         })?;
-        Ok(builder.ins().iconst(ir_type, 0))
-        //unimplemented!("compiling expressions");
+        match expr.expr {
+            ExprType::Literal(token) => self.compile_literal(ir_type, token, builder),
+            _ => unimplemented!("any expression other than literals"),
+        }
+    }
+    fn compile_literal(
+        &self,
+        ir_type: IrType,
+        token: Token,
+        builder: &mut FunctionBuilder,
+    ) -> Result<Value, Locatable<String>> {
+        match token {
+            Token::Int(i) => Ok(builder.ins().iconst(ir_type, i)),
+            Token::Float(f) => Ok(builder.ins().f64const(f)),
+            _ => unimplemented!("aggregate literals"),
+        }
     }
     fn store_static(&mut self, symbol: Symbol, init: Initializer, location: Location) {
         /*

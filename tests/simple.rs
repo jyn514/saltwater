@@ -14,11 +14,13 @@ fn no_op() {
 
 #[test]
 fn exit_status() {
-    assert!(
-        run("int main(void) { return 1; }".to_string(), &[])
-            .expect("compilation should succeed")
-            .status
-            .code()
-            == Some(1)
-    );
+    for i in 0..255 {
+        assert!(
+            run(format!("int main(void) {{ return {}; }}", i), &[])
+                .expect("compilation should succeed")
+                .status
+                .code()
+                == Some(i)
+        );
+    }
 }

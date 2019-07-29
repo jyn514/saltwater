@@ -1,3 +1,4 @@
+use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ansi_term::{ANSIString, Colour};
@@ -14,20 +15,24 @@ fn pretty_print(prefix: ANSIString, msg: &str, location: &Location) {
     );
 }
 
-pub(crate) fn warn(msg: &str, location: &Location) {
+pub fn warn(msg: &str, location: &Location) {
     WARNINGS.fetch_add(1, Ordering::Relaxed);
     pretty_print(Colour::Yellow.bold().paint("warning"), msg, location);
 }
-pub(crate) fn error(msg: &str, location: &Location) {
+pub fn error(msg: &str, location: &Location) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
     pretty_print(Colour::Red.bold().paint("error"), msg, location);
 }
+pub fn fatal(msg: &str, code: i32) -> ! {
+    eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
+    process::exit(code);
+}
 
-pub(crate) fn get_warnings() -> usize {
+pub fn get_warnings() -> usize {
     WARNINGS.load(Ordering::SeqCst)
 }
 
-pub(crate) fn get_errors() -> usize {
+pub fn get_errors() -> usize {
     ERRORS.load(Ordering::SeqCst)
 }
 

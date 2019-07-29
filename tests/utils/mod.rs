@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::io::Error;
 use std::path::Path;
 use std::process::{Command, Output};
@@ -19,4 +21,12 @@ pub fn compile(program: String, output: &Path) -> Result<(), CompileError> {
 
 pub fn run(program: &Path, args: &[&str]) -> Result<Output, Error> {
     Command::new(program).args(args).output()
+}
+
+pub fn assert_compile_error(program: String) {
+    let output = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+    assert!(match compile(program, &output) {
+        Err(CompileError::Semantic(_)) => true,
+        _ => false,
+    });
 }

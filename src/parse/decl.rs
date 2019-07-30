@@ -169,6 +169,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             None => None,
         };
 
+        // reset the function context
+        self.current_function = None;
+
         // clean up and go home
         let symbol = Symbol {
             id: id.data,
@@ -373,6 +376,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location: self.next_location().clone(),
                     data: Default::default(),
                 });
+                if data != "" && params.iter().any(|p| p.data.id == data) {
+                    errs.push_back(Err(Locatable {
+                        location: location.clone(),
+                        data: format!(
+                            "duplicate parameter name '{}' in function declaration",
+                            data,
+                        ),
+                    }));
+                }
                 params.push(Locatable {
                     location,
                     data: Symbol {
@@ -1332,5 +1344,7 @@ mod tests {
         assert!(parse("int f[]();").unwrap().is_err());
         assert!(parse("int f()();").unwrap().is_err());
         assert!(parse("int (*f)[;").unwrap().is_err());
+        // duplicate parameter name
+        assert!(parse("int f(int a, int a);").unwrap().is_err());
     }
 }

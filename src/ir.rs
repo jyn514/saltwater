@@ -1,7 +1,7 @@
 use cranelift::prelude::{types, FunctionBuilder, FunctionBuilderContext, Type as IrType, Value};
 use cranelift_codegen::{
     self as codegen,
-    ir::{condcodes, function::Function, immediates, ExternalName, InstBuilder},
+    ir::{condcodes, function::Function, ExternalName, InstBuilder},
     isa,
     settings::{self, Configurable},
 };

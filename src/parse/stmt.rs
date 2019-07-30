@@ -101,11 +101,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .current_function
             .as_ref()
             .expect("should have current_function set when parsing statements");
-        let func_type = match current.ctype {
-            Type::Function(ref f) => f,
-            _ => panic!("current_function should be a function"),
-        };
-        let should_ret = *func_type.return_type != Type::Void;
+        let ret_type = &current.ftype.return_type;
+        let should_ret = **ret_type != Type::Void;
         match (expr, should_ret) {
             (None, false) => Ok(Stmt::Return(None)),
             (None, true) => Err(Locatable {
@@ -116,7 +113,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 data: format!("void function '{}' should not return a value", current.id),
                 location: expr.location,
             }),
-            (Some(expr), true) => Ok(Stmt::Return(Some(expr))),
+            (Some(expr), true) => {
+                if expr.ctype != **ret_type {
+                    Ok(Stmt::Return(Some(Expr::cast_op(expr, ret_type)?)))
+                } else {
+                    Ok(Stmt::Return(Some(expr)))
+                }
+            }
         }
     }
     /// if_statement:

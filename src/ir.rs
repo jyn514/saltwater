@@ -1,7 +1,7 @@
-use cranelift::prelude::{FunctionBuilder, FunctionBuilderContext, Type as IrType, Value};
+use cranelift::prelude::{types, FunctionBuilder, FunctionBuilderContext, Type as IrType, Value};
 use cranelift_codegen::{
     self as codegen,
-    ir::{function::Function, ExternalName, InstBuilder},
+    ir::{condcodes, function::Function, immediates, ExternalName, InstBuilder},
     isa,
     settings::{self, Configurable},
 };
@@ -149,7 +149,8 @@ impl LLVMCompiler {
             Stmt::Return(expr) => {
                 let mut ret = vec![];
                 if let Some(e) = expr {
-                    ret.push(self.compile_expr(e, builder)?);
+                    let (compiled, _) = self.compile_expr(e, builder)?;
+                    ret.push(compiled);
                 }
                 builder.ins().return_(&ret);
             }
@@ -183,17 +184,23 @@ impl LLVMCompiler {
         Ok(())
     }
     fn compile_expr(
-        &mut self,
+        &self,
         expr: Expr,
         builder: &mut FunctionBuilder,
-    ) -> Result<Value, Locatable<String>> {
+    ) -> Result<(Value, IrType), Locatable<String>> {
         let location = expr.location;
-        let ir_type = expr.ctype.into_llvm_basic().map_err(|err| Locatable {
-            data: err,
-            location,
-        })?;
+        let ir_type = match expr.ctype.into_llvm_basic() {
+            Ok(ir_type) => ir_type,
+            Err(err) => {
+                return Err(Locatable {
+                    data: err,
+                    location,
+                });
+            }
+        };
         match expr.expr {
             ExprType::Literal(token) => self.compile_literal(ir_type, token, builder),
+            ExprType::Cast(orig, ctype) => self.cast(*orig, ctype, location, builder),
             _ => unimplemented!("any expression other than literals"),
         }
     }
@@ -202,12 +209,57 @@ impl LLVMCompiler {
         ir_type: IrType,
         token: Token,
         builder: &mut FunctionBuilder,
-    ) -> Result<Value, Locatable<String>> {
+    ) -> Result<(Value, IrType), Locatable<String>> {
         match token {
-            Token::Int(i) => Ok(builder.ins().iconst(ir_type, i)),
-            Token::Float(f) => Ok(builder.ins().f64const(f)),
+            Token::Int(i) => Ok((builder.ins().iconst(ir_type, i), ir_type)),
+            Token::Float(f) => Ok((builder.ins().f64const(f), types::F64)),
             _ => unimplemented!("aggregate literals"),
         }
+    }
+    fn cast(
+        &self,
+        expr: Expr,
+        ctype: Type,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> Result<(Value, IrType), Locatable<String>> {
+        // calculate this here before it's moved to `compile_expr`
+        let orig_signed = expr.ctype.is_signed();
+        let (orig, orig_type) = self.compile_expr(expr, builder)?;
+        let cast_type = ctype.into_llvm_basic().map_err(|err| Locatable {
+            data: err,
+            location,
+        })?;
+        // NOTE: we compare the IR types, not the C types, because multiple C types
+        // NOTE: may have the same representation (e.g. both `int` and `long` are i64)
+        if cast_type == orig_type {
+            // no-op
+            return Ok((orig, orig_type));
+        }
+        let cast = match (orig_type, cast_type) {
+            (types::F32, types::F64) => builder.ins().fpromote(cast_type, orig),
+            (types::F64, types::F32) => builder.ins().fdemote(cast_type, orig),
+            (b, i) if b.is_bool() && i.is_int() => builder.ins().bint(cast_type, orig),
+            (i, b) if i.is_int() && b.is_bool() => {
+                builder.ins().icmp_imm(condcodes::IntCC::NotEqual, orig, 0)
+            }
+            (i, f) if i.is_int() && f.is_float() => {
+                if orig_signed {
+                    builder.ins().fcvt_from_sint(cast_type, orig)
+                } else {
+                    builder.ins().fcvt_from_uint(cast_type, orig)
+                }
+            }
+            (f, i) if f.is_float() && i.is_int() => {
+                if orig_signed {
+                    builder.ins().fcvt_to_sint(cast_type, orig)
+                } else {
+                    builder.ins().fcvt_to_uint(cast_type, orig)
+                }
+            }
+            _ => unimplemented!("cast from {} to {}", orig_type, cast_type),
+        };
+        Ok((cast, cast_type))
     }
     fn store_static(&mut self, symbol: Symbol, init: Initializer, location: Location) {
         /*

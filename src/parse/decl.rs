@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use std::iter::Iterator;
 use std::mem;
 
-use super::{Lexeme, Parser};
+use super::{FunctionData, Lexeme, Parser};
 use crate::data::{
     ArrayType, Declaration, Expr, FunctionType, Initializer, Keyword, Locatable, Location,
     Qualifiers, Stmt, StorageClass, Symbol, Token, Type,
@@ -119,31 +119,41 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         qualifiers: Qualifiers,
         ctype: Type,
     ) -> Result<Locatable<Declaration>, Locatable<String>> {
+        // parse declarator
         // declarator: Result<Symbol, Locatable<String>>
         let decl = self
             .declarator(false)?
             .expect("declarator should never return None when called with allow_abstract: false");
         let (id, ctype) = decl.parse_type(ctype.clone(), &self.last_location.as_ref().unwrap())?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
-        if self.current_function.is_some() {
-            return Err(Locatable {
-                location: id.location,
-                data: format!(
-                    "functions cannot be nested. hint: try declaring {} as `static` at file scope",
-                    id.data
-                ),
+
+        // if it's a function, set up state so we know the return type
+        // TODO: rework all of this so semantic analysis is done _after_ parsing
+        // TODO: that will remove a lot of clones and also make the logic much simpler
+        if let Type::Function(ref ftype) = ctype {
+            if self.current_function.is_some() {
+                // TODO: allow function _declarations_ at local scope
+                // e.g. int main() { int f(); return f(); }
+                return Err(Locatable {
+                    location: id.location,
+                    data: format!(
+                        "functions cannot be nested. hint: try declaring {} as `static` at file scope",
+                        id.data
+                    ),
+                });
+            }
+            self.current_function = Some(FunctionData {
+                ftype: ftype.clone(),
+                id: id.data.clone(),
+                location: id.location.clone(),
+                seen_ret: false,
             });
         }
-        self.current_function = Some(Symbol {
-            storage_class: sc,
-            qualifiers,
-            ctype: ctype.clone(),
-            id: id.data,
-            init: false,
-        });
+
+        // optionally, parse an initializer
         let init = match self.initializer()? {
             Some(Initializer::CompoundStatement(stmts)) => {
-                if !ctype.is_function() {
+                if self.current_function.is_none() {
                     return Err(Locatable {
                         location: id.location,
                         data: format!("only functions can have a compound statement as an initializer, got '{}'", ctype)
@@ -158,11 +168,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             None => None,
         };
-        let mut symbol = self
-            .current_function
-            .take()
-            .expect("initializer should not modify parser.current_function");
-        symbol.init = init.is_some();
+
+        // clean up and go home
+        let symbol = Symbol {
+            id: id.data,
+            ctype,
+            qualifiers,
+            storage_class: sc,
+            init: init.is_some(),
+        };
         Ok(Locatable {
             data: Declaration { symbol, init },
             location: id.location,

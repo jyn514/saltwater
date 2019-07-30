@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{Declaration, FunctionType, Keyword, Locatable, Location, Scope, Symbol, Token};
+use crate::data::{Declaration, FunctionType, Keyword, Locatable, Location, Scope, Token};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
@@ -33,7 +33,21 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     // the function we are currently compiling.
     // if `None`, we are in global scope.
     // used for checking return types
-    current_function: Option<Symbol>,
+    current_function: Option<FunctionData>,
+}
+
+#[derive(Debug)]
+/// used to keep track of function metadata
+/// while doing semantic analysis
+struct FunctionData {
+    /// the name of the function
+    id: String,
+    /// where the function was declared
+    location: Location,
+    /// the type of the function
+    ftype: FunctionType,
+    /// whether or not we've seen a return statement for this function
+    seen_ret: bool,
 }
 
 impl<I> Parser<I>

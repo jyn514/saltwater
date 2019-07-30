@@ -359,6 +359,15 @@ impl Type {
         }
     }
     #[inline]
+    // returns whether `self` is a signed integer type
+    pub fn is_signed(&self) -> bool {
+        use Type::*;
+        match self {
+            Bool | Char(true) | Short(true) | Int(true) | Long(true) => true,
+            _ => false,
+        }
+    }
+    #[inline]
     pub fn is_integral(&self) -> bool {
         use Type::*;
         match self {

@@ -8,5 +8,11 @@ fn return_type() {
          int main(void) { return 0; }"
             .to_string(),
     );
-    utils::assert_compile_error("int main(void) { return 1.1; }".to_string());
+    assert!(
+        utils::compile_and_run("int main(void) { return 1.1; }".to_string(), &[])
+            .unwrap()
+            .status
+            .code()
+            == Some(1)
+    );
 }

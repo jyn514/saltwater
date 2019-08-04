@@ -28,19 +28,23 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Lo
         .map_or_else(|| "<empty>".to_string(), |decl| decl.data.symbol.id.clone());
     let mut compiler = LLVMCompiler::new(name);
     for decl in program {
-        if let Some(init) = decl.data.init {
-            match decl.data.symbol.ctype {
-                Type::Void => panic!("parser let an incomplete type through"),
-                Type::Function(func_type) => compiler.compile_func(
+        match (decl.data.symbol.ctype.clone(), decl.data.init) {
+            (_, None) => {} // only compile definitions
+            (Type::Void, _) => panic!("parser let an incomplete type through"),
+            (Type::Function(func_type), Some(Initializer::FunctionBody(stmts))) => compiler
+                .compile_func(
                     decl.data.symbol.id,
                     func_type,
                     decl.data.symbol.qualifiers,
                     decl.data.symbol.storage_class,
-                    init,
+                    stmts,
                     decl.location,
                 )?,
-                _ => compiler.store_static(decl.data.symbol, init, decl.location),
+            (Type::Function(_), _) => panic!("functions should have a FunctionBody initializer"),
+            (_, Some(Initializer::FunctionBody(_))) => {
+                panic!("only functions should have a function body")
             }
+            (_, Some(init)) => compiler.store_static(decl.data.symbol, init, decl.location),
         }
     }
     Ok(compiler.module)
@@ -84,7 +88,7 @@ impl LLVMCompiler {
         func_type: FunctionType,
         quals: Qualifiers,
         sc: StorageClass,
-        init: Initializer,
+        stmts: Vec<Stmt>,
         location: Location,
     ) -> Result<(), Locatable<String>> {
         let linkage = match sc {
@@ -114,10 +118,6 @@ impl LLVMCompiler {
         builder.append_ebb_params_for_function_params(func_start);
         builder.switch_to_block(func_start);
 
-        let stmts = match init {
-            Initializer::CompoundStatement(stmts) => stmts,
-            x => panic!("expected compound statement from parser, got '{:#?}'", x),
-        };
         self.compile_all(stmts, &mut builder)?;
 
         let flags = settings::Flags::new(settings::builder());

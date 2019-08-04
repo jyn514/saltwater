@@ -88,14 +88,15 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
             while let Some(locatable) = self.match_next(&Token::Semicolon) {
                 warn("extraneous semicolon at top level", &locatable.location);
             }
-            let locatable = self.next_token()?;
-            match locatable.data {
-                Token::Semicolon => panic!("should have been caught by previous loop"),
-                _ => {
-                    self.unput(Some(locatable));
-                    // If declaration is None, we saw an empty specifier
-                    self.declaration().or_else(|| self.next())
-                }
+
+            // if we're at the end of the file, return None
+            self.peek_token()?;
+
+            // If declaration is None, we saw an empty specifier
+            match self.declaration() {
+                Err(err) => Some(Err(err)),
+                Ok(Some(decl)) => Some(Ok(decl)),
+                Ok(None) => self.next(),
             }
         })
     }
@@ -174,10 +175,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     return self.next_token();
                 }
             }
-            None
-        } else {
-            None
         }
+        None
     }
     /*
      * If we're in an invalid state, try to recover.
@@ -211,6 +210,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(data) => {
                 let message = data.to_string();
                 let location = self.next_location().clone();
+                // TODO: these errors don't seem to be reported?
                 self.pending.push_back(Err(Locatable {
                     location,
                     data: format!("expected '{}', got '{}'", next, message),

@@ -655,24 +655,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// We also catch function bodies here, which normally aren't allowed in initializers; we
     /// have some custom logic in init_declarator to deal with it
-    ///
-    /// TODO: handle trailing commas
     fn initializer(&mut self, ctype: &Type) -> Result<Initializer, Locatable<String>> {
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
             let mut elements = vec![];
-            eprintln!("{:?}", self.peek_token());
-            // XXX: this is just clearly wrong
-            loop {
-                eprintln!("{:?}", self.peek_token());
-                elements.push(self.initializer(ctype)?);
+            while self.match_next(&Token::RightBrace).is_none() {
+                let elem_type = ctype.type_at(elements.len()).map_err(|err| Locatable {
+                    data: err,
+                    location: self.next_location().clone(),
+                })?;
+                elements.push(self.initializer(elem_type)?);
                 if self.match_next(&Token::RightBrace).is_some() {
                     break;
                 }
                 self.expect(Token::Comma);
             }
-            eprintln!("{:?}", self.peek_token());
-            self.expect(Token::RightBrace);
             Ok(Initializer::InitializerList(elements))
         } else {
             // assignment_expr
@@ -966,6 +963,25 @@ impl Declarator {
     }
 }
 
+impl Type {
+    fn type_at(&self, index: usize) -> Result<&Type, String> {
+        match self {
+            Type::Array(inner, _) => Ok(inner),
+            Type::Struct(symbols) => symbols.get(index).map_or_else(
+                || {
+                    Err(format!(
+                        "too many initializers for struct (declared with {} elements, found {}",
+                        symbols.len(),
+                        index
+                    ))
+                },
+                |symbol| Ok(&symbol.ctype),
+            ),
+            _ => unimplemented!("type checking for aggregate initializers"),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 enum DeclaratorType {
     Id(String, Location),
@@ -990,7 +1006,7 @@ struct Declarator {
 #[cfg(test)]
 mod tests {
     use crate::data::{
-        ArrayType, FunctionType, Qualifiers, Symbol,
+        ArrayType, Declaration, FunctionType, Initializer, Locatable, Qualifiers, Symbol,
         Type::{self, *},
     };
     use crate::parse::tests::{match_all, match_data, parse, parse_all, ParseType};
@@ -1365,5 +1381,27 @@ mod tests {
         assert!(parse("int (*f)[;").unwrap().is_err());
         // duplicate parameter name
         assert!(parse("int f(int a, int a);").unwrap().is_err());
+    }
+    #[test]
+    fn test_initializers() {
+        // scalars
+        assert!(parse("int i = 3;").unwrap().is_ok());
+
+        // bounded and unbounded arrays
+        assert!(all_match!(
+            Some(Ok(Locatable {
+                data:
+                    Declaration {
+                        init: Some(Initializer::InitializerList(l)),
+                        ..
+                    },
+                ..
+            })),
+            parse("int a[] = {1, 2, 3};"),
+            parse("int a[3] = {1, 2, 3};"),
+            // possibly with trailing commas
+            parse("int a[] = {1, 2, 3,};"),
+            parse("int a[3] = {1, 2, 3,};")
+        ));
     }
 }

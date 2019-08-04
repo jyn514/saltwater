@@ -187,11 +187,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         loop {
             match self.peek_token() {
                 None | Some(Token::Semicolon) | Some(Token::RightBrace) => break,
-                _ => {}
-            }
+                _ => self.next_token(),
+            };
         }
     }
     fn expect(&mut self, next: Token) -> Option<Locatable<Token>> {
+        // special case keywords - they must match exactly
         if let Token::Keyword(n) = next {
             if let Some(Token::Keyword(p)) = self.peek_token() {
                 if n == *p {

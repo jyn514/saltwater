@@ -57,6 +57,7 @@ macro_rules! map {
 ///
 /// Very similar to `if let $pattern = $expr {}`,
 /// but can be used as an expression instead of a block.
+#[allow(unused_macros)]
 macro_rules! matches {
     ($pattern: pat, $val: expr) => {
         match $val {
@@ -68,6 +69,7 @@ macro_rules! matches {
 
 /// Check that many expressions match a pattern
 /// TODO: only works for 1, 2, or 3 arguments
+#[allow(unused_macros)]
 macro_rules! all_match {
     ($pat: pat, $val: expr) => {
         matches!($pat, $val)

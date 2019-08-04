@@ -165,7 +165,7 @@ impl Type {
 }
 
 impl FunctionType {
-    pub fn signature(self, location: Location) -> Result<Signature, Locatable<String>> {
+    pub fn signature(self, location: &Location) -> Result<Signature, Locatable<String>> {
         let params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
             // no arguments
             Vec::new()
@@ -193,7 +193,7 @@ impl FunctionType {
                 .map(AbiParam::new)
                 .map_err(|err| Locatable {
                     data: err,
-                    location,
+                    location: location.clone(),
                 })?]
         };
         Ok(Signature {

@@ -1,6 +1,7 @@
 // https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models
 #[allow(non_camel_case_types)]
 pub(crate) type SIZE_T = u64;
+#[allow(dead_code)]
 pub(crate) const SIZE_MAX: SIZE_T = SIZE_T::max_value();
 
 pub(crate) const FLOAT_SIZE: u16 = 4;

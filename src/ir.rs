@@ -1,3 +1,5 @@
+use std::convert::{TryFrom, TryInto};
+
 use cranelift::prelude::{types, FunctionBuilder, FunctionBuilderContext, Type as IrType, Value};
 use cranelift_codegen::{
     self as codegen,
@@ -6,7 +8,7 @@ use cranelift_codegen::{
     settings::{self, Configurable},
 };
 use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
-use cranelift_module::{self, Linkage, Module as CraneliftModule};
+use cranelift_module::{self, DataContext, Linkage, Module as CraneliftModule};
 
 use crate::backend::TARGET;
 use crate::data::{
@@ -44,7 +46,7 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Lo
             (_, Some(Initializer::FunctionBody(_))) => {
                 panic!("only functions should have a function body")
             }
-            (_, Some(init)) => compiler.store_static(decl.data.symbol, init, decl.location),
+            (_, init) => compiler.store_static(decl.data.symbol, init, decl.location)?,
         }
     }
     Ok(compiler.module)
@@ -91,17 +93,11 @@ impl LLVMCompiler {
         stmts: Vec<Stmt>,
         location: Location,
     ) -> Result<(), Locatable<String>> {
-        let linkage = match sc {
-            StorageClass::Extern => Linkage::Export,
-            StorageClass::Static => Linkage::Local,
-            StorageClass::Auto | StorageClass::Register => {
-                return Err(Locatable {
-                    data: format!("illegal storage class {} for function {}", sc, id),
-                    location,
-                });
-            }
-        };
-        let signature = func_type.signature(location)?;
+        let signature = func_type.signature(&location)?;
+        let linkage = sc.try_into().map_err(|err| Locatable {
+            data: err,
+            location,
+        })?;
         let func_id = self
             .module
             .declare_function(&id, linkage, &signature)
@@ -261,12 +257,68 @@ impl LLVMCompiler {
         };
         Ok((cast, cast_type))
     }
-    fn store_static(&mut self, symbol: Symbol, init: Initializer, location: Location) {
-        /*
-        let mir = Mir::StaticInit(self.addr, init);
-        self.addr += 1;
-        self.mir.push(mir);
-        */
-        unimplemented!("static initialization")
+    fn store_static(
+        &mut self,
+        symbol: Symbol,
+        init: Option<Initializer>,
+        location: Location,
+    ) -> Result<(), Locatable<String>> {
+        let err_closure = |err| Locatable {
+            data: err,
+            location: location.clone(),
+        };
+        let linkage = symbol.storage_class.try_into().map_err(err_closure)?;
+        let id = self
+            .module
+            .declare_data(
+                &symbol.id,
+                linkage,
+                symbol.qualifiers.c_const,
+                Some(
+                    symbol
+                        .ctype
+                        .alignof()
+                        .map_err(|err| err.to_string())
+                        .and_then(|size| {
+                            size.try_into().map_err(|f| {
+                                format!("align of {} is greater than 256 bytes", symbol.id)
+                            })
+                        })
+                        .map_err(err_closure)?,
+                ),
+            )
+            .map_err(|err| Locatable {
+                data: format!("error storing static value: {}", err),
+                location: location.clone(),
+            })?;
+        let mut ctx = DataContext::new();
+        if let Some(init) = init {
+            let data = unimplemented!("explicit initializers");
+            ctx.define(data)
+        } else {
+            ctx.define_zeroinit(
+                symbol
+                    .ctype
+                    .sizeof()
+                    .map_err(|err| err_closure(err.to_string()))? as usize,
+            )
+        };
+        self.module.define_data(id, &ctx).map_err(|err| Locatable {
+            data: format!("error defining static variable: {}", err),
+            location,
+        })
+    }
+}
+
+impl TryFrom<StorageClass> for Linkage {
+    type Error = String;
+    fn try_from(sc: StorageClass) -> Result<Linkage, String> {
+        match sc {
+            StorageClass::Extern => Ok(Linkage::Export),
+            StorageClass::Static => Ok(Linkage::Local),
+            StorageClass::Auto | StorageClass::Register => {
+                Err(format!("illegal storage class {} for global variable", sc))
+            }
+        }
     }
 }

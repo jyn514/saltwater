@@ -140,8 +140,8 @@ pub struct Declaration {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Initializer {
     Scalar(Expr),                      // int i = 5;
-    CompoundStatement(Vec<Stmt>),      // int f() { return 0; }
     InitializerList(Vec<Initializer>), // int a[] = { 1, 2, 3 };
+    FunctionBody(Vec<Stmt>),           // int f() { return 0; }
 }
 
 /// Holds the metadata for an expression.

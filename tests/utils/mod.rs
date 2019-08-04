@@ -23,10 +23,17 @@ pub fn run(program: &Path, args: &[&str]) -> Result<Output, Error> {
     Command::new(program).args(args).output()
 }
 
-pub fn assert_compile_error(program: String) {
+pub fn assert_compile_error(program: &str) {
     let output = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-    assert!(match compile(program, &output) {
+    assert!(match compile(program.to_string(), &output) {
         Err(CompileError::Semantic(_)) => true,
         _ => false,
+    });
+}
+
+pub fn assert_succeeds(program: &str) {
+    assert!(match compile_and_run(program.to_string(), &[]) {
+        Err(_) => false,
+        Ok(output) => output.status.success(),
     });
 }

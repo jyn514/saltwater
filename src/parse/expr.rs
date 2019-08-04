@@ -89,7 +89,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// we parse an entire expression, see if an assignment operator follows it,
     /// and only then check if the left is an lval.
     /// NOTE: comma operators aren't allowed on the RHS of an assignment.
-    fn assignment_expr(&mut self) -> ExprResult {
+    ///
+    /// This is public so that we can parse expressions that can't have commas
+    /// (usually initializers)
+    pub fn assignment_expr(&mut self) -> ExprResult {
         let lval = self.conditional_expr()?;
         if self
             .peek_token()
@@ -858,7 +861,7 @@ impl Expr {
         unimplemented!("implicit variable dereferences")
     }
     // Simple assignment rules, section 6.5.16.1 of the C standard
-    pub fn cast_op(expr: Expr, ctype: &Type) -> ExprResult {
+    pub fn cast_op(mut expr: Expr, ctype: &Type) -> ExprResult {
         if expr.ctype == *ctype {
             Ok(expr)
         } else if expr.ctype.is_arithmetic() && ctype.is_arithmetic()
@@ -880,6 +883,9 @@ impl Expr {
                 lval: false,
                 ctype: ctype.clone(),
             })
+        } else if expr.expr == ExprType::Literal(Token::Int(0)) && ctype.is_pointer() {
+            expr.ctype = ctype.clone();
+            Ok(expr)
         } else {
             Err(Locatable {
                 location: expr.location,

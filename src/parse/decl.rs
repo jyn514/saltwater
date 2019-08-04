@@ -65,53 +65,74 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
-    pub fn declaration(&mut self) -> Option<Result<Locatable<Declaration>, Locatable<String>>> {
-        let (sc, qualifiers, ctype) = match self.declaration_specifiers(true) {
-            Err(x) => return Some(Err(x)),
-            Ok(x) => x,
-        };
+    pub fn declaration(&mut self) -> Result<Option<Locatable<Declaration>>, Locatable<String>> {
+        let (sc, qualifiers, ctype) = self.declaration_specifiers(true)?;
         if self.match_next(&Token::Semicolon).is_some() {
             warn(
                 "declaration does not declare anything",
                 self.next_location(),
             );
-            return None;
+            return Ok(None);
+        }
+
+        // special case functions bodies - they can only occur as the first declarator
+        let declarator = self
+            .declarator(false)?
+            .expect("declarator should return id when called with allow_abstract: false");
+        let (id, first_type) =
+            declarator.parse_type(ctype.clone(), self.last_location.as_ref().unwrap())?;
+        let id = id.expect("declarator should return id when called with allow_abstract: false");
+
+        // if it's not a function, we still need to handle it
+        let init = match (&first_type, self.peek_token()) {
+            (Type::Function(ftype), Some(Token::LeftBrace)) => Some(Initializer::FunctionBody(
+                self.function_body(id.clone(), ftype.clone())?,
+            )),
+            (ctype, Some(Token::Equal)) => {
+                self.next_token();
+                Some(self.initializer(ctype)?)
+            }
+            _ => None,
+        };
+        let is_func = first_type.is_function();
+        let symbol = Symbol {
+            id: id.data,
+            ctype: first_type,
+            qualifiers: qualifiers.clone(),
+            storage_class: sc,
+            init: init.is_some(),
+        };
+        let decl = Locatable {
+            data: Declaration { symbol, init },
+            location: id.location,
+        };
+        self.define(&decl)?;
+        if (is_func && decl.data.init.is_some()) || self.match_next(&Token::Semicolon).is_some() {
+            return Ok(Some(decl));
+        } else {
+            self.pending.push_back(Ok(decl));
+            self.expect(Token::Comma);
         }
         loop {
-            let decl = match self.init_declarator(sc, qualifiers.clone(), ctype.clone()) {
-                Err(err) => return Some(Err(err)),
-                Ok(decl) => decl,
-            };
-            match self.scope.insert(decl.data.symbol.clone()) {
-                None => {}
-                Some(ref symbol) if symbol.init => {}
-                Some(_) => {
-                    return Some(Err(Locatable {
-                        location: decl.location,
-                        data: format!("redefinition of '{}'", decl.data.symbol.id),
-                    }))
-                }
-            }
-            let (is_func, has_init) = (
-                decl.data.symbol.ctype.is_function(),
-                decl.data.init.is_some(),
-            );
+            let decl = self.init_declarator(sc, qualifiers.clone(), ctype.clone())?;
+            self.define(&decl)?;
             self.pending.push_back(Ok(decl));
-            // NOTE: does not adhere to the standard, allows `int i, f() {}`
-            // TODO: have different logic for '=' and '{' initializers
-            if is_func && has_init {
-                break;
-            }
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon);
                 break;
             }
         }
-        Some(
-            self.pending
-                .pop_front()
-                .expect("if we entered the loop, there should be at least one declaration"),
-        )
+        self.pending.pop_front().transpose()
+    }
+    fn define(&mut self, decl: &Locatable<Declaration>) -> Result<(), Locatable<String>> {
+        match self.scope.insert(decl.data.symbol.clone()) {
+            None => Ok(()),
+            Some(ref symbol) if symbol.init => Ok(()),
+            Some(_) => Err(Locatable {
+                location: decl.location.clone(),
+                data: format!("redefinition of '{}'", decl.data.symbol.id),
+            }),
+        }
     }
     fn init_declarator(
         &mut self,
@@ -127,50 +148,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let (id, ctype) = decl.parse_type(ctype.clone(), &self.last_location.as_ref().unwrap())?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
 
-        // if it's a function, set up state so we know the return type
-        // TODO: rework all of this so semantic analysis is done _after_ parsing
-        // TODO: that will remove a lot of clones and also make the logic much simpler
-        if let Type::Function(ref ftype) = ctype {
-            if self.current_function.is_some() {
-                // TODO: allow function _declarations_ at local scope
-                // e.g. int main() { int f(); return f(); }
-                return Err(Locatable {
-                    location: id.location,
-                    data: format!(
-                        "functions cannot be nested. hint: try declaring {} as `static` at file scope",
-                        id.data
-                    ),
-                });
-            }
-            self.current_function = Some(FunctionData {
-                ftype: ftype.clone(),
-                id: id.data.clone(),
-                location: id.location.clone(),
-                seen_ret: false,
-            });
-        }
-
         // optionally, parse an initializer
-        let init = match self.initializer()? {
-            Some(Initializer::CompoundStatement(stmts)) => {
-                if self.current_function.is_none() {
-                    return Err(Locatable {
-                        location: id.location,
-                        data: format!("only functions can have a compound statement as an initializer, got '{}'", ctype)
-                    });
-                }
-                Some(Initializer::CompoundStatement(stmts))
-            }
-            Some(Initializer::InitializerList(list)) => unimplemented!(),
-            Some(Initializer::Scalar(expr)) => {
-                let expr = Expr::cast_op(expr, &ctype)?;
-                Some(Initializer::Scalar(expr))
-            }
-            None => None,
+        let init = if self.match_next(&Token::Equal).is_some() {
+            Some(self.initializer(&ctype)?)
+        } else {
+            None
         };
-
-        // reset the function context
-        self.current_function = None;
 
         // clean up and go home
         let symbol = Symbol {
@@ -266,7 +249,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 *s = signed.unwrap_or(true);
                 ctype.unwrap()
             }
-            Some(_) => ctype.unwrap(),
+            Some(ctype) => ctype,
             None => {
                 if signed.is_none() {
                     warn(
@@ -668,36 +651,72 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// Rewritten as
     /// initializer: assignment_expr
-    ///     | '{' initializer (',' initializer)* ','? '}'
+    ///     | '{' initializer (',' initializer)* '}'
     ///
     /// We also catch function bodies here, which normally aren't allowed in initializers; we
     /// have some custom logic in init_declarator to deal with it
-    fn initializer(&mut self) -> Result<Option<Initializer>, Locatable<String>> {
-        if self.peek_token() == Some(&Token::LeftBrace) {
-            // function body
-            Ok(Some(Initializer::CompoundStatement(
-                match self.compound_statement()? {
-                    Some(Stmt::Compound(stmts)) => stmts,
-                    None => vec![],
-                    x => panic!("expected compound_statement to return compound statement, got '{:#?}' instead", x)
+    ///
+    /// TODO: handle trailing commas
+    fn initializer(&mut self, ctype: &Type) -> Result<Initializer, Locatable<String>> {
+        // initializer_list
+        if self.match_next(&Token::LeftBrace).is_some() {
+            let mut elements = vec![];
+            eprintln!("{:?}", self.peek_token());
+            // XXX: this is just clearly wrong
+            loop {
+                eprintln!("{:?}", self.peek_token());
+                elements.push(self.initializer(ctype)?);
+                if self.match_next(&Token::RightBrace).is_some() {
+                    break;
                 }
-            )))
-        } else if self.match_next(&Token::Equal).is_some() {
-            // initializer_list
-            if self.match_next(&Token::LeftBrace).is_some() {
-                let mut elements = vec![];
-                while let Some(init) = self.initializer()? {
-                    elements.push(init);
-                }
-                self.expect(Token::RightBrace);
-                Ok(Some(Initializer::InitializerList(elements)))
-            } else {
-                // assignment_expr
-                Ok(Some(Initializer::Scalar(self.expr()?)))
+                self.expect(Token::Comma);
             }
+            eprintln!("{:?}", self.peek_token());
+            self.expect(Token::RightBrace);
+            Ok(Initializer::InitializerList(elements))
         } else {
-            Ok(None)
+            // assignment_expr
+            let expr = Expr::cast_op(self.assignment_expr()?, ctype)?;
+            Ok(Initializer::Scalar(expr))
         }
+    }
+    fn function_body(
+        &mut self,
+        id: Locatable<String>,
+        ftype: FunctionType,
+    ) -> Result<Vec<Stmt>, Locatable<String>> {
+        // if it's a function, set up state so we know the return type
+        // TODO: rework all of this so semantic analysis is done _after_ parsing
+        // TODO: that will remove a lot of clones and also make the logic much simpler
+        if self.current_function.is_some() {
+            // TODO: allow function _declarations_ at local scope
+            // e.g. int main() { int f(); return f(); }
+            return Err(Locatable {
+                location: id.location,
+                data: format!(
+                    "functions cannot be nested. hint: try declaring {} as `static` at file scope",
+                    id.data
+                ),
+            });
+        }
+        self.current_function = Some(FunctionData {
+            ftype: ftype.clone(),
+            id: id.data,
+            location: id.location,
+            seen_ret: false,
+        });
+
+        // function body
+        let body = match self.compound_statement()? {
+            Some(Stmt::Compound(stmts)) => stmts,
+            None => vec![],
+            x => panic!(
+                "expected compound_statement to return compound statement, got '{:#?}' instead",
+                x
+            ),
+        };
+        self.current_function = None;
+        Ok(body)
     }
 }
 

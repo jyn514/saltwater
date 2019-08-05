@@ -43,7 +43,9 @@ which makes them automatically run with `cargo test`.
 See the end of `src/lex.rs` for an example.
 
 Patches will not be merged unless they pass all current tests, including `clippy` and `rustfmt`.
-You can run these with `./test.sh`; I suggest sym-linking it to `.git/hooks/pre-commit`.
+You can run these with `tests/pre-commit.sh`;
+I suggest sym-linking it to `.git/hooks/pre-commit` like this:
+`ln -s ../../tests/pre-commit.sh .git/hooks/pre-commit`.
 
 ## Code of Conduct
 

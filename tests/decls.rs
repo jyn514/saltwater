@@ -11,7 +11,10 @@ fn test_decl_and_func_definition() {
 fn test_initializers() {
     utils::assert_succeeds(
         "
+    int i = 1;
     int a[3] = {1, 2, 3};
+    double d = 1.2;
+    float f = 1.2;
     int main(void) { return 0; }
     ",
     );

@@ -626,6 +626,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         location,
                     }),
                 },
+                Char(literal) => Ok(Expr::char_literal(literal, location)),
                 Str(literal) => Ok(Expr::string_literal(literal, location)),
                 Int(literal) => Ok(Expr::int_literal(literal, location)),
                 Float(literal) => Ok(Expr::float_literal(literal, location)),
@@ -947,6 +948,13 @@ impl Expr {
         })
     }
     // this and the next few '*_literal' functions make unit tests more convenient
+    fn char_literal(value: u8, location: Location) -> Expr {
+        Expr::literal(
+            Type::Char(true),
+            location,
+            ExprType::Literal(Token::Char(value)),
+        )
+    }
     fn int_literal(value: i64, location: Location) -> Expr {
         Expr::literal(
             Type::Int(true),

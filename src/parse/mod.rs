@@ -13,27 +13,29 @@ type Lexeme = Locatable<Result<Token, String>>;
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
-    // the variables that have been declared
+    /// the variables that have been declared
     scope: Scope,
-    // we iterate lazily over the tokens, so if we have a program that's mostly valid but
-    // breaks at the end, we don't only show lex errors
+    /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
+    /// breaks at the end, we don't only show lex errors
     tokens: I,
-    // VecDeque supports pop_front with reasonable efficiency
-    // this is useful because errors are FIFO
+    /// VecDeque supports pop_front with reasonable efficiency
+    /// this is useful because errors are FIFO
     pending: VecDeque<Result<Locatable<Declaration>, Locatable<String>>>,
-    // in case we get to the end of the file and want to show an error
-    // TODO: are we sure this should be optional?
+    /// in case we get to the end of the file and want to show an error
+    /// TODO: are we sure this should be optional?
     last_location: Option<Location>,
-    // the last token we saw from the Lexer
+    /// the last token we saw from the Lexer
     current: Option<Locatable<Token>>,
-    // TODO: are we sure we need 2 tokens of lookahead?
-    // this was put here for declarations, so we know the difference between
-    // int (*x) and int (int), but there's probably a workaround
+    /// TODO: are we sure we need 2 tokens of lookahead?
+    /// this was put here for declarations, so we know the difference between
+    /// int (*x) and int (int), but there's probably a workaround
     next: Option<Locatable<Token>>,
-    // the function we are currently compiling.
-    // if `None`, we are in global scope.
-    // used for checking return types
+    /// the function we are currently compiling.
+    /// if `None`, we are in global scope.
+    /// used for checking return types
     current_function: Option<FunctionData>,
+    /// whether to debug each declaration
+    debug: bool,
 }
 
 #[derive(Debug)]
@@ -54,7 +56,7 @@ impl<I> Parser<I>
 where
     I: Iterator<Item = Lexeme>,
 {
-    pub fn new(iter: I) -> Self {
+    pub fn new(iter: I, debug: bool) -> Self {
         Parser {
             scope: Default::default(),
             tokens: iter,
@@ -63,6 +65,7 @@ where
             current: None,
             next: None,
             current_function: None,
+            debug,
         }
     }
 }
@@ -84,7 +87,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
     /// | declaration_specifiers declarator compound_statement
     /// ;
     fn next(&mut self) -> Option<Self::Item> {
-        self.pending.pop_front().or_else(|| {
+        let next = self.pending.pop_front().or_else(|| {
             while let Some(locatable) = self.match_next(&Token::Semicolon) {
                 warn("extraneous semicolon at top level", &locatable.location);
             }
@@ -98,7 +101,11 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                 Ok(Some(decl)) => Some(Ok(decl)),
                 Ok(None) => self.next(),
             }
-        })
+        });
+        if self.debug {
+            println!("declaration: {:?}", next);
+        }
+        next
     }
 }
 
@@ -289,7 +296,8 @@ mod tests {
     }
     #[inline]
     pub(crate) fn parser(input: &str) -> Parser<Lexer> {
-        Parser::new(Lexer::new("<test suite>".to_string(), input.chars()))
+        let lex = Lexer::new("<test suite>".to_string(), input.chars(), false);
+        Parser::new(lex, false)
     }
     #[test]
     fn peek() {

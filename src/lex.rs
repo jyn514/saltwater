@@ -37,6 +37,7 @@ pub struct Lexer<'a> {
     current: Option<char>,
     // used for 3-character tokens
     lookahead: Option<char>,
+    debug: bool,
 }
 
 // returned when lexing a string literal
@@ -94,7 +95,7 @@ lazy_static! {
 
 impl<'a> Lexer<'a> {
     /// Creates a Lexer from a filename and the contents of a file
-    pub fn new(filename: String, chars: Chars<'a>) -> Lexer<'a> {
+    pub fn new(filename: String, chars: Chars<'a>, debug: bool) -> Lexer<'a> {
         Lexer {
             location: Location {
                 line: 1,
@@ -105,6 +106,7 @@ impl<'a> Lexer<'a> {
             chars,
             current: None,
             lookahead: None,
+            debug,
         }
     }
     /// This lexer is somewhat unique - it reads a single character at a time,
@@ -557,7 +559,7 @@ impl<'a> Iterator for Lexer<'a> {
                 _ => break,
             }
         }
-        c.and_then(|c| {
+        let c = c.and_then(|c| {
             // this clone is unavoidable, we need to keep self.location
             // but we also need each token to have a location
             let location = self.location.clone();
@@ -724,7 +726,11 @@ impl<'a> Iterator for Lexer<'a> {
                 x => Err(format!("unknown token {:?}", x)),
             };
             Some(Self::Item { data, location })
-        })
+        });
+        if self.debug {
+            println!("lexeme: {:?}", c);
+        }
+        c
     }
 }
 
@@ -738,7 +744,7 @@ mod tests {
         lex_all(input).get(0).cloned()
     }
     fn lex_all(input: &str) -> Vec<LexType> {
-        Lexer::new("<stdin>".to_string(), input.chars()).collect()
+        Lexer::new("<stdin>".to_string(), input.chars(), false).collect()
     }
 
     fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool

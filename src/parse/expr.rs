@@ -965,7 +965,7 @@ impl Expr {
     }
     fn float_literal(value: f64, location: Location) -> Expr {
         Expr::literal(
-            Type::Float,
+            Type::Double,
             location,
             ExprType::Literal(Token::Float(value)),
         )
@@ -1161,8 +1161,8 @@ mod tests {
     }
     #[test]
     fn test_mul() {
-        assert!(parse_expr("1*1.0").unwrap().ctype == Type::Float);
-        assert!(parse_expr("1*2.0 / 1.3").unwrap().ctype == Type::Float);
+        assert!(parse_expr("1*1.0").unwrap().ctype == Type::Double);
+        assert!(parse_expr("1*2.0 / 1.3").unwrap().ctype == Type::Double);
         assert!(parse_expr("3%2").unwrap().ctype == Type::Int(true));
     }
     #[test]

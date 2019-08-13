@@ -9,12 +9,15 @@ fn test_decl_and_func_definition() {
 
 #[test]
 fn test_initializers() {
+    utils::assert_compile_error("char c = '🙃';");
     utils::assert_succeeds(
         "
     int i = 1;
     int a[3] = {1, 2, 3};
     double d = 1.2;
     float f = 1.2;
+    char c = 'h';
+    char s[] = \"hi there\";
     int main(void) { return 0; }
     ",
     );

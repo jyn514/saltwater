@@ -447,6 +447,15 @@ impl<'a> Lexer<'a> {
     /// Before: chars{"\0' blah"}
     /// After:  chars{" blah"}
     fn parse_char(&mut self) -> Result<Token, String> {
+        fn consume_until_quote<'a>(lexer: &mut Lexer<'a>) {
+            loop {
+                match lexer.parse_single_char(false) {
+                    Ok('\'') => break,
+                    Err(_) => break,
+                    _ => {}
+                }
+            }
+        }
         let (term_err, newline_err) = (
             Err(String::from(
                 "Missing terminating ' character in char literal",
@@ -454,21 +463,19 @@ impl<'a> Lexer<'a> {
             Err(String::from("Illegal newline while parsing char literal")),
         );
         match self.parse_single_char(false) {
-            Ok(c) => match self.next_char() {
-                Some('\'') => Ok(Token::Char(c)),
+            Ok(c) if c.is_ascii() => match self.next_char() {
+                Some('\'') => Ok(Token::Char(c as u8)),
                 Some('\n') => newline_err,
                 None => term_err,
                 Some(_) => {
-                    loop {
-                        match self.parse_single_char(false) {
-                            Ok('\'') => break,
-                            Err(_) => break,
-                            _ => {}
-                        }
-                    }
+                    consume_until_quote(self);
                     Err(String::from("Multi-character character literal"))
                 }
             },
+            Ok(c) => {
+                consume_until_quote(self);
+                Err(String::from("Multi-byte unicode character literal"))
+            }
             Err(CharError::Eof) => term_err,
             Err(CharError::Newline) => newline_err,
             Err(CharError::Terminator) => Err(String::from("Empty character constant")),
@@ -757,7 +764,7 @@ mod tests {
         }
     }
 
-    fn match_char(lexed: Option<LexType>, expected: char) -> bool {
+    fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
         match_data(lexed, |c| c == Ok(Token::Char(expected)))
     }
 
@@ -880,17 +887,17 @@ mod tests {
     }
     #[test]
     fn test_characters() {
-        assert!(match_char(lex("'a'"), 'a'));
-        assert!(match_char(lex("'0'"), '0'));
-        assert!(match_char(lex("'\\0'"), '\0'));
-        assert!(match_char(lex("'\\\\'"), '\\'));
-        assert!(match_char(lex("'\\n'"), '\n'));
-        assert!(match_char(lex("'\\r'"), '\r'));
-        assert!(match_char(lex("'\\\"'"), '"'));
-        assert!(match_char(lex("'\\''"), '\''));
-        assert!(match_char(lex("'\\b'"), '\x08'));
-        assert!(match_char(lex("'\\f'"), '\x0c'));
-        assert!(match_char(lex("'\\t'"), '\t'));
+        assert!(match_char(lex("'a'"), b'a'));
+        assert!(match_char(lex("'0'"), b'0'));
+        assert!(match_char(lex("'\\0'"), b'\0'));
+        assert!(match_char(lex("'\\\\'"), b'\\'));
+        assert!(match_char(lex("'\\n'"), b'\n'));
+        assert!(match_char(lex("'\\r'"), b'\r'));
+        assert!(match_char(lex("'\\\"'"), b'"'));
+        assert!(match_char(lex("'\\''"), b'\''));
+        assert!(match_char(lex("'\\b'"), b'\x08'));
+        assert!(match_char(lex("'\\f'"), b'\x0c'));
+        assert!(match_char(lex("'\\t'"), b'\t'));
     }
     #[test]
     fn test_strings() {

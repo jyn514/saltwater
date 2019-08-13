@@ -425,6 +425,8 @@ impl Token {
                     x, f
                 )),
             }),
+            Token::Str(string) => Ok(string.into_boxed_str().into()),
+            Token::Char(c) => Ok(Box::new([c])),
             x => unimplemented!("storing static of type {:?}", x),
         }
     }

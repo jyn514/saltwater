@@ -20,12 +20,7 @@ cranelift-module = "0.36"
 failure = "0.1"
 target-lexicon = "0.4"
 tempfile = "3"
-
-structopt = { version = "0.2", optional = true }
+structopt = "0.2"
 
 [profile.release]
 lto = true
-
-[features]
-# it _is_ much nicer, but it also has about 50 dependencies
-better_parsing = ["structopt"]

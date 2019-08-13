@@ -10,10 +10,12 @@ fn test_decl_and_func_definition() {
 #[test]
 fn test_initializers() {
     utils::assert_compile_error("char c = '🙃';");
+    utils::assert_compile_error("int a[-1];");
     utils::assert_succeeds(
         "
     int i = 1;
     int a[3] = {1, 2, 3};
+    int a[2][2] = {{1, 2}, {3, 4}};
     double d = 1.2;
     float f = 1.2;
     char c = 'h';

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fmt::{self, Display, Formatter};
 
 use crate::backend::SIZE_T;
@@ -406,6 +406,7 @@ pub enum LengthError {
     Unbounded,
     Dynamic,
     NonIntegral,
+    Negative,
 }
 
 impl ArrayType {
@@ -416,7 +417,11 @@ impl ArrayType {
                 if !expr.ctype.is_integral() {
                     return Err(LengthError::NonIntegral);
                 }
-                unimplemented!("constant folding and dynamic array length");
+                let literal = expr.const_fold().ok_or(LengthError::Dynamic)?;
+                match literal.data {
+                    Token::Int(x) => x.try_into().map_err(|_| LengthError::Negative),
+                    _ => unreachable!("should have been caught already"),
+                }
             }
         }
     }
@@ -436,6 +441,7 @@ impl From<LengthError> for &'static str {
             Unbounded => "Cannot take the length of unbounded array type",
             Dynamic => "Length of variable-length array cannot be known at compile time",
             NonIntegral => "The length of an array must be an integer",
+            Negative => "The length of an array must not be negative",
         }
     }
 }

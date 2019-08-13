@@ -12,8 +12,8 @@ use cranelift_module::{self, DataContext, Linkage, Module as CraneliftModule};
 
 use crate::backend::TARGET;
 use crate::data::{
-    Declaration, Expr, ExprType, FunctionType, Initializer, Locatable, Location, Qualifiers, Stmt,
-    StorageClass, Symbol, Token, Type,
+    ArrayType, Declaration, Expr, ExprType, FunctionType, Initializer, Locatable, Location,
+    Qualifiers, Stmt, StorageClass, Symbol, Token, Type,
 };
 use crate::utils::warn;
 
@@ -294,7 +294,7 @@ impl LLVMCompiler {
             })?;
         let mut ctx = DataContext::new();
         if let Some(init) = init {
-            let data = init.into_bytes()?;
+            let data = init.into_bytes(&symbol.ctype, &location)?;
             ctx.define(data)
         } else {
             ctx.define_zeroinit(
@@ -312,11 +312,49 @@ impl LLVMCompiler {
 }
 
 impl Initializer {
-    fn into_bytes(self) -> Result<Box<[u8]>, Locatable<String>> {
+    fn into_bytes(self, ctype: &Type, location: &Location) -> Result<Box<[u8]>, Locatable<String>> {
         match self {
-            Initializer::InitializerList(x) => {
-                unimplemented!("converting aggregate initializers to bytes")
-            }
+            Initializer::InitializerList(mut x) => match ctype {
+                Type::Array(ty, ArrayType::Unbounded) => {
+                    unimplemented!("inferring size of unbounded array from initializer")
+                }
+                Type::Array(ty, arr) => {
+                    let size = arr.length().map_err(|err| Locatable {
+                        data: <&str>::from(err).to_string(),
+                        location: location.clone(),
+                    })?;
+                    if x.len() as u64 > size {
+                        Err(Locatable {
+                            data: format!(
+                                "too many initalizers for array (expected {}, got {})",
+                                size,
+                                x.len()
+                            ),
+                            location: location.clone(),
+                        })
+                    } else {
+                        let mut bytes = vec![];
+                        let elements = x.into_iter().map(|init| init.into_bytes(ctype, location));
+
+                        for init in elements {
+                            bytes.extend_from_slice(&*init?);
+                        }
+
+                        Ok(bytes.into_boxed_slice())
+                    }
+                }
+                ty if ty.is_scalar() => {
+                    assert_eq!(x.len(), 1);
+                    x.remove(0).into_bytes(ctype, location)
+                }
+                Type::Union(_) => unimplemented!("union initializers"),
+                Type::Struct(_) => unimplemented!("struct initializers"),
+                Type::Bitfield(_) => unimplemented!("bitfield initalizers"),
+
+                Type::Function(_) => unreachable!("function initializers"),
+                Type::Void => unreachable!("initializer for void type"),
+                _ => unreachable!("scalar types should have been handled"),
+            },
             Initializer::Scalar(expr) => expr.into_bytes(),
             Initializer::FunctionBody(_) => {
                 panic!("function definitions should go through compile_function, not store_static")
@@ -328,14 +366,14 @@ impl Initializer {
 impl Expr {
     fn into_bytes(self) -> Result<Box<[u8]>, Locatable<String>> {
         match self.const_fold() {
-            Some(constexpr) => constexpr.data.into_bytes(self.ctype, constexpr.location),
+            Some(constexpr) => constexpr.data.into_bytes(self.ctype, &constexpr.location),
             None => Err(Locatable {
                 data: "expression is not a compile time constant".into(),
                 location: self.location,
             }),
         }
     }
-    fn const_fold(&self) -> Option<Locatable<Token>> {
+    pub(crate) fn const_fold(&self) -> Option<Locatable<Token>> {
         if self.constexpr {
             let constexpr = match self.expr {
                 ExprType::Literal(ref token) => token,
@@ -379,12 +417,12 @@ macro_rules! bytes {
 }
 
 impl Token {
-    fn into_bytes(self, ctype: Type, location: Location) -> Result<Box<[u8]>, Locatable<String>> {
+    fn into_bytes(self, ctype: Type, location: &Location) -> Result<Box<[u8]>, Locatable<String>> {
         let ir_type = match ctype.clone().into_llvm_basic() {
             Err(err) => {
                 return Err(Locatable {
                     data: err,
-                    location,
+                    location: location.clone(),
                 })
             }
             Ok(ir_type) => ir_type,

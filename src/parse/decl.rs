@@ -966,6 +966,16 @@ impl Declarator {
 impl Type {
     fn type_at(&self, index: usize) -> Result<&Type, String> {
         match self {
+            ty if ty.is_scalar() => {
+                if index == 0 {
+                    Ok(ty)
+                } else {
+                    Err(format!(
+                        "scalar initializers may only have one element (initialized with {})",
+                        index + 1
+                    ))
+                }
+            }
             Type::Array(inner, _) => Ok(inner),
             Type::Struct(symbols) => symbols.get(index).map_or_else(
                 || {

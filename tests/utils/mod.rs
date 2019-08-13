@@ -30,15 +30,23 @@ pub fn run(program: &Path, args: &[&str]) -> Result<Output, Error> {
 
 pub fn assert_compile_error(program: &str) {
     let output = tempfile::NamedTempFile::new().unwrap().into_temp_path();
-    assert!(match compile(program.to_string(), true, &output) {
-        Err(CompileError::Semantic(_)) => true,
-        _ => false,
-    });
+    assert!(
+        match compile(program.to_string(), true, &output) {
+            Err(CompileError::Semantic(_)) => true,
+            _ => false,
+        },
+        "{} should fail to compile",
+        program
+    );
 }
 
 pub fn assert_succeeds(program: &str) {
-    assert!(match compile_and_run(program.to_string(), &[]) {
-        Err(_) => false,
-        Ok(output) => output.status.success(),
-    });
+    assert!(
+        match compile_and_run(program.to_string(), &[]) {
+            Err(_) => false,
+            Ok(output) => output.status.success(),
+        },
+        "{} should exit successfully",
+        program
+    );
 }

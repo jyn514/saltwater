@@ -234,7 +234,7 @@ pub enum Type {
 
 #[derive(Clone, Debug)]
 pub enum ArrayType {
-    Fixed(Box<Expr>),
+    Fixed(SIZE_T),
     Unbounded,
 }
 
@@ -409,20 +409,15 @@ pub enum LengthError {
     Negative,
 }
 
-impl ArrayType {
-    pub fn length(&self) -> Result<SIZE_T, LengthError> {
-        match self {
-            ArrayType::Unbounded => Err(LengthError::Unbounded),
-            ArrayType::Fixed(expr) => {
-                if !expr.ctype.is_integral() {
-                    return Err(LengthError::NonIntegral);
-                }
-                let literal = expr.const_fold().ok_or(LengthError::Dynamic)?;
-                match literal.data {
-                    Token::Int(x) => x.try_into().map_err(|_| LengthError::Negative),
-                    _ => unreachable!("should have been caught already"),
-                }
-            }
+impl Expr {
+    pub fn const_int(&self) -> Result<SIZE_T, LengthError> {
+        if !self.ctype.is_integral() {
+            return Err(LengthError::NonIntegral);
+        }
+        let literal = self.const_fold().ok_or(LengthError::Dynamic)?;
+        match literal.data {
+            Token::Int(x) => x.try_into().map_err(|_| LengthError::Negative),
+            _ => unreachable!("should have been caught already"),
         }
     }
 }

@@ -318,11 +318,8 @@ impl Initializer {
                 Type::Array(ty, ArrayType::Unbounded) => {
                     unimplemented!("inferring size of unbounded array from initializer")
                 }
-                Type::Array(ty, arr) => {
-                    let size = arr.length().map_err(|err| Locatable {
-                        data: <&str>::from(err).to_string(),
-                        location: location.clone(),
-                    })?;
+                Type::Array(ty, ArrayType::Fixed(size)) => {
+                    let size = *size;
                     if x.len() as u64 > size {
                         Err(Locatable {
                             data: format!(

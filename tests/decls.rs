@@ -15,7 +15,7 @@ fn test_initializers() {
         "
     int i = 1;
     int a[3] = {1, 2, 3};
-    int a[2][2] = {{1, 2}, {3, 4}};
+    int b[2][2] = {{1, 2}, {3, 4}};
     double d = 1.2;
     float f = 1.2;
     char c = 'h';

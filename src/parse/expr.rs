@@ -1,4 +1,5 @@
 use super::{Lexeme, Parser};
+use crate::backend::SIZE_T;
 use crate::data::*;
 
 type ExprResult = Result<Expr, Locatable<String>>;
@@ -971,7 +972,7 @@ impl Expr {
     }
     fn string_literal(value: String, location: Location) -> Expr {
         Expr::literal(
-            Type::for_string_literal(value.len()),
+            Type::for_string_literal(value.len() as SIZE_T),
             location,
             ExprType::Literal(Token::Str(value)),
         )
@@ -1081,13 +1082,10 @@ impl Type {
             _ => std::usize::MAX,
         }
     }
-    fn for_string_literal(len: usize) -> Type {
+    fn for_string_literal(len: SIZE_T) -> Type {
         // int overflow should never happen, nobody makes strings that
         // are 2^64 characters long. it wouldn't even fit onto disk!
-        Type::Array(
-            Box::new(Type::Char(true)),
-            ArrayType::Fixed(Box::new(Expr::int_literal(len as i64, Default::default()))),
-        )
+        Type::Array(Box::new(Type::Char(true)), ArrayType::Fixed(len))
     }
 }
 

@@ -352,21 +352,27 @@ impl Expr {
 }
 
 macro_rules! cast {
-    ($i: expr, $int: ty, $be: expr, $ctype: expr, $location: expr) => {{
-        let cast = $i as $int;
-        if cast as i64 != $i {
+    ($i: expr, $from: ty, $to: ty, $ctype: expr, $location: expr) => {{
+        let cast = $i as $to;
+        if cast as $from != $i {
             warn(
                 &format!(
                     "conversion to {} loses precision ({} != {})",
-                    $ctype, cast, $i
+                    $ctype, cast as $from, $i
                 ),
                 $location,
             )
         }
+        cast
+    }};
+}
+
+macro_rules! bytes {
+    ($int: expr, $be: expr) => {{
         let boxed: Box<[u8]> = if $be {
-            Box::new(cast.to_be_bytes())
+            Box::new($int.to_be_bytes())
         } else {
-            Box::new(cast.to_le_bytes())
+            Box::new($int.to_le_bytes())
         };
         boxed
     }};
@@ -391,20 +397,35 @@ impl Token {
 
         match self {
             Token::Int(i) => Ok(match ir_type {
-                types::I8 => cast!(i, i8, big_endian, &ctype, &location),
-                types::I16 => cast!(i, i16, big_endian, &ctype, &location),
-                types::I32 => cast!(i, i32, big_endian, &ctype, &location),
-                types::I64 => Box::new(if big_endian {
-                    i.to_be_bytes()
-                } else {
-                    i.to_le_bytes()
-                }),
-                x => panic!(format!(
+                types::I8 => bytes!(cast!(i, i64, i8, &ctype, &location), big_endian),
+                types::I16 => bytes!(cast!(i, i64, i16, &ctype, &location), big_endian),
+                types::I32 => bytes!(cast!(i, i64, i32, &ctype, &location), big_endian),
+                types::I64 => bytes!(i, big_endian),
+                x => unreachable!(format!(
                     "ir_type {} for integer {} is not of integer type",
                     x, i
                 )),
             }),
-            _ => unimplemented!("compiling literals other than ints"),
+            Token::Float(f) => Ok(match ir_type {
+                types::F32 => {
+                    let cast = f as f32;
+                    if (f64::from(cast) - f).abs() >= std::f64::EPSILON {
+                        warn(&format!("conversion from double to float loses precision ({} is different from {} by more than DBL_EPSILON ({}))",
+                        f64::from(cast), f, std::f64::EPSILON), &location);
+                    }
+                    let float_as_int = unsafe { *(&cast as *const f32 as *const u32) };
+                    bytes!(float_as_int, big_endian)
+                }
+                types::F64 => {
+                    let float_as_int = unsafe { *(&f as *const f64 as *const u64) };
+                    bytes!(float_as_int, big_endian)
+                }
+                x => unreachable!(format!(
+                    "ir_type {} for float {} is not of integer type",
+                    x, f
+                )),
+            }),
+            x => unimplemented!("storing static of type {:?}", x),
         }
     }
 }

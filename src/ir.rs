@@ -15,6 +15,7 @@ use crate::data::{
     Declaration, Expr, ExprType, FunctionType, Initializer, Locatable, Location, Qualifiers, Stmt,
     StorageClass, Symbol, Token, Type,
 };
+use crate::utils::warn;
 
 type Module = CraneliftModule<FaerieBackend>;
 
@@ -293,7 +294,7 @@ impl LLVMCompiler {
             })?;
         let mut ctx = DataContext::new();
         if let Some(init) = init {
-            let data = unimplemented!("explicit initializers");
+            let data = init.into_bytes()?;
             ctx.define(data)
         } else {
             ctx.define_zeroinit(
@@ -307,6 +308,104 @@ impl LLVMCompiler {
             data: format!("error defining static variable: {}", err),
             location,
         })
+    }
+}
+
+impl Initializer {
+    fn into_bytes(self) -> Result<Box<[u8]>, Locatable<String>> {
+        match self {
+            Initializer::InitializerList(x) => {
+                unimplemented!("converting aggregate initializers to bytes")
+            }
+            Initializer::Scalar(expr) => expr.into_bytes(),
+            Initializer::FunctionBody(_) => {
+                panic!("function definitions should go through compile_function, not store_static")
+            }
+        }
+    }
+}
+
+impl Expr {
+    fn into_bytes(self) -> Result<Box<[u8]>, Locatable<String>> {
+        match self.const_fold() {
+            Some(constexpr) => constexpr.data.into_bytes(self.ctype, constexpr.location),
+            None => Err(Locatable {
+                data: "expression is not a compile time constant".into(),
+                location: self.location,
+            }),
+        }
+    }
+    fn const_fold(&self) -> Option<Locatable<Token>> {
+        if self.constexpr {
+            let constexpr = match self.expr {
+                ExprType::Literal(ref token) => token,
+                _ => unimplemented!("const folding"),
+            };
+            Some(Locatable {
+                location: self.location.clone(),
+                data: constexpr.clone(),
+            })
+        } else {
+            None
+        }
+    }
+}
+
+macro_rules! cast {
+    ($i: expr, $int: ty, $be: expr, $ctype: expr, $location: expr) => {{
+        let cast = $i as $int;
+        if cast as i64 != $i {
+            warn(
+                &format!(
+                    "conversion to {} loses precision ({} != {})",
+                    $ctype, cast, $i
+                ),
+                $location,
+            )
+        }
+        let boxed: Box<[u8]> = if $be {
+            Box::new(cast.to_be_bytes())
+        } else {
+            Box::new(cast.to_le_bytes())
+        };
+        boxed
+    }};
+}
+
+impl Token {
+    fn into_bytes(self, ctype: Type, location: Location) -> Result<Box<[u8]>, Locatable<String>> {
+        let ir_type = match ctype.clone().into_llvm_basic() {
+            Err(err) => {
+                return Err(Locatable {
+                    data: err,
+                    location,
+                })
+            }
+            Ok(ir_type) => ir_type,
+        };
+        //let mut buf = [u8; ir_type.bytes()];
+        let big_endian = TARGET
+            .endianness()
+            .expect("target should be big or little endian")
+            == target_lexicon::Endianness::Big;
+
+        match self {
+            Token::Int(i) => Ok(match ir_type {
+                types::I8 => cast!(i, i8, big_endian, &ctype, &location),
+                types::I16 => cast!(i, i16, big_endian, &ctype, &location),
+                types::I32 => cast!(i, i32, big_endian, &ctype, &location),
+                types::I64 => Box::new(if big_endian {
+                    i.to_be_bytes()
+                } else {
+                    i.to_le_bytes()
+                }),
+                x => panic!(format!(
+                    "ir_type {} for integer {} is not of integer type",
+                    x, i
+                )),
+            }),
+            _ => unimplemented!("compiling literals other than ints"),
+        }
     }
 }
 

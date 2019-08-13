@@ -436,21 +436,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         self.expect(Token::RightBracket);
                         // TODO: allow any integer type
                         // also TODO: look up the rules for this in the C standard
-                        if expr.ctype.is_integral() {
-                            Some(Declarator {
-                                current: DeclaratorType::Array(ArrayType::Fixed(Box::new(expr))),
+                        match expr.const_int() {
+                            Ok(length) => Some(Declarator {
+                                current: DeclaratorType::Array(ArrayType::Fixed(length)),
                                 next: prefix.map(Box::new),
-                            })
-                        } else {
+                            }),
                             // TODO: parse the rest of the declarator before
                             // complaining about a type mismatch
-                            return Err(Locatable {
-                                location: expr.location,
-                                data: format!(
-                                    "size of array has non-integer type '{}'",
-                                    expr.ctype
-                                ),
-                            });
+                            Err(err) => {
+                                return Err(Locatable {
+                                    data: <&str>::from(err).to_string(),
+                                    location: expr.location,
+                                })
+                            }
                         }
                     }
                 }

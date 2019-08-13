@@ -6,7 +6,7 @@ use cranelift_codegen::ir::{AbiParam, Signature};
 use cranelift_codegen::isa::CallConv;
 use target_lexicon::Triple;
 
-use crate::data::{FunctionType, Locatable, Location, Type};
+use crate::data::{ArrayType, FunctionType, Locatable, Location, Type};
 use Type::*;
 
 // NOTE: this is required by the standard to always be one
@@ -44,7 +44,8 @@ impl Type {
             Double => Ok(DOUBLE_SIZE.into()),
             Pointer(_, _) => Ok(PTR_SIZE.into()),
             // now for the hard ones
-            Array(t, l) => t.sizeof().and_then(|n| Ok(n * l.length()?)),
+            Array(t, ArrayType::Fixed(l)) => t.sizeof().and_then(|n| Ok(n * l)),
+            Array(t, ArrayType::Unbounded) => Err("cannot take sizeof variable length array"),
             Enum(symbols) => {
                 let uchar = CHAR_BIT as usize;
                 // integer division, but taking the ceiling instead of the floor

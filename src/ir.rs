@@ -314,35 +314,46 @@ impl LLVMCompiler {
 impl Initializer {
     fn into_bytes(self, ctype: &Type, location: &Location) -> Result<Box<[u8]>, Locatable<String>> {
         match self {
-            Initializer::InitializerList(mut x) => match ctype {
+            Initializer::InitializerList(mut initializers) => match ctype {
                 Type::Array(ty, ArrayType::Unbounded) => {
                     unimplemented!("inferring size of unbounded array from initializer")
                 }
                 Type::Array(ty, ArrayType::Fixed(size)) => {
                     let size = *size;
-                    if x.len() as u64 > size {
+                    if initializers.len() as u64 > size {
                         Err(Locatable {
                             data: format!(
                                 "too many initalizers for array (expected {}, got {})",
                                 size,
-                                x.len()
+                                initializers.len()
                             ),
                             location: location.clone(),
                         })
                     } else {
+                        let init_len = initializers.len();
                         let mut bytes = vec![];
-                        let elements = x.into_iter().map(|init| init.into_bytes(ctype, location));
+                        let elements = initializers
+                            .into_iter()
+                            .map(|init| init.into_bytes(ctype, location));
 
                         for init in elements {
                             bytes.extend_from_slice(&*init?);
                         }
+                        let sizeof = ty.sizeof().map_err(|err| Locatable {
+                            location: location.clone(),
+                            data: err.to_string(),
+                        })?;
+                        let remaining_bytes = sizeof * (size - init_len as u64);
+                        let mut zero_init = Vec::new();
+                        zero_init.resize(remaining_bytes as usize, 0);
+                        bytes.append(&mut zero_init);
 
                         Ok(bytes.into_boxed_slice())
                     }
                 }
                 ty if ty.is_scalar() => {
-                    assert_eq!(x.len(), 1);
-                    x.remove(0).into_bytes(ctype, location)
+                    assert_eq!(initializers.len(), 1);
+                    initializers.remove(0).into_bytes(ctype, location)
                 }
                 Type::Union(_) => unimplemented!("union initializers"),
                 Type::Struct(_) => unimplemented!("struct initializers"),

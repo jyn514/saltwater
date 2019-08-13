@@ -28,7 +28,6 @@ pub type Product = <FaerieBackend as Backend>::Product;
 pub use data::{Declaration, Locatable};
 pub use lex::Lexer;
 pub use parse::Parser;
-use utils::error;
 
 #[macro_use]
 pub mod utils;
@@ -39,6 +38,7 @@ mod lex;
 mod parse;
 
 #[derive(StructOpt, Debug)]
+#[structopt(rename_all = "kebab")]
 pub struct Opt {
     /// If set, print all tokens found by the lexer in addition to compiling.
     #[structopt(long)]
@@ -52,7 +52,7 @@ pub struct Opt {
     #[structopt(short = "c", long)]
     pub no_link: bool,
 
-    /// The output file to use. Defaults to 'a.out'.
+    /// The output file to use.
     #[structopt(short = "o", long, default_value = "a.out", parse(from_os_str))]
     pub output: PathBuf,
 }
@@ -91,7 +91,7 @@ impl From<Locatable<String>> for CompileError {
 /// C type system of LLVM
 /// Also links the resulting object file using the host `cc`
 pub fn compile_and_assemble(buf: String, filename: String, opt: Opt) -> Result<(), CompileError> {
-    let product = compile(buf, filename.clone(), opt.debug_lex);
+    let product = compile(buf, filename.clone(), opt.debug_lex, opt.debug_ast);
     let bytes = product?.emit().map_err(CompileError::Platform)?;
 
     let tmp_file = if opt.no_link {
@@ -117,16 +117,14 @@ pub fn compile_and_assemble(buf: String, filename: String, opt: Opt) -> Result<(
     }
 }
 
-pub fn compile(buf: String, filename: String, debug_lex: bool) -> Result<Product, CompileError> {
-    if debug_lex {
-        for lexeme in Lexer::new(filename.clone(), buf.chars()) {
-            match lexeme.data {
-                Ok(l) => println!("{:#?}", l),
-                Err(err) => error(&err, &lexeme.location),
-            }
-        }
-    }
-    let parser = Parser::new(Lexer::new(filename, buf.chars()));
+pub fn compile(
+    buf: String,
+    filename: String,
+    debug_lex: bool,
+    debug_ast: bool,
+) -> Result<Product, CompileError> {
+    let lexer = Lexer::new(filename, buf.chars(), debug_lex);
+    let parser = Parser::new(lexer, debug_ast);
     let hir = parser.collect::<Result<Vec<Locatable<Declaration>>, Locatable<String>>>();
     let hir = match hir {
         Err(err) => return Err(CompileError::Semantic(err)),

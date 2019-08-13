@@ -1091,7 +1091,7 @@ mod tests {
     use crate::{Lexer, Parser};
     fn parse_expr(input: &str) -> ExprResult {
         // because we're a child module of parse, we can skip straight to `expr()`
-        Parser::new(Lexer::new("<test-suite>".to_string(), input.chars())).expr()
+        parser(input).expr()
     }
     fn get_location(expr: &ExprResult) -> Location {
         match expr {

@@ -451,7 +451,7 @@ impl<'a> Lexer<'a> {
     /// Before: chars{"\0' blah"}
     /// After:  chars{" blah"}
     fn parse_char(&mut self) -> Result<Token, String> {
-        fn consume_until_quote<'a>(lexer: &mut Lexer<'a>) {
+        fn consume_until_quote(lexer: &mut Lexer) {
             loop {
                 match lexer.parse_single_char(false) {
                     Ok('\'') => break,
@@ -870,9 +870,9 @@ mod tests {
     #[test]
     // used to have a stack overflow on large consecutive whitespace inputs
     fn test_lots_of_whitespace() {
-        assert!(lex(&lots_of(' ')) == None);
-        assert!(lex(&lots_of('\t')) == None);
-        assert!(lex(&lots_of('\n')) == None);
+        assert_eq!(lex(&lots_of(' ')), None);
+        assert_eq!(lex(&lots_of('\t')), None);
+        assert_eq!(lex(&lots_of('\n')), None);
     }
 
     #[test]
@@ -880,19 +880,19 @@ mod tests {
         assert!(lex("/* this is a comment /* /* /* */").is_none());
         assert!(lex("// this is a comment // /// // ").is_none());
         assert!(lex("/*/ this is part of the comment */").is_none());
-        assert!(
+        assert_eq!(
             lex_all(
                 "/* make sure it finds things _after_ comments */
         int i;"
             )
-            .len()
-                == 3
+            .len(),
+            3
         );
         let bad_comment = lex("/* unterminated comments are an error ");
         assert!(bad_comment.is_some() && bad_comment.unwrap().data.is_err());
         // check for stack overflow
-        assert!(lex(&"//".repeat(10_000)) == None);
-        assert!(lex(&"/* */".repeat(10_000)) == None);
+        assert_eq!(lex(&"//".repeat(10_000)), None);
+        assert_eq!(lex(&"/* */".repeat(10_000)), None);
     }
     #[test]
     fn test_characters() {

@@ -1,31 +1,55 @@
 # rust-c-compiler
+
 A C compiler written in Rust, with a focus on good error messages. Warning: my first rust project, code quality is pretty low
 
 ## Implemented
+
 - Lexer
 - Declarations (`int i, *p;`)
+- AST for expressions and (most) statements
+- Basic static initialization (i64, f64, arrays - no const folding yet)
+- Compiling to object files
+- Linking using host `cc` (similar to how the rust compiler does it)
 - Some error handling
 - Some command line arguments
-- ... not much else ...
 
 ## TODO
+
 - Preprocessor
-- Expressions
-- Statements (besides declarations)
 - Multiple translation units (files)
-- Codegen (probably to a MIR) - want to match GCC calling convention to allow linking to glibc.
-- Optimization?
-- Assembly/Linking
+- Parse switch statements
+- Codegen for expressions (only literals are implemented)
+- Scoping for variables
+- Constant folding (required for e.g. `float f = 1.2` at top level)
+- Structs, Unions, Enums
+- Bitfields?
 
 ## Running
+
 `cargo run` from top level directory.
-Not much works yet, but you can try `static unsigned long *const (*l)(int []);`.
-You can also use `cargo run -- - -d` to show every token the lexer found.
+Only literals currently work - try something like this:
+
+```
+int i = 1;
+int a[] = {1, 2, 3};
+double = 1.0;
+
+int main(void) {
+  return 1;
+}
+```
+
+You can also use `cargo run -- --debug-lex` or `cargo run -- --debug-ast`
+to show a very verbose description of the lexemes/AST respectively.
+
+Use `cargo run -- --help` for all options.
 
 ## Testing
+
 `cargo test`
 
 ## Contributing
+
 The following are all welcome:
 - code reviews
 - issues/feature requests.
@@ -33,7 +57,7 @@ Note that feature requests should be limited to extensions or better error handl
 the compiler will not break backwards compatibility with C.
 - test cases
 
-Substantial new features (e.g. expression parsing) may not be accepted at this point,
+Substantial new features (e.g. constant folding) may not be accepted at this point,
 since this is a side project and I do kind of want to write the code myself.
 Bugfixes and minor features (e.g. better error messages) are welcome, please submit a pull request.
 

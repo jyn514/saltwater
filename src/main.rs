@@ -12,7 +12,6 @@ use compiler::{compile_and_assemble, utils, CompileError, Opt};
 #[derive(StructOpt)]
 struct CmdLine {
     /// The file to read C source from.
-    ///
     /// "-" means stdin (use ./- to read a file called '-').
     /// Only one file at a time is currently accepted.
     #[structopt(name = "FILE", default_value = "-", parse(from_os_str))]

@@ -1,9 +1,13 @@
 use std::cmp::max;
 use std::convert::TryInto;
 
-use cranelift_codegen::ir::types::{self, Type as IrType};
-use cranelift_codegen::ir::{AbiParam, Signature};
-use cranelift_codegen::isa::CallConv;
+use cranelift::codegen::{
+    ir::{
+        types::{self, Type as IrType},
+        AbiParam, Signature,
+    },
+    isa::CallConv,
+};
 use target_lexicon::Triple;
 
 use crate::data::{ArrayType, FunctionType, Locatable, Location, Type};

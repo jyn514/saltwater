@@ -1,12 +1,12 @@
 use std::convert::{TryFrom, TryInto};
 
-use cranelift::prelude::{types, FunctionBuilder, FunctionBuilderContext, Type as IrType, Value};
-use cranelift_codegen::{
-    self as codegen,
+use cranelift::codegen::{
+    self,
     ir::{condcodes, function::Function, ExternalName, InstBuilder},
     isa,
     settings::{self, Configurable},
 };
+use cranelift::prelude::{types, FunctionBuilder, FunctionBuilderContext, Type as IrType, Value};
 use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
 use cranelift_module::{self, DataContext, Linkage, Module as CraneliftModule};
 

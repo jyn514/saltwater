@@ -209,9 +209,19 @@ impl FunctionType {
     }
 }
 
-/// partially taken from
-/// https://doc.rust-lang.org/src/core/iter/traits/iterator.rs.html#2591
 /// short-circuiting version of iter.max_by_key
+///
+/// partially taken from https://doc.rust-lang.org/src/core/iter/traits/iterator.rs.html#2591
+///
+/// Example:
+///
+/// ```
+/// let list = [[1, 2, 3], [5, 4, 3], [1, 1, 4]];
+/// assert_eq!(try_max_by_key(list.into_iter(), |vec| vec.last().ok_or(())), Some(Ok(&[1, 1, 4])));
+///
+/// let lengths = [vec![], vec![1], vec![1, 2]];
+/// assert_eq!(try_max_by_key(lengths.into_iter(), |vec| vec.last().ok_or(())), Some(Err(())));
+/// ```
 fn try_max_by_key<I, T, C, R, F>(mut iter: I, mut f: F) -> Option<Result<T, R>>
 where
     I: Iterator<Item = T>,

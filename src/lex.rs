@@ -230,13 +230,17 @@ impl<'a> Lexer<'a> {
     ///
     /// Before: chars{"hello this is a lot of text */ int main(){}"}
     /// After:  chars{" int main(){}"}
-    fn consume_multi_comment(&mut self) {
+    fn consume_multi_comment(&mut self) -> Result<(), Locatable<String>> {
         while let Some(c) = self.next_char() {
             if c == '*' && self.peek() == Some('/') {
                 self.next_char();
-                break;
+                return Ok(());
             }
         }
+        Err(Locatable {
+            location: self.location.clone(),
+            data: "unterminated /* comment".to_string(),
+        })
     }
     /// Parse a number literal, given the starting character and whether floats are allowed.
     ///
@@ -559,7 +563,12 @@ impl<'a> Iterator for Lexer<'a> {
                 Some('*') => {
                     // discard '*' so /*/ doesn't look like a complete comment
                     self.next_char();
-                    self.consume_multi_comment();
+                    if let Err(err) = self.consume_multi_comment() {
+                        return Some(Locatable {
+                            data: Err(err.data),
+                            location: err.location,
+                        });
+                    }
                     self.consume_whitespace();
                     self.next_char()
                 }
@@ -880,7 +889,7 @@ mod tests {
                 == 3
         );
         let bad_comment = lex("/* unterminated comments are an error ");
-        //assert!(bad_comment.is_some() && bad_comment.unwrap().data.is_err());
+        assert!(bad_comment.is_some() && bad_comment.unwrap().data.is_err());
         // check for stack overflow
         assert!(lex(&"//".repeat(10_000)) == None);
         assert!(lex(&"/* */".repeat(10_000)) == None);

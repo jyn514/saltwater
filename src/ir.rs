@@ -198,6 +198,7 @@ impl LLVMCompiler {
         match expr.expr {
             ExprType::Literal(token) => self.compile_literal(ir_type, token, builder),
             ExprType::Cast(orig, ctype) => self.cast(*orig, ctype, location, builder),
+            ExprType::Add(left, right) => self.add(*left, *right, builder),
             _ => unimplemented!("any expression other than literals"),
         }
     }
@@ -257,6 +258,22 @@ impl LLVMCompiler {
             _ => unimplemented!("cast from {} to {}", orig_type, cast_type),
         };
         Ok((cast, cast_type))
+    }
+    fn add(&self, left: Expr, right: Expr, builder: &mut FunctionBuilder) -> IrResult {
+        let (left, right) = (self.rval(left, builder)?, self.rval(right, builder)?);
+        assert_eq!(left.1, right.1);
+        match left.1 {
+            ty if ty.is_float() => Ok((builder.ins().fadd(left.0, right.0), ty)),
+            ty if ty.is_int() => Ok((builder.ins().iadd(left.0, right.0), ty)),
+            _ => unreachable!("all add values should be scalar"),
+        }
+    }
+    fn rval(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
+        let compiled = self.compile_expr(expr, builder)?;
+        // TODO: deref lvals
+        // TODO: will require even more data from each function, maybe make a custom struct?
+        // TODO: will structs need special handling?
+        Ok(compiled)
     }
     fn store_static(
         &mut self,

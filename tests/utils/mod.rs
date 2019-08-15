@@ -50,3 +50,15 @@ pub fn assert_succeeds(program: &str) {
         program
     );
 }
+
+pub fn assert_code(program: &str, code: i32) {
+    assert!(
+        match compile_and_run(program.to_string(), &[]) {
+            Err(_) => false,
+            Ok(output) => output.status.code().unwrap() == code,
+        },
+        "{} should exit with code {}",
+        program,
+        code
+    );
+}

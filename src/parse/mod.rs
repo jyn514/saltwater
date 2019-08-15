@@ -303,23 +303,32 @@ mod tests {
     fn peek() {
         use crate::data::{Keyword, Token};
         let mut instance = parser("int a[(int)1];");
-        assert!(instance.next_token().unwrap().data == Token::Keyword(Keyword::Int));
-        assert!(instance.next_token().unwrap().data == Token::Id("a".to_string()));
-        assert!(instance.peek_token() == Some(&Token::LeftBracket));
-        assert!(instance.peek_next_token() == Some(&Token::LeftParen));
-        assert!(instance.peek_token() == Some(&Token::LeftBracket));
-        assert!(instance.next_token().unwrap().data == Token::LeftBracket);
-        assert!(instance.next_token().unwrap().data == Token::LeftParen);
-        assert!(instance.next_token().unwrap().data == Token::Keyword(Keyword::Int));
+        assert_eq!(
+            instance.next_token().unwrap().data,
+            Token::Keyword(Keyword::Int)
+        );
+        assert_eq!(
+            instance.next_token().unwrap().data,
+            Token::Id("a".to_string())
+        );
+        assert_eq!(instance.peek_token(), Some(&Token::LeftBracket));
+        assert_eq!(instance.peek_next_token(), Some(&Token::LeftParen));
+        assert_eq!(instance.peek_token(), Some(&Token::LeftBracket));
+        assert_eq!(instance.next_token().unwrap().data, Token::LeftBracket);
+        assert_eq!(instance.next_token().unwrap().data, Token::LeftParen);
+        assert_eq!(
+            instance.next_token().unwrap().data,
+            Token::Keyword(Keyword::Int)
+        );
     }
     #[test]
     fn multiple_declaration() {
         let mut decls = parse_all("int a; int a;");
-        assert!(decls.len() == 2);
-        assert!(decls.pop().unwrap().is_err());
+        assert_eq!(decls.len(), 2);
+        assert!(decls.pop().unwrap().is_ok());
         assert!(decls.pop().unwrap().is_ok());
         let mut decls = parse_all("int a; char *a[];");
-        assert!(decls.len() == 2);
+        assert_eq!(decls.len(), 2);
         assert!(decls.pop().unwrap().is_err());
         assert!(decls.pop().unwrap().is_ok());
     }

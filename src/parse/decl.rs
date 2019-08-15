@@ -106,7 +106,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             data: Declaration { symbol, init },
             location: id.location,
         };
-        self.define(&decl)?;
+        self.declare(&decl)?;
         if (is_func && decl.data.init.is_some()) || self.match_next(&Token::Semicolon).is_some() {
             return Ok(Some(decl));
         } else {
@@ -115,7 +115,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         loop {
             let decl = self.init_declarator(sc, qualifiers.clone(), ctype.clone())?;
-            self.define(&decl)?;
+            self.declare(&decl)?;
             self.pending.push_back(Ok(decl));
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon);
@@ -124,14 +124,31 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         self.pending.pop_front().transpose()
     }
-    fn define(&mut self, decl: &Locatable<Declaration>) -> Result<(), Locatable<String>> {
-        match self.scope.insert(decl.data.symbol.clone()) {
-            None => Ok(()),
-            Some(ref symbol) if symbol.init => Ok(()),
-            Some(_) => Err(Locatable {
-                location: decl.location.clone(),
-                data: format!("redefinition of '{}'", decl.data.symbol.id),
-            }),
+    fn declare(&mut self, decl: &Locatable<Declaration>) -> Result<(), Locatable<String>> {
+        if let Some(existing) = self.scope.get_immediate(&decl.data.symbol.id) {
+            if existing == &decl.data.symbol {
+                if decl.data.init.is_some() && existing.init {
+                    Err(Locatable {
+                        location: decl.location.clone(),
+                        data: format!("redefinition of '{}'", decl.data.symbol.id),
+                    })
+                } else {
+                    self.scope.insert(decl.data.symbol.clone());
+                    Ok(())
+                }
+            } else {
+                // TODO: this gives a terrible error message if storage_class or qualifiers are different
+                Err(Locatable {
+                    data: format!(
+                        "redeclaration of '{}' with different type (originally {}, now {})",
+                        existing.id, existing.ctype, decl.data.symbol.ctype
+                    ),
+                    location: decl.location.clone(),
+                })
+            }
+        } else {
+            self.scope.insert(decl.data.symbol.clone());
+            Ok(())
         }
     }
     fn init_declarator(

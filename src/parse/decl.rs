@@ -710,8 +710,23 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 x
             ),
         };
-        self.current_function = None;
-        Ok(body)
+        let func_data = self.current_function.take().unwrap();
+        let should_return = *func_data.ftype.return_type != Type::Void;
+        if func_data.seen_ret != should_return {
+            assert!(
+                should_return,
+                "stmt should have already caught bad return types"
+            );
+            Err(Locatable {
+                data: format!(
+                    "expected a return statement before end of function '{}' returning {}",
+                    func_data.id, func_data.ftype.return_type
+                ),
+                location: func_data.location,
+            })
+        } else {
+            Ok(body)
+        }
     }
 }
 

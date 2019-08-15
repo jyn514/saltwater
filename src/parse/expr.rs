@@ -1126,16 +1126,16 @@ mod tests {
         assert!(test_literal(141, Expr::int_literal));
         let parsed = parse_expr("\"hi there\"");
 
-        assert!(
-            parsed
-                == Ok(Expr::string_literal(
-                    "hi there\0".to_string(),
-                    get_location(&parsed)
-                ))
+        assert_eq!(
+            parsed,
+            Ok(Expr::string_literal(
+                "hi there\0".to_string(),
+                get_location(&parsed)
+            ))
         );
         assert!(test_literal(1.5, Expr::float_literal));
         let parsed = parse_expr("(1)");
-        assert!(parsed == Ok(Expr::int_literal(1, get_location(&parsed))));
+        assert_eq!(parsed, Ok(Expr::int_literal(1, get_location(&parsed))));
         let x = Symbol {
             ctype: Type::Int(true),
             id: "x".to_string(),
@@ -1148,22 +1148,22 @@ mod tests {
         let mut scope_parser = parser("x");
         scope_parser.scope = scope;
         let parsed = scope_parser.expr();
-        assert!(
-            parsed
-                == Ok(Expr {
-                    location: get_location(&parsed),
-                    ctype: Type::Int(true),
-                    constexpr: false,
-                    lval: true,
-                    expr: ExprType::Id(x)
-                })
+        assert_eq!(
+            parsed,
+            Ok(Expr {
+                location: get_location(&parsed),
+                ctype: Type::Int(true),
+                constexpr: false,
+                lval: true,
+                expr: ExprType::Id(x)
+            })
         );
     }
     #[test]
     fn test_mul() {
-        assert!(parse_expr("1*1.0").unwrap().ctype == Type::Double);
-        assert!(parse_expr("1*2.0 / 1.3").unwrap().ctype == Type::Double);
-        assert!(parse_expr("3%2").unwrap().ctype == Type::Int(true));
+        assert_eq!(parse_expr("1*1.0").unwrap().ctype, Type::Double);
+        assert_eq!(parse_expr("1*2.0 / 1.3").unwrap().ctype, Type::Double);
+        assert_eq!(parse_expr("3%2").unwrap().ctype, Type::Int(true));
     }
     #[test]
     fn test_funcall() {

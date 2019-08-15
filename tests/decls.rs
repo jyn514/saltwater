@@ -8,6 +8,16 @@ fn test_decl_and_func_definition() {
 }
 
 #[test]
+fn test_decl_after_init() {
+    utils::assert_succeeds("int main(); int main() {} int main();");
+}
+
+#[test]
+fn test_different_types() {
+    utils::assert_compile_error("int i; long i;");
+}
+
+#[test]
 fn test_initializers() {
     utils::assert_compile_error("char c = '🙃';");
     utils::assert_compile_error("int a[-1];");

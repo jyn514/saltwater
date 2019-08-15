@@ -247,7 +247,7 @@ pub enum StorageClass {
 }
 
 /* structs */
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Symbol {
     pub id: String,
     pub ctype: Type,
@@ -650,3 +650,15 @@ impl PartialEq for ArrayType {
     }
 }
 impl Eq for ArrayType {}
+
+impl PartialEq for Symbol {
+    // don't require both symbols to be `init` to be equal
+    fn eq(&self, other: &Self) -> bool {
+        self.ctype == other.ctype
+            && self.id == other.id
+            && self.qualifiers == other.qualifiers
+            && self.storage_class == other.storage_class
+    }
+}
+
+impl Eq for Symbol {}

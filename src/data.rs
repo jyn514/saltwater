@@ -474,6 +474,12 @@ impl Scope {
     }
 }
 
+impl FunctionType {
+    pub fn should_return(&self) -> bool {
+        *self.return_type != Type::Void
+    }
+}
+
 pub fn zero() -> Expr {
     Expr {
         ctype: Type::Int(true),

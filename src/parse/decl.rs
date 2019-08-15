@@ -717,13 +717,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 should_return,
                 "stmt should have already caught bad return types"
             );
-            Err(Locatable {
-                data: format!(
-                    "expected a return statement before end of function '{}' returning {}",
-                    func_data.id, func_data.ftype.return_type
-                ),
-                location: func_data.location,
-            })
+            // allow `int main() {}`
+            if func_data.id == "main" {
+                // make body explicitly mutable
+                let mut body = body;
+                body.push(Stmt::Return(Some(Expr::zero())));
+                Ok(body)
+            } else {
+                Err(Locatable {
+                    data: format!(
+                        "expected a return statement before end of function '{}' returning {}",
+                        func_data.id, func_data.ftype.return_type
+                    ),
+                    location: func_data.location,
+                })
+            }
         } else {
             Ok(body)
         }

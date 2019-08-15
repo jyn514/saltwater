@@ -189,6 +189,7 @@ impl FunctionType {
                 })
                 .collect::<Result<Vec<_>, Locatable<String>>>()?
         };
+        // we can't use `.should_return` because `self` was partially moved by `self.params.into_iter`
         let return_type = if *self.return_type == Type::Void {
             vec![]
         } else {

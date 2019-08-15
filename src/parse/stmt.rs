@@ -1,5 +1,5 @@
 use super::{Lexeme, Parser};
-use crate::data::{Expr, Keyword, Locatable, Location, Stmt, Token, Type};
+use crate::data::{Expr, Keyword, Locatable, Location, Stmt, Token};
 use crate::utils::warn;
 use std::iter::Iterator;
 
@@ -102,8 +102,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .as_mut()
             .expect("should have current_function set when parsing statements");
         let ret_type = &current.ftype.return_type;
-        let should_ret = **ret_type != Type::Void;
-        match (expr, should_ret) {
+        match (expr, current.ftype.should_return()) {
             (None, false) => Ok(Stmt::Return(None)),
             (None, true) => Err(Locatable {
                 data: format!("function '{}' does not return a value", current.id),

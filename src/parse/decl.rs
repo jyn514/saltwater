@@ -711,7 +711,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ),
         };
         let func_data = self.current_function.take().unwrap();
-        let should_return = *func_data.ftype.return_type != Type::Void;
+        let should_return = func_data.ftype.should_return();
         if func_data.seen_ret != should_return {
             assert!(
                 should_return,

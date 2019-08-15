@@ -843,7 +843,7 @@ impl Expr {
                 lval: false,
                 location: self.location.clone(),
                 ctype: Type::Bool,
-                expr: ExprType::Compare(Box::new(self), Box::new(zero()), Token::NotEqual),
+                expr: ExprType::Compare(Box::new(self), Box::new(Expr::zero()), Token::NotEqual),
             })
         }
     }

@@ -420,6 +420,15 @@ impl Expr {
             _ => unreachable!("should have been caught already"),
         }
     }
+    pub fn zero() -> Expr {
+        Expr {
+            ctype: Type::Int(true),
+            constexpr: true,
+            expr: ExprType::Literal(Token::Int(0)),
+            lval: false,
+            location: Default::default(),
+        }
+    }
 }
 
 impl From<LengthError> for String {
@@ -477,16 +486,6 @@ impl Scope {
 impl FunctionType {
     pub fn should_return(&self) -> bool {
         *self.return_type != Type::Void
-    }
-}
-
-pub fn zero() -> Expr {
-    Expr {
-        ctype: Type::Int(true),
-        constexpr: true,
-        expr: ExprType::Literal(Token::Int(0)),
-        lval: false,
-        location: Default::default(),
     }
 }
 

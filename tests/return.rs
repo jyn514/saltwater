@@ -16,3 +16,8 @@ fn return_type() {
         Some(1)
     );
 }
+
+#[test]
+fn main_is_special() {
+    utils::assert_succeeds("int main() {}");
+}

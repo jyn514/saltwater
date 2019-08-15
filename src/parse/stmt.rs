@@ -97,9 +97,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn return_statement(&mut self) -> StmtResult {
         let ret_token = self.expect(Token::Keyword(Keyword::Return)).unwrap();
         let expr = self.expr_opt(Token::Semicolon)?;
-        let current = self
+        let mut current = self
             .current_function
-            .as_ref()
+            .as_mut()
             .expect("should have current_function set when parsing statements");
         let ret_type = &current.ftype.return_type;
         let should_ret = **ret_type != Type::Void;
@@ -114,6 +114,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 location: expr.location,
             }),
             (Some(expr), true) => {
+                current.seen_ret = true;
                 if expr.ctype != **ret_type {
                     Ok(Stmt::Return(Some(Expr::cast_op(expr, ret_type)?)))
                 } else {

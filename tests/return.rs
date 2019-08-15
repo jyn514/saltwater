@@ -7,11 +7,12 @@ fn return_type() {
         "void f() { return 1; }
          int main(void) { return 0; }",
     );
-    assert!(
+    utils::assert_compile_error("int f() {}");
+    assert_eq!(
         utils::compile_and_run("int main(void) { return 1.1; }".to_string(), &[])
             .unwrap()
             .status
-            .code()
-            == Some(1)
+            .code(),
+        Some(1)
     );
 }

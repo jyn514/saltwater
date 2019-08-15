@@ -6,7 +6,9 @@ use cranelift::codegen::{
     isa,
     settings::{self, Configurable},
 };
-use cranelift::prelude::{types, FunctionBuilder, FunctionBuilderContext, Type as IrType, Value};
+use cranelift::prelude::{
+    types, FunctionBuilder, FunctionBuilderContext, Type as IrType, Value as IrValue,
+};
 use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
 use cranelift_module::{self, DataContext, Linkage, Module as CraneliftModule};
 
@@ -18,10 +20,17 @@ use crate::data::{
 use crate::utils::warn;
 
 type Module = CraneliftModule<FaerieBackend>;
+type IrResult = Result<Value, Locatable<String>>;
 
 struct LLVMCompiler {
     // TODO: allow compiling multiple modules with the same compiler struct?
     module: Module,
+}
+
+struct Value {
+    ir_val: IrValue,
+    ir_type: IrType,
+    ctype: Type,
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
@@ -52,6 +61,22 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Lo
     }
     Ok(compiler.module)
 }
+
+macro_rules! scalar_bin_op {
+        ($self: expr, $left: expr, $right: expr, $builder: expr, $($pat: pat $(if $guard: expr)?, $func: ident),+) => {{
+            let (left, right) = ($self.rval($left, $builder)?, $self.rval($right, $builder)?);
+            assert_eq!(left.ir_type, right.ir_type);
+            match (left.ir_type, left.ctype.is_signed()) {
+                $($pat $(if $guard)? => Ok(Value {
+                    ir_val: $ builder.ins().$ func(left.ir_val, right.ir_val),
+                    ir_type: left.ir_type,
+                    // TODO: this will probably be wrong for pointer addition
+                    ctype: left.ctype,
+                }) ),+ ,
+                _ => unreachable!("parser should have caught illegal IR types")
+            }
+        }};
+    }
 
 impl LLVMCompiler {
     fn new(name: String) -> LLVMCompiler {
@@ -146,8 +171,8 @@ impl LLVMCompiler {
             Stmt::Return(expr) => {
                 let mut ret = vec![];
                 if let Some(e) = expr {
-                    let (compiled, _) = self.compile_expr(e, builder)?;
-                    ret.push(compiled);
+                    let val = self.compile_expr(e, builder)?;
+                    ret.push(val.ir_val);
                 }
                 builder.ins().return_(&ret);
             }
@@ -180,13 +205,9 @@ impl LLVMCompiler {
         };
         Ok(())
     }
-    fn compile_expr(
-        &self,
-        expr: Expr,
-        builder: &mut FunctionBuilder,
-    ) -> Result<(Value, IrType), Locatable<String>> {
+    fn compile_expr(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         let location = expr.location;
-        let ir_type = match expr.ctype.into_llvm_basic() {
+        let ir_type = match expr.ctype.as_ir_basic_type() {
             Ok(ir_type) => ir_type,
             Err(err) => {
                 return Err(Locatable {
@@ -196,21 +217,40 @@ impl LLVMCompiler {
             }
         };
         match expr.expr {
-            ExprType::Literal(token) => self.compile_literal(ir_type, token, builder),
+            ExprType::Literal(token) => self.compile_literal(ir_type, expr.ctype, token, builder),
             ExprType::Cast(orig, ctype) => self.cast(*orig, ctype, location, builder),
+            ExprType::Id(var) => self.load_addr(var),
             ExprType::Add(left, right) => self.add(*left, *right, builder),
-            _ => unimplemented!("any expression other than literals"),
+            ExprType::Sub(left, right) => {
+                scalar_bin_op!(self, *left, *right, builder, (ty, _) if ty.is_int(), isub, (ty, _) if ty.is_float(), fsub)
+            }
+            ExprType::Mul(left, right) => {
+                scalar_bin_op!(self, *left, *right, builder, (ty, _) if ty.is_int(), imul, (ty, _) if ty.is_float(), fmul)
+            }
+            ExprType::Div(left, right) => {
+                scalar_bin_op!(self, *left, *right, builder, (ty, true) if ty.is_int(), sdiv, (ty, false) if ty.is_int(), udiv, (ty, _) if ty.is_float(), fdiv)
+            }
+            _ => unimplemented!("most expressions"),
         }
     }
     fn compile_literal(
         &self,
         ir_type: IrType,
+        ctype: Type,
         token: Token,
         builder: &mut FunctionBuilder,
-    ) -> Result<(Value, IrType), Locatable<String>> {
+    ) -> IrResult {
         match token {
-            Token::Int(i) => Ok((builder.ins().iconst(ir_type, i), ir_type)),
-            Token::Float(f) => Ok((builder.ins().f64const(f), types::F64)),
+            Token::Int(i) => Ok(Value {
+                ir_val: builder.ins().iconst(ir_type, i),
+                ir_type,
+                ctype,
+            }),
+            Token::Float(f) => Ok(Value {
+                ir_val: builder.ins().f64const(f),
+                ir_type: types::F64,
+                ctype,
+            }),
             _ => unimplemented!("aggregate literals"),
         }
     }
@@ -220,53 +260,56 @@ impl LLVMCompiler {
         ctype: Type,
         location: Location,
         builder: &mut FunctionBuilder,
-    ) -> Result<(Value, IrType), Locatable<String>> {
+    ) -> IrResult {
         // calculate this here before it's moved to `compile_expr`
         let orig_signed = expr.ctype.is_signed();
-        let (orig, orig_type) = self.compile_expr(expr, builder)?;
-        let cast_type = ctype.into_llvm_basic().map_err(|err| Locatable {
+        let original = self.compile_expr(expr, builder)?;
+        let cast_type = ctype.as_ir_basic_type().map_err(|err| Locatable {
             data: err,
             location,
         })?;
         // NOTE: we compare the IR types, not the C types, because multiple C types
         // NOTE: may have the same representation (e.g. both `int` and `long` are i64)
-        if cast_type == orig_type {
+        if cast_type == original.ir_type {
             // no-op
-            return Ok((orig, orig_type));
+            return Ok(original);
         }
-        let cast = match (orig_type, cast_type) {
-            (types::F32, types::F64) => builder.ins().fpromote(cast_type, orig),
-            (types::F64, types::F32) => builder.ins().fdemote(cast_type, orig),
-            (b, i) if b.is_bool() && i.is_int() => builder.ins().bint(cast_type, orig),
+        let cast = match (original.ir_type, cast_type) {
+            (types::F32, types::F64) => builder.ins().fpromote(cast_type, original.ir_val),
+            (types::F64, types::F32) => builder.ins().fdemote(cast_type, original.ir_val),
+            (b, i) if b.is_bool() && i.is_int() => builder.ins().bint(cast_type, original.ir_val),
             (i, b) if i.is_int() && b.is_bool() => {
-                builder.ins().icmp_imm(condcodes::IntCC::NotEqual, orig, 0)
+                builder
+                    .ins()
+                    .icmp_imm(condcodes::IntCC::NotEqual, original.ir_val, 0)
             }
             (i, f) if i.is_int() && f.is_float() => {
                 if orig_signed {
-                    builder.ins().fcvt_from_sint(cast_type, orig)
+                    builder.ins().fcvt_from_sint(cast_type, original.ir_val)
                 } else {
-                    builder.ins().fcvt_from_uint(cast_type, orig)
+                    builder.ins().fcvt_from_uint(cast_type, original.ir_val)
                 }
             }
             (f, i) if f.is_float() && i.is_int() => {
                 if orig_signed {
-                    builder.ins().fcvt_to_sint(cast_type, orig)
+                    builder.ins().fcvt_to_sint(cast_type, original.ir_val)
                 } else {
-                    builder.ins().fcvt_to_uint(cast_type, orig)
+                    builder.ins().fcvt_to_uint(cast_type, original.ir_val)
                 }
             }
-            _ => unimplemented!("cast from {} to {}", orig_type, cast_type),
+            _ => unimplemented!("cast from {} to {}", original.ir_type, cast_type),
         };
-        Ok((cast, cast_type))
+        Ok(Value {
+            ir_val: cast,
+            ir_type: cast_type,
+            ctype,
+        })
+    }
+    fn load_addr(&self, var: Symbol) -> IrResult {
+        unimplemented!("address loads");
     }
     fn add(&self, left: Expr, right: Expr, builder: &mut FunctionBuilder) -> IrResult {
-        let (left, right) = (self.rval(left, builder)?, self.rval(right, builder)?);
-        assert_eq!(left.1, right.1);
-        match left.1 {
-            ty if ty.is_float() => Ok((builder.ins().fadd(left.0, right.0), ty)),
-            ty if ty.is_int() => Ok((builder.ins().iadd(left.0, right.0), ty)),
-            _ => unreachable!("all add values should be scalar"),
-        }
+        scalar_bin_op!(self, left, right, builder, (ty, _) if ty.is_int(), iadd, (ty, _) if ty.is_float(), fadd)
     }
     fn rval(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         let compiled = self.compile_expr(expr, builder)?;
@@ -443,7 +486,7 @@ macro_rules! bytes {
 
 impl Token {
     fn into_bytes(self, ctype: Type, location: &Location) -> Result<Box<[u8]>, Locatable<String>> {
-        let ir_type = match ctype.clone().into_llvm_basic() {
+        let ir_type = match ctype.clone().as_ir_basic_type() {
             Err(err) => {
                 return Err(Locatable {
                     data: err,

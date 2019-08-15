@@ -99,7 +99,7 @@ impl Type {
             Void => Err("cannot take `alignof` void"),
         }
     }
-    pub fn into_llvm_basic(self) -> Result<IrType, String> {
+    pub fn as_ir_basic_type(&self) -> Result<IrType, String> {
         match self {
             // Integers
             Bool | Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_) => {
@@ -128,8 +128,8 @@ impl Type {
                 .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE))),
             Struct(members) => {
                 let llvm_elements: Vec<_> = members
-                    .into_iter()
-                    .map(|m| m.ctype.into_llvm_basic())
+                    .iter()
+                    .map(|m| m.ctype.as_ir_basic_type())
                     .collect::<Result<_, String>>()?;
                 unimplemented!("struct type -> IR");
             }
@@ -137,14 +137,14 @@ impl Type {
             // What Clang does is cast it to the type of the largest member,
             // and then cast every element of the union as it is accessed.
             // See https://stackoverflow.com/questions/19549942/extracting-a-value-from-an-union#19550613
-            Union(members) => try_max_by_key(members.into_iter().map(|m| m.ctype), Type::sizeof)
+            Union(members) => try_max_by_key(members.iter().map(|m| &m.ctype), Type::sizeof)
                 .expect("parser should ensure all unions have at least one member")?
-                .into_llvm_basic(),
+                .as_ir_basic_type(),
             Bitfield(_) => unimplemented!("bitfield to llvm type"),
             Void | Function(_) => Err(format!("{} is not a basic type", self)),
         }
     }
-    pub fn into_llvm(self) -> Result<IrType, String> {
+    pub fn as_ir_type(&self) -> Result<IrType, String> {
         match self {
             // basic types (according to LLVM)
             Bool
@@ -159,7 +159,7 @@ impl Type {
             | Array(_, _)
             | Struct(_)
             | Bitfield(_)
-            | Union(_) => self.into_llvm_basic(),
+            | Union(_) => self.as_ir_basic_type(),
             // void cannot be loaded or stored
             Void => Ok(types::INVALID),
             // I don't think Cranelift IR has a representation for functions
@@ -180,7 +180,7 @@ impl FunctionType {
                 .map(|param| {
                     param
                         .ctype
-                        .into_llvm_basic()
+                        .as_ir_basic_type()
                         .map(AbiParam::new)
                         .map_err(|err| Locatable {
                             data: err,
@@ -195,7 +195,7 @@ impl FunctionType {
         } else {
             vec![self
                 .return_type
-                .into_llvm_basic()
+                .as_ir_basic_type()
                 .map(AbiParam::new)
                 .map_err(|err| Locatable {
                     data: err,
@@ -223,9 +223,9 @@ impl FunctionType {
 /// let lengths = [vec![], vec![1], vec![1, 2]];
 /// assert_eq!(try_max_by_key(lengths.into_iter(), |vec| vec.last().ok_or(())), Some(Err(())));
 /// ```
-fn try_max_by_key<I, T, C, R, F>(mut iter: I, mut f: F) -> Option<Result<T, R>>
+fn try_max_by_key<'a, I, T, C, R, F>(mut iter: I, mut f: F) -> Option<Result<&'a T, R>>
 where
-    I: Iterator<Item = T>,
+    I: Iterator<Item = &'a T>,
     C: std::cmp::Ord,
     F: FnMut(&T) -> Result<C, R>,
 {
@@ -234,7 +234,7 @@ where
         // avoids f not being called if there's only one element
         f(&initial)?;
         iter.try_fold(initial, |current, next| {
-            if f(&current)? >= f(&next)? {
+            if f(current)? >= f(next)? {
                 Ok(current)
             } else {
                 Ok(next)

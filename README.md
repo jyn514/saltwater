@@ -27,7 +27,7 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 ## Running
 
 `cargo run` from top level directory.
-Only literals currently work - try something like this:
+Only literals and add/subtract/multiply/divide currently work - try something like this:
 
 ```
 int i = 1;
@@ -35,7 +35,7 @@ int a[] = {1, 2, 3};
 double = 1.0;
 
 int main(void) {
-  return 1;
+  return 1 + 2 * 3 - 4 / 2;
 }
 ```
 

@@ -24,7 +24,7 @@ lazy_static! {
     pub static ref CALLING_CONVENTION: CallConv = CallConv::triple_default(&TARGET);
 }
 mod x64;
-pub(crate) use x64::*;
+pub use x64::*;
 
 impl Type {
     pub fn can_represent(&self, other: &Type) -> bool {
@@ -217,13 +217,14 @@ impl FunctionType {
 /// Example:
 ///
 /// ```
+/// use compiler::backend::try_max_by_key;
 /// let list = [[1, 2, 3], [5, 4, 3], [1, 1, 4]];
-/// assert_eq!(try_max_by_key(list.into_iter(), |vec| vec.last().ok_or(())), Some(Ok(&[1, 1, 4])));
+/// assert_eq!(try_max_by_key(list.iter(), |vec| vec.last().map(|&x| x).ok_or(())), Some(Ok(&[1, 1, 4])));
 ///
 /// let lengths = [vec![], vec![1], vec![1, 2]];
-/// assert_eq!(try_max_by_key(lengths.into_iter(), |vec| vec.last().ok_or(())), Some(Err(())));
+/// assert_eq!(try_max_by_key(lengths.iter(), |vec| vec.last().map(|&x| x).ok_or(())), Some(Err(())));
 /// ```
-fn try_max_by_key<'a, I, T, C, R, F>(mut iter: I, mut f: F) -> Option<Result<&'a T, R>>
+pub fn try_max_by_key<'a, I, T, C, R, F>(mut iter: I, mut f: F) -> Option<Result<&'a T, R>>
 where
     I: Iterator<Item = &'a T>,
     C: std::cmp::Ord,

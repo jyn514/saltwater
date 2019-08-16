@@ -221,15 +221,31 @@ impl LLVMCompiler {
             ExprType::Cast(orig, ctype) => self.cast(*orig, ctype, location, builder),
             ExprType::Id(var) => self.load_addr(var),
             ExprType::Add(left, right) => self.add(*left, *right, builder),
-            ExprType::Sub(left, right) => {
-                scalar_bin_op!(self, *left, *right, builder, (ty, _) if ty.is_int(), isub, (ty, _) if ty.is_float(), fsub)
-            }
-            ExprType::Mul(left, right) => {
-                scalar_bin_op!(self, *left, *right, builder, (ty, _) if ty.is_int(), imul, (ty, _) if ty.is_float(), fmul)
-            }
-            ExprType::Div(left, right) => {
-                scalar_bin_op!(self, *left, *right, builder, (ty, true) if ty.is_int(), sdiv, (ty, false) if ty.is_int(), udiv, (ty, _) if ty.is_float(), fdiv)
-            }
+            ExprType::Sub(left, right) => scalar_bin_op!(self, *left, *right, builder,
+                (ty, _) if ty.is_int(), isub,
+                (ty, _) if ty.is_float(), fsub),
+            ExprType::Mul(left, right) => scalar_bin_op!(self, *left, *right, builder,
+                (ty, _) if ty.is_int(), imul,
+                (ty, _) if ty.is_float(), fmul),
+            ExprType::Div(left, right) => scalar_bin_op!(self, *left, *right, builder,
+                (ty, true) if ty.is_int(), sdiv,
+                (ty, false) if ty.is_int(), udiv,
+                (ty, _) if ty.is_float(), fdiv),
+            ExprType::BitwiseAnd(left, right) => scalar_bin_op!(self, *left, *right, builder,
+               (ty, true) if ty.is_int(), band),
+            ExprType::BitwiseOr(left, right) => scalar_bin_op!(self, *left, *right, builder,
+               (ty, true) if ty.is_int(), bor),
+            // left shift
+            ExprType::Shift(left, right, true) => scalar_bin_op!(self, *left, *right, builder,
+               (ty, _) if ty.is_int(), ishl),
+            // right shift
+            ExprType::Shift(left, right, false) => scalar_bin_op!(self, *left, *right, builder,
+                // arithmetic shift: keeps the sign of `left`
+               (ty, true) if ty.is_int(), sshr,
+               // logical shift: shifts in zeros
+               (ty, false) if ty.is_int(), ushr),
+            ExprType::Xor(left, right) => scalar_bin_op!(self, *left, *right, builder,
+                                                         (ty, _) if ty.is_int(), bxor),
             _ => unimplemented!("most expressions"),
         }
     }

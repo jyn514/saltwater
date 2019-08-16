@@ -31,3 +31,29 @@ fn div() {
     utils::assert_code("int main() { return 4 / 3; }", 1);
     utils::assert_code("int main() { return 3.1 / 3.0; }", 1);
 }
+
+#[test]
+fn band() {
+    utils::assert_code("int main() { return 1 & 1; }", 1);
+    utils::assert_code("int main() { return 2 & 3; }", 2);
+    utils::assert_code("int main() { return 0 & 10; }", 0);
+    utils::assert_code("int main() { return -65 & 7; }", 7);
+}
+
+#[test]
+fn bor() {
+    utils::assert_code("int main() { return 1 | 2; }", 3);
+    utils::assert_code("int main() { return 0 | 0; }", 0);
+    utils::assert_code("int main() { return 105 | 0; }", 105);
+    utils::assert_code("int main() { return (-1 | 0) + 1; }", 0);
+}
+
+#[test]
+fn shift() {
+    utils::assert_code("int main() { return 1 << 1; }", 2);
+    utils::assert_code("int main() { return 2 << 3; }", 16);
+    utils::assert_code("int main() { return 1 >> 1; }", 0);
+    utils::assert_code("int main() { return 1 >> 10; }", 0);
+    // should overflow and set sign bit
+    //utils::assert_code("int main() { return (1 << 31) < 0; }", 1);
+}

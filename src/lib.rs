@@ -30,7 +30,7 @@ pub use parse::Parser;
 
 #[macro_use]
 pub mod utils;
-mod backend;
+pub mod backend;
 pub mod data;
 mod ir;
 mod lex;

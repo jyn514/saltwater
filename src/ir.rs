@@ -314,7 +314,6 @@ impl LLVMCompiler {
     fn rval(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         let compiled = self.compile_expr(expr, builder)?;
         // TODO: deref lvals
-        // TODO: will require even more data from each function, maybe make a custom struct?
         // TODO: will structs need special handling?
         Ok(compiled)
     }

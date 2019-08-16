@@ -24,7 +24,8 @@ use super::utils::warn;
 /// use compiler::Lexer;
 ///
 /// let lexer = Lexer::new("<stdin>".to_string(),
-///                        "int main(void) { char *hello = \"hi\"; }".chars());
+///                        "int main(void) { char *hello = \"hi\"; }".chars(),
+///                         false);
 /// for token in lexer {
 ///     assert!(token.data.is_ok());
 /// }
@@ -37,7 +38,8 @@ pub struct Lexer<'a> {
     current: Option<char>,
     // used for 3-character tokens
     lookahead: Option<char>,
-    debug: bool,
+    /// whether to print out every token as it's encountered
+    pub debug: bool,
 }
 
 // returned when lexing a string literal
@@ -127,7 +129,7 @@ impl<'a> Lexer<'a> {
     /// ```
     /// use compiler::Lexer;
     ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars());
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// assert!(lexer.next_char() == Some('i'));
     /// assert!(lexer.next_char() == Some('n'));
     /// assert!(lexer.next_char() == Some('t'));
@@ -157,7 +159,7 @@ impl<'a> Lexer<'a> {
     /// ```
     /// use compiler::Lexer;
     ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars());
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// let first = lexer.next_char();
     /// assert!(first == Some('i'));
     /// lexer.unput(first);
@@ -173,7 +175,7 @@ impl<'a> Lexer<'a> {
     /// ```
     /// use compiler::Lexer;
     ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars());
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.peek() == Some('i'));
@@ -191,7 +193,7 @@ impl<'a> Lexer<'a> {
     /// ```
     /// use compiler::Lexer;
     ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars());
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// assert!(lexer.match_next('i'));
     /// assert!(lexer.match_next('n'));
     /// assert!(lexer.next_char() == Some('t'));

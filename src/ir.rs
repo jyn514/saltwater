@@ -68,7 +68,7 @@ macro_rules! scalar_bin_op {
             assert_eq!(left.ir_type, right.ir_type);
             match (left.ir_type, left.ctype.is_signed()) {
                 $($pat $(if $guard)? => Ok(Value {
-                    ir_val: $ builder.ins().$ func(left.ir_val, right.ir_val),
+                    ir_val: $builder.ins().$func(left.ir_val, right.ir_val),
                     ir_type: left.ir_type,
                     // TODO: this will probably be wrong for pointer addition
                     ctype: left.ctype,
@@ -205,6 +205,9 @@ impl LLVMCompiler {
         };
         Ok(())
     }
+    // clippy doesn't like big match statements, but this is kind of essential complexity,
+    // it can't be any smaller without supporting fewer features
+    #[allow(clippy::cognitive_complexity)]
     fn compile_expr(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         let location = expr.location;
         let ir_type = match expr.ctype.as_ir_basic_type() {
@@ -231,6 +234,9 @@ impl LLVMCompiler {
                 (ty, true) if ty.is_int(), sdiv,
                 (ty, false) if ty.is_int(), udiv,
                 (ty, _) if ty.is_float(), fdiv),
+            ExprType::Mod(left, right) => scalar_bin_op!(self, *left, *right, builder,
+                 (ty, true) if ty.is_int(), srem,
+                 (ty, false) if ty.is_int(), urem),
             ExprType::BitwiseAnd(left, right) => scalar_bin_op!(self, *left, *right, builder,
                (ty, true) if ty.is_int(), band),
             ExprType::BitwiseOr(left, right) => scalar_bin_op!(self, *left, *right, builder,

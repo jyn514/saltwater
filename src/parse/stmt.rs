@@ -115,7 +115,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             (Some(expr), true) => {
                 current.seen_ret = true;
                 if expr.ctype != **ret_type {
-                    Ok(Stmt::Return(Some(Expr::cast_op(expr, ret_type)?)))
+                    Ok(Stmt::Return(Some(Expr::cast(expr, ret_type)?)))
                 } else {
                     Ok(Stmt::Return(Some(expr)))
                 }

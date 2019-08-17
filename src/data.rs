@@ -182,7 +182,6 @@ pub struct Expr {
 pub enum ExprType {
     Id(Symbol),
     Literal(Token),
-    Array(Box<Expr>, Box<Expr>),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, Token),
     // pre/post inc/dec-rement
@@ -422,6 +421,28 @@ impl Type {
         match self {
             Type::Pointer(_, _) => true,
             _ => false,
+        }
+    }
+    #[inline]
+    pub fn is_void_pointer(&self) -> bool {
+        match self {
+            Type::Pointer(t, _) => **t == Type::Void,
+            _ => false,
+        }
+    }
+    #[inline]
+    /// used for pointer addition and subtraction, see section 6.5.6 of the C11 standard
+    pub fn is_pointer_to_complete_object(&self) -> bool {
+        match self {
+            Type::Pointer(ctype, _) => ctype.is_complete() && !ctype.is_function(),
+            _ => false,
+        }
+    }
+    pub fn is_complete(&self) -> bool {
+        match self {
+            Type::Void | Type::Array(_, ArrayType::Unbounded) => false,
+            // TODO: update when we allow incomplete struct and union types (e.g. `struct s;`)
+            _ => true,
         }
     }
     #[inline]

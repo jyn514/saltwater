@@ -247,7 +247,9 @@ impl LLVMCompiler {
             ExprType::Xor(left, right) => scalar_bin_op!(self, *left, *right, builder,
                                                          (ty, _) if ty.is_int(), bxor),
             ExprType::Compare(left, right, token) => self.compare(*left, *right, &token, builder),
-            _ => unimplemented!("most expressions"),
+            _ => {
+                unimplemented!("unary expressions, assignments, ternary, comma, logical expressions, sizeof, (casts), struct operations")
+            }
         }
     }
     fn compile_literal(

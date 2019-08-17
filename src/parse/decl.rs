@@ -688,7 +688,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(Initializer::InitializerList(elements))
         } else {
             // assignment_expr
-            let expr = Expr::cast_op(self.assignment_expr()?, ctype)?;
+            let expr = Expr::cast(self.assignment_expr()?, ctype)?;
             Ok(Initializer::Scalar(expr))
         }
     }

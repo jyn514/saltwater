@@ -77,8 +77,17 @@ fn cmp() {
     utils::assert_code("int main() { return 10 >= 0; }", 1);
     utils::assert_code("int main() { return 12 < 24; }", 1);
     utils::assert_code("int main() { return 12 <= 12; }", 1);
-    //utils::assert_code("int main() { return 12.0 == 12; }", 1);
-    //utils::assert_code("int main() { return 12.0 <= 12; }", 1);
     utils::assert_code("int main() { return 12.0 <= 12.5; }", 1);
     utils::assert_code("int main() { return 12.0 != 12.1; }", 1);
+}
+
+#[test]
+fn implicit_casts() {
+    utils::assert_code("int main() { return 1 + 1.0; }", 2);
+    utils::assert_succeeds("int main() { return 1 - 1.0; }");
+    utils::assert_code("int main() { return 1 * 1.0; }", 1);
+    utils::assert_code("int main() { return 1 / 1.0; }", 1);
+    utils::assert_code("int main() { return 1 == 1.0; }", 1);
+    utils::assert_code("int main() { return 12.0 == 12; }", 1);
+    utils::assert_code("int main() { return 12.0 <= 12; }", 1);
 }

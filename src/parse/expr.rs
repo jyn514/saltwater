@@ -314,11 +314,37 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.left_associative_binary_op(
             Self::multiplicative_expr,
             &[&Token::Plus, &Token::Minus],
-            |left, right, token| {
+            |mut left, mut right, token| {
+                let (ctype, lval) = if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
+                    let tmp = Expr::binary_promote(*left, *right)?;
+                    left = Box::new(tmp.0);
+                    right = Box::new(tmp.1);
+                    (left.ctype.clone(), false)
+                } else if left.ctype.is_pointer_to_complete_object() && right.ctype.is_integral() {
+                    (left.ctype.clone(), true)
+                    // `i - p` for pointer p is not valid
+                } else if token.data == Token::Plus && left.ctype.is_integral() && right.ctype.is_pointer_to_complete_object() {
+                    (right.ctype.clone(), true)
+                    // `p1 + p2` for pointers p1 and p2 is not valid
+                } else if token.data == Token::Minus && left.ctype.is_pointer_to_complete_object() && left.ctype == right.ctype {
+                    // not sure what type to use here, C11 standard doesn't mention it
+                    (left.ctype.clone(), true)
+                } else {
+                    return Err(Locatable {
+                        data: format!(
+                            "invalid operators for '{}' (expected either arithmetic types or pointer operation, got '{} {} {}'",
+                            token.data,
+                            left.ctype,
+                            token.data,
+                            right.ctype
+                        ),
+                        location: token.location
+                    });
+                };
                 Ok(Expr {
-                    ctype: left.ctype.clone(),
+                    ctype,
+                    lval,
                     location: token.location,
-                    lval: false,
                     constexpr: left.constexpr && right.constexpr,
                     expr: (if token.data == Token::Plus {
                         ExprType::Add
@@ -341,22 +367,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Self::cast_expr,
             &[&Token::Star, &Token::Divide, &Token::Mod],
             |left, right, token| {
-                let ctype = Type::binary_promote(&left.ctype, &right.ctype);
+                let (left, right) = Expr::binary_promote(*left, *right)?;
                 let type_bound = if token.data == Token::Mod {
                     Type::is_integral
                 } else {
                     Type::is_arithmetic
                 };
-                if type_bound(&ctype) {
+                if type_bound(&left.ctype) {
                     Ok(Expr {
-                        ctype,
+                        ctype: left.ctype.clone(),
                         location: token.location,
                         constexpr: left.constexpr && right.constexpr,
                         lval: false,
                         expr: match token.data {
-                            Token::Star => ExprType::Mul(left, right),
-                            Token::Divide => ExprType::Div(left, right),
-                            Token::Mod => ExprType::Mod(left, right),
+                            Token::Star => ExprType::Mul(Box::new(left), Box::new(right)),
+                            Token::Divide => ExprType::Div(Box::new(left), Box::new(right)),
+                            Token::Mod => ExprType::Mod(Box::new(left), Box::new(right)),
                             _ => panic!(
                                 "left_associate_binary_op should only return tokens given to it"
                             ),
@@ -373,7 +399,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                                 "number"
                             },
                             token.data,
-                            ctype
+                            left.ctype,
                         ),
                     })
                 }
@@ -544,7 +570,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let promoted_args: Vec<Expr> = args
                         .into_iter()
                         .zip(&functype.params)
-                        .map(|(arg, expected)| Expr::cast_op(arg, &expected.ctype))
+                        .map(|(arg, expected)| arg.cast(&expected.ctype))
                         .collect::<Result<_, Locatable<String>>>()?;
                     Ok(Expr {
                         location,
@@ -823,6 +849,18 @@ impl Expr {
             _ => unimplemented!("what's an lval but not a pointer or id?"),
         }
     }
+    // Perform a binary conversion, including all relevant casts.
+    //
+    // See `Type::binary_promote` for conversion rules.
+    fn binary_promote(mut left: Expr, mut right: Expr) -> Result<(Expr, Expr), Locatable<String>> {
+        let ctype = Type::binary_promote(&left.ctype, &right.ctype);
+        if ctype == left.ctype {
+            right = right.cast(&ctype)?;
+        } else {
+            left = left.cast(&ctype)?;
+        }
+        Ok((left, right))
+    }
     // Convert an expression to _Bool. Section 6.3.1.3 of the C standard:
     // "When any scalar value is converted to _Bool,
     // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
@@ -863,35 +901,35 @@ impl Expr {
         unimplemented!("implicit variable dereferences")
     }
     // Simple assignment rules, section 6.5.16.1 of the C standard
-    pub fn cast_op(mut expr: Expr, ctype: &Type) -> ExprResult {
-        if expr.ctype == *ctype {
-            Ok(expr)
-        } else if expr.ctype.is_arithmetic() && ctype.is_arithmetic()
-            || expr.is_null() && ctype.is_pointer()
-            || expr.ctype.is_pointer() && ctype.is_bool()
-            || expr.ctype.is_pointer()
+    pub fn cast(mut self, ctype: &Type) -> ExprResult {
+        if self.ctype == *ctype {
+            Ok(self)
+        } else if self.ctype.is_arithmetic() && ctype.is_arithmetic()
+            || self.is_null() && ctype.is_pointer()
+            || self.ctype.is_pointer() && ctype.is_bool()
+            || self.ctype.is_pointer()
                 && match ctype {
                     Type::Pointer(t, quals) => match **t {
-                        Type::Void => true, // quals == expr.ctype.quals,
+                        Type::Void => true, // quals == self.ctype.quals,
                         _ => false,
                     },
                     _ => false,
                 }
         {
             Ok(Expr {
-                location: expr.location.clone(),
-                constexpr: expr.constexpr,
-                expr: ExprType::Cast(Box::new(expr), ctype.clone()),
+                location: self.location.clone(),
+                constexpr: self.constexpr,
+                expr: ExprType::Cast(Box::new(self), ctype.clone()),
                 lval: false,
                 ctype: ctype.clone(),
             })
-        } else if expr.expr == ExprType::Literal(Token::Int(0)) && ctype.is_pointer() {
-            expr.ctype = ctype.clone();
-            Ok(expr)
+        } else if self.expr == ExprType::Literal(Token::Int(0)) && ctype.is_pointer() {
+            self.ctype = ctype.clone();
+            Ok(self)
         } else {
             Err(Locatable {
-                location: expr.location,
-                data: format!("cannot convert '{}' to '{}'", expr.ctype, ctype),
+                location: self.location,
+                data: format!("cannot convert '{}' to '{}'", self.ctype, ctype),
             })
         }
     }
@@ -938,8 +976,35 @@ impl Expr {
         }
     }
     // helper function since == and > have almost identical logic
-    fn relational_expr(left: Box<Expr>, right: Box<Expr>, token: Locatable<Token>) -> ExprResult {
-        // TODO: binary promote operands
+    fn relational_expr(
+        mut left: Box<Expr>,
+        mut right: Box<Expr>,
+        token: Locatable<Token>,
+    ) -> ExprResult {
+        if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
+            let tmp = Expr::binary_promote(*left, *right)?;
+            left = Box::new(tmp.0);
+            right = Box::new(tmp.1);
+        } else if !((left.ctype.is_pointer() && left.ctype == right.ctype)
+            // equality operations have different rules :(
+            || ((token.data == Token::EqualEqual || token.data == Token::NotEqual)
+                // shoot me now
+                && ((left.ctype.is_pointer() && right.ctype.is_void_pointer())
+                    || (left.ctype.is_void_pointer() && right.ctype.is_pointer())
+                    || (left.is_null() && right.ctype.is_pointer())
+                    || (left.ctype.is_pointer() && right.is_null()))))
+        {
+            return Err(Locatable {
+                data: format!(
+                    "invalid types for '{}' (expected arithmetic types or compatible pointers, got {} {} {}",
+                    token.data,
+                    left.ctype,
+                    token.data,
+                    right.ctype
+                ),
+                location: token.location,
+            });
+        }
         Ok(Expr {
             constexpr: left.constexpr && right.constexpr,
             lval: false,

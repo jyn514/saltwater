@@ -1,6 +1,13 @@
 mod utils;
 
 #[test]
+fn negate() {
+    utils::assert_code("int main() { return -(-4); }", 4);
+    utils::assert_code("int main() { return -(-0); }", 0);
+    utils::assert_code("int main() { return -(1) + 1; }", 0);
+}
+
+#[test]
 fn add() {
     utils::assert_succeeds("int main() { return 0 + 0; }");
     utils::assert_code("int main() { return 1 + 1; }", 2);

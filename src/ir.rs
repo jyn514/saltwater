@@ -246,6 +246,7 @@ impl LLVMCompiler {
                (ty, false) if ty.is_int(), ushr),
             ExprType::Xor(left, right) => scalar_bin_op!(self, *left, *right, builder,
                                                          (ty, _) if ty.is_int(), bxor),
+            ExprType::Compare(left, right, token) => self.compare(*left, *right, &token, builder),
             _ => unimplemented!("most expressions"),
         }
     }
@@ -326,6 +327,34 @@ impl LLVMCompiler {
     }
     fn add(&self, left: Expr, right: Expr, builder: &mut FunctionBuilder) -> IrResult {
         scalar_bin_op!(self, left, right, builder, (ty, _) if ty.is_int(), iadd, (ty, _) if ty.is_float(), fadd)
+    }
+    fn compare(
+        &self,
+        left: Expr,
+        right: Expr,
+        token: &Token,
+        builder: &mut FunctionBuilder,
+    ) -> IrResult {
+        let (left, right) = (self.rval(left, builder)?, self.rval(right, builder)?);
+        assert_eq!(left.ir_type, right.ir_type);
+
+        let ir_val = if left.ir_type.is_int() {
+            let code = token
+                .to_int_compare(left.ctype.is_signed())
+                .expect("Expr::Compare should only have comparison tokens");
+            builder.ins().icmp(code, left.ir_val, right.ir_val)
+        } else {
+            assert!(left.ir_type.is_float());
+            let code = token
+                .to_float_compare()
+                .expect("Expr::Compare should only have comparison tokens");
+            builder.ins().fcmp(code, left.ir_val, right.ir_val)
+        };
+        Ok(Value {
+            ir_val,
+            ir_type: types::B1,
+            ctype: left.ctype,
+        })
     }
     fn rval(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         let compiled = self.compile_expr(expr, builder)?;

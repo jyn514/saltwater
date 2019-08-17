@@ -33,6 +33,14 @@ fn div() {
 }
 
 #[test]
+fn modulo() {
+    utils::assert_code("int main() { return 6 % 3; }", 0);
+    utils::assert_code("int main() { return 7 % 3; }", 1);
+    utils::assert_code("int main() { return -7 % 3 + 1; }", 0);
+    utils::assert_compile_error("int main() { return 1.0 % 2; }");
+}
+
+#[test]
 fn band() {
     utils::assert_code("int main() { return 1 & 1; }", 1);
     utils::assert_code("int main() { return 2 & 3; }", 2);

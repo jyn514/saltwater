@@ -38,6 +38,7 @@ fn band() {
     utils::assert_code("int main() { return 2 & 3; }", 2);
     utils::assert_code("int main() { return 0 & 10; }", 0);
     utils::assert_code("int main() { return -65 & 7; }", 7);
+    utils::assert_compile_error("int main() { return 65 & 1.5; }");
 }
 
 #[test]
@@ -46,6 +47,7 @@ fn bor() {
     utils::assert_code("int main() { return 0 | 0; }", 0);
     utils::assert_code("int main() { return 105 | 0; }", 105);
     utils::assert_code("int main() { return (-1 | 0) + 1; }", 0);
+    utils::assert_compile_error("int main() { return 1 | 1.5; }");
 }
 
 #[test]
@@ -54,6 +56,29 @@ fn shift() {
     utils::assert_code("int main() { return 2 << 3; }", 16);
     utils::assert_code("int main() { return 1 >> 1; }", 0);
     utils::assert_code("int main() { return 1 >> 10; }", 0);
+    utils::assert_compile_error("int main() { return 1 >> 10.0; }");
     // should overflow and set sign bit
     //utils::assert_code("int main() { return (1 << 31) < 0; }", 1);
+}
+
+#[test]
+fn xor() {
+    utils::assert_code("int main() { return 0 ^ 0; }", 0);
+    utils::assert_code("int main() { return 1 ^ 0; }", 1);
+    utils::assert_code("int main() { return 5 ^ 2; }", 7);
+    utils::assert_compile_error("int main() { return 5.2 ^ 1.2; }")
+}
+
+#[test]
+fn cmp() {
+    utils::assert_code("int main() { return 1 == 1; }", 1);
+    utils::assert_code("int main() { return 1 != 0; }", 1);
+    utils::assert_code("int main() { return 1 > 0; }", 1);
+    utils::assert_code("int main() { return 10 >= 0; }", 1);
+    utils::assert_code("int main() { return 12 < 24; }", 1);
+    utils::assert_code("int main() { return 12 <= 12; }", 1);
+    //utils::assert_code("int main() { return 12.0 == 12; }", 1);
+    //utils::assert_code("int main() { return 12.0 <= 12; }", 1);
+    utils::assert_code("int main() { return 12.0 <= 12.5; }", 1);
+    utils::assert_code("int main() { return 12.0 != 12.1; }", 1);
 }

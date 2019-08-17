@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{self, Display, Formatter};
 
+use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
+
 use crate::backend::SIZE_T;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -334,6 +336,35 @@ impl Qualifiers {
         c_const: true,
         volatile: true,
     };
+}
+
+impl Token {
+    pub fn to_int_compare(&self, signed: bool) -> Result<IntCC, ()> {
+        match (self, signed) {
+            (Token::Less, true) => Ok(IntCC::SignedLessThan),
+            (Token::Less, false) => Ok(IntCC::UnsignedLessThan),
+            (Token::LessEqual, true) => Ok(IntCC::SignedLessThanOrEqual),
+            (Token::LessEqual, false) => Ok(IntCC::UnsignedLessThanOrEqual),
+            (Token::Greater, true) => Ok(IntCC::SignedGreaterThan),
+            (Token::Greater, false) => Ok(IntCC::UnsignedGreaterThan),
+            (Token::GreaterEqual, true) => Ok(IntCC::SignedGreaterThanOrEqual),
+            (Token::GreaterEqual, false) => Ok(IntCC::UnsignedGreaterThanOrEqual),
+            (Token::EqualEqual, _) => Ok(IntCC::Equal),
+            (Token::NotEqual, _) => Ok(IntCC::NotEqual),
+            _ => Err(()),
+        }
+    }
+    pub fn to_float_compare(&self) -> Result<FloatCC, ()> {
+        match self {
+            Token::Less => Ok(FloatCC::LessThan),
+            Token::LessEqual => Ok(FloatCC::LessThanOrEqual),
+            Token::Greater => Ok(FloatCC::GreaterThan),
+            Token::GreaterEqual => Ok(FloatCC::GreaterThanOrEqual),
+            Token::EqualEqual => Ok(FloatCC::Equal),
+            Token::NotEqual => Ok(FloatCC::NotEqual),
+            _ => Err(()),
+        }
+    }
 }
 
 lazy_static! {

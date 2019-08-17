@@ -7,6 +7,8 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 - Lexer
 - Declarations (`int i, *p;`)
 - AST for expressions and (most) statements
+- Most binary expressions (+, -, \*, /, \<, \>, \<\<, \>\>, ==, !=)
+- Implicit binary conversions (1.0 == 1)
 - Basic static initialization (i64, f64, arrays - no const folding yet)
 - Compiling to object files
 - Linking using host `cc` (similar to how the rust compiler does it)
@@ -18,7 +20,8 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 - Preprocessor
 - Multiple translation units (files)
 - Parse switch statements
-- Codegen for expressions (only literals are implemented)
+- Codegen for the rest of expressions
+- Codegen for statements
 - Scoping for variables
 - Constant folding (required for e.g. `float f = 1.2` at top level)
 - Structs, Unions, Enums

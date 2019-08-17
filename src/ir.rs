@@ -221,9 +221,18 @@ impl LLVMCompiler {
         };
         match expr.expr {
             ExprType::Literal(token) => self.compile_literal(ir_type, expr.ctype, token, builder),
-            ExprType::Cast(orig, ctype) => self.cast(*orig, ctype, location, builder),
             ExprType::Id(var) => self.load_addr(var),
-            ExprType::Add(left, right) => self.add(*left, *right, builder),
+
+            // unary expressions
+            // NOTE: this may be an implicit cast (float f = 1.2) not an explicit cast (1 + (int)1.2)
+            // NOTE: it may also be a widening conversion (1 + 1.2)
+            ExprType::Cast(orig, ctype) => self.cast(*orig, ctype, location, builder),
+            ExprType::Negate(expr) => self.negate(*expr, builder),
+
+            // binary expressions
+            ExprType::Add(left, right) => scalar_bin_op!(self, *left, *right, builder,
+                (ty, _) if ty.is_int(), iadd,
+                (ty, _) if ty.is_float(), fadd),
             ExprType::Sub(left, right) => scalar_bin_op!(self, *left, *right, builder,
                 (ty, _) if ty.is_int(), isub,
                 (ty, _) if ty.is_float(), fsub),
@@ -330,11 +339,22 @@ impl LLVMCompiler {
             ctype,
         })
     }
+    fn negate(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
+        let ctype = expr.ctype.clone();
+        let val = self.compile_expr(expr, builder)?;
+        let ir_val = match val.ir_type {
+            i if i.is_int() => builder.ins().irsub_imm(val.ir_val, 0),
+            f if f.is_float() => builder.ins().fneg(val.ir_val),
+            _ => unreachable!("parser should catch illegal types"),
+        };
+        Ok(Value {
+            ctype,
+            ir_val,
+            ir_type: val.ir_type,
+        })
+    }
     fn load_addr(&self, var: Symbol) -> IrResult {
         unimplemented!("address loads");
-    }
-    fn add(&self, left: Expr, right: Expr, builder: &mut FunctionBuilder) -> IrResult {
-        scalar_bin_op!(self, left, right, builder, (ty, _) if ty.is_int(), iadd, (ty, _) if ty.is_float(), fadd)
     }
     fn compare(
         &self,

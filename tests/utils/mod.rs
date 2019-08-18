@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 
 use std::io::Error;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
 
 extern crate compiler;
 extern crate tempfile;
 
-use compiler::{CompileError, Opt};
+use compiler::CompileError;
 
 pub fn compile_and_run(program: String, args: &[&str]) -> Result<Output, CompileError> {
     let output = tempfile::NamedTempFile::new().unwrap().into_temp_path();
@@ -16,12 +16,14 @@ pub fn compile_and_run(program: String, args: &[&str]) -> Result<Output, Compile
 }
 
 pub fn compile(program: String, no_link: bool, output: &Path) -> Result<(), CompileError> {
-    let opt = Opt {
-        output: PathBuf::from(output),
-        no_link,
-        ..Opt::default()
-    };
-    compiler::compile_and_assemble(program, "<integration-test>".to_string(), opt)
+    let module = compiler::compile(program, "<integration-test>".to_string(), false, false)?;
+    if !no_link {
+        let tmp_file = tempfile::NamedTempFile::new().unwrap();
+        compiler::assemble(module, tmp_file.as_ref())?;
+        compiler::link(tmp_file.as_ref(), &output).map_err(std::io::Error::into)
+    } else {
+        compiler::assemble(module, output)
+    }
 }
 
 pub fn run(program: &Path, args: &[&str]) -> Result<Output, Error> {

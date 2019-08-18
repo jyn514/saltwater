@@ -7,25 +7,69 @@ extern crate structopt;
 use structopt::StructOpt;
 
 extern crate compiler;
-use compiler::{compile_and_assemble, utils, CompileError, Opt};
+use compiler::{assemble, compile, link, utils, CompileError};
+use tempfile::NamedTempFile;
 
-#[derive(StructOpt)]
-struct CmdLine {
+#[derive(StructOpt, Debug)]
+#[structopt(rename_all = "kebab")]
+pub struct Opt {
     /// The file to read C source from.
     /// "-" means stdin (use ./- to read a file called '-').
     /// Only one file at a time is currently accepted.
     #[structopt(name = "FILE", default_value = "-", parse(from_os_str))]
     filename: PathBuf,
 
-    #[structopt(flatten)]
-    options: Opt,
+    /// If set, print all tokens found by the lexer in addition to compiling.
+    #[structopt(long)]
+    pub debug_lex: bool,
+
+    /// If set, print the parsed abstract syntax tree in addition to compiling
+    #[structopt(short = "a", long)]
+    pub debug_ast: bool,
+
+    /// If set, compile and assemble but do not link. Object file is machine-dependent.
+    #[structopt(short = "c", long)]
+    pub no_link: bool,
+
+    /// The output file to use.
+    #[structopt(short = "o", long, default_value = "a.out", parse(from_os_str))]
+    pub output: PathBuf,
+}
+
+impl Default for Opt {
+    fn default() -> Self {
+        Opt {
+            filename: "<default>".into(),
+            debug_lex: false,
+            debug_ast: false,
+            no_link: false,
+            output: PathBuf::from("a.out"),
+        }
+    }
+}
+
+// TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
+// TODO: then we can move this into `main` and have main return `Result<(), CompileError>`
+fn real_main(buf: String, opt: Opt) -> Result<(), CompileError> {
+    let product = compile(
+        buf,
+        opt.filename.to_string_lossy().into_owned(),
+        opt.debug_lex,
+        opt.debug_ast,
+    )?;
+    if opt.no_link {
+        return assemble(product, opt.output.as_path());
+    }
+    let tmp_file = NamedTempFile::new()?;
+    assemble(product, tmp_file.as_ref())?;
+    link(tmp_file.as_ref(), opt.output.as_path()).map_err(io::Error::into)
 }
 
 fn main() {
-    let opt = CmdLine::from_args();
+    let mut opt = Opt::from_args();
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
-    let filename = if opt.filename == PathBuf::from("-") {
+    opt.filename = if opt.filename == PathBuf::from("-") {
         io::stdin().read_to_string(&mut buf).unwrap_or_else(|err| {
             eprintln!("Failed to read stdin: {}", err);
             process::exit(1);
@@ -52,8 +96,7 @@ fn main() {
     // What's happening here is the function has type `fn(...) -> !`,
     // but when it's called, that's coerced to `!`,
     // so the closure has type `fn(...) -> i32`
-    compile_and_assemble(buf, filename.to_string_lossy().to_string(), opt.options)
-        .unwrap_or_else(|err| err_exit(err));
+    real_main(buf, opt).unwrap_or_else(|err| err_exit(err));
 }
 
 fn err_exit(err: CompileError) -> ! {

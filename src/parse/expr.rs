@@ -485,19 +485,36 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         if !expr.ctype.is_arithmetic() {
                             Err(Locatable {
                                 data: format!("cannot use unary minus on expression of non-arithmetic type '{}'", expr.ctype),
-                                location: expr.location
+                                location,
                             })
                         } else {
+                            let expr = expr.integer_promote()?;
                             Ok(Expr {
                                 lval: false,
                                 ctype: expr.ctype.clone(),
                                 constexpr: expr.constexpr,
-                                location: expr.location.clone(),
+                                location,
                                 expr: ExprType::Negate(Box::new(expr)),
                             })
                         }
                     }
-                    Token::BinaryNot => unimplemented!("binary not"),
+                    Token::BinaryNot => {
+                        if !expr.ctype.is_integral() {
+                            Err(Locatable {
+                                data: format!("cannot use unary negation on expression of non-integer type '{}'", expr.ctype),
+                                location,
+                            })
+                        } else {
+                            let expr = expr.integer_promote()?;
+                            Ok(Expr {
+                                lval: false,
+                                ctype: expr.ctype.clone(),
+                                constexpr: expr.constexpr,
+                                location,
+                                expr: ExprType::BitwiseNot(Box::new(expr)),
+                            })
+                        }
+                    }
                     Token::LogicalNot => unimplemented!("logical not"),
                     x => panic!("didn't expect '{}' to be an unary operand", x),
                 }
@@ -849,11 +866,18 @@ impl Expr {
             _ => unimplemented!("what's an lval but not a pointer or id?"),
         }
     }
+    // Perform an integer conversion, including all relevant casts.
+    //
+    // See `Type::integer_promote` for conversion rules.
+    fn integer_promote(self) -> Result<Expr, Locatable<String>> {
+        let ctype = self.ctype.clone().integer_promote();
+        self.cast(&ctype)
+    }
     // Perform a binary conversion, including all relevant casts.
     //
     // See `Type::binary_promote` for conversion rules.
     fn binary_promote(mut left: Expr, mut right: Expr) -> Result<(Expr, Expr), Locatable<String>> {
-        let ctype = Type::binary_promote(&left.ctype, &right.ctype);
+        let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
         if ctype == left.ctype {
             right = right.cast(&ctype)?;
         } else {
@@ -1056,13 +1080,15 @@ impl Expr {
 /// Implicit conversions.
 /// These are handled here and no other part of the compiler deals with them directly.
 impl Type {
-    pub fn integer_promote(from: Type, to: Type) -> Result<Type, ()> {
-        if !(from.is_integral() && to.is_integral()) {
-            Err(())
-        } else if from.rank() >= to.rank() {
-            Ok(from)
+    pub fn integer_promote(self) -> Type {
+        if self.rank() <= Type::Int(true).rank() {
+            if Type::Int(true).can_represent(&self) {
+                Type::Int(true)
+            } else {
+                Type::Int(false)
+            }
         } else {
-            Ok(to)
+            self
         }
     }
     /// Perform the 'usual arithmetic conversions' from 6.3.1.8 of the C standard.
@@ -1082,13 +1108,15 @@ impl Type {
     ///
     /// Trying to promote derived types (pointers, functions, etc.) is an error.
     /// Pointer arithmetic should not promote either argument, see 6.5.6 of the C standard.
-    fn binary_promote(left: &Type, right: &Type) -> Type {
+    fn binary_promote(mut left: Type, mut right: Type) -> Type {
         use Type::*;
-        if *left == Double || *right == Double {
+        if left == Double || right == Double {
             return Double; // toil and trouble
-        } else if *left == Float || *right == Float {
+        } else if left == Float || right == Float {
             return Float;
         }
+        left = left.integer_promote();
+        right = right.integer_promote();
         let signs = (left.sign(), right.sign());
         // same sign
         if signs.0 == signs.1 {
@@ -1104,9 +1132,9 @@ impl Type {
             (right, left)
         };
         if signed.can_represent(&unsigned) {
-            signed.clone()
+            signed
         } else {
-            unsigned.clone()
+            unsigned
         }
     }
     /// Return whether self is a signed type.

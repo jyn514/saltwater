@@ -228,6 +228,10 @@ impl LLVMCompiler {
             // NOTE: it may also be a widening conversion (1 + 1.2)
             ExprType::Cast(orig, ctype) => self.cast(*orig, ctype, location, builder),
             ExprType::Negate(expr) => self.negate(*expr, builder),
+            ExprType::BitwiseNot(expr) => self.unary_op(*expr, builder, |ir_val, ir_type, _, builder| match ir_type {
+                ty if ty.is_int() => builder.ins().bnot(ir_val),
+                _ => unreachable!("parser should catch illegal types")
+            }),
 
             // binary expressions
             ExprType::Add(left, right) => scalar_bin_op!(self, *left, *right, builder,
@@ -288,6 +292,19 @@ impl LLVMCompiler {
             _ => unimplemented!("aggregate literals"),
         }
     }
+    fn unary_op<F>(&self, expr: Expr, builder: &mut FunctionBuilder, func: F) -> IrResult
+    where
+        F: FnOnce(IrValue, IrType, &Type, &mut FunctionBuilder) -> IrValue,
+    {
+        let ctype = expr.ctype.clone();
+        let val = self.compile_expr(expr, builder)?;
+        let ir_val = func(val.ir_val, val.ir_type, &ctype, builder);
+        Ok(Value {
+            ir_val,
+            ctype,
+            ir_type: val.ir_type,
+        })
+    }
     fn cast(
         &self,
         expr: Expr,
@@ -340,17 +357,10 @@ impl LLVMCompiler {
         })
     }
     fn negate(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
-        let ctype = expr.ctype.clone();
-        let val = self.compile_expr(expr, builder)?;
-        let ir_val = match val.ir_type {
-            i if i.is_int() => builder.ins().irsub_imm(val.ir_val, 0),
-            f if f.is_float() => builder.ins().fneg(val.ir_val),
+        self.unary_op(expr, builder, |ir_val, ir_type, _, builder| match ir_type {
+            i if i.is_int() => builder.ins().irsub_imm(ir_val, 0),
+            f if f.is_float() => builder.ins().fneg(ir_val),
             _ => unreachable!("parser should catch illegal types"),
-        };
-        Ok(Value {
-            ctype,
-            ir_val,
-            ir_type: val.ir_type,
         })
     }
     fn load_addr(&self, var: Symbol) -> IrResult {

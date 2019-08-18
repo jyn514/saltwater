@@ -28,11 +28,11 @@ pub use x64::*;
 
 impl Type {
     pub fn can_represent(&self, other: &Type) -> bool {
-        unimplemented!(
-            "don't know if {} can represent {}, it's platform dependent",
-            self,
-            other
-        )
+        self == other
+            || *self == Type::Double && *other == Type::Float
+            || (self.is_integral() && other.is_integral())
+                && (self.sizeof() > other.sizeof()
+                    || self.sizeof() == other.sizeof() && self.is_signed() == other.is_signed())
     }
 
     // TODO: instead of doing this manually,

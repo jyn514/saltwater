@@ -211,6 +211,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut ctype = None;
         let mut signed = None;
         let mut errors = vec![];
+        if self.peek_token().is_none() {
+            return Err(Locatable {
+                data: "expected declaration specifier, got <end-of-file>".into(),
+                location: self.last_location.as_ref().unwrap().clone(),
+            });
+        }
         // unsigned const int
         while let Some(locatable) = self.next_token() {
             let (location, keyword) = match locatable.data {

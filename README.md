@@ -50,6 +50,7 @@ Use `cargo run -- --help` for all options.
 ## Testing
 
 `cargo test`
+`cargo +nightly fuzz run garbage -- -timeout=1`
 
 ## Contributing
 

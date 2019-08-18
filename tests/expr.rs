@@ -5,6 +5,17 @@ fn negate() {
     utils::assert_code("int main() { return -(-4); }", 4);
     utils::assert_code("int main() { return -(-0); }", 0);
     utils::assert_code("int main() { return -(1) + 1; }", 0);
+    utils::assert_compile_error("int a[1]; int main() { return -a; }");
+}
+
+#[test]
+fn bnot() {
+    utils::assert_code("int main() { return ~-1; }", 0);
+    utils::assert_code("int main() { return ~-2; }", 1);
+    utils::assert_code("int main() { return ~0 + 1; }", 0);
+    utils::assert_code("int main() { return ~1 + 2; }", 0);
+    utils::assert_compile_error("int main() { return ~1.2; }");
+    utils::assert_compile_error("int a[1]; int main() { return ~a; }");
 }
 
 #[test]
@@ -45,6 +56,9 @@ fn modulo() {
     utils::assert_code("int main() { return 7 % 3; }", 1);
     utils::assert_code("int main() { return -7 % 3 + 1; }", 0);
     utils::assert_compile_error("int main() { return 1.0 % 2; }");
+    // TODO: to fix this panic, we have to convert arrays to pointers implicitly
+    // TODO: `rval()` should be a function in `parse::expr`, not in `ir`
+    //utils::assert_compile_error("int a[1]; int main() { return a % 1; }");
 }
 
 #[test]
@@ -54,6 +68,7 @@ fn band() {
     utils::assert_code("int main() { return 0 & 10; }", 0);
     utils::assert_code("int main() { return -65 & 7; }", 7);
     utils::assert_compile_error("int main() { return 65 & 1.5; }");
+    utils::assert_compile_error("int a[1]; int main() { return a & 1; }");
 }
 
 #[test]
@@ -63,6 +78,7 @@ fn bor() {
     utils::assert_code("int main() { return 105 | 0; }", 105);
     utils::assert_code("int main() { return (-1 | 0) + 1; }", 0);
     utils::assert_compile_error("int main() { return 1 | 1.5; }");
+    utils::assert_compile_error("int a[1]; int main() { return a | 1; }");
 }
 
 #[test]
@@ -72,6 +88,7 @@ fn shift() {
     utils::assert_code("int main() { return 1 >> 1; }", 0);
     utils::assert_code("int main() { return 1 >> 10; }", 0);
     utils::assert_compile_error("int main() { return 1 >> 10.0; }");
+    utils::assert_compile_error("int a[1]; int main() { return a >> 1; }");
     // should overflow and set sign bit
     //utils::assert_code("int main() { return (1 << 31) < 0; }", 1);
 }
@@ -81,7 +98,8 @@ fn xor() {
     utils::assert_code("int main() { return 0 ^ 0; }", 0);
     utils::assert_code("int main() { return 1 ^ 0; }", 1);
     utils::assert_code("int main() { return 5 ^ 2; }", 7);
-    utils::assert_compile_error("int main() { return 5.2 ^ 1.2; }")
+    utils::assert_compile_error("int main() { return 5.2 ^ 1.2; }");
+    utils::assert_compile_error("int a[1]; int main() { return a ^ 1; }");
 }
 
 #[test]
@@ -94,6 +112,7 @@ fn cmp() {
     utils::assert_code("int main() { return 12 <= 12; }", 1);
     utils::assert_code("int main() { return 12.0 <= 12.5; }", 1);
     utils::assert_code("int main() { return 12.0 != 12.1; }", 1);
+    utils::assert_compile_error("int a[1]; int main() { return a == 1; }");
 }
 
 #[test]

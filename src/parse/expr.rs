@@ -367,42 +367,40 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Self::cast_expr,
             &[&Token::Star, &Token::Divide, &Token::Mod],
             |left, right, token| {
-                let (left, right) = Expr::binary_promote(*left, *right)?;
-                let type_bound = if token.data == Token::Mod {
-                    Type::is_integral
-                } else {
-                    Type::is_arithmetic
-                };
-                if type_bound(&left.ctype) {
-                    Ok(Expr {
-                        ctype: left.ctype.clone(),
-                        location: token.location,
-                        constexpr: left.constexpr && right.constexpr,
-                        lval: false,
-                        expr: match token.data {
-                            Token::Star => ExprType::Mul(Box::new(left), Box::new(right)),
-                            Token::Divide => ExprType::Div(Box::new(left), Box::new(right)),
-                            Token::Mod => ExprType::Mod(Box::new(left), Box::new(right)),
-                            _ => panic!(
-                                "left_associate_binary_op should only return tokens given to it"
-                            ),
-                        },
-                    })
-                } else {
-                    Err(Locatable {
-                        location: token.location,
+                if token.data == Token::Mod
+                    && !(left.ctype.is_integral() && right.ctype.is_integral())
+                {
+                    return Err(Locatable {
                         data: format!(
-                            "expected {} for both operands of '{}' , got {}",
-                            if token.data == Token::Mod {
-                                "integer"
-                            } else {
-                                "number"
-                            },
-                            token.data,
-                            left.ctype,
+                            "expected integers for both operators of %, got '{}' and '{}'",
+                            left.ctype, right.ctype
                         ),
-                    })
+                        location: token.location,
+                    });
+                } else if !(left.ctype.is_arithmetic() && right.ctype.is_arithmetic()) {
+                    return Err(Locatable {
+                        data: format!(
+                            "expected float or integer types for both operands of {}, got '{}' and '{}'",
+                            token.data, left.ctype, right.ctype
+                        ),
+                        location: token.location,
+                    });
                 }
+                let (left, right) = Expr::binary_promote(*left, *right)?;
+                Ok(Expr {
+                    ctype: left.ctype.clone(),
+                    location: token.location,
+                    constexpr: left.constexpr && right.constexpr,
+                    lval: false,
+                    expr: match token.data {
+                        Token::Star => ExprType::Mul(Box::new(left), Box::new(right)),
+                        Token::Divide => ExprType::Div(Box::new(left), Box::new(right)),
+                        Token::Mod => ExprType::Mod(Box::new(left), Box::new(right)),
+                        _ => {
+                            panic!("left_associate_binary_op should only return tokens given to it")
+                        }
+                    },
+                })
             },
         )
     }

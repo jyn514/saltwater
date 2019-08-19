@@ -40,6 +40,7 @@ fn mul() {
     utils::assert_code("int main() { return 1 * 0; }", 0);
     utils::assert_code("int main() { return 3 * 4 * 5; }", 60);
     utils::assert_code("int main() { return 2.3 * 2.1; }", 4);
+    utils::assert_compile_error("int a[1]; int main() { return a * 1; }");
 }
 
 #[test]
@@ -48,6 +49,7 @@ fn div() {
     utils::assert_code("int main() { return 0 / 1; }", 0);
     utils::assert_code("int main() { return 4 / 3; }", 1);
     utils::assert_code("int main() { return 3.1 / 3.0; }", 1);
+    utils::assert_compile_error("int a[1]; int main() { return a / 1; }");
 }
 
 #[test]
@@ -56,9 +58,7 @@ fn modulo() {
     utils::assert_code("int main() { return 7 % 3; }", 1);
     utils::assert_code("int main() { return -7 % 3 + 1; }", 0);
     utils::assert_compile_error("int main() { return 1.0 % 2; }");
-    // TODO: to fix this panic, we have to convert arrays to pointers implicitly
-    // TODO: `rval()` should be a function in `parse::expr`, not in `ir`
-    //utils::assert_compile_error("int a[1]; int main() { return a % 1; }");
+    utils::assert_compile_error("int a[1]; int main() { return a % 1; }");
 }
 
 #[test]

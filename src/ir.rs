@@ -226,7 +226,7 @@ impl LLVMCompiler {
             // unary expressions
             // NOTE: this may be an implicit cast (float f = 1.2) not an explicit cast (1 + (int)1.2)
             // NOTE: it may also be a widening conversion (1 + 1.2)
-            ExprType::Cast(orig, ctype) => self.cast(*orig, ctype, location, builder),
+            ExprType::Cast(orig) => self.cast(*orig, expr.ctype, location, builder),
             ExprType::Negate(expr) => self.negate(*expr, builder),
             ExprType::BitwiseNot(expr) => self.unary_op(*expr, builder, |ir_val, ir_type, _, builder| match ir_type {
                 ty if ty.is_int() => builder.ins().bnot(ir_val),

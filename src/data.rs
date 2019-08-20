@@ -186,7 +186,7 @@ pub enum ExprType {
     Member(Box<Expr>, Token),
     // pre/post inc/dec-rement
     Increment(Box<Expr>, bool, bool),
-    Cast(Box<Expr>, Type),
+    Cast(Box<Expr>),
     Sizeof(Type),
     Ref(Box<Expr>),
     Deref(Box<Expr>),

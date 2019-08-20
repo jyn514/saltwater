@@ -414,10 +414,33 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             match self.peek_next_token() {
                 Some(Token::Keyword(k)) if k.is_decl_specifier() => {
                     self.next_token();
-                    let ctype = self.type_name()?;
+                    let Locatable {
+                        location,
+                        data: (ctype, quals),
+                    } = self.type_name()?;
                     self.expect(Token::RightParen);
-                    let right = self.cast_expr()?;
-                    unimplemented!("casts are not implemented")
+                    let expr = self.cast_expr()?;
+                    if !ctype.is_scalar() {
+                        return Err(Locatable {
+                            data: format!("cannot cast to non-scalar type '{}'", ctype),
+                            location,
+                        });
+                    } else if expr.ctype.is_floating() && ctype.is_pointer()
+                        || expr.ctype.is_pointer() && ctype.is_floating()
+                    {
+                        return Err(Locatable {
+                            data: format!("cannot cast pointer to float or vice versa. hint: if you really want to do this, use '({})(int)' instead",
+                            ctype),
+                            location,
+                        });
+                    }
+                    Ok(Expr {
+                        lval: false,
+                        constexpr: expr.constexpr,
+                        expr: ExprType::Cast(Box::new(expr)),
+                        ctype,
+                        location,
+                    })
                 }
                 _ => self.unary_expr(),
             }
@@ -941,7 +964,7 @@ impl Expr {
             Ok(Expr {
                 location: self.location.clone(),
                 constexpr: self.constexpr,
-                expr: ExprType::Cast(Box::new(self), ctype.clone()),
+                expr: ExprType::Cast(Box::new(self)),
                 lval: false,
                 ctype: ctype.clone(),
             })
@@ -951,7 +974,16 @@ impl Expr {
         } else {
             Err(Locatable {
                 location: self.location,
-                data: format!("cannot convert '{}' to '{}'", self.ctype, ctype),
+                data: format!(
+                    "cannot implicitly convert '{}' to '{}'{}",
+                    self.ctype,
+                    ctype,
+                    if ctype.is_pointer() {
+                        format!(". help: use an explicit cast: ({})", ctype)
+                    } else {
+                        String::new()
+                    }
+                ),
             })
         }
     }
@@ -1212,6 +1244,12 @@ mod tests {
         parser.scope = scope;
         parser
     }
+    fn assert_type(input: &str, ctype: Type) {
+        assert!(match parse_expr(input) {
+            Ok(expr) => expr.ctype == ctype,
+            _ => false,
+        });
+    }
     #[test]
     fn test_primaries() {
         assert!(test_literal(141, Expr::int_literal));
@@ -1252,9 +1290,9 @@ mod tests {
     }
     #[test]
     fn test_mul() {
-        assert_eq!(parse_expr("1*1.0").unwrap().ctype, Type::Double);
-        assert_eq!(parse_expr("1*2.0 / 1.3").unwrap().ctype, Type::Double);
-        assert_eq!(parse_expr("3%2").unwrap().ctype, Type::Int(true));
+        assert_type("1*1.0", Type::Double);
+        assert_type("1*2.0 / 1.3", Type::Double);
+        assert_type("3%2", Type::Int(true));
     }
     #[test]
     fn test_funcall() {
@@ -1283,5 +1321,18 @@ mod tests {
     #[test]
     fn test_type_errors() {
         assert!(parse_expr("1 % 2.0").is_err());
+    }
+
+    #[test]
+    fn test_explicit_casts() {
+        assert_type("(int)4.2", Type::Int(true));
+        assert_type("(unsigned int)4.2", Type::Int(false));
+        assert_type("(float)4.2", Type::Float);
+        assert_type("(double)4.2", Type::Double);
+        assert!(parse_expr("(int*)4.2").is_err());
+        assert_type(
+            "(int*)(int)4.2",
+            Type::Pointer(Box::new(Type::Int(true)), Qualifiers::NONE),
+        );
     }
 }

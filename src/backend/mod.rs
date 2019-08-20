@@ -102,7 +102,8 @@ impl Type {
     pub fn as_ir_basic_type(&self) -> Result<IrType, String> {
         match self {
             // Integers
-            Bool | Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_) => {
+            Bool => Ok(types::B1),
+            Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_) => {
                 let int_size = SIZE_T::from(CHAR_BIT)
                     * self
                         .sizeof()

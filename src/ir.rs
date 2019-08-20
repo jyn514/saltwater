@@ -325,36 +325,83 @@ impl LLVMCompiler {
             // no-op
             return Ok(original);
         }
-        let cast = match (original.ir_type, cast_type) {
-            (types::F32, types::F64) => builder.ins().fpromote(cast_type, original.ir_val),
-            (types::F64, types::F32) => builder.ins().fdemote(cast_type, original.ir_val),
-            (b, i) if b.is_bool() && i.is_int() => builder.ins().bint(cast_type, original.ir_val),
-            (i, b) if i.is_int() && b.is_bool() => {
-                builder
-                    .ins()
-                    .icmp_imm(condcodes::IntCC::NotEqual, original.ir_val, 0)
-            }
-            (i, f) if i.is_int() && f.is_float() => {
-                if orig_signed {
-                    builder.ins().fcvt_from_sint(cast_type, original.ir_val)
-                } else {
-                    builder.ins().fcvt_from_uint(cast_type, original.ir_val)
-                }
-            }
-            (f, i) if f.is_float() && i.is_int() => {
-                if orig_signed {
-                    builder.ins().fcvt_to_sint(cast_type, original.ir_val)
-                } else {
-                    builder.ins().fcvt_to_uint(cast_type, original.ir_val)
-                }
-            }
-            _ => unimplemented!("cast from {} to {}", original.ir_type, cast_type),
-        };
+        let cast = Self::cast_ir(
+            original.ir_type,
+            cast_type,
+            original.ir_val,
+            orig_signed,
+            ctype.is_signed(),
+            builder,
+        );
         Ok(Value {
             ir_val: cast,
             ir_type: cast_type,
             ctype,
         })
+    }
+    fn cast_ir(
+        from: IrType,
+        to: IrType,
+        val: IrValue,
+        from_signed: bool,
+        to_signed: bool,
+        builder: &mut FunctionBuilder,
+    ) -> IrValue {
+        match (from, to) {
+            // narrowing and widening float conversions
+            (types::F32, types::F64) => builder.ins().fpromote(to, val),
+            (types::F64, types::F32) => builder.ins().fdemote(to, val),
+            // narrowing and widening integer conversions
+            (b, i) if b.is_bool() && i.is_int() => builder.ins().bint(to, val),
+            (i, b) if i.is_int() && b.is_bool() => {
+                builder.ins().icmp_imm(condcodes::IntCC::NotEqual, val, 0)
+            }
+            (big_int, small_int)
+                if big_int.is_int()
+                    && small_int.is_int()
+                    && big_int.lane_bits() > small_int.lane_bits() =>
+            {
+                builder.ins().ireduce(small_int, val)
+            }
+            (small_int, big_int)
+                if big_int.is_int()
+                    && small_int.is_int()
+                    && big_int.lane_bits() > small_int.lane_bits() =>
+            {
+                if to_signed {
+                    builder.ins().sextend(big_int, val)
+                } else {
+                    builder.ins().uextend(big_int, val)
+                }
+            }
+            // int/float conversions
+            (i, f) if i.is_int() && f.is_float() => {
+                if from_signed {
+                    builder.ins().fcvt_from_sint(to, val)
+                } else {
+                    builder.ins().fcvt_from_uint(to, val)
+                }
+            }
+            (f, i) if f.is_float() && i.is_int() => {
+                if from_signed {
+                    builder.ins().fcvt_to_sint(to, val)
+                } else {
+                    builder.ins().fcvt_to_uint(to, val)
+                }
+            }
+            // bool/float conversions
+            // cranelift doesn't seem to have a builtin way to do this
+            // instead, this converts from bool to signed int and then int to float
+            (b, f) if b.is_bool() && f.is_float() => {
+                let int_val = Self::cast_ir(b, types::I32, val, false, true, builder);
+                Self::cast_ir(types::I8, f, int_val, true, true, builder)
+            }
+            (f, b) if b.is_bool() && f.is_float() => {
+                let int_val = Self::cast_ir(f, types::I32, val, true, true, builder);
+                Self::cast_ir(types::I8, b, int_val, true, false, builder)
+            }
+            _ => unreachable!("cast from {} to {}", from, to),
+        }
     }
     fn negate(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         self.unary_op(expr, builder, |ir_val, ir_type, _, builder| match ir_type {

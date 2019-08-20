@@ -125,3 +125,12 @@ fn implicit_casts() {
     utils::assert_code("int main() { return 12.0 == 12; }", 1);
     utils::assert_code("int main() { return 12.0 <= 12; }", 1);
 }
+
+#[test]
+fn explicit_casts() {
+    utils::assert_succeeds("int main() { return (short)0; }");
+    utils::assert_succeeds("int main() { return (int)0.3; }");
+    utils::assert_succeeds("int main() { return (_Bool)0.0; }");
+    utils::assert_succeeds("int main() { return (float)0; }");
+    utils::assert_succeeds("int main() { return (_Bool)(int*)(int)0.0; }");
+}

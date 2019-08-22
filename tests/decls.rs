@@ -36,8 +36,9 @@ fn test_initializers() {
 }
 
 #[test]
-fn test_declare_local() {
-    utils::assert_succeeds(
+#[should_panic(expected = "expected statement")]
+fn declare_local_not_implemented() {
+    utils::not_implemented(
         "int main(void) {
     int i = 0;
     return i;
@@ -46,8 +47,9 @@ fn test_declare_local() {
 }
 
 #[test]
-fn test_declare_local_function() {
-    utils::assert_succeeds(
+#[should_panic(expected = "expected statement")]
+fn declare_local_function_not_implemented() {
+    utils::not_implemented(
         "
 int main() {
     int f();
@@ -57,12 +59,12 @@ int main() {
 }
 
 #[test]
-fn test_local_function_goes_out_of_scope() {
-    utils::assert_compile_error(
+#[should_panic(expected = "expected statement")]
+fn local_function_goes_out_of_scope_not_implemented() {
+    utils::not_implemented(
         "
 int main() {
     int f();
-    return f();
 }
 
 int g() {

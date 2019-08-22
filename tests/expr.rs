@@ -1,9 +1,5 @@
 mod utils;
-
-/// test a program so that if it becomes implemented I remember to add a test for it
-fn not_implemented(prog: &str) {
-    utils::compile(prog.into(), true, "/dev/null".as_ref()).unwrap();
-}
+use utils::not_implemented;
 
 #[test]
 #[should_panic(expected = "real GPR value defined by a ghost instruction")]

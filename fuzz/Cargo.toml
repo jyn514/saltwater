@@ -12,15 +12,17 @@ cargo-fuzz = true
 path = ".."
 [dependencies.libfuzzer-sys]
 git = "https://github.com/rust-fuzz/libfuzzer-sys.git"
+[dependencies.afl]
+version = "0.4"
 
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
 
 [[bin]]
-name = "fuzz_target_1"
-path = "fuzz_targets/fuzz_target_1.rs"
+name = "afl"
+path = "afl/garbage.rs"
 
 [[bin]]
-name = "garbage"
+name = "libfuzzer"
 path = "fuzz_targets/garbage.rs"

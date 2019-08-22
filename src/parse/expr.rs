@@ -299,7 +299,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location: token.location,
                     lval: false,
                     constexpr: left.constexpr && right.constexpr,
-                    expr: ExprType::Shift(left, right, token.data == Token::ShiftLeft),
+                    expr: ExprType::Shift(
+                        Box::new(left),
+                        Box::new(right),
+                        token.data == Token::ShiftLeft,
+                    ),
                 })
             },
         )
@@ -848,14 +852,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         expr_func: E,
     ) -> ExprResult
     where
-        E: Fn(Box<Expr>, Box<Expr>, Locatable<Token>) -> ExprResult,
+        E: Fn(Expr, Expr, Locatable<Token>) -> ExprResult,
         G: Fn(&mut Self) -> ExprResult,
     {
         self.left_associative_binary_op(next_grammar_func, tokens, |expr, next, token| {
             let non_scalar = if !expr.ctype.is_integral() {
-                Some(expr.ctype.clone())
+                Some(&expr.ctype)
             } else if !next.ctype.is_integral() {
-                Some(next.ctype.clone())
+                Some(&next.ctype)
             } else {
                 None
             };
@@ -868,6 +872,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location: token.location,
                 });
             }
+            let (expr, next) = Expr::binary_promote(*expr, *next)?;
             expr_func(expr, next, token)
         })
     }
@@ -1083,19 +1088,17 @@ impl Expr {
         }
     }
     // convenience method for constructing an Expr
-    fn default_expr<C>(
-        constructor: C,
-    ) -> impl Fn(Box<Expr>, Box<Expr>, Locatable<Token>) -> ExprResult
+    fn default_expr<C>(constructor: C) -> impl Fn(Expr, Expr, Locatable<Token>) -> ExprResult
     where
         C: Fn(Box<Expr>, Box<Expr>) -> ExprType,
     {
-        move |left: Box<Expr>, right: Box<Expr>, token: Locatable<Token>| {
+        move |left: Expr, right: Expr, token: Locatable<Token>| {
             Ok(Expr {
                 location: token.location,
                 ctype: left.ctype.clone(),
                 constexpr: left.constexpr && right.constexpr,
                 lval: false,
-                expr: constructor(left, right),
+                expr: constructor(Box::new(left), Box::new(right)),
             })
         }
     }

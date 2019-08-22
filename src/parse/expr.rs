@@ -499,7 +499,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let Locatable { location, data: op } = self.next_token().unwrap();
                 let expr = self.cast_expr()?;
                 match op {
-                    Token::Ampersand => unimplemented!("address of"),
+                    // TODO: semantic checking for expr
+                    Token::Ampersand => match expr.expr {
+                        // parse &*p as p
+                        ExprType::Deref(inner) => Ok(*inner),
+                        _ => Ok(Expr {
+                            constexpr: false,
+                            lval: false,
+                            location,
+                            ctype: Type::Pointer(Box::new(expr.ctype.clone()), Qualifiers::NONE),
+                            expr: ExprType::Ref(Box::new(expr)),
+                        }),
+                    },
                     Token::Star => match &expr.ctype {
                         Type::Pointer(t, _) => Ok(Expr {
                             constexpr: expr.constexpr,

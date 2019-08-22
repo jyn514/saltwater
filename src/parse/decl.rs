@@ -133,7 +133,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         data: format!("redefinition of '{}'", decl.data.symbol.id),
                     })
                 } else {
-                    self.scope.insert(decl.data.symbol.clone());
+                    self.scope
+                        .insert(decl.data.symbol.id.clone(), decl.data.symbol.clone());
                     Ok(())
                 }
             } else {
@@ -147,7 +148,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 })
             }
         } else {
-            self.scope.insert(decl.data.symbol.clone());
+            self.scope
+                .insert(decl.data.symbol.id.clone(), decl.data.symbol.clone());
             Ok(())
         }
     }

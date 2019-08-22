@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{self, Display, Formatter};
+use std::hash::Hash;
 
 use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
 
@@ -286,11 +287,8 @@ pub struct BitfieldType {
     pub ctype: Type,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Scope {
-    parent: Option<Box<Scope>>,
-    variables: HashMap<String, Symbol>,
-}
+#[derive(Debug)]
+pub struct Scope<K: Hash + Eq, V>(Vec<HashMap<K, V>>);
 
 // holds where a piece of code came from
 // should almost always be immutable
@@ -502,36 +500,40 @@ impl From<LengthError> for &'static str {
     }
 }
 
-impl Scope {
-    pub fn new() -> Scope {
-        Scope {
-            parent: None,
-            variables: HashMap::new(),
-        }
+impl<K: Hash + Eq, V> Scope<K, V> {
+    pub fn new() -> Self {
+        Self(vec![HashMap::new()])
     }
-    pub fn with_parent(parent: Scope) -> Scope {
-        Scope {
-            parent: Some(Box::new(parent)),
-            variables: HashMap::new(),
-        }
+    pub fn child(&mut self) {
+        self.0.push(HashMap::<K, V>::new())
     }
-    pub fn discard(self) -> Option<Scope> {
-        self.parent.map(|p| *p)
-    }
-    pub fn get(&self, name: &str) -> Option<&Symbol> {
-        let immediate = self.get_immediate(name);
-        if let Some(parent) = &self.parent {
-            immediate.or_else(|| parent.get(name))
-        } else {
-            immediate
+    pub fn discard(&mut self) {
+        if self.0.len() == 1 {
+            panic!("cannot discard the global scope");
         }
+        self.0.pop();
+    }
+    pub fn get(&self, name: &K) -> Option<&V> {
+        for map in self.0.iter() {
+            let current = map.get(name);
+            if current.is_some() {
+                return current;
+            }
+        }
+        None
     }
     // returns whether the _immediate_ scope contains `name`
-    pub fn insert(&mut self, symbol: Symbol) -> Option<Symbol> {
-        self.variables.insert(symbol.id.clone(), symbol)
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        self.0[0].insert(key, value)
     }
-    pub fn get_immediate(&self, name: &str) -> Option<&Symbol> {
-        self.variables.get(name)
+    pub fn get_immediate(&self, name: &K) -> Option<&V> {
+        self.0[0].get(name)
+    }
+}
+
+impl<K: Eq + Hash, V> Default for Scope<K, V> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

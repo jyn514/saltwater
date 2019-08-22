@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{Declaration, FunctionType, Keyword, Locatable, Location, Scope, Token};
+use crate::data::{Declaration, FunctionType, Keyword, Locatable, Location, Scope, Symbol, Token};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
@@ -14,7 +14,7 @@ type Lexeme = Locatable<Result<Token, String>>;
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// the variables that have been declared
-    scope: Scope,
+    scope: Scope<String, Symbol>,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,
@@ -58,7 +58,7 @@ where
 {
     pub fn new(iter: I, debug: bool) -> Self {
         Parser {
-            scope: Default::default(),
+            scope: Scope::new(),
             tokens: iter,
             pending: Default::default(),
             last_location: None,

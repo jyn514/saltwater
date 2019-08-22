@@ -2,13 +2,6 @@ mod utils;
 use utils::not_implemented;
 
 #[test]
-#[should_panic(expected = "real GPR value defined by a ghost instruction")]
-/// as far as I know, this is a bug in cranelift: https://github.com/CraneStation/cranelift/issues/922
-fn bnot_bool_not_implemented() {
-    not_implemented("int main() { return !(_Bool)0; }".into());
-}
-
-#[test]
 #[should_panic(expected = "not yet implemented: address loads")]
 fn variable_expressions_not_implemented() {
     not_implemented("int x; int main() { return x; }");
@@ -42,6 +35,7 @@ fn lnot() {
     utils::assert_code("int main() { return !0.0; }", 1);
     utils::assert_code("int main() { return !(short)0; }", 1);
     utils::assert_code("int main() { return !(unsigned)0; }", 1);
+    utils::assert_code("int main() { return !(_Bool)0; }", 1);
 }
 
 #[test]

@@ -54,7 +54,7 @@ cargo test
 cargo +nightly fuzz run garbage -- -timeout=1
 cd fuzz && {
   RUSTFLAGS="-Clink-arg=-fuse-ld=gold" cargo afl build --bin afl
-  AFL_SKIP_CPUFREQ=1 cargo afl fuzz -i afl/ -o artifacts/ target/debug/afl
+  AFL_SKIP_CPUFREQ=1 cargo afl fuzz -i afl/inputs -o afl/outputs target/debug/afl
 }
 ```
 

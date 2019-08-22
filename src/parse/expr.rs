@@ -1312,7 +1312,7 @@ mod tests {
         let mut parser = parser(input);
         let mut scope = Scope::new();
         for var in variables {
-            scope.insert((*var).clone());
+            scope.insert(var.id.clone(), (*var).clone());
         }
         parser.scope = scope;
         parser
@@ -1345,8 +1345,8 @@ mod tests {
             storage_class: Default::default(),
             init: false,
         };
-        let mut scope: Scope = Default::default();
-        scope.insert(x.clone());
+        let mut scope = Scope::new();
+        scope.insert(x.id.clone(), x.clone());
         let mut scope_parser = parser("x");
         scope_parser.scope = scope;
         let parsed = scope_parser.expr();

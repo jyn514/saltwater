@@ -7,7 +7,7 @@ type StmtResult = Result<Stmt, Locatable<String>>;
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     pub fn compound_statement(&mut self) -> Result<Option<Stmt>, Locatable<String>> {
-        if self.expect(Token::LeftBrace).is_none() {
+        if self.expect(Token::LeftBrace).is_err() {
             panic!("compound_statement should be called with '{' as the next token");
         }
         let mut stmts = vec![];
@@ -16,7 +16,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 stmts.push(x);
             }
         }
-        if self.expect(Token::RightBrace).is_none() {
+        if self.expect(Token::RightBrace).is_err() {
             panic!("peek should always be the same as next");
         }
         Ok(if stmts.is_empty() {
@@ -89,7 +89,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             _ => {
                 let expr = self.expr()?;
-                self.expect(Token::Semicolon);
+                self.expect(Token::Semicolon)?;
                 Ok(Some(Stmt::Expr(expr)))
             }
         }
@@ -126,10 +126,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///     IF '(' expr ')' statement
     ///   | IF '(' expr ')' statement ELSE statement
     fn if_statement(&mut self) -> StmtResult {
-        let start = self.expect(Token::Keyword(Keyword::If));
-        self.expect(Token::LeftParen);
+        let start = self
+            .expect(Token::Keyword(Keyword::If))
+            .expect("parser shouldn't call if_statement without an if");
+        self.expect(Token::LeftParen)?;
         let condition = self.expr()?;
-        self.expect(Token::RightParen);
+        self.expect(Token::RightParen)?;
         let body = self.statement()?;
         let otherwise = if self.match_next(&Token::Keyword(Keyword::Else)).is_some() {
             // NOTE: `if (1) ; else ;` is legal!
@@ -148,11 +150,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Ok(Stmt::Expr(condition))
             }
             (None, Some(body)) => Ok(Stmt::If(
-                condition.logical_not(
-                    start
-                        .expect("parser shouldn't call if_statement without an if")
-                        .location,
-                )?,
+                condition.logical_not(start.location)?,
                 Box::new(body),
                 None,
             )),
@@ -165,10 +163,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     /// switch_statement: SWITCH '(' expr ')' statement
     fn switch_statement(&mut self) -> StmtResult {
-        let start = self.expect(Token::Keyword(Keyword::Switch));
-        self.expect(Token::LeftParen);
+        let start = self.expect(Token::Keyword(Keyword::Switch))?;
+        self.expect(Token::LeftParen)?;
         let expr = self.expr()?;
-        self.expect(Token::RightParen);
+        self.expect(Token::RightParen)?;
         let body = self.statement()?;
         if let Some(stmt) = body {
             unimplemented!("switch body (esp. labels)");
@@ -184,24 +182,26 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     /// while_statement: WHILE '(' expr ')' statement
     fn while_statement(&mut self) -> StmtResult {
-        let start = self.expect(Token::Keyword(Keyword::While));
-        self.expect(Token::LeftParen);
+        let start = self.expect(Token::Keyword(Keyword::While))?;
+        self.expect(Token::LeftParen)?;
         let condition = self.expr()?.truthy()?;
-        self.expect(Token::RightParen);
+        self.expect(Token::RightParen)?;
         let body = self.statement()?;
         Ok(Stmt::While(condition, body.map(Box::new)))
     }
     /// do_while_statement: DO statement WHILE '(' expr ')' ';'
     fn do_while_statement(&mut self) -> StmtResult {
-        let start = self.expect(Token::Keyword(Keyword::Do)).unwrap_or_else(|| {
-            panic!("do_while_statement should only be called with `do` as next token")
-        });
+        let start = self
+            .expect(Token::Keyword(Keyword::Do))
+            .unwrap_or_else(|_| {
+                panic!("do_while_statement should only be called with `do` as next token")
+            });
         let body = self.statement()?;
-        self.expect(Token::Keyword(Keyword::While));
-        self.expect(Token::LeftParen);
+        self.expect(Token::Keyword(Keyword::While))?;
+        self.expect(Token::LeftParen)?;
         let condition = self.expr()?.truthy()?;
-        self.expect(Token::RightParen);
-        self.expect(Token::Semicolon);
+        self.expect(Token::RightParen)?;
+        self.expect(Token::Semicolon)?;
         if let Some(body) = body {
             Ok(Stmt::Do(Box::new(body), condition))
         } else {
@@ -219,7 +219,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///   | FOR '(' declaration expr_opt ';' expr_opt ') statement
     fn for_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::For));
-        self.expect(Token::LeftParen);
+        self.expect(Token::LeftParen)?;
         match self.peek_token() {
             Some(Token::Keyword(k)) if k.is_decl_specifier() => {
                 let decl = self.declaration();
@@ -242,16 +242,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// goto_statement: GOTO identifier ';'
     fn goto_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::Goto));
-        if let Some(Locatable {
-            data: Token::Id(id),
-            ..
-        }) = self.expect(Token::Id(String::new()))
-        {
-            self.expect(Token::Semicolon);
-            Ok(Stmt::Goto(id))
-        } else {
-            unimplemented!("handle error in GOTO");
-        }
+        let id = self.expect(Token::Id(String::new()))?;
+        let id = match id.data {
+            Token::Id(id) => id,
+            _ => unreachable!("expect should only return an Id if called with Token::Id"),
+        };
+        self.expect(Token::Semicolon)?;
+        Ok(Stmt::Goto(id))
     }
 }
 

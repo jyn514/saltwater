@@ -111,14 +111,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             return Ok(Some(decl));
         } else {
             self.pending.push_back(Ok(decl));
-            self.expect(Token::Comma);
+            self.expect(Token::Comma)?;
         }
         loop {
             let decl = self.init_declarator(sc, qualifiers.clone(), ctype.clone())?;
             self.declare(&decl)?;
             self.pending.push_back(Ok(decl));
             if self.match_next(&Token::Comma).is_none() {
-                self.expect(Token::Semicolon);
+                self.expect(Token::Semicolon)?;
                 break;
             }
         }
@@ -315,7 +315,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *
      */
     fn parameter_type_list(&mut self) -> Result<DeclaratorType, Locatable<String>> {
-        self.expect(Token::LeftParen);
+        self.expect(Token::LeftParen)
+            .expect("parameter_type_list should only be called with '(' as the next token");
         let mut params = vec![];
         let mut errs = VecDeque::new();
         if self.match_next(&Token::RightParen).is_some() {
@@ -333,7 +334,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     }));
                 }
                 // TODO: have a better error message for `int f(int, ..., int);`
-                self.expect(Token::RightParen);
+                self.expect(Token::RightParen)?;
                 return Ok(DeclaratorType::Function(FunctionDeclarator {
                     params,
                     varargs: true,
@@ -415,7 +416,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             }
             if self.match_next(&Token::Comma).is_none() {
-                self.expect(Token::RightParen);
+                self.expect(Token::RightParen)?;
                 // TODO: handle errors (what should the return type be?)
                 //let err = errs.pop_front();
                 self.pending.append(&mut errs);
@@ -448,7 +449,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             prefix = match data {
                 // array
                 Token::LeftBracket => {
-                    self.expect(Token::LeftBracket);
+                    self.expect(Token::LeftBracket).unwrap();
                     if self.match_next(&Token::RightBracket).is_some() {
                         Some(Declarator {
                             current: DeclaratorType::Array(ArrayType::Unbounded),
@@ -456,7 +457,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         })
                     } else {
                         let expr = self.constant_expr()?;
-                        self.expect(Token::RightBracket);
+                        self.expect(Token::RightBracket)?;
                         // TODO: allow any integer type
                         // also TODO: look up the rules for this in the C standard
                         match expr.const_int() {
@@ -558,9 +559,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     // but if so we'll catch it later
                     _ => {
                         // the one we already matched
-                        self.expect(Token::LeftParen);
+                        self.expect(Token::LeftParen)
+                            .expect("peek_next_token should be accurate");
                         let declarator = self.declarator(allow_abstract)?;
-                        self.expect(Token::RightParen);
+                        self.expect(Token::RightParen)?;
                         declarator
                     }
                 }
@@ -689,7 +691,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if self.match_next(&Token::RightBrace).is_some() {
                     break;
                 }
-                self.expect(Token::Comma);
+                self.expect(Token::Comma)?;
             }
             Ok(Initializer::InitializerList(elements))
         } else {

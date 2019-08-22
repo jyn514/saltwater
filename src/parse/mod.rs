@@ -197,12 +197,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             };
         }
     }
-    fn expect(&mut self, next: Token) -> Option<Locatable<Token>> {
+    fn expect(&mut self, next: Token) -> Result<Locatable<Token>, Locatable<String>> {
         // special case keywords - they must match exactly
         if let Token::Keyword(n) = next {
             if let Some(Token::Keyword(p)) = self.peek_token() {
                 if n == *p {
-                    return self.next_token();
+                    return Ok(self.next_token().unwrap());
                 }
             }
         }
@@ -212,18 +212,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     && mem::discriminant(data)
                         != mem::discriminant(&Token::Keyword(Keyword::Void)) =>
             {
-                self.next_token()
+                Ok(self.next_token().unwrap())
             }
             Some(data) => {
                 let message = data.to_string();
                 let location = self.next_location().clone();
                 // TODO: these errors don't seem to be reported?
-                self.pending.push_back(Err(Locatable {
+                let err = Err(Locatable {
                     location,
                     data: format!("expected '{}', got '{}'", next, message),
-                }));
+                });
                 self.panic();
-                None
+                err
             }
             None => {
                 let location = self
@@ -231,11 +231,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     .as_ref()
                     .expect("parser.expect cannot be called at start of program")
                     .clone();
-                self.pending.push_back(Err(Locatable {
+                Err(Locatable {
                     location,
                     data: format!("expected '{}', got <end-of-file>", next),
-                }));
-                None
+                })
             }
         }
     }

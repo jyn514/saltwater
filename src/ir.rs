@@ -257,7 +257,12 @@ impl LLVMCompiler {
                         builder.ins().fcmp(condcodes::FloatCC::Equal, ir_val, zero)
                     },
                     ty if ty.is_int() => builder.ins().icmp_imm(condcodes::IntCC::Equal, ir_val, 0),
-                    ty if ty.is_bool() => builder.ins().bnot(ir_val),
+                    ty if ty.is_bool() => {
+                        // TODO: change this if Cranelift ever implements boolean negation on x86
+                        // see https://github.com/CraneStation/cranelift/issues/922
+                        let int = Self::cast_ir(ir_type, types::I32, ir_val, false, true, builder);
+                        builder.ins().icmp_imm(condcodes::IntCC::Equal, int, 0)
+                    },
                     _ => unreachable!("all scalars should be float, int, or bool"),
                 };
                 Self::cast_ir(types::B1, ir_type, ir_bool, false, ctype.is_signed(), builder)

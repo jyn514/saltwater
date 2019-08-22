@@ -42,6 +42,14 @@ pub fn assert_compile_error(program: &str) {
     );
 }
 
+pub fn assert_output(program: &str, output: &str) {
+    let output: Vec<u8> = output.into();
+    assert!(match compile_and_run(program.into(), &[]) {
+        Err(_) => false,
+        Ok(actual) => actual.stdout == output,
+    })
+}
+
 pub fn assert_succeeds(program: &str) {
     assert!(
         match compile_and_run(program.to_string(), &[]) {

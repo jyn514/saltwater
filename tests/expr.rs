@@ -2,7 +2,7 @@ mod utils;
 use utils::not_implemented;
 
 #[test]
-#[should_panic(expected = "not yet implemented: address loads")]
+#[should_panic(expected = "not yet implemented: data declarations")]
 fn variable_expressions_not_implemented() {
     not_implemented("int x; int main() { return x; }");
 }

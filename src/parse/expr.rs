@@ -636,16 +636,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             })
                         }
                     };
-                    if args.len() != functype.params.len() {
+                    let mut expected = functype.params.len();
+                    if expected == 1 && functype.params[0].ctype == Type::Void {
+                        expected = 0;
+                    }
+                    if args.len() != expected {
                         return Err(Locatable {
                             data: format!(
                                 "too {} arguments to function call: expected {}, have {}",
-                                if args.len() > functype.params.len() {
-                                    "many"
-                                } else {
-                                    "few"
-                                },
-                                functype.params.len(),
+                                if args.len() > expected { "many" } else { "few" },
+                                expected,
                                 args.len(),
                             ),
                             location,

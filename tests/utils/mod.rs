@@ -64,3 +64,8 @@ pub fn assert_code(program: &str, code: i32) {
         code
     );
 }
+
+/// test a program so that if it becomes implemented I remember to add a test for it
+pub fn not_implemented(prog: &str) {
+    compile(prog.into(), true, "/dev/null".as_ref()).unwrap();
+}

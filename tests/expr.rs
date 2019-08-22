@@ -160,6 +160,7 @@ fn implicit_casts() {
     utils::assert_code("int main() { return 1 == 1.0; }", 1);
     utils::assert_code("int main() { return 12.0 == 12; }", 1);
     utils::assert_code("int main() { return 12.0 <= 12; }", 1);
+    utils::assert_code("int main() { return 1 + 2 > 1; }", 1);
 }
 
 #[test]

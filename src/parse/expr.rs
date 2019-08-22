@@ -500,7 +500,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let expr = self.cast_expr()?;
                 match op {
                     Token::Ampersand => unimplemented!("address of"),
-                    Token::Star => unimplemented!("dereference"),
+                    Token::Star => match &expr.ctype {
+                        Type::Pointer(t, _) => Ok(Expr {
+                            constexpr: expr.constexpr,
+                            lval: !t.is_function(),
+                            ctype: (**t).clone(),
+                            location,
+                            expr: ExprType::Deref(Box::new(expr)),
+                        }),
+                        _ => Err(Locatable {
+                            data: format!(
+                                "cannot dereference expression of non-pointer type '{}'",
+                                expr.ctype
+                            ),
+                            location,
+                        }),
+                    },
                     Token::Plus => {
                         if !expr.ctype.is_arithmetic() {
                             Err(Locatable {
@@ -552,7 +567,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         }
                     }
                     Token::LogicalNot => expr.logical_not(location),
-                    x => panic!("didn't expect '{}' to be an unary operand", x),
+                    x => unreachable!("didn't expect '{}' to be an unary operand", x),
                 }
             }
             _ => self.postfix_expr(),

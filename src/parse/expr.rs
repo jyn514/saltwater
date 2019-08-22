@@ -11,7 +11,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(None)
         } else {
             let expr = self.expr()?;
-            self.expect(token);
+            self.expect(token)?;
             Ok(Some(expr))
         }
     }
@@ -140,7 +140,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let condition = self.logical_or_expr()?;
         if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {
             let then = self.expr()?;
-            self.expect(Token::Colon);
+            self.expect(Token::Colon)?;
             let otherwise = self.conditional_expr()?;
             if then.ctype == otherwise.ctype {
                 Ok(Expr {
@@ -418,7 +418,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         location,
                         data: (ctype, quals),
                     } = self.type_name()?;
-                    self.expect(Token::RightParen);
+                    self.expect(Token::RightParen)?;
                     let expr = self.cast_expr()?;
                     if !ctype.is_scalar() {
                         return Err(Locatable {
@@ -611,7 +611,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // function call
                 Token::LeftParen => {
                     let args = self.argument_expr_list_opt()?;
-                    self.expect(Token::RightParen);
+                    self.expect(Token::RightParen)?;
                     // if fp is a function pointer, fp() desugars to (*fp)()
                     let expr = match expr.ctype {
                         Type::Pointer(ref pointee, _) if pointee.is_function() => {
@@ -738,7 +738,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Float(literal) => Ok(Expr::float_literal(literal, location)),
                 LeftParen => {
                     let expr = self.expr();
-                    self.expect(RightParen);
+                    self.expect(RightParen)?;
                     expr
                 }
                 other => {

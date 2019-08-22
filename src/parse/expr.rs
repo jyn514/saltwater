@@ -501,7 +501,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 match op {
                     Token::Ampersand => unimplemented!("address of"),
                     Token::Star => unimplemented!("dereference"),
-                    Token::Plus => unimplemented!("unary plus, does nothing but make it an rval"),
+                    Token::Plus => {
+                        if !expr.ctype.is_arithmetic() {
+                            Err(Locatable {
+                                data: format!("cannot use unary plus on expression of non-arithmetic type '{}'",
+                                expr.ctype),
+                                location,
+                            })
+                        } else {
+                            let expr = expr.integer_promote()?;
+                            Ok(Expr {
+                                lval: false,
+                                location,
+                                ..expr
+                            })
+                        }
+                    }
                     Token::Minus => {
                         if !expr.ctype.is_arithmetic() {
                             Err(Locatable {

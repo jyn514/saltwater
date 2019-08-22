@@ -178,6 +178,9 @@ impl LLVMCompiler {
         }
         match stmt {
             Stmt::Compound(stmts) => self.compile_all(stmts, builder)?,
+            Stmt::Expr(expr) => {
+                self.compile_expr(expr, builder)?;
+            }
             Stmt::Return(expr) => {
                 let mut ret = vec![];
                 if let Some(e) = expr {

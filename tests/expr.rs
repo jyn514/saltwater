@@ -1,5 +1,29 @@
 mod utils;
 
+/// test a program so that if it becomes implemented I remember to add a test for it
+fn not_implemented(prog: &str) {
+    utils::compile(prog.into(), true, "/dev/null".as_ref()).unwrap();
+}
+
+#[test]
+#[should_panic(expected = "real GPR value defined by a ghost instruction")]
+/// as far as I know, this is a bug in cranelift: https://github.com/CraneStation/cranelift/issues/922
+fn bnot_bool_not_implemented() {
+    not_implemented("int main() { return !(_Bool)0; }".into());
+}
+
+#[test]
+#[should_panic(expected = "not yet implemented: address loads")]
+fn variable_expressions_not_implemented() {
+    not_implemented("int x; int main() { return x; }");
+}
+
+#[test]
+#[should_panic(expected = "expected statement")]
+fn local_declarations_not_implemented() {
+    not_implemented("int main() { int x; }");
+}
+
 #[test]
 fn unary_plus() {
     utils::assert_code("int main() { return +1; }", 1);
@@ -12,6 +36,16 @@ fn negate() {
     utils::assert_code("int main() { return -(-0); }", 0);
     utils::assert_code("int main() { return -(1) + 1; }", 0);
     utils::assert_compile_error("int a[1]; int main() { return -a; }");
+}
+
+#[test]
+fn lnot() {
+    utils::assert_code("int main() { return !1; }", 0);
+    utils::assert_code("int main() { return !1.0; }", 0);
+    utils::assert_code("int main() { return !0; }", 1);
+    utils::assert_code("int main() { return !0.0; }", 1);
+    utils::assert_code("int main() { return !(short)0; }", 1);
+    utils::assert_code("int main() { return !(unsigned)0; }", 1);
 }
 
 #[test]

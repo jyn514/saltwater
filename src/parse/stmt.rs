@@ -147,7 +147,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 );
                 Ok(Stmt::Expr(condition))
             }
-            (None, Some(body)) => Ok(Stmt::If(condition.logical_not()?, Box::new(body), None)),
+            (None, Some(body)) => Ok(Stmt::If(
+                condition.logical_not(
+                    start
+                        .expect("parser shouldn't call if_statement without an if")
+                        .location,
+                )?,
+                Box::new(body),
+                None,
+            )),
             (Some(body), maybe_else) => Ok(Stmt::If(
                 condition,
                 Box::new(body),

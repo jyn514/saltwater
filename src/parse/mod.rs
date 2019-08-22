@@ -103,7 +103,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
             }
         });
         if self.debug {
-            println!("declaration: {:?}", next);
+            println!("declaration: {:#?}", next);
         }
         next
     }

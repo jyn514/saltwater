@@ -301,6 +301,12 @@ impl LLVMCompiler {
             ExprType::Xor(left, right) => scalar_bin_op!(self, *left, *right, builder,
                                                          (ty, _) if ty.is_int(), bxor),
             ExprType::Compare(left, right, token) => self.compare(*left, *right, &token, builder),
+
+            // misfits
+            ExprType::Comma(left, right) => {
+                self.compile_expr(*left, builder)?;
+                self.compile_expr(*right, builder)
+            }
             _ => {
                 unimplemented!("unary expressions, assignments, ternary, comma, logical expressions, sizeof, (casts), struct operations")
             }

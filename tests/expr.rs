@@ -146,6 +146,12 @@ fn cmp() {
 }
 
 #[test]
+fn comma() {
+    utils::assert_code("int main() { return 1, 2; }", 2);
+    utils::assert_code("int main() { return 1 + 1, 2.4; }", 2);
+}
+
+#[test]
 fn implicit_casts() {
     utils::assert_code("int main() { return 1 + 1.0; }", 2);
     utils::assert_succeeds("int main() { return 1 - 1.0; }");

@@ -25,6 +25,7 @@ type IrResult = Result<Value, Locatable<String>>;
 struct LLVMCompiler {
     // TODO: allow compiling multiple modules with the same compiler struct?
     module: Module,
+    ebb_has_return: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -109,6 +110,7 @@ impl LLVMCompiler {
 
         LLVMCompiler {
             module: Module::new(builder),
+            ebb_has_return: false,
         }
     }
     fn compile_func(
@@ -167,6 +169,13 @@ impl LLVMCompiler {
         stmt: Stmt,
         builder: &mut FunctionBuilder,
     ) -> Result<(), Locatable<String>> {
+        if self.ebb_has_return {
+            return Err(Locatable {
+                data: "unreachable statement".into(),
+                // TODO: this location is not even trying
+                location: Default::default(),
+            });
+        }
         match stmt {
             Stmt::Compound(stmts) => self.compile_all(stmts, builder)?,
             Stmt::Return(expr) => {
@@ -175,6 +184,7 @@ impl LLVMCompiler {
                     let val = self.compile_expr(e, builder)?;
                     ret.push(val.ir_val);
                 }
+                self.ebb_has_return = true;
                 builder.ins().return_(&ret);
             }
             Stmt::If(condition, body, otherwise) => {

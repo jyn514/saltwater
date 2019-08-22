@@ -605,6 +605,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // a[i] desugars to *(a + i)
                 Token::LeftBracket => {
                     let index = self.expr()?;
+                    self.expect(Token::RightBracket)?;
                     let sum = Expr::pointer_arithmetic_op(expr, index, true)?;
                     Expr::deref_op(sum)
                 }
@@ -660,11 +661,33 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     })
                 }
                 Token::Dot => {
-                    let member = self.expect(Token::Id(Default::default()));
-                    unimplemented!("structs are very much not implemented");
+                    let Locatable { location, data } =
+                        self.expect(Token::Id(Default::default()))?;
+                    let id = match data {
+                        Token::Id(id) => id,
+                        _ => unreachable!("bug in Parser::expect"),
+                    };
+                    match &expr.ctype {
+                        Type::Struct(members) | Type::Union(members) => {
+                            if members.iter().any(|member| member.id == id) {
+                                unimplemented!(
+                                    "struct and union members are very much not implemented"
+                                )
+                            } else {
+                                Err(Locatable {
+                                    data: format!("no member named '{}' in '{}'", id, expr.ctype),
+                                    location,
+                                })
+                            }
+                        }
+                        _ => Err(Locatable {
+                            data: format!("expected struct or union, got type '{}'", expr.ctype),
+                            location,
+                        }),
+                    }
                 }
                 Token::StructDeref => {
-                    let member = self.expect(Token::Id(Default::default()));
+                    let member = self.expect(Token::Id(Default::default()))?;
                     unimplemented!("structs are very much not implemented");
                 }
                 Token::PlusPlus => {

@@ -389,16 +389,27 @@ impl<'a> Lexer<'a> {
             return Ok(0);
         }
         self.next_char();
-        let next = self.peek();
-        if !(next.is_some() && (next.unwrap().is_ascii_digit() || next == Some('-'))) {
-            return Err(String::from("exponent for floating literal has no digits"));
-        }
-        let next = self.next_char().unwrap();
+        let next = match self.peek() {
+            Some(c) if c.is_ascii_digit() => {
+                assert_eq!(self.next_char(), Some(c));
+                c
+            }
+            Some('-') => {
+                assert_eq!(self.next_char(), Some('-'));
+                match self.peek() {
+                    Some(c) if c.is_ascii_digit() => {}
+                    Some(other) => return Err(format!("expected digit after '-', got {}", other)),
+                    None => return Err("expected digit after '-', got <end-of-file>".into()),
+                }
+                '-'
+            }
+            _ => return Err(String::from("exponent for floating literal has no digits")),
+        };
         match self.parse_num(next, false)? {
             Token::Int(i) => i32::try_from(i).map_err(|_| {
                 "only 32-bit exponents are allowed, 64-bit exponents will overflow".to_string()
             }),
-            _ => panic!(
+            _ => unreachable!(
                 "parse_num should never return something besides Token::Int \
                  when called with allow_float: false"
             ),

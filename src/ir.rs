@@ -7,25 +7,30 @@ use cranelift::codegen::{
     settings::{self, Configurable},
 };
 use cranelift::prelude::{
-    types, FunctionBuilder, FunctionBuilderContext, Type as IrType, Value as IrValue,
+    types, FunctionBuilder, FunctionBuilderContext, Signature, Type as IrType, Value as IrValue,
 };
 use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
-use cranelift_module::{self, DataContext, Linkage, Module as CraneliftModule};
+use cranelift_module::{self, DataContext, FuncId, Linkage, Module as CraneliftModule};
 
 use crate::backend::TARGET;
 use crate::data::{
     ArrayType, Declaration, Expr, ExprType, FunctionType, Initializer, Locatable, Location,
-    Qualifiers, Stmt, StorageClass, Symbol, Token, Type,
+    Qualifiers, Scope, Stmt, StorageClass, Symbol, Token, Type,
 };
 use crate::utils::warn;
 
 type Module = CraneliftModule<FaerieBackend>;
 type IrResult = Result<Value, Locatable<String>>;
 
+enum Id {
+    Function(FuncId),
+    Data(Value),
+}
+
 struct LLVMCompiler {
-    // TODO: allow compiling multiple modules with the same compiler struct?
     module: Module,
     ebb_has_return: bool,
+    scope: Scope<String, Id>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -43,7 +48,22 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Lo
     let mut compiler = LLVMCompiler::new(name);
     for decl in program {
         match (decl.data.symbol.ctype.clone(), decl.data.init) {
-            (_, None) => {} // only compile definitions
+            (Type::Function(func_type), None) => {
+                let location = decl.location;
+                compiler.declare_func(
+                    decl.data.symbol.id,
+                    &func_type.signature(&location)?,
+                    decl.data.symbol.storage_class,
+                    &location,
+                    // TODO: this doesn't allow declaring a function and then defining it
+                    // TODO: the reason this is here is because if you declare a function without defining it
+                    // e.g. `int puts(char *)`, Cranelift will throw an error
+                    // TODO: to work around this, you can use `static` when declaring a function instead,
+                    // or just define a function up front
+                    true,
+                )?;
+            }
+            (ty, None) => unimplemented!("data declarations without initializers"),
             (Type::Void, _) => panic!("parser let an incomplete type through"),
             (Type::Function(func_type), Some(Initializer::FunctionBody(stmts))) => compiler
                 .compile_func(
@@ -111,7 +131,30 @@ impl LLVMCompiler {
         LLVMCompiler {
             module: Module::new(builder),
             ebb_has_return: false,
+            scope: Scope::new(),
         }
+    }
+    fn declare_func(
+        &mut self,
+        id: String,
+        signature: &Signature,
+        sc: StorageClass,
+        location: &Location,
+        cextern: bool,
+    ) -> Result<FuncId, Locatable<String>> {
+        let mut linkage = sc.try_into().map_err(|err| Locatable {
+            data: err,
+            location: location.clone(),
+        })?;
+        if linkage == Linkage::Export && cextern {
+            linkage = Linkage::Import;
+        }
+        let func_id = self
+            .module
+            .declare_function(&id, linkage, &signature)
+            .expect("should not have an error declaring a function");
+        self.scope.insert(id, Id::Function(func_id));
+        Ok(func_id)
     }
     fn compile_func(
         &mut self,
@@ -123,14 +166,7 @@ impl LLVMCompiler {
         location: Location,
     ) -> Result<(), Locatable<String>> {
         let signature = func_type.signature(&location)?;
-        let linkage = sc.try_into().map_err(|err| Locatable {
-            data: err,
-            location,
-        })?;
-        let func_id = self
-            .module
-            .declare_function(&id, linkage, &signature)
-            .expect("should not have an error declaring a function");
+        let func_id = self.declare_func(id, &signature, sc, &location, false)?;
         // external name is meant to be a lookup in a symbol table,
         // but we just give it garbage values
         let mut func = Function::with_name_signature(ExternalName::user(0, 0), signature);
@@ -287,12 +323,16 @@ impl LLVMCompiler {
             ExprType::Compare(left, right, token) => self.compare(*left, *right, &token, builder),
 
             // misfits
+            ExprType::FuncCall(func, args) => match func.expr {
+                ExprType::Id(var) => self.call_direct(var.id, func.ctype, args, location, builder),
+                _ => unimplemented!("indirect function calls"),
+            },
             ExprType::Comma(left, right) => {
                 self.compile_expr(*left, builder)?;
                 self.compile_expr(*right, builder)
             }
-            _ => {
-                unimplemented!("unary expressions, assignments, ternary, comma, logical expressions, sizeof, (casts), struct operations")
+            x => {
+                unimplemented!("{:?}", x);
             }
         }
     }
@@ -303,19 +343,17 @@ impl LLVMCompiler {
         token: Token,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        match token {
-            Token::Int(i) => Ok(Value {
-                ir_val: builder.ins().iconst(ir_type, i),
-                ir_type,
-                ctype,
-            }),
-            Token::Float(f) => Ok(Value {
-                ir_val: builder.ins().f64const(f),
-                ir_type: types::F64,
-                ctype,
-            }),
+        let ir_val = match token {
+            Token::Int(i) => builder.ins().iconst(ir_type, i),
+            Token::Float(f) => builder.ins().f64const(f),
+            Token::Char(c) => builder.ins().iconst(ir_type, i64::from(c)),
             _ => unimplemented!("aggregate literals"),
-        }
+        };
+        Ok(Value {
+            ir_val,
+            ir_type,
+            ctype,
+        })
     }
     fn unary_op<F>(&self, expr: Expr, builder: &mut FunctionBuilder, func: F) -> IrResult
     where
@@ -494,6 +532,39 @@ impl LLVMCompiler {
             ir_val,
             ir_type: types::B1,
             ctype: left.ctype,
+        })
+    }
+    fn call_direct(
+        &self,
+        func_name: String,
+        ctype: Type,
+        args: Vec<Expr>,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> IrResult {
+        // TODO: should type checking go here or in parsing?
+        let ret_type = match ctype {
+            Type::Function(FunctionType { return_type, .. }) => *return_type,
+            _ => unreachable!("parser should only allow calling functions"),
+        };
+        let compiled_args: Vec<IrValue> = args
+            .into_iter()
+            .map(|arg| self.compile_expr(arg, builder).map(|val| val.ir_val))
+            .collect::<Result<_, Locatable<String>>>()?;
+        // TODO: need access to current scope for this to work
+        let func_id: FuncId = match self.scope.get(&func_name) {
+            Some(Id::Function(func_id)) => *func_id,
+            _ => panic!("parser should catch illegal function calls"),
+        };
+        let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+        let call = builder.ins().call(func_ref, compiled_args.as_slice());
+        let ir_val = builder.inst_results(call)[0];
+        Ok(Value {
+            ir_val,
+            ir_type: ret_type
+                .as_ir_type()
+                .expect("parser should only allow legal function types to be called"),
+            ctype: ret_type,
         })
     }
     fn rval(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {

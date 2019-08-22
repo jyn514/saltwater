@@ -27,6 +27,7 @@ struct LLVMCompiler {
     module: Module,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct Value {
     ir_val: IrValue,
     ir_type: IrType,
@@ -232,6 +233,22 @@ impl LLVMCompiler {
                 ty if ty.is_int() => builder.ins().bnot(ir_val),
                 _ => unreachable!("parser should catch illegal types")
             }),
+            ExprType::LogicalNot(expr) => self.unary_op(*expr, builder, |ir_val, ir_type, ctype, builder| {
+                let ir_bool = match ir_type {
+                    types::F32 => {
+                        let zero = builder.ins().f32const(0.0);
+                        builder.ins().fcmp(condcodes::FloatCC::Equal, ir_val, zero)
+                    },
+                    types::F64 => {
+                        let zero = builder.ins().f64const(0.0);
+                        builder.ins().fcmp(condcodes::FloatCC::Equal, ir_val, zero)
+                    },
+                    ty if ty.is_int() => builder.ins().icmp_imm(condcodes::IntCC::Equal, ir_val, 0),
+                    ty if ty.is_bool() => builder.ins().bnot(ir_val),
+                    _ => unreachable!("all scalars should be float, int, or bool"),
+                };
+                Self::cast_ir(types::B1, ir_type, ir_bool, false, ctype.is_signed(), builder)
+            }),
 
             // binary expressions
             ExprType::Add(left, right) => scalar_bin_op!(self, *left, *right, builder,
@@ -319,12 +336,6 @@ impl LLVMCompiler {
             data: err,
             location,
         })?;
-        // NOTE: we compare the IR types, not the C types, because multiple C types
-        // NOTE: may have the same representation (e.g. both `int` and `long` are i64)
-        if cast_type == original.ir_type {
-            // no-op
-            return Ok(original);
-        }
         let cast = Self::cast_ir(
             original.ir_type,
             cast_type,
@@ -347,6 +358,12 @@ impl LLVMCompiler {
         to_signed: bool,
         builder: &mut FunctionBuilder,
     ) -> IrValue {
+        // NOTE: we compare the IR types, not the C types, because multiple C types
+        // NOTE: may have the same representation (e.g. both `int` and `long` are i64)
+        if from == to {
+            // no-op
+            return val;
+        }
         match (from, to) {
             // narrowing and widening float conversions
             (types::F32, types::F64) => builder.ins().fpromote(to, val),

@@ -551,7 +551,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             })
                         }
                     }
-                    Token::LogicalNot => unimplemented!("logical not"),
+                    Token::LogicalNot => expr.logical_not(location),
                     x => panic!("didn't expect '{}' to be an unary operand", x),
                 }
             }
@@ -945,8 +945,14 @@ impl Expr {
             })
         }
     }
-    pub fn logical_not(self) -> Result<Expr, Locatable<String>> {
-        unimplemented!("logical not")
+    pub fn logical_not(self, location: Location) -> Result<Expr, Locatable<String>> {
+        Ok(Expr {
+            location,
+            ctype: Type::Bool,
+            constexpr: self.constexpr,
+            lval: false,
+            expr: ExprType::LogicalNot(Box::new(self)),
+        })
     }
     /// p + 1 where p is a pointer
     fn pointer_arithmetic_op(left: Expr, right: Expr, addition: bool) -> ExprResult {

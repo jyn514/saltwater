@@ -707,6 +707,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         id: Locatable<String>,
         ftype: FunctionType,
     ) -> Result<Vec<Stmt>, Locatable<String>> {
+        if let Some(bad_index) = ftype
+            .params
+            .iter()
+            .position(|param| param.id == "" && param.ctype != Type::Void)
+        {
+            return Err(Locatable {
+                data: format!(
+                    "missing parameter name in function definition (parameter {} of type '{}')",
+                    bad_index, ftype.params[bad_index].ctype
+                ),
+                location: id.location,
+            });
+        }
         // if it's a function, set up state so we know the return type
         // TODO: rework all of this so semantic analysis is done _after_ parsing
         // TODO: that will remove a lot of clones and also make the logic much simpler

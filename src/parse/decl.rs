@@ -82,6 +82,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let (id, first_type) =
             declarator.parse_type(ctype.clone(), self.last_location.as_ref().unwrap())?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
+        if sc == StorageClass::Typedef {
+            unimplemented!("typedefs");
+            return Ok(None);
+        }
 
         // if it's not a function, we still need to handle it
         let init = match (&first_type, self.peek_token()) {
@@ -936,7 +940,8 @@ impl Keyword {
         use Keyword::*;
         match self {
             Unsigned | Signed | Void | Bool | Char | Short | Int | Long | Float | Double
-            | Extern | Static | Auto | Register | Const | Volatile => true,
+            | Extern | Static | Auto | Register | Const | Volatile | Struct | Union | Enum
+            | Typedef => true,
             _ => false,
         }
     }

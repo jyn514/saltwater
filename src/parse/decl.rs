@@ -124,7 +124,44 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         self.pending.pop_front().transpose()
     }
+    // check if this is a valid signature for 'main'
+    fn is_main_func_signature(ftype: &FunctionType) -> bool {
+        // main must return 'int' and must not be variadic
+        if *ftype.return_type != Type::Int(true) || ftype.varargs {
+            return false;
+        }
+        // allow 'main()''
+        if ftype.params.is_empty() {
+            return true;
+        }
+        let types: Vec<&Type> = ftype.params.iter().map(|param| &param.ctype).collect();
+        // allow 'main(void)'
+        if types == vec![&Type::Void] {
+            return true;
+        }
+        // TODO: allow 'int main(int argc, char *argv[], char *environ[])'
+        if types.len() != 2 || *types[0] != Type::Int(true) {
+            return false;
+        }
+        match types[1] {
+            Type::Pointer(t, _) | Type::Array(t, _) => match &**t {
+                Type::Pointer(inner, _) => inner.is_char(),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
     fn declare(&mut self, decl: &Locatable<Declaration>) -> Result<(), Locatable<String>> {
+        if decl.data.symbol.id == "main" {
+            if let Type::Function(ftype) = &decl.data.symbol.ctype {
+                if !Self::is_main_func_signature(ftype) {
+                    return Err(Locatable {
+                        data: "illegal signature for main function (expected 'int main(void)' or 'int main(char **)'".into(),
+                        location: decl.location.clone(),
+                    });
+                }
+            }
+        }
         if let Some(existing) = self.scope.get_immediate(&decl.data.symbol.id) {
             if existing == &decl.data.symbol {
                 if decl.data.init.is_some() && existing.init {
@@ -677,9 +714,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// Rewritten as
     /// initializer: assignment_expr
     ///     | '{' initializer (',' initializer)* '}'
-    ///
-    /// We also catch function bodies here, which normally aren't allowed in initializers; we
-    /// have some custom logic in init_declarator to deal with it
     fn initializer(&mut self, ctype: &Type) -> Result<Initializer, Locatable<String>> {
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
@@ -758,6 +792,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 "stmt should have already caught bad return types"
             );
             // allow `int main() {}`
+            // TODO: if compiling in a freestanding environment, don't do this
             if func_data.id == "main" {
                 // make body explicitly mutable
                 let mut body = body;

@@ -387,6 +387,13 @@ impl Type {
         }
     }
     #[inline]
+    pub fn is_char(&self) -> bool {
+        match self {
+            Type::Char(true) => true,
+            _ => false,
+        }
+    }
+    #[inline]
     // returns whether `self` is a signed integer type
     pub fn is_signed(&self) -> bool {
         use Type::*;

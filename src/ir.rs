@@ -178,6 +178,7 @@ impl LLVMCompiler {
         let func_start = builder.create_ebb();
         builder.append_ebb_params_for_function_params(func_start);
         builder.switch_to_block(func_start);
+        self.ebb_has_return = false;
 
         self.compile_all(stmts, &mut builder)?;
 

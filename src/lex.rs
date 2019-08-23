@@ -266,22 +266,10 @@ impl<'a> Lexer<'a> {
         // for example, if we stopped halfway through 10000000000000000000 because of
         // overflow, we'd get a bogus Token::Int(0).
         let mut err = false;
-        // the radix check is funky, it's easier to just make the first character part of
-        // the number proper (instead of '-')
-        let (start, negative) = if start == '-' {
-            (
-                self.next_char().expect(
-                    "main loop should ensure '-' is followed by digit if passed to parse_num",
-                ),
-                true,
-            )
-        } else {
-            (start, false)
-        };
 
         if start == '.' {
             assert!(allow_float);
-            return self.parse_float(0, 10, negative);
+            return self.parse_float(0, 10);
         }
         // start - '0' breaks for hex digits
         assert!(
@@ -291,7 +279,7 @@ impl<'a> Lexer<'a> {
         let mut current = start as i64 - '0' as i64;
 
         // check for radix other than 10 - but if we see '.', use 10
-        let radix = if start == '0' {
+        let radix = if current == 0 {
             match self.peek() {
                 Some('b') => {
                     self.next_char();
@@ -314,7 +302,7 @@ impl<'a> Lexer<'a> {
         while let Some(c) = self.next_char() {
             if c == '.' {
                 if allow_float {
-                    return self.parse_float(current, radix, negative);
+                    return self.parse_float(current, radix);
                 } else {
                     return Err(String::from("exponents cannot be floating point numbers"));
                 }
@@ -336,11 +324,6 @@ impl<'a> Lexer<'a> {
         if err {
             return Err(String::from("overflow while parsing integer literal"));
         }
-        // doing this anywhere else is just painful. that's also the reason we pass
-        // `negative` to `parse_float`
-        if negative {
-            current = -current;
-        }
         if allow_float {
             let exp = self.parse_exponent()?;
             if exp.is_negative() {
@@ -361,7 +344,7 @@ impl<'a> Lexer<'a> {
         }
     }
     // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, start: i64, radix: u32, negative: bool) -> Result<Token, String> {
+    fn parse_float(&mut self, start: i64, radix: u32) -> Result<Token, String> {
         let radix_f = f64::from(radix);
         let (mut fraction, mut current_base): (f64, f64) = (0.0, 1.0 / radix_f);
         // parse fraction: second {digits} in regex
@@ -380,7 +363,7 @@ impl<'a> Lexer<'a> {
                 "overflow error while parsing floating literal",
             ))
         } else {
-            Ok(Token::Float(if negative { -result } else { result }))
+            Ok(Token::Float(result))
         }
     }
     // should only be called at the end of a number. mostly error handling
@@ -389,23 +372,30 @@ impl<'a> Lexer<'a> {
             return Ok(0);
         }
         self.next_char();
-        let next = match self.peek() {
+        let exp = match self.peek() {
             Some(c) if c.is_ascii_digit() => {
                 assert_eq!(self.next_char(), Some(c));
-                c
+                self.parse_num(c, false)?
             }
             Some('-') => {
                 assert_eq!(self.next_char(), Some('-'));
                 match self.peek() {
-                    Some(c) if c.is_ascii_digit() => {}
+                    Some(c) if c.is_ascii_digit() => {
+                        self.next_char();
+                        match self.parse_num(c, false) {
+                            Err(err) => return Err(err),
+                            Ok(Token::Int(i)) => Token::Int(-i),
+                            // INVARIANT: this needs to be caught later because it's a bug
+                            Ok(other) => other,
+                        }
+                    }
                     Some(other) => return Err(format!("expected digit after '-', got {}", other)),
                     None => return Err("expected digit after '-', got <end-of-file>".into()),
                 }
-                '-'
             }
             _ => return Err(String::from("exponent for floating literal has no digits")),
         };
-        match self.parse_num(next, false)? {
+        match exp {
             Token::Int(i) => i32::try_from(i).map_err(|_| {
                 "only 32-bit exponents are allowed, 64-bit exponents will overflow".to_string()
             }),
@@ -618,9 +608,6 @@ impl<'a> Iterator for Lexer<'a> {
                         self.next_char();
                         Ok(Token::StructDeref)
                     }
-                    // we have to parse '-' as part of number so that we can have
-                    // negative exponents after floats
-                    Some(c) if c.is_ascii_digit() => self.parse_num('-', true),
                     c => {
                         self.unput(c);
                         Ok(Token::Minus)
@@ -856,13 +843,11 @@ mod tests {
         assert!(match_data(lex("0.1"), |lexed| lexed == Ok(Token::Float(0.1))));
         assert!(match_data(lex(".1"), |lexed| lexed == Ok(Token::Float(0.1))));
         assert!(match_data(lex("1e10"), |lexed| lexed == Ok(Token::Int(10000000000))));
-        assert!(match_data(lex("-1"), |lexed| lexed == Ok(Token::Int(-1))));
-        assert!(match_data(lex("-1e10"), |lexed| lexed == Ok(Token::Int(-10000000000))));
-        assert!(match_data(lex("-1.2"), |lexed| lexed == Ok(Token::Float(-1.2))));
-        assert!(match_data(lex("-1.2e10"), |lexed| lexed == Ok(Token::Float(-1.2e10))));
-        assert!(match_data(lex("-1.2e-1"), |lexed| lexed == Ok(Token::Float(-1.2e-1))));
-        assert!(match_data(lex("1e-1"), |lexed| lexed == Ok(Token::Int(0))));
-        assert!(match_data(lex("-1e-1"), |lexed| lexed == Ok(Token::Int(0))))
+        assert!(match_all(&lex_all("-1"), &[Token::Minus, Token::Int(1)]));
+        assert!(match_all(
+            &lex_all("-1e10"),
+            &[Token::Minus, Token::Int(10000000000)]
+        ));
     }
 
     #[test]

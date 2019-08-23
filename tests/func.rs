@@ -25,3 +25,12 @@ int main() {
         1,
     );
 }
+
+#[test]
+fn declaration_before_definition() {
+    utils::assert_succeeds(
+        "int f();
+int f() { return 0; }
+int main() { return f(); }",
+    )
+}

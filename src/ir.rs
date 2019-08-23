@@ -800,7 +800,7 @@ impl TryFrom<StorageClass> for Linkage {
         match sc {
             StorageClass::Extern => Ok(Linkage::Export),
             StorageClass::Static => Ok(Linkage::Local),
-            StorageClass::Auto | StorageClass::Register => {
+            StorageClass::Auto | StorageClass::Register | StorageClass::Typedef => {
                 Err(format!("illegal storage class {} for global variable", sc))
             }
         }

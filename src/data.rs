@@ -9,7 +9,7 @@ use crate::backend::SIZE_T;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Keyword {
-    // keywords
+    // statements
     If,
     Else,
     Do,
@@ -37,6 +37,7 @@ pub enum Keyword {
     Typedef,
     Union,
     Struct,
+    Enum,
 
     // qualifiers
     Const,
@@ -246,6 +247,7 @@ pub enum StorageClass {
     Extern = Keyword::Extern as isize,
     Auto = Keyword::Auto as isize,
     Register = Keyword::Register as isize,
+    Typedef = Keyword::Typedef as isize,
 }
 
 /* structs */
@@ -559,6 +561,7 @@ impl TryFrom<Keyword> for StorageClass {
             Keyword::Static => Ok(Static),
             Keyword::Auto => Ok(Auto),
             Keyword::Register => Ok(Register),
+            Keyword::Typedef => Ok(Typedef),
             _ => Err(value),
         }
     }

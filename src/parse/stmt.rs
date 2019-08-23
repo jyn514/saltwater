@@ -61,6 +61,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Keyword::Continue => unimplemented!(),
                 Keyword::Break => unimplemented!(),
                 Keyword::Return => Ok(Some(self.return_statement()?)),
+
+                // start of an expression statement
+                Keyword::Sizeof => self.expression_statement(),
                 x => {
                     if !x.is_decl_specifier() {
                         panic!("unrecognized keyword '{}' while parsing statement", x);
@@ -76,7 +79,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if self.match_next(&Token::Colon).is_some() {
                     match locatable.data {
                         Token::Id(id) => Ok(Some(Stmt::Label(id, self.statement()?.map(Box::new)))),
-                        _ => panic!("peek should always be the same as next"),
+                        _ => unreachable!("peek should always be the same as next"),
                     }
                 } else {
                     self.unput(Some(locatable));
@@ -87,12 +90,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 self.next_token();
                 Ok(None)
             }
-            _ => {
-                let expr = self.expr()?;
-                self.expect(Token::Semicolon)?;
-                Ok(Some(Stmt::Expr(expr)))
-            }
+            _ => self.expression_statement(),
         }
+    }
+    fn expression_statement(&mut self) -> Result<Option<Stmt>, Locatable<String>> {
+        let expr = self.expr()?;
+        self.expect(Token::Semicolon)?;
+        Ok(Some(Stmt::Expr(expr)))
     }
     fn return_statement(&mut self) -> StmtResult {
         let ret_token = self.expect(Token::Keyword(Keyword::Return)).unwrap();

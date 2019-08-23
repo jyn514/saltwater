@@ -36,6 +36,11 @@ fn test_initializers() {
 }
 
 #[test]
+fn abstract_param_in_definition() {
+    utils::assert_compile_error("int f(int) { return 1; }");
+}
+
+#[test]
 #[should_panic(expected = "expected statement")]
 fn declare_local_not_implemented() {
     utils::not_implemented(

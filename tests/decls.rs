@@ -41,6 +41,15 @@ fn abstract_param_in_definition() {
 }
 
 #[test]
+fn bad_signature_for_main() {
+    utils::assert_compile_error("int main(int);");
+    utils::assert_compile_error("int main(char **);");
+    utils::assert_compile_error("int main(int, char **, ...);");
+    utils::assert_succeeds("int main(int argc, char ** argv) {}");
+    utils::assert_succeeds("int main(int argc, char *argv[]) {}");
+}
+
+#[test]
 #[should_panic(expected = "expected statement")]
 fn declare_local_not_implemented() {
     utils::not_implemented(

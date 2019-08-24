@@ -7,6 +7,10 @@ use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
 
 use crate::backend::SIZE_T;
 
+pub mod prelude {
+    pub use super::{Declaration, Expr, ExprType, Locatable, Location, Stmt, Symbol, Token, Type};
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Keyword {
     // statements
@@ -105,6 +109,7 @@ pub enum Token {
 
     // literals
     Int(i64),
+    UnsignedInt(u64),
     Float(f64),
     Str(String),
     Char(u8),
@@ -364,6 +369,16 @@ impl Token {
             _ => Err(()),
         }
     }
+    pub fn ctype(&self) -> Result<Type, ()> {
+        match self {
+            Token::Int(_) => Ok(Type::Long(true)),
+            Token::UnsignedInt(_) => Ok(Type::Long(false)),
+            Token::Float(_) => Ok(Type::Double),
+            Token::Str(s) => Ok(Type::for_string_literal(s.len().try_into().unwrap())),
+            Token::Char(_) => Ok(Type::Char(true)),
+            _ => Err(()),
+        }
+    }
 }
 
 lazy_static! {
@@ -469,13 +484,22 @@ pub enum LengthError {
 }
 
 impl Expr {
-    pub fn const_int(&self) -> Result<SIZE_T, LengthError> {
+    pub fn const_int(self) -> Result<SIZE_T, Locatable<String>> {
         if !self.ctype.is_integral() {
-            return Err(LengthError::NonIntegral);
+            return Err(Locatable {
+                data: LengthError::NonIntegral.into(),
+                location: self.location.clone(),
+            });
         }
-        let literal = self.const_fold().ok_or(LengthError::Dynamic)?;
+        let literal = self.constexpr()?.map_err(|location| Locatable {
+            data: LengthError::Dynamic.into(),
+            location,
+        })?;
         match literal.data {
-            Token::Int(x) => x.try_into().map_err(|_| LengthError::Negative),
+            Token::Int(x) => x.try_into().map_err(|_| Locatable {
+                data: LengthError::Negative.into(),
+                location: literal.location,
+            }),
             _ => unreachable!("should have been caught already"),
         }
     }
@@ -696,6 +720,7 @@ impl Display for Token {
             Mod => write!(f, "%"),
 
             Int(i) => write!(f, "{}", i),
+            UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
             Str(s) => write!(f, "\"{}\"", s),
             Char(c) => write!(f, "{}", c),

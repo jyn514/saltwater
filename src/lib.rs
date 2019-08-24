@@ -1,5 +1,5 @@
 #![allow(unused_variables)]
-#![warn(variant_size_differences)]
+#![allow(clippy::cognitive_complexity)]
 #![warn(unreachable_pub)]
 #![warn(deprecated_in_future)]
 
@@ -28,6 +28,7 @@ pub use parse::Parser;
 pub mod utils;
 pub mod backend;
 pub mod data;
+mod fold;
 mod ir;
 mod lex;
 mod parse;

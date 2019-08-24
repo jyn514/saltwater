@@ -14,8 +14,7 @@ use cranelift_module::{self, DataContext, FuncId, Linkage, Module as CraneliftMo
 
 use crate::backend::TARGET;
 use crate::data::{
-    ArrayType, Declaration, Expr, ExprType, FunctionType, Initializer, Locatable, Location,
-    Qualifiers, Scope, Stmt, StorageClass, Symbol, Token, Type,
+    prelude::*, ArrayType, FunctionType, Initializer, Qualifiers, Scope, StorageClass,
 };
 use crate::utils::warn;
 
@@ -260,6 +259,7 @@ impl LLVMCompiler {
     // it can't be any smaller without supporting fewer features
     #[allow(clippy::cognitive_complexity)]
     fn compile_expr(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
+        let expr = expr.const_fold()?;
         let location = expr.location;
         let ir_type = match expr.ctype.as_ir_basic_type() {
             Ok(ir_type) => ir_type,
@@ -344,10 +344,14 @@ impl LLVMCompiler {
         token: Token,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        let ir_val = match token {
-            Token::Int(i) => builder.ins().iconst(ir_type, i),
-            Token::Float(f) => builder.ins().f64const(f),
-            Token::Char(c) => builder.ins().iconst(ir_type, i64::from(c)),
+        let ir_val = match dbg!(token, ir_type) {
+            (Token::Int(i), types::B1) => builder.ins().bconst(ir_type, i != 0),
+            (Token::Int(i), _) => builder.ins().iconst(ir_type, i),
+            (Token::UnsignedInt(u), types::B1) => builder.ins().bconst(ir_type, u != 0),
+            (Token::UnsignedInt(u), _) => builder.ins().iconst(ir_type, u as i64),
+            (Token::Float(f), types::F32) => builder.ins().f32const(f as f32),
+            (Token::Float(f), types::F64) => builder.ins().f64const(f),
+            (Token::Char(c), _) => builder.ins().iconst(ir_type, i64::from(c)),
             _ => unimplemented!("aggregate literals"),
         };
         Ok(Value {
@@ -689,26 +693,15 @@ impl Initializer {
 
 impl Expr {
     fn into_bytes(self) -> Result<Box<[u8]>, Locatable<String>> {
-        match self.const_fold() {
-            Some(constexpr) => constexpr.data.into_bytes(self.ctype, &constexpr.location),
-            None => Err(Locatable {
+        match self.constexpr()? {
+            Ok(constexpr) => {
+                let ctype = constexpr.data.ctype().unwrap();
+                constexpr.data.into_bytes(ctype, &constexpr.location)
+            }
+            Err(location) => Err(Locatable {
                 data: "expression is not a compile time constant".into(),
-                location: self.location,
+                location,
             }),
-        }
-    }
-    pub(crate) fn const_fold(&self) -> Option<Locatable<Token>> {
-        if self.constexpr {
-            let constexpr = match self.expr {
-                ExprType::Literal(ref token) => token,
-                _ => unimplemented!("const folding"),
-            };
-            Some(Locatable {
-                location: self.location.clone(),
-                data: constexpr.clone(),
-            })
-        } else {
-            None
         }
     }
 }
@@ -751,7 +744,6 @@ impl Token {
             }
             Ok(ir_type) => ir_type,
         };
-        //let mut buf = [u8; ir_type.bytes()];
         let big_endian = TARGET
             .endianness()
             .expect("target should be big or little endian")
@@ -762,6 +754,16 @@ impl Token {
                 types::I8 => bytes!(cast!(i, i64, i8, &ctype, &location), big_endian),
                 types::I16 => bytes!(cast!(i, i64, i16, &ctype, &location), big_endian),
                 types::I32 => bytes!(cast!(i, i64, i32, &ctype, &location), big_endian),
+                types::I64 => bytes!(i, big_endian),
+                x => unreachable!(format!(
+                    "ir_type {} for integer {} is not of integer type",
+                    x, i
+                )),
+            }),
+            Token::UnsignedInt(i) => Ok(match ir_type {
+                types::I8 => bytes!(cast!(i, u64, u8, &ctype, &location), big_endian),
+                types::I16 => bytes!(cast!(i, u64, u16, &ctype, &location), big_endian),
+                types::I32 => bytes!(cast!(i, u64, u32, &ctype, &location), big_endian),
                 types::I64 => bytes!(i, big_endian),
                 x => unreachable!(format!(
                     "ir_type {} for integer {} is not of integer type",

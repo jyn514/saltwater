@@ -5,8 +5,7 @@ use std::mem;
 
 use super::{FunctionData, Lexeme, Parser};
 use crate::data::{
-    ArrayType, Declaration, Expr, FunctionType, Initializer, Keyword, Locatable, Location,
-    Qualifiers, Stmt, StorageClass, Symbol, Token, Type,
+    prelude::*, ArrayType, FunctionType, Initializer, Keyword, Qualifiers, StorageClass,
 };
 use crate::utils::warn;
 
@@ -503,20 +502,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         self.expect(Token::RightBracket)?;
                         // TODO: allow any integer type
                         // also TODO: look up the rules for this in the C standard
-                        match expr.const_int() {
-                            Ok(length) => Some(Declarator {
-                                current: DeclaratorType::Array(ArrayType::Fixed(length)),
-                                next: prefix.map(Box::new),
-                            }),
-                            // TODO: parse the rest of the declarator before
-                            // complaining about a type mismatch
-                            Err(err) => {
-                                return Err(Locatable {
-                                    data: <&str>::from(err).to_string(),
-                                    location: expr.location,
-                                })
-                            }
-                        }
+                        let length = expr.const_int()?;
+                        Some(Declarator {
+                            current: DeclaratorType::Array(ArrayType::Fixed(length)),
+                            next: prefix.map(Box::new),
+                        })
                     }
                 }
                 Token::LeftParen => Some(Declarator {

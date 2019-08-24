@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{Declaration, FunctionType, Keyword, Locatable, Location, Scope, Symbol, Token};
+use crate::data::{prelude::*, FunctionType, Keyword, Scope};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;

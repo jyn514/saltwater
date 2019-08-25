@@ -1,7 +1,10 @@
 #![allow(unused_variables)]
 #![allow(clippy::cognitive_complexity)]
+#![warn(absolute_paths_not_starting_with_crate)]
+#![warn(explicit_outlives_requirements)]
 #![warn(unreachable_pub)]
 #![warn(deprecated_in_future)]
+#![deny(unsafe_code)]
 
 use std::fs::File;
 use std::io::{self, Write};

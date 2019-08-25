@@ -703,7 +703,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.next_char();
                         Token::OrEqual
                     }
-                    _ => Token::BinaryOr,
+                    _ => Token::BitwiseOr,
                 }),
                 '{' => Ok(Token::LeftBrace),
                 '}' => Ok(Token::RightBrace),

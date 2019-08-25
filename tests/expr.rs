@@ -1,5 +1,4 @@
 mod utils;
-use utils::not_implemented;
 
 #[test]
 fn unary_plus() {

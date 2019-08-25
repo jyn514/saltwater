@@ -92,22 +92,6 @@ pub(crate) fn compile(
     Ok(compiler.module)
 }
 
-macro_rules! scalar_bin_op {
-        ($self: expr, $left: expr, $right: expr, $builder: expr, $($pat: pat $(if $guard: expr)?, $func: ident),+) => {{
-            let (left, right) = ($self.compile_expr($left, $builder)?, $self.compile_expr($right, $builder)?);
-            assert_eq!(left.ir_type, right.ir_type);
-            match (left.ir_type, left.ctype.is_signed()) {
-                $($pat $(if $guard)? => Ok(Value {
-                    ir_val: $builder.ins().$func(left.ir_val, right.ir_val),
-                    ir_type: left.ir_type,
-                    // TODO: this will probably be wrong for pointer addition
-                    ctype: left.ctype,
-                }) ),+ ,
-                _ => unreachable!("parser should have caught illegal IR types")
-            }
-        }};
-    }
-
 impl LLVMCompiler {
     fn new(name: String, debug: bool) -> LLVMCompiler {
         let mut flags_builder = settings::builder();
@@ -380,40 +364,64 @@ impl LLVMCompiler {
             ExprType::LogicalNot(expr) => self.logical_not(*expr, builder),
 
             // binary operators
-            ExprType::Add(left, right) => scalar_bin_op!(self, *left, *right, builder,
-                (ty, _) if ty.is_int(), iadd,
-                (ty, _) if ty.is_float(), fadd),
-            ExprType::Sub(left, right) => scalar_bin_op!(self, *left, *right, builder,
-                (ty, _) if ty.is_int(), isub,
-                (ty, _) if ty.is_float(), fsub),
-            ExprType::Mul(left, right) => scalar_bin_op!(self, *left, *right, builder,
-                (ty, _) if ty.is_int(), imul,
-                (ty, _) if ty.is_float(), fmul),
-            ExprType::Div(left, right) => scalar_bin_op!(self, *left, *right, builder,
-                (ty, true) if ty.is_int(), sdiv,
-                (ty, false) if ty.is_int(), udiv,
-                (ty, _) if ty.is_float(), fdiv),
-            ExprType::Mod(left, right) => scalar_bin_op!(self, *left, *right, builder,
-                 (ty, true) if ty.is_int(), srem,
-                 (ty, false) if ty.is_int(), urem),
-            ExprType::BitwiseAnd(left, right) => scalar_bin_op!(self, *left, *right, builder,
-               (ty, true) if ty.is_int(), band),
-            ExprType::BitwiseOr(left, right) => scalar_bin_op!(self, *left, *right, builder,
-               (ty, true) if ty.is_int(), bor),
+            ExprType::Add(left, right) => {
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Plus, location, builder)
+            }
+            ExprType::Sub(left, right) => {
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Minus, location, builder)
+            }
+            ExprType::Mul(left, right) => {
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Star, location, builder)
+            }
+            ExprType::Div(left, right) => {
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Divide, location, builder)
+            }
+            ExprType::Mod(left, right) => {
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Mod, location, builder)
+            }
+            ExprType::BitwiseAnd(left, right) => self.binary_assign_op(
+                *left,
+                *right,
+                expr.ctype,
+                Token::Ampersand,
+                location,
+                builder,
+            ),
+            ExprType::BitwiseOr(left, right) => self.binary_assign_op(
+                *left,
+                *right,
+                expr.ctype,
+                Token::BitwiseOr,
+                location,
+                builder,
+            ),
             // left shift
-            ExprType::Shift(left, right, true) => scalar_bin_op!(self, *left, *right, builder,
-               (ty, _) if ty.is_int(), ishl),
+            ExprType::Shift(left, right, true) => self.binary_assign_op(
+                *left,
+                *right,
+                expr.ctype,
+                Token::ShiftRight,
+                location,
+                builder,
+            ),
             // right shift
-            ExprType::Shift(left, right, false) => scalar_bin_op!(self, *left, *right, builder,
-                // arithmetic shift: keeps the sign of `left`
-               (ty, true) if ty.is_int(), sshr,
-               // logical shift: shifts in zeros
-               (ty, false) if ty.is_int(), ushr),
-            ExprType::Xor(left, right) => scalar_bin_op!(self, *left, *right, builder,
-                                                         (ty, _) if ty.is_int(), bxor),
+            ExprType::Shift(left, right, false) => self.binary_assign_op(
+                *left,
+                *right,
+                expr.ctype,
+                Token::ShiftRight,
+                location,
+                builder,
+            ),
+            ExprType::Xor(left, right) => {
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Xor, location, builder)
+            }
             ExprType::Compare(left, right, token) => self.compare(*left, *right, &token, builder),
 
             // misfits
+            ExprType::Assign(lval, rval, token) => {
+                self.assignment(*lval, *rval, token, location, builder)
+            }
             ExprType::FuncCall(func, args) => match func.expr {
                 ExprType::Id(var) => self.call_direct(var.id, func.ctype, args, location, builder),
                 _ => unimplemented!("indirect function calls"),
@@ -461,6 +469,65 @@ impl LLVMCompiler {
             ir_val,
             ctype,
             ir_type: val.ir_type,
+        })
+    }
+    #[inline]
+    fn binary_assign_op(
+        &self,
+        left: Expr,
+        right: Expr,
+        ctype: Type,
+        token: Token,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> IrResult {
+        let (left, right) = (
+            self.compile_expr(left, builder)?,
+            self.compile_expr(right, builder)?,
+        );
+        assert_eq!(left.ir_type, right.ir_type);
+        Self::binary_assign_ir(left, right, ctype, token, location, builder)
+    }
+    fn binary_assign_ir(
+        left: Value,
+        right: Value,
+        ctype: Type,
+        token: Token,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> IrResult {
+        use codegen::ir::InstBuilder as b;
+        let ir_type = ctype
+            .as_ir_basic_type()
+            .map_err(|data| Locatable { data, location })?;
+        let signed = ctype.is_signed();
+        let func = match (token, ir_type, signed) {
+            (Token::Plus, ty, _) if ty.is_int() => b::iadd,
+            (Token::Plus, ty, _) if ty.is_float() => b::fadd,
+            (Token::Minus, ty, _) if ty.is_int() => b::isub,
+            (Token::Minus, ty, _) if ty.is_float() => b::fsub,
+            (Token::Star, ty, _) if ty.is_int() => b::imul,
+            (Token::Star, ty, _) if ty.is_float() => b::fmul,
+            (Token::Divide, ty, true) if ty.is_int() => b::sdiv,
+            (Token::Divide, ty, false) if ty.is_int() => b::udiv,
+            (Token::Divide, ty, _) if ty.is_float() => b::fdiv,
+            (Token::Mod, ty, true) if ty.is_int() => b::srem,
+            (Token::Mod, ty, false) if ty.is_int() => b::urem,
+            (Token::Ampersand, ty, true) if ty.is_int() => b::band,
+            (Token::BitwiseOr, ty, true) if ty.is_int() => b::bor,
+            (Token::ShiftLeft, ty, _) if ty.is_int() => b::ishl,
+            // arithmetic shift: keeps the sign of `left`
+            (Token::ShiftRight, ty, true) if ty.is_int() => b::sshr,
+            // logical shift: shifts in zeros
+            (Token::ShiftRight, ty, false) if ty.is_int() => b::ushr,
+            (Token::Xor, ty, _) if ty.is_int() => b::bxor,
+            _ => unreachable!("only valid assign binary ops should be passed to binary_assign_op"),
+        };
+        let ir_val = func(builder.ins(), left.ir_val, right.ir_val);
+        Ok(Value {
+            ir_val,
+            ir_type,
+            ctype,
         })
     }
     fn cast(
@@ -649,6 +716,51 @@ impl LLVMCompiler {
             ir_type: types::B1,
             ctype: left.ctype,
         })
+    }
+    fn assignment(
+        &self,
+        lval: Expr,
+        rval: Expr,
+        token: Token,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> IrResult {
+        let ctype = lval.ctype.clone();
+        let is_id = match lval.expr {
+            ExprType::Id(_) => true,
+            _ => false,
+        };
+        let (mut target, mut value) = (
+            self.compile_expr(lval, builder)?,
+            self.compile_expr(rval, builder)?,
+        );
+        let ir_target = if token != Token::Equal {
+            let ir_target = target.ir_val;
+            // need to deref explicitly to get an rval, the frontend didn't do it for us
+            if is_id {
+                target.ir_val =
+                    builder
+                        .ins()
+                        .load(target.ir_type, MemFlags::new(), target.ir_val, 0);
+            }
+            value = Self::binary_assign_ir(
+                target,
+                value,
+                ctype,
+                token
+                    .without_assignment()
+                    .expect("only valid assignment tokens should be passed to assignment"),
+                location,
+                builder,
+            )?;
+            ir_target
+        } else {
+            target.ir_val
+        };
+        builder
+            .ins()
+            .store(MemFlags::new(), value.ir_val, ir_target, 0);
+        Ok(value)
     }
     fn call_direct(
         &self,

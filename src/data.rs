@@ -90,7 +90,7 @@ pub enum Token {
     Greater,
     Ampersand,
     LogicalAnd,
-    BinaryOr,
+    BitwiseOr,
     LogicalOr,
     BinaryNot,  // ~
     LogicalNot, // !
@@ -373,6 +373,21 @@ impl Token {
             Token::NotEqual => Ok(FloatCC::NotEqual),
             _ => Err(()),
         }
+    }
+    pub fn without_assignment(&self) -> Result<Token, ()> {
+        Ok(match self {
+            Token::PlusEqual => Token::Plus,
+            Token::MinusEqual => Token::Minus,
+            Token::StarEqual => Token::Star,
+            Token::DivideEqual => Token::Divide,
+            Token::ModEqual => Token::Mod,
+            Token::AndEqual => Token::Ampersand,
+            Token::OrEqual => Token::BitwiseOr,
+            Token::LeftEqual => Token::ShiftLeft,
+            Token::RightEqual => Token::ShiftRight,
+            Token::XorEqual => Token::Xor,
+            _ => return Err(()),
+        })
     }
     pub fn ctype(&self) -> Result<Type, ()> {
         match self {
@@ -707,7 +722,7 @@ impl Display for Token {
             Greater => write!(f, ">"),
             Ampersand => write!(f, "&"),
             LogicalAnd => write!(f, "&&"),
-            BinaryOr => write!(f, "|"),
+            BitwiseOr => write!(f, "|"),
             LogicalOr => write!(f, "||"),
             BinaryNot => write!(f, "~"),
             LogicalNot => write!(f, "!"),

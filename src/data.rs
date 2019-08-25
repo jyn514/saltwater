@@ -8,7 +8,9 @@ use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
 use crate::backend::SIZE_T;
 
 pub mod prelude {
-    pub use super::{Declaration, Expr, ExprType, Locatable, Location, Stmt, Symbol, Token, Type};
+    pub use super::{
+        Declaration, Expr, ExprType, Locatable, Location, Stmt, StmtType, Symbol, Token, Type,
+    };
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -122,8 +124,10 @@ pub enum Token {
     StructDeref, // ->
 }
 
+pub type Stmt = Locatable<StmtType>;
+
 #[derive(Clone, Debug, PartialEq)]
-pub enum Stmt {
+pub enum StmtType {
     Compound(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     Do(Box<Stmt>, Expr),
@@ -138,9 +142,10 @@ pub enum Stmt {
     Continue,
     Break,
     Return(Option<Expr>),
+    Decl(Box<Declaration>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Declaration {
     pub symbol: Symbol,
     pub init: Option<Initializer>,

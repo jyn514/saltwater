@@ -771,7 +771,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
         // function body
         let body = match self.compound_statement()? {
-            Some(Stmt::Compound(stmts)) => stmts,
+            Some(Stmt {
+                data: StmtType::Compound(stmts),
+                ..
+            }) => stmts,
             None => vec![],
             x => panic!(
                 "expected compound_statement to return compound statement, got '{:#?}' instead",
@@ -790,7 +793,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             if func_data.id == "main" {
                 // make body explicitly mutable
                 let mut body = body;
-                body.push(Stmt::Return(Some(Expr::zero())));
+                body.push(Stmt {
+                    data: StmtType::Return(Some(Expr::zero())),
+                    location: Default::default(),
+                });
                 Ok(body)
             } else {
                 Err(Locatable {

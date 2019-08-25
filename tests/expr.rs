@@ -8,7 +8,7 @@ fn variable_expressions_not_implemented() {
 }
 
 #[test]
-#[should_panic(expected = "expected statement")]
+#[should_panic(expected = "not yet implemented")]
 fn local_declarations_not_implemented() {
     not_implemented("int main() { int x; }");
 }

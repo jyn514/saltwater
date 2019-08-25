@@ -49,10 +49,11 @@ fn bad_signature_for_main() {
     utils::assert_compile_error("int main(int, char **, ...);");
     utils::assert_succeeds("int main(int argc, char ** argv) {}");
     utils::assert_succeeds("int main(int argc, char *argv[]) {}");
+    // TODO: check char main[] is valid
 }
 
 #[test]
-#[should_panic(expected = "expected statement")]
+#[should_panic(expected = "not yet implemented")]
 fn declare_local_not_implemented() {
     utils::not_implemented(
         "int main(void) {
@@ -63,7 +64,7 @@ fn declare_local_not_implemented() {
 }
 
 #[test]
-#[should_panic(expected = "expected statement")]
+#[should_panic(expected = "not yet implemented")]
 fn declare_local_function_not_implemented() {
     utils::not_implemented(
         "
@@ -75,7 +76,7 @@ int main() {
 }
 
 #[test]
-#[should_panic(expected = "expected statement")]
+#[should_panic(expected = "not yet implemented")]
 fn local_function_goes_out_of_scope_not_implemented() {
     utils::not_implemented(
         "

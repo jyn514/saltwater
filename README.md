@@ -7,9 +7,10 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 - Lexer
 - Declarations (`int i, *p;`)
 - AST for expressions and (most) statements
-- Most binary expressions (+, -, \*, /, \<, \>, \<\<, \>\>, ==, !=)
+- Binary expressions (+, -, \*, /, \<, \>, \<\<, \>\>, ==, !=)
 - Implicit binary conversions (1.0 == 1)
-- Basic static initialization (i64, f64, arrays - no const folding yet)
+- Basic static initialization (i64, f64, arrays)
+- Local variables; loads and stores
 - Compiling to object files
 - Linking using host `cc` (similar to how the rust compiler does it)
 - Some error handling
@@ -23,22 +24,24 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 - Codegen for the rest of expressions
 - Codegen for statements
 - Scoping for variables
-- Constant folding (required for e.g. `float f = 1.2` at top level)
 - Structs, Unions, Enums
 - Bitfields?
+- loads are broken on Cranelift's end (see https://github.com/CraneStation/cranelift/issues/938 and https://github.com/CraneStation/cranelift/issues/939)
+- pointer arithmetic (including arrays)
 
 ## Running
 
 `cargo run` from top level directory.
-Only literals and add/subtract/multiply/divide currently work - try something like this:
+Anything without pointers or control flow should work, try something like this:
 
 ```
-int i = 1;
-int a[] = {1, 2, 3};
-double = 1.0;
+long i = 1;
+int a[3] = {1, 2, 3};
+float f = 2.5;
 
 int main(void) {
-  return 1 + 2 * 3 - 4 / 2;
+  // should return 6
+  return i + 2.5*3 - 4/2;
 }
 ```
 

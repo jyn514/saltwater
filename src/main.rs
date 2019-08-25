@@ -27,6 +27,10 @@ pub struct Opt {
     #[structopt(short = "a", long)]
     pub debug_ast: bool,
 
+    /// If set, print the intermediate representation of the program in addition to compiling
+    #[structopt(long)]
+    pub debug_asm: bool,
+
     /// If set, compile and assemble but do not link. Object file is machine-dependent.
     #[structopt(short = "c", long)]
     pub no_link: bool,
@@ -42,6 +46,7 @@ impl Default for Opt {
             filename: "<default>".into(),
             debug_lex: false,
             debug_ast: false,
+            debug_asm: false,
             no_link: false,
             output: PathBuf::from("a.out"),
         }
@@ -56,6 +61,7 @@ fn real_main(buf: String, opt: Opt) -> Result<(), CompileError> {
         opt.filename.to_string_lossy().into_owned(),
         opt.debug_lex,
         opt.debug_ast,
+        opt.debug_asm,
     )?;
     if opt.no_link {
         return assemble(product, opt.output.as_path());

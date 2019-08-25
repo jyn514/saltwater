@@ -13,6 +13,7 @@ use std::process::Command;
 
 #[macro_use]
 extern crate lazy_static;
+extern crate cranelift;
 extern crate cranelift_faerie;
 extern crate cranelift_module;
 extern crate failure;
@@ -60,6 +61,7 @@ pub fn compile(
     filename: String,
     debug_lex: bool,
     debug_ast: bool,
+    debug_ir: bool,
 ) -> Result<Product, CompileError> {
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
     let parser = Parser::new(lexer, debug_ast);
@@ -67,7 +69,7 @@ pub fn compile(
         .collect::<Result<Vec<Locatable<Declaration>>, Locatable<String>>>()
         .map_err(CompileError::Semantic)?;
 
-    ir::compile(hir)
+    ir::compile(hir, debug_ir)
         .map_err(CompileError::Semantic)
         .map(Module::<FaerieBackend>::finish)
 }

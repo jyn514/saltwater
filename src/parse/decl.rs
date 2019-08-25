@@ -83,7 +83,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let id = id.expect("declarator should return id when called with allow_abstract: false");
         if sc == StorageClass::Typedef {
             unimplemented!("typedefs");
-            return Ok(None);
+            //return Ok(None);
         }
 
         // if it's not a function, we still need to handle it

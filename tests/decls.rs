@@ -53,9 +53,8 @@ fn bad_signature_for_main() {
 }
 
 #[test]
-#[should_panic(expected = "not yet implemented")]
-fn declare_local_not_implemented() {
-    utils::not_implemented(
+fn declare_local() {
+    utils::assert_succeeds(
         "int main(void) {
     int i = 0;
     return i;
@@ -64,21 +63,29 @@ fn declare_local_not_implemented() {
 }
 
 #[test]
-#[should_panic(expected = "not yet implemented")]
-fn declare_local_function_not_implemented() {
-    utils::not_implemented(
+fn declare_local_function() {
+    utils::assert_code(
         "
 int main() {
     int f();
     return f();
-}",
+}
+
+int f() { return 1; }",
+        1,
     );
 }
 
 #[test]
-#[should_panic(expected = "not yet implemented")]
-fn local_function_goes_out_of_scope_not_implemented() {
-    utils::not_implemented(
+#[should_panic(expected = "not yet implemented: data declarations")]
+fn declare_global() {
+    utils::not_implemented("int x; int main() { return x; }");
+}
+
+/* will fail until I add scoping
+#[test]
+fn local_function_goes_out_of_scope() {
+    utils::assert_compile_error(
         "
 int main() {
     int f();
@@ -89,3 +96,4 @@ int g() {
 }",
     );
 }
+*/

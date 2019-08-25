@@ -212,12 +212,12 @@ impl LLVMCompiler {
                 location: Default::default(),
             });
         }
-        match stmt {
-            Stmt::Compound(stmts) => self.compile_all(stmts, builder)?,
-            Stmt::Expr(expr) => {
+        match stmt.data {
+            StmtType::Compound(stmts) => self.compile_all(stmts, builder)?,
+            StmtType::Expr(expr) => {
                 self.compile_expr(expr, builder)?;
             }
-            Stmt::Return(expr) => {
+            StmtType::Return(expr) => {
                 let mut ret = vec![];
                 if let Some(e) = expr {
                     let val = self.compile_expr(e, builder)?;
@@ -226,7 +226,7 @@ impl LLVMCompiler {
                 self.ebb_has_return = true;
                 builder.ins().return_(&ret);
             }
-            Stmt::If(condition, body, otherwise) => {
+            StmtType::If(condition, body, otherwise) => {
                 // If condtion is zero:
                 //      If else_block exists, jump to else_block + compile_all
                 //      Otherwise, jump to end_block

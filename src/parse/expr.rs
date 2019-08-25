@@ -101,7 +101,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .map_or(false, Token::is_assignment_operator)
         {
             let assign_op = self.next_token().unwrap();
-            let rval = self.assignment_expr()?;
+            let rval = self.assignment_expr()?.rval();
             if !lval.lval {
                 Err(Locatable {
                     data: "expression is not assignable".to_string(),
@@ -223,7 +223,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn inclusive_or_expr(&mut self) -> ExprResult {
         self.integral_left_associative_binary_op(
             Self::exclusive_or_expr,
-            &[&Token::BinaryOr],
+            &[&Token::BitwiseOr],
             Expr::default_expr(ExprType::BitwiseOr),
         )
     }

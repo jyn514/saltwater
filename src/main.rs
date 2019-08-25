@@ -30,7 +30,11 @@ pub struct Opt {
     /// If set, print the intermediate representation of the program in addition to compiling
     #[structopt(long)]
     pub debug_asm: bool,
-
+    /*
+    /// If set, do not assemble the compiled program. Implies 'no_link'.
+    #[structopt(short = "S", long)]
+    pub no_assemble: bool,
+    */
     /// If set, compile and assemble but do not link. Object file is machine-dependent.
     #[structopt(short = "c", long)]
     pub no_link: bool,

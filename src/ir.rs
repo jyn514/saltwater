@@ -16,7 +16,7 @@ use cranelift::prelude::{
     types, FunctionBuilder, FunctionBuilderContext, Signature, Type as IrType, Value as IrValue,
 };
 use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
-use cranelift_module::{self, DataContext, FuncId, Linkage, Module as CraneliftModule};
+use cranelift_module::{self, DataContext, DataId, FuncId, Linkage, Module as CraneliftModule};
 
 use crate::backend::TARGET;
 use crate::data::{
@@ -29,7 +29,8 @@ type IrResult = Result<Value, Locatable<String>>;
 
 enum Id {
     Function(FuncId),
-    Data(StackSlot),
+    Global(DataId),
+    Local(StackSlot),
 }
 
 struct LLVMCompiler {
@@ -189,7 +190,7 @@ impl LLVMCompiler {
             offset: None,
         };
         let stack_slot = builder.create_stack_slot(data);
-        self.scope.insert(decl.symbol.id, Id::Data(stack_slot));
+        self.scope.insert(decl.symbol.id, Id::Local(stack_slot));
         if let Some(init) = decl.init {
             self.store_stack(init, stack_slot, decl.symbol.ctype, location, builder)?;
         }
@@ -673,7 +674,19 @@ impl LLVMCompiler {
     ) -> IrResult {
         match self.scope.get(&var.id).unwrap() {
             Id::Function(func_id) => unimplemented!("address of function"),
-            Id::Data(stack_slot) => {
+            Id::Global(static_id) => {
+                let ir_type = var
+                    .ctype
+                    .as_ir_basic_type()
+                    .map_err(|data| Locatable { data, location })?;
+                let global = self.module.declare_data_in_func(*static_id, builder.func);
+                Ok(Value {
+                    ir_type,
+                    ir_val: builder.ins().global_value(ir_type, global),
+                    ctype: var.ctype,
+                })
+            }
+            Id::Local(stack_slot) => {
                 let ir_type = var
                     .ctype
                     .as_ir_basic_type()
@@ -829,6 +842,9 @@ impl LLVMCompiler {
                 data: format!("error storing static value: {}", err),
                 location: location.clone(),
             })?;
+
+        self.scope.insert(symbol.id, Id::Global(id));
+
         let mut ctx = DataContext::new();
         if let Some(init) = init {
             let data = init.into_bytes(&symbol.ctype, &location)?;

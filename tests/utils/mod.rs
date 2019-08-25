@@ -16,7 +16,13 @@ pub fn compile_and_run(program: String, args: &[&str]) -> Result<Output, Compile
 }
 
 pub fn compile(program: String, no_link: bool, output: &Path) -> Result<(), CompileError> {
-    let module = compiler::compile(program, "<integration-test>".to_string(), false, false)?;
+    let module = compiler::compile(
+        program,
+        "<integration-test>".to_string(),
+        false,
+        false,
+        false,
+    )?;
     if !no_link {
         let tmp_file = tempfile::NamedTempFile::new().unwrap();
         compiler::assemble(module, tmp_file.as_ref())?;

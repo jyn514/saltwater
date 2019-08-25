@@ -957,17 +957,38 @@ impl Expr {
             _ => unimplemented!("what's an lval but not a pointer or id?"),
         }
     }
+    // ensure an expression has a value
+    pub fn rval(self) -> Expr {
+        /*
+        match self.ctype {
+            Type::Array(_, _) => ,
+            Type::Function(_, _) =>
+        }
+        */
+        match self.expr {
+            ExprType::Id(_) => Expr {
+                ctype: self.ctype.clone(),
+                lval: false,
+                constexpr: false,
+                location: self.location.clone(),
+                expr: ExprType::Deref(Box::new(self)),
+            },
+            _ => self,
+        }
+    }
     // Perform an integer conversion, including all relevant casts.
     //
     // See `Type::integer_promote` for conversion rules.
     fn integer_promote(self) -> Result<Expr, Locatable<String>> {
-        let ctype = self.ctype.clone().integer_promote();
-        self.cast(&ctype)
+        let expr = self.rval();
+        let ctype = expr.ctype.clone().integer_promote();
+        expr.cast(&ctype)
     }
     // Perform a binary conversion, including all relevant casts.
     //
     // See `Type::binary_promote` for conversion rules.
-    fn binary_promote(mut left: Expr, mut right: Expr) -> Result<(Expr, Expr), Locatable<String>> {
+    fn binary_promote(left: Expr, right: Expr) -> Result<(Expr, Expr), Locatable<String>> {
+        let (mut left, mut right) = (left.rval(), right.rval());
         let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
         if ctype == left.ctype {
             right = right.cast(&ctype)?;

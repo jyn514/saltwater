@@ -70,7 +70,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
                 // start of an expression statement
                 Keyword::Sizeof => self.expression_statement(),
-                decl if decl.is_decl_specifier() => unimplemented!("local variables"),
+                decl if decl.is_decl_specifier() => match self.declaration() {
+                    Ok(Some(decl)) => Ok(Some(Stmt {
+                        data: StmtType::Decl(Box::new(decl.data)),
+                        location: decl.location,
+                    })),
+                    Ok(None) => Ok(None),
+                    Err(err) => Err(err),
+                },
                 other => unreachable!("unrecognized keyword '{}' while parsing statement", other),
             },
             Some(Token::Semicolon) => {
@@ -127,6 +134,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             (Some(expr), true) => {
                 current.seen_ret = true;
+                let expr = expr.rval();
                 if expr.ctype != **ret_type {
                     StmtType::Return(Some(Expr::cast(expr, ret_type)?))
                 } else {

@@ -2,18 +2,6 @@ mod utils;
 use utils::not_implemented;
 
 #[test]
-#[should_panic(expected = "not yet implemented: data declarations")]
-fn variable_expressions_not_implemented() {
-    not_implemented("int x; int main() { return x; }");
-}
-
-#[test]
-#[should_panic(expected = "not yet implemented")]
-fn local_declarations_not_implemented() {
-    not_implemented("int main() { int x; }");
-}
-
-#[test]
 fn unary_plus() {
     utils::assert_code("int main() { return +1; }", 1);
     utils::assert_compile_error("int a[1]; int main() { return +a; }");

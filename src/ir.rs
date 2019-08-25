@@ -2,7 +2,13 @@ use std::convert::{TryFrom, TryInto};
 
 use cranelift::codegen::{
     self,
-    ir::{condcodes, function::Function, ExternalName, InstBuilder},
+    ir::{
+        condcodes,
+        entities::StackSlot,
+        function::Function,
+        stackslot::{StackSlotData, StackSlotKind},
+        ExternalName, InstBuilder, MemFlags,
+    },
     isa,
     settings::{self, Configurable},
 };
@@ -23,13 +29,14 @@ type IrResult = Result<Value, Locatable<String>>;
 
 enum Id {
     Function(FuncId),
-    Data(Value),
+    Data(StackSlot),
 }
 
 struct LLVMCompiler {
     module: Module,
     ebb_has_return: bool,
     scope: Scope<String, Id>,
+    debug: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -40,11 +47,14 @@ struct Value {
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
-pub(crate) fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Locatable<String>> {
+pub(crate) fn compile(
+    program: Vec<Locatable<Declaration>>,
+    debug: bool,
+) -> Result<Module, Locatable<String>> {
     let name = program
         .first()
         .map_or_else(|| "<empty>".to_string(), |decl| decl.data.symbol.id.clone());
-    let mut compiler = LLVMCompiler::new(name);
+    let mut compiler = LLVMCompiler::new(name, debug);
     for decl in program {
         match (decl.data.symbol.ctype.clone(), decl.data.init) {
             (Type::Function(func_type), None) => {
@@ -62,8 +72,8 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Lo
                     true,
                 )?;
             }
+            (Type::Void, _) => unreachable!("parser let an incomplete type through"),
             (ty, None) => unimplemented!("data declarations without initializers"),
-            (Type::Void, _) => panic!("parser let an incomplete type through"),
             (Type::Function(func_type), Some(Initializer::FunctionBody(stmts))) => compiler
                 .compile_func(
                     decl.data.symbol.id,
@@ -73,9 +83,8 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Lo
                     stmts,
                     decl.location,
                 )?,
-            (Type::Function(_), _) => panic!("functions should have a FunctionBody initializer"),
             (_, Some(Initializer::FunctionBody(_))) => {
-                panic!("only functions should have a function body")
+                unreachable!("only functions should have a function body")
             }
             (_, init) => compiler.store_static(decl.data.symbol, init, decl.location)?,
         }
@@ -85,7 +94,7 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>) -> Result<Module, Lo
 
 macro_rules! scalar_bin_op {
         ($self: expr, $left: expr, $right: expr, $builder: expr, $($pat: pat $(if $guard: expr)?, $func: ident),+) => {{
-            let (left, right) = ($self.rval($left, $builder)?, $self.rval($right, $builder)?);
+            let (left, right) = ($self.compile_expr($left, $builder)?, $self.compile_expr($right, $builder)?);
             assert_eq!(left.ir_type, right.ir_type);
             match (left.ir_type, left.ctype.is_signed()) {
                 $($pat $(if $guard)? => Ok(Value {
@@ -100,7 +109,7 @@ macro_rules! scalar_bin_op {
     }
 
 impl LLVMCompiler {
-    fn new(name: String) -> LLVMCompiler {
+    fn new(name: String, debug: bool) -> LLVMCompiler {
         let mut flags_builder = settings::builder();
         // allow creating shared libraries
         flags_builder
@@ -131,6 +140,7 @@ impl LLVMCompiler {
             module: Module::new(builder),
             ebb_has_return: false,
             scope: Scope::new(),
+            debug,
         }
     }
     fn declare_func(
@@ -154,6 +164,70 @@ impl LLVMCompiler {
             .expect("should not have an error declaring a function");
         self.scope.insert(id, Id::Function(func_id));
         Ok(func_id)
+    }
+    /// declare an object on the stack
+    fn declare_data(
+        &mut self,
+        decl: Declaration,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> Result<(), Locatable<String>> {
+        if let Type::Function(ftype) = decl.symbol.ctype {
+            self.declare_func(
+                decl.symbol.id,
+                &ftype.signature(&location)?,
+                decl.symbol.storage_class,
+                &location,
+                true,
+            )?;
+            return Ok(());
+        }
+        let u64_size = match decl.symbol.ctype.sizeof() {
+            Ok(size) => size,
+            Err(err) => {
+                return Err(Locatable {
+                    data: err.into(),
+                    location,
+                })
+            }
+        };
+        let kind = StackSlotKind::ExplicitSlot;
+        let size = match u32::try_from(u64_size) {
+            Ok(size) => size,
+            Err(_) => return Err(Locatable {
+                data: "cannot store items on the stack that are more than 4 GB, it will overflow the stack".into(),
+                location,
+            })
+        };
+        let data = StackSlotData {
+            kind,
+            size,
+            offset: None,
+        };
+        let stack_slot = builder.create_stack_slot(data);
+        self.scope.insert(decl.symbol.id, Id::Data(stack_slot));
+        if let Some(init) = decl.init {
+            self.store_stack(init, stack_slot, decl.symbol.ctype, location, builder)?;
+        }
+        Ok(())
+    }
+    fn store_stack(
+        &self,
+        init: Initializer,
+        stack_slot: StackSlot,
+        ctype: Type,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> Result<(), Locatable<String>> {
+        match init {
+            Initializer::Scalar(expr) => {
+                let val = self.compile_expr(expr, builder)?;
+                builder.ins().stack_store(val.ir_val, stack_slot, 0);
+            }
+            Initializer::InitializerList(_) => unimplemented!("aggregate dynamic initialization"),
+            Initializer::FunctionBody(_) => unreachable!("functions can't be stored on the stack"),
+        }
+        Ok(())
     }
     fn compile_func(
         &mut self,
@@ -180,6 +254,11 @@ impl LLVMCompiler {
         self.ebb_has_return = false;
 
         self.compile_all(stmts, &mut builder)?;
+        if self.debug {
+            let mut clif = String::new();
+            codegen::write_function(&mut clif, &func, &None.into()).unwrap();
+            println!("{}", clif);
+        }
 
         let flags = settings::Flags::new(settings::builder());
         codegen::verify_function(&func, &flags).expect("should not have a compile error");
@@ -214,6 +293,8 @@ impl LLVMCompiler {
         }
         match stmt.data {
             StmtType::Compound(stmts) => self.compile_all(stmts, builder)?,
+            // INVARIANT: symbol has not yet been declared in this scope
+            StmtType::Decl(decl) => self.declare_data(*decl, stmt.location, builder)?,
             StmtType::Expr(expr) => {
                 self.compile_expr(expr, builder)?;
             }
@@ -272,11 +353,20 @@ impl LLVMCompiler {
         };
         match expr.expr {
             ExprType::Literal(token) => self.compile_literal(ir_type, expr.ctype, token, builder),
-            ExprType::Id(var) => self.load_addr(var),
+            ExprType::Id(var) => self.load_addr(var, location, builder),
 
             // unary operators
             // NOTE: this may be an implicit cast (float f = 1.2) not an explicit cast (1 + (int)1.2)
             // NOTE: it may also be a widening conversion (1 + 1.2)
+            ExprType::Deref(pointer) => {
+                let val = self.compile_expr(*pointer, builder)?;
+                let flags = MemFlags::new();
+                Ok(Value {
+                    ir_type,
+                    ctype: expr.ctype,
+                    ir_val: builder.ins().load(val.ir_type, flags, val.ir_val, 0),
+                })
+            }
             ExprType::Cast(orig) => self.cast(*orig, expr.ctype, location, builder),
             ExprType::Negate(expr) => self.negate(*expr, builder),
             ExprType::BitwiseNot(expr) => self.unary_op(
@@ -508,8 +598,26 @@ impl LLVMCompiler {
             _ => unreachable!("parser should catch illegal types"),
         })
     }
-    fn load_addr(&self, var: Symbol) -> IrResult {
-        unimplemented!("address loads");
+    fn load_addr(
+        &self,
+        var: Symbol,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> IrResult {
+        match self.scope.get(&var.id).unwrap() {
+            Id::Function(func_id) => unimplemented!("address of function"),
+            Id::Data(stack_slot) => {
+                let ir_type = var
+                    .ctype
+                    .as_ir_basic_type()
+                    .map_err(|data| Locatable { data, location })?;
+                Ok(Value {
+                    ir_type,
+                    ir_val: builder.ins().stack_addr(ir_type, *stack_slot, 0),
+                    ctype: var.ctype,
+                })
+            }
+        }
     }
     fn compare(
         &self,
@@ -518,7 +626,10 @@ impl LLVMCompiler {
         token: &Token,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        let (left, right) = (self.rval(left, builder)?, self.rval(right, builder)?);
+        let (left, right) = (
+            self.compile_expr(left, builder)?,
+            self.compile_expr(right, builder)?,
+        );
         assert_eq!(left.ir_type, right.ir_type);
 
         let ir_val = if left.ir_type.is_int() {
@@ -571,12 +682,6 @@ impl LLVMCompiler {
                 .expect("parser should only allow legal function types to be called"),
             ctype: ret_type,
         })
-    }
-    fn rval(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
-        let compiled = self.compile_expr(expr, builder)?;
-        // TODO: deref lvals
-        // TODO: will structs need special handling?
-        Ok(compiled)
     }
     fn store_static(
         &mut self,

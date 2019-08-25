@@ -188,6 +188,9 @@ impl Expr {
             ExprType::Compare(left, right, Token::NotEqual) => {
                 fold_compare_op!(left, right, Compare, !=, Token::NotEqual)
             }
+            ExprType::Compare(_, _, _) => {
+                unreachable!("only comparison tokens should appear in ExprType::Compare")
+            }
             ExprType::Ternary(condition, then, otherwise) => {
                 let (condition, then, otherwise) = (
                     condition.const_fold()?,
@@ -218,25 +221,42 @@ impl Expr {
                 let expr = expr.const_fold()?;
                 ExprType::Member(Box::new(expr), member)
             }
+            ExprType::Assign(target, value, token) => {
+                let (target, value) = (target.const_fold()?, value.const_fold()?);
+                // TODO: could we propagate this information somehow?
+                // e.g. fold `int main() { int x = 1; return x; }` to `return 1;`
+                ExprType::Assign(Box::new(target), Box::new(value), token)
+            }
             ExprType::Increment(expr, pre, post) => {
                 let expr = expr.const_fold()?;
                 // this isn't constant for the same reason assignment isn't constant
                 ExprType::Increment(Box::new(expr), pre, post)
             }
-            ExprType::Cast(expr) => {
-                let expr = expr.const_fold()?;
-                if let ExprType::Literal(ref token) = expr.expr {
-                    if let Some(token) = const_cast(token, &self.ctype) {
-                        ExprType::Literal(token)
+            ExprType::Cast(expr) => cast(*expr, &self.ctype)?,
+            ExprType::LogicalAnd(left, right) => {
+                let left = cast(*left, &Type::Bool)?;
+                if let ExprType::Literal(Token::Int(i)) = left {
+                    if i == 0 {
+                        ExprType::Literal(Token::Int(0))
                     } else {
-                        ExprType::Cast(Box::new(expr))
+                        cast(*right, &Type::Bool)?
                     }
                 } else {
-                    ExprType::Cast(Box::new(expr))
+                    left
                 }
             }
-            // TODO: finish constant folding
-            _ => self.expr,
+            ExprType::LogicalOr(left, right) => {
+                let left = cast(*left, &Type::Bool)?;
+                if let ExprType::Literal(Token::Int(i)) = left {
+                    if i != 0 {
+                        ExprType::Literal(Token::Int(1))
+                    } else {
+                        cast(*right, &Type::Bool)?
+                    }
+                } else {
+                    left
+                }
+            }
         };
         let is_constexpr = match folded {
             ExprType::Literal(_) => true,
@@ -250,6 +270,19 @@ impl Expr {
             ..self
         })
     }
+}
+
+fn cast(expr: Expr, ctype: &Type) -> Result<ExprType, Locatable<String>> {
+    let expr = expr.const_fold()?;
+    Ok(if let ExprType::Literal(ref token) = expr.expr {
+        if let Some(token) = const_cast(token, ctype) {
+            ExprType::Literal(token)
+        } else {
+            ExprType::Cast(Box::new(expr))
+        }
+    } else {
+        ExprType::Cast(Box::new(expr))
+    })
 }
 
 /// since we only have Int and Float for literals,

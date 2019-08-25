@@ -344,7 +344,7 @@ impl LLVMCompiler {
         token: Token,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        let ir_val = match dbg!(token, ir_type) {
+        let ir_val = match (token, ir_type) {
             (Token::Int(i), types::B1) => builder.ins().bconst(ir_type, i != 0),
             (Token::Int(i), _) => builder.ins().iconst(ir_type, i),
             (Token::UnsignedInt(u), types::B1) => builder.ins().bconst(ir_type, u != 0),
@@ -777,13 +777,10 @@ impl Token {
                         warn(&format!("conversion from double to float loses precision ({} is different from {} by more than DBL_EPSILON ({}))",
                         f64::from(cast), f, std::f64::EPSILON), &location);
                     }
-                    let float_as_int = unsafe { *(&cast as *const f32 as *const u32) };
+                    let float_as_int = cast.to_bits();
                     bytes!(float_as_int, big_endian)
                 }
-                types::F64 => {
-                    let float_as_int = unsafe { *(&f as *const f64 as *const u64) };
-                    bytes!(float_as_int, big_endian)
-                }
+                types::F64 => bytes!(f.to_bits(), big_endian),
                 x => unreachable!(format!(
                     "ir_type {} for float {} is not of integer type",
                     x, f

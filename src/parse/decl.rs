@@ -91,6 +91,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             (Type::Function(ftype), Some(Token::LeftBrace)) => Some(Initializer::FunctionBody(
                 self.function_body(id.clone(), ftype.clone())?,
             )),
+            (Type::Function(_), Some(Token::Equal)) => {
+                return Err(Locatable {
+                    data: format!(
+                        "cannot only initialize function '{}' with function body",
+                        id.data
+                    ),
+                    location: id.location,
+                });
+            }
             (ctype, Some(Token::Equal)) => {
                 self.next_token();
                 Some(self.initializer(ctype)?)

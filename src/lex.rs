@@ -554,7 +554,7 @@ impl<'a> Iterator for Lexer<'a> {
     /// The file may be empty to start, in which case the iterator will return None.
     fn next(&mut self) -> Option<Self::Item> {
         self.consume_whitespace();
-        let mut c = self.next_char();;
+        let mut c = self.next_char();
         // avoid stack overflow on lots of comments
         while c == Some('/') {
             c = match self.peek() {

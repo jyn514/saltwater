@@ -74,7 +74,6 @@ pub(crate) fn compile(
                 )?;
             }
             (Type::Void, _) => unreachable!("parser let an incomplete type through"),
-            (ty, None) => unimplemented!("data declarations without initializers"),
             (Type::Function(func_type), Some(Initializer::FunctionBody(stmts))) => compiler
                 .compile_func(
                     decl.data.symbol.id,
@@ -293,29 +292,7 @@ impl LLVMCompiler {
                 builder.ins().return_(&ret);
             }
             StmtType::If(condition, body, otherwise) => {
-                // If condtion is zero:
-                //      If else_block exists, jump to else_block + compile_all
-                //      Otherwise, jump to end_block
-                //  Otherwise:
-                //      Fallthrough to if_body + compile_all
-                //      If else_block exists, jump to end_block + compile_all
-                //      Otherwise, fallthrough to end_block
-                /*
-                let condition = self.compile_expr(condition);
-                let (if_body, end_body) = (builder.create_ebb(), builder.create_ebb());
-                let target = if let Some(o) = otherwise {
-                    let else_body = builder.create_ebb();
-                    builder.switch_to_block(else_body);
-                    self.compile_all(o, builder);
-                    builder.switch_to_block(
-                    else_body
-                } else {
-                    end_body
-                };
-                builder.ins().brz(condtion, target, &[]);
-                */
-                unimplemented!("if statements");
-                //let reg = self.compile_expr(condition);
+                self.if_stmt(condition, *body, otherwise, builder)?
             }
             _ => unimplemented!("almost every statement"),
         };
@@ -861,6 +838,59 @@ impl LLVMCompiler {
             data: format!("error defining static variable: {}", err),
             location,
         })
+    }
+    fn if_stmt(
+        &mut self,
+        condition: Expr,
+        body: Stmt,
+        otherwise: Option<Box<Stmt>>,
+        builder: &mut FunctionBuilder,
+    ) -> Result<(), Locatable<String>> {
+        // If condtion is zero:
+        //      If else_block exists, jump to else_block + compile_all
+        //      Otherwise, jump to end_block
+        //  Otherwise:
+        //      Fallthrough to if_body + compile_all
+        //      If else_block exists, jump to end_block + compile_all
+        //      Otherwise, fallthrough to end_block
+        let condition = self.compile_expr(condition, builder)?;
+        let (if_body, end_body) = (builder.create_ebb(), builder.create_ebb());
+        if let Some(other) = otherwise {
+            let else_body = builder.create_ebb();
+            builder.ins().brz(condition.ir_val, else_body, &[]);
+            builder.ins().jump(if_body, &[]);
+
+            builder.switch_to_block(if_body);
+            self.ebb_has_return = false;
+            self.compile_stmt(body, builder)?;
+            if !self.ebb_has_return {
+                builder.ins().jump(end_body, &[]);
+            }
+
+            builder.switch_to_block(else_body);
+            self.ebb_has_return = false;
+            self.compile_stmt(*other, builder)?;
+            if !self.ebb_has_return {
+                builder.ins().jump(end_body, &[]);
+            }
+
+            builder.switch_to_block(end_body);
+            self.ebb_has_return = false;
+        } else {
+            builder.ins().brz(condition.ir_val, end_body, &[]);
+            builder.ins().jump(if_body, &[]);
+
+            builder.switch_to_block(if_body);
+            self.ebb_has_return = false;
+            self.compile_stmt(body, builder)?;
+            if !self.ebb_has_return {
+                builder.ins().jump(end_body, &[]);
+            }
+
+            builder.switch_to_block(end_body);
+            self.ebb_has_return = false;
+        };
+        Ok(())
     }
 }
 

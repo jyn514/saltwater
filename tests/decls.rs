@@ -77,9 +77,8 @@ int f() { return 1; }",
 }
 
 #[test]
-#[should_panic(expected = "not yet implemented: data declarations")]
 fn declare_global() {
-    utils::not_implemented("int x; int main() { return x; }");
+    utils::assert_succeeds("int x; int main() { return x; }");
 }
 
 /* will fail until I add scoping

@@ -271,8 +271,7 @@ impl LLVMCompiler {
         if self.ebb_has_return {
             return Err(Locatable {
                 data: "unreachable statement".into(),
-                // TODO: this location is not even trying
-                location: Default::default(),
+                location: stmt.location,
             });
         }
         match stmt.data {

@@ -7,17 +7,9 @@ pub const SIZE_MAX: SIZE_T = SIZE_T::max_value();
 pub const FLOAT_SIZE: u16 = 4;
 pub const DOUBLE_SIZE: u16 = 8;
 
-/*
-// treat all integers as longs until https://github.com/CraneStation/cranelift/issues/939 is fixed
 pub const LONG_SIZE: u16 = 8;
 pub const INT_SIZE: u16 = 4;
 pub const SHORT_SIZE: u16 = 2;
-pub const BOOL_SIZE: u16 = 1;
-*/
-
-pub const LONG_SIZE: u16 = 8;
-pub const INT_SIZE: u16 = 8;
-pub const SHORT_SIZE: u16 = 8;
 pub const BOOL_SIZE: u16 = 1;
 
 pub const PTR_SIZE: u16 = 8;

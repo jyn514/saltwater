@@ -99,6 +99,9 @@ impl Type {
             Void => Err("cannot take `alignof` void"),
         }
     }
+    pub fn ptr_type() -> IrType {
+        IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
+    }
     pub fn as_ir_basic_type(&self) -> Result<IrType, String> {
         match self {
             // Integers

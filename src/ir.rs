@@ -658,7 +658,7 @@ impl LLVMCompiler {
                 let global = self.module.declare_data_in_func(*static_id, builder.func);
                 Ok(Value {
                     ir_type,
-                    ir_val: builder.ins().global_value(ir_type, global),
+                    ir_val: builder.ins().global_value(Type::ptr_type(), global),
                     ctype: var.ctype,
                 })
             }
@@ -669,7 +669,7 @@ impl LLVMCompiler {
                     .map_err(|data| Locatable { data, location })?;
                 Ok(Value {
                     ir_type,
-                    ir_val: builder.ins().stack_addr(ir_type, *stack_slot, 0),
+                    ir_val: builder.ins().stack_addr(Type::ptr_type(), *stack_slot, 0),
                     ctype: var.ctype,
                 })
             }

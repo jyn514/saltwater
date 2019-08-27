@@ -45,6 +45,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Self::assignment_expr,
             &[&Token::Comma],
             |left, right, token| {
+                let right = right.rval();
                 Ok(Expr {
                     ctype: right.ctype.clone(),
                     // TODO: this is technically right but will almost certainly be buggy
@@ -53,8 +54,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     // That's not really `expr()`'s problem, but it is something the constant
                     // folding has to worry about
                     constexpr: right.constexpr,
-                    lval: right.lval,
-                    expr: ExprType::Comma(left, right),
+                    lval: false,
+                    expr: ExprType::Comma(left, Box::new(right)),
                     location: token.location,
                 })
             },
@@ -101,13 +102,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .map_or(false, Token::is_assignment_operator)
         {
             let assign_op = self.next_token().unwrap();
-            let rval = self.assignment_expr()?.rval();
+            let mut rval = self.assignment_expr()?.rval();
             if !lval.lval {
                 Err(Locatable {
                     data: "expression is not assignable".to_string(),
                     location: assign_op.location,
                 })
             } else {
+                if rval.ctype != lval.ctype {
+                    rval = rval.cast(&lval.ctype)?;
+                }
                 Ok(Expr {
                     ctype: lval.ctype.clone(),
                     constexpr: rval.constexpr,

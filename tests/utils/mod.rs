@@ -71,7 +71,10 @@ pub fn assert_code(program: &str, code: i32) {
     assert!(
         match compile_and_run(program.to_string(), &[]) {
             Err(_) => false,
-            Ok(output) => output.status.code().unwrap() == code,
+            Ok(output) => match output.status.code() {
+                Some(actual) => actual == code,
+                None => false,
+            },
         },
         "{} should exit with code {}",
         program,

@@ -6,12 +6,12 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 
 - Lexer
 - Declarations (`int i, *p;`)
-- AST for expressions and (most) statements
 - Binary expressions (+, -, \*, /, \<, \>, \<\<, \>\>, ==, !=)
 - Implicit binary conversions (1.0 == 1)
 - Basic static initialization (i64, f64, arrays)
+- Scalar dynamic initialization (`int i = 1` inside a function)
 - Local variables; loads and stores
-- Compiling to object files
+- Compiling to object files on x86_64
 - Linking using host `cc` (similar to how the rust compiler does it)
 - Some error handling
 - Some command line arguments
@@ -21,12 +21,10 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 - Preprocessor
 - Multiple translation units (files)
 - Parse switch statements
-- Codegen for the rest of expressions
 - Codegen for statements
 - Scoping for variables
 - Structs, Unions, Enums
 - Bitfields?
-- loads are broken on Cranelift's end (see https://github.com/CraneStation/cranelift/issues/938 and https://github.com/CraneStation/cranelift/issues/939)
 - pointer arithmetic (including arrays)
 
 ## Running
@@ -34,14 +32,15 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 `cargo run` from top level directory.
 Anything without pointers or control flow should work, try something like this:
 
-```
-long i = 1;
+```c
+int i = 1;
 int a[3] = {1, 2, 3};
 float f = 2.5;
 
 int main(void) {
+  const int c = 4;
   // should return 6
-  return i + 2.5*3 - 4/2;
+  return i + 2.5*3 - c/2;
 }
 ```
 
@@ -52,8 +51,10 @@ Use `cargo run -- --help` for all options.
 
 ## Testing
 
-```
+```sh
 cargo test
+# optionally, you can fuzz the compiler
+# it may be more helpful to just `grep -R unimplemented src`, though
 cargo +nightly fuzz run garbage -- -timeout=1
 cd fuzz && {
   RUSTFLAGS="-Clink-arg=-fuse-ld=gold" cargo afl build --bin afl
@@ -70,7 +71,7 @@ Note that feature requests should be limited to extensions or better error handl
 the compiler will not break backwards compatibility with C.
 - test cases
 
-Substantial new features (e.g. constant folding) may not be accepted at this point,
+Substantial new features (e.g. a preprocessor) may not be accepted at this point,
 since this is a side project and I do kind of want to write the code myself.
 Bugfixes and minor features (e.g. better error messages) are welcome, please submit a pull request.
 

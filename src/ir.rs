@@ -585,7 +585,7 @@ impl LLVMCompiler {
                 }
             }
             (f, i) if f.is_float() && i.is_int() => {
-                if from_signed {
+                if to_signed {
                     builder.ins().fcvt_to_sint(to, val)
                 } else {
                     builder.ins().fcvt_to_uint(to, val)
@@ -731,6 +731,9 @@ impl LLVMCompiler {
                     builder
                         .ins()
                         .load(target.ir_type, MemFlags::new(), target.ir_val, 0);
+            }
+            if target.ir_type != value.ir_type {
+                unimplemented!("binary promotion for complex assignment");
             }
             value = Self::binary_assign_ir(
                 target,
@@ -958,7 +961,7 @@ impl Expr {
         match self.constexpr()? {
             Ok(constexpr) => {
                 let ctype = constexpr.data.ctype().unwrap();
-                constexpr.data.into_bytes(ctype, &constexpr.location)
+                constexpr.data.into_bytes(&ctype, &constexpr.location)
             }
             Err(location) => Err(Locatable {
                 data: "expression is not a compile time constant".into(),
@@ -996,8 +999,8 @@ macro_rules! bytes {
 }
 
 impl Token {
-    fn into_bytes(self, ctype: Type, location: &Location) -> Result<Box<[u8]>, Locatable<String>> {
-        let ir_type = match ctype.clone().as_ir_basic_type() {
+    fn into_bytes(self, ctype: &Type, location: &Location) -> Result<Box<[u8]>, Locatable<String>> {
+        let ir_type = match ctype.as_ir_basic_type() {
             Err(err) => {
                 return Err(Locatable {
                     data: err,

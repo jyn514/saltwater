@@ -133,9 +133,22 @@ fn cmp() {
 }
 
 #[test]
+fn assign() {
+    utils::assert_code("int main () { int i = 3; return i += 4; }", 7);
+    utils::assert_code("int i = 3; int main () { return i += 4; }", 7);
+    utils::assert_code("float f = -.515; int main () { return -(f *= 4); }", 2);
+    utils::assert_code(
+        "float f = -.515; int main () { int i; return -(i = f); }",
+        1,
+    );
+    //utils::assert_code("int main () { float f = 3; return f -= 2.1; }", 0);
+}
+
+#[test]
 fn comma() {
     utils::assert_code("int main() { return 1, 2; }", 2);
     utils::assert_code("int main() { return 1 + 1, 2.4; }", 2);
+    utils::assert_code("int main() { int i = 1; return i = 2, i; }", 2);
 }
 
 #[test]

@@ -800,7 +800,7 @@ impl LLVMCompiler {
             .declare_data(
                 &symbol.id,
                 linkage,
-                symbol.qualifiers.c_const,
+                !symbol.qualifiers.c_const,
                 Some(
                     symbol
                         .ctype

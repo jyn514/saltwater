@@ -1,4 +1,14 @@
+use crate::backend::CHAR_BIT;
 use crate::data::prelude::*;
+
+macro_rules! err {
+    ($message: expr, $location: expr$(,)?) => {
+        return Err(Locatable {
+            data: $message,
+            location: $location,
+        });
+    };
+}
 
 macro_rules! fold_int_bin_op {
     ($left: expr, $right: expr, $constructor: expr, $op: tt) => {{
@@ -88,6 +98,30 @@ macro_rules! fold_compare_op {
 }
 
 impl Expr {
+    pub fn is_zero(&self) -> bool {
+        if let ExprType::Literal(token) = &self.expr {
+            match *token {
+                Token::Int(i) => i == 0,
+                Token::UnsignedInt(u) => u == 0,
+                Token::Float(f) => f == 0.0,
+                Token::Char(c) => c == 0,
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+    pub fn is_negative(&self) -> bool {
+        if let ExprType::Literal(token) = &self.expr {
+            match *token {
+                Token::Int(i) => i < 0,
+                Token::Float(f) => f < 0.0,
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
     // first result: whether the expression itself is erroneous
     // second result: whether the expression was constexpr
     pub fn constexpr(self) -> Result<Result<Locatable<Token>, Location>, Locatable<String>> {
@@ -153,9 +187,27 @@ impl Expr {
             ExprType::Add(left, right) => fold_scalar_bin_op!(left, right, Add, +),
             ExprType::Sub(left, right) => fold_scalar_bin_op!(left, right, Sub, -),
             ExprType::Mul(left, right) => fold_scalar_bin_op!(left, right, Mul, *),
-            ExprType::Div(left, right) => fold_scalar_bin_op!(left, right, Div, /),
+            ExprType::Div(left, right) => {
+                let right = right.const_fold()?;
+                if right.is_zero() {
+                    return Err(Locatable {
+                        data: "cannot divide by zero".into(),
+                        location,
+                    });
+                }
+                fold_scalar_bin_op!(left, right, Div, /)
+            }
 
-            ExprType::Mod(left, right) => fold_int_bin_op!(left, right, ExprType::Mod, %),
+            ExprType::Mod(left, right) => {
+                let right = right.const_fold()?;
+                if right.is_zero() {
+                    return Err(Locatable {
+                        data: "cannot take remainder of division by zero".into(),
+                        location,
+                    });
+                }
+                fold_int_bin_op!(left, right, ExprType::Mod, %)
+            }
             ExprType::Xor(left, right) => fold_int_bin_op!(left, right, ExprType::Xor, ^),
             ExprType::BitwiseAnd(left, right) => {
                 fold_int_bin_op!(left, right, ExprType::BitwiseAnd, &)
@@ -164,12 +216,11 @@ impl Expr {
                 fold_int_bin_op!(left, right, ExprType::BitwiseOr, |)
             }
             ExprType::Shift(left, right, true) => {
-                fold_int_bin_op!(left, right, |left, right| ExprType::Shift(left, right, true), <<)
+                shift_left(*left, *right, &self.ctype, &location)?
             }
             ExprType::Shift(left, right, false) => {
-                fold_int_bin_op!(left, right, |left, right| ExprType::Shift(left, right, false), >>)
+                shift_right(*left, *right, &self.ctype, &location)?
             }
-
             ExprType::Compare(left, right, Token::Less) => {
                 fold_compare_op!(left, right, Compare, <, Token::Less)
             }
@@ -272,6 +323,16 @@ impl Expr {
     }
 }
 
+impl Token {
+    fn non_negative_int(&self) -> Result<u64, ()> {
+        match *self {
+            Token::Int(i) if i >= 0 => Ok(i as u64),
+            Token::UnsignedInt(u) => Ok(u),
+            _ => Err(()),
+        }
+    }
+}
+
 fn cast(expr: Expr, ctype: &Type) -> Result<ExprType, Locatable<String>> {
     let expr = expr.const_fold()?;
     Ok(if let ExprType::Literal(ref token) = expr.expr {
@@ -317,5 +378,114 @@ fn lnot_fold(expr: Expr) -> ExprType {
         ExprType::Literal(Token::Char(c)) => ExprType::Literal(Token::Int((c == 0) as i64)),
         ExprType::Literal(Token::Str(_)) => ExprType::Literal(Token::Int(0)),
         _ => ExprType::LogicalNot(Box::new(expr)),
+    }
+}
+
+fn shift_right(
+    left: Expr,
+    right: Expr,
+    ctype: &Type,
+    location: &Location,
+) -> Result<ExprType, Locatable<String>> {
+    let (left, right) = (left.const_fold()?, right.const_fold()?);
+    if let ExprType::Literal(token) = right.expr {
+        let shift = match token.non_negative_int() {
+            Ok(u) => u,
+            Err(_) => err!(
+                "cannot shift left by a negative amount".into(),
+                location.clone()
+            ),
+        };
+        let sizeof = ctype.sizeof().map_err(|err| Locatable {
+            data: err.into(),
+            location: location.clone(),
+        })?;
+        // Rust panics if the shift is greater than the size of the type
+        if shift >= sizeof {
+            return Ok(ExprType::Literal(if ctype.is_signed() {
+                Token::Int(0)
+            } else {
+                Token::UnsignedInt(0)
+            }));
+        }
+        if let ExprType::Literal(token) = left.expr {
+            Ok(match token {
+                Token::Int(i) => ExprType::Literal(Token::Int(i.wrapping_shr(shift as u32))),
+                Token::UnsignedInt(u) => {
+                    ExprType::Literal(Token::UnsignedInt(u.wrapping_shr(shift as u32)))
+                }
+                _ => unreachable!("only ints and unsigned ints can be right shifted"),
+            })
+        } else {
+            Ok(ExprType::Shift(
+                Box::new(left),
+                Box::new(Expr {
+                    expr: ExprType::Literal(token),
+                    ..right
+                }),
+                false,
+            ))
+        }
+    } else {
+        Ok(ExprType::Shift(Box::new(left), Box::new(right), false))
+    }
+}
+
+fn shift_left(
+    left: Expr,
+    right: Expr,
+    ctype: &Type,
+    location: &Location,
+) -> Result<ExprType, Locatable<String>> {
+    let (left, right) = (left.const_fold()?, right.const_fold()?);
+    if let ExprType::Literal(token) = right.expr {
+        let shift = match token.non_negative_int() {
+            Ok(u) => u,
+            Err(_) => err!(
+                "cannot shift left by a negative amount".into(),
+                location.clone()
+            ),
+        };
+        if left.ctype.is_signed() {
+            let size = match left.ctype.sizeof() {
+                Ok(s) => s,
+                Err(err) => err!(err.into(), location.clone()),
+            };
+            let max_shift = u64::from(CHAR_BIT) * size;
+            if shift >= max_shift {
+                err!(
+                    format!(
+                        "cannot shift left by {} or more bits for type '{}' (got {})",
+                        max_shift, ctype, shift
+                    ),
+                    location.clone(),
+                );
+            }
+        }
+        Ok(match left.expr {
+            ExprType::Literal(Token::Int(i)) => {
+                let (result, overflow) = i.overflowing_shl(shift as u32);
+                if overflow {
+                    err!(
+                        "overflow in shift left during constant folding".into(),
+                        location.clone()
+                    );
+                }
+                ExprType::Literal(Token::Int(result))
+            }
+            ExprType::Literal(Token::UnsignedInt(u)) => {
+                ExprType::Literal(Token::UnsignedInt(u.wrapping_shl(shift as u32)))
+            }
+            _ => ExprType::Shift(
+                Box::new(left),
+                Box::new(Expr {
+                    expr: ExprType::Literal(token),
+                    ..right
+                }),
+                false,
+            ),
+        })
+    } else {
+        Ok(ExprType::Shift(Box::new(left), Box::new(right), false))
     }
 }

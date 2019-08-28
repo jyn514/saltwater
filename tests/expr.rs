@@ -138,10 +138,10 @@ fn assign() {
     utils::assert_code("int i = 3; int main () { return i += 4; }", 7);
     utils::assert_code("float f = -.515; int main () { return -(f *= 4); }", 2);
     utils::assert_code(
-        "float f = -.515; int main () { int i; return -(i = f); }",
+        "float f = -1.515; int main () { int i; return -(i = f); }",
         1,
     );
-    //utils::assert_code("int main () { float f = 3; return f -= 2.1; }", 0);
+    utils::assert_code("int main () { float f = 3; return f -= 2.1; }", 0);
 }
 
 #[test]

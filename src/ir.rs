@@ -960,8 +960,8 @@ impl Expr {
     fn into_bytes(self) -> Result<Box<[u8]>, Locatable<String>> {
         match self.constexpr()? {
             Ok(constexpr) => {
-                let ctype = constexpr.data.ctype().unwrap();
-                constexpr.data.into_bytes(&ctype, &constexpr.location)
+                let (token, ctype) = constexpr.data;
+                token.into_bytes(&ctype, &constexpr.location)
             }
             Err(location) => Err(Locatable {
                 data: "expression is not a compile time constant".into(),

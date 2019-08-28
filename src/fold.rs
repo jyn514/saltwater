@@ -124,11 +124,13 @@ impl Expr {
     }
     // first result: whether the expression itself is erroneous
     // second result: whether the expression was constexpr
-    pub fn constexpr(self) -> Result<Result<Locatable<Token>, Location>, Locatable<String>> {
+    pub fn constexpr(
+        self,
+    ) -> Result<Result<Locatable<(Token, Type)>, Location>, Locatable<String>> {
         let folded = self.const_fold()?;
         let constexpr = match folded.expr {
             ExprType::Literal(token) => Ok(Locatable {
-                data: token,
+                data: (token, folded.ctype),
                 location: folded.location,
             }),
             _ => Err(folded.location),

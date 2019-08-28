@@ -389,16 +389,6 @@ impl Token {
             _ => return Err(()),
         })
     }
-    pub fn ctype(&self) -> Result<Type, ()> {
-        match self {
-            Token::Int(_) => Ok(Type::Long(true)),
-            Token::UnsignedInt(_) => Ok(Type::Long(false)),
-            Token::Float(_) => Ok(Type::Double),
-            Token::Str(s) => Ok(Type::for_string_literal(s.len().try_into().unwrap())),
-            Token::Char(_) => Ok(Type::Char(true)),
-            _ => Err(()),
-        }
-    }
 }
 
 lazy_static! {
@@ -515,7 +505,8 @@ impl Expr {
             data: LengthError::Dynamic.into(),
             location,
         })?;
-        match literal.data {
+        match literal.data.0 {
+            Token::UnsignedInt(u) => Ok(u),
             Token::Int(x) => x.try_into().map_err(|_| Locatable {
                 data: LengthError::Negative.into(),
                 location: literal.location,

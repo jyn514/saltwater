@@ -785,7 +785,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 ..
             }) => stmts,
             None => vec![],
-            x => panic!(
+            x => unreachable!(
                 "expected compound_statement to return compound statement, got '{:#?}' instead",
                 x
             ),

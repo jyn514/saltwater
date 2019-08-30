@@ -1,15 +1,6 @@
 use crate::backend::CHAR_BIT;
 use crate::data::prelude::*;
 
-macro_rules! err {
-    ($message: expr, $location: expr$(,)?) => {
-        return Err(Locatable {
-            data: $message,
-            location: $location,
-        });
-    };
-}
-
 macro_rules! fold_int_bin_op {
     ($left: expr, $right: expr, $constructor: expr, $op: tt) => {{
         let (left, right) = ($left.const_fold()?, $right.const_fold()?);

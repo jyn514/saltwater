@@ -901,39 +901,24 @@ impl Initializer {
         match self {
             Initializer::InitializerList(mut initializers) => match ctype {
                 Type::Array(ty, ArrayType::Unbounded) => {
-                    unimplemented!("inferring size of unbounded array from initializer")
+                    let len = initializers.len() as u64;
+                    let array_type = Type::Array(ty.clone(), ArrayType::Fixed(len));
+                    array_to_bytes(initializers, len, &array_type, ty, location)
                 }
                 Type::Array(ty, ArrayType::Fixed(size)) => {
                     let size = *size;
                     if initializers.len() as u64 > size {
                         Err(Locatable {
                             data: format!(
-                                "too many initalizers for array (expected {}, got {})",
+                                "too many elements for array (expected {}, got {})",
                                 size,
                                 initializers.len()
                             ),
+                            // TODO: this location points to the declarator, not the initializer
                             location: location.clone(),
                         })
                     } else {
-                        let init_len = initializers.len();
-                        let mut bytes = vec![];
-                        let elements = initializers
-                            .into_iter()
-                            .map(|init| init.into_bytes(ctype, location));
-
-                        for init in elements {
-                            bytes.extend_from_slice(&*init?);
-                        }
-                        let sizeof = ty.sizeof().map_err(|err| Locatable {
-                            location: location.clone(),
-                            data: err.to_string(),
-                        })?;
-                        let remaining_bytes = sizeof * (size - init_len as u64);
-                        let mut zero_init = Vec::new();
-                        zero_init.resize(remaining_bytes as usize, 0);
-                        bytes.append(&mut zero_init);
-
-                        Ok(bytes.into_boxed_slice())
+                        array_to_bytes(initializers, size, ctype, ty, location)
                     }
                 }
                 ty if ty.is_scalar() => {
@@ -954,6 +939,40 @@ impl Initializer {
             }
         }
     }
+}
+
+fn array_to_bytes(
+    initializers: Vec<Initializer>,
+    len: u64,
+    array_type: &Type,
+    inner_type: &Type,
+    location: &Location,
+) -> Result<Box<[u8]>, Locatable<String>> {
+    if let Type::Array(_, ArrayType::Unbounded) = inner_type {
+        err!(
+            "nested array must declare the size of each inner array".into(),
+            location.clone()
+        );
+    }
+    let init_len = initializers.len();
+    let mut bytes = vec![];
+    let elements = initializers
+        .into_iter()
+        .map(|init| init.into_bytes(inner_type, location));
+
+    for init in elements {
+        bytes.extend_from_slice(&*init?);
+    }
+    let sizeof = array_type.sizeof().map_err(|err| Locatable {
+        location: location.clone(),
+        data: err.to_string(),
+    })?;
+    let remaining_bytes = sizeof * (len - init_len as u64);
+    let mut zero_init = Vec::new();
+    zero_init.resize(remaining_bytes as usize, 0);
+    bytes.append(&mut zero_init);
+
+    Ok(bytes.into_boxed_slice())
 }
 
 impl Expr {

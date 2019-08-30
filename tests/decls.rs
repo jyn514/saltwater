@@ -77,6 +77,14 @@ int f() { return 1; }",
 }
 
 #[test]
+fn infer_array_bounds() {
+    utils::assert_succeeds("int a[] = {1, 2, 3}; int main(){}");
+    utils::assert_compile_error("int a[][] = {{1}};");
+    utils::assert_succeeds("int a[][3] = {{1, 2, 3}}; int main(){}");
+    utils::assert_compile_error("int a[][1] = {{1, 2, 3}}; int main(){}");
+}
+
+#[test]
 fn declare_global() {
     utils::assert_succeeds("int x; int main() { return x; }");
 }

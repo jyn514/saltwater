@@ -67,6 +67,18 @@ macro_rules! matches {
     };
 }
 
+/// Return an error from a function
+/// Assumes that 'Locatable' is in scope and that the function it is called in
+/// returns a 'Result<Locatable<T>>'
+macro_rules! err {
+    ($message: expr, $location: expr$(,)?) => {
+        return Err(Locatable {
+            data: $message,
+            location: $location,
+        });
+    };
+}
+
 /// Check that many expressions match a pattern
 /// TODO: only works for 1, 2, or 3 arguments
 #[allow(unused_macros)]

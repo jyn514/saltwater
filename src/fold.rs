@@ -134,7 +134,6 @@ impl Expr {
             ExprType::Literal(_) => self.expr,
             // TODO: if a variable were const, could we const fold Ids?
             ExprType::Id(_) => self.expr,
-            ExprType::Ref(expr) => ExprType::Ref(Box::new(expr.const_fold()?)),
             ExprType::Sizeof(ctype) => {
                 let sizeof = ctype.sizeof().map_err(|data| Locatable {
                     data: data.into(),

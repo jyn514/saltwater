@@ -182,3 +182,35 @@ fn overflow() {
     utils::assert_compile_error("int i = 1/0;");
     utils::assert_compile_error("int i = 1%0;");
 }
+
+#[test]
+fn pointers() {
+    utils::assert_code(
+        "int main() {
+    int i = 1;
+    int *p = &i;
+    return *p;
+}",
+        1,
+    );
+    utils::assert_code(
+        "int main() {
+    int i = 1;
+    int *p = &i;
+    *p = 2;
+    return i;
+}",
+        2,
+    );
+    utils::assert_succeeds(
+        "int main() {
+        int x;
+        int *p;
+        x = 0;
+        p = &x;
+        if(*p)
+                return 1;
+        return 0;
+}",
+    )
+}

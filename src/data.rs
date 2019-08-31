@@ -215,7 +215,6 @@ pub enum ExprType {
     Increment(Box<Expr>, bool, bool),
     Cast(Box<Expr>),
     Sizeof(Type),
-    Ref(Box<Expr>),
     Deref(Box<Expr>),
     Negate(Box<Expr>),
     LogicalNot(Box<Expr>),

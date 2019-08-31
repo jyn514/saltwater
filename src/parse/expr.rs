@@ -517,7 +517,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             lval: false,
                             location,
                             ctype: Type::Pointer(Box::new(expr.ctype.clone()), Qualifiers::NONE),
-                            expr: ExprType::Ref(Box::new(expr)),
+                            expr: expr.expr,
                         }),
                     },
                     Token::Star => match &expr.ctype {
@@ -963,21 +963,16 @@ impl Expr {
     }
     // ensure an expression has a value
     pub fn rval(self) -> Expr {
-        /*
-        match self.ctype {
-            Type::Array(_, _) => ,
-            Type::Function(_, _) =>
-        }
-        */
-        match self.expr {
-            ExprType::Id(_) => Expr {
+        if self.lval {
+            Expr {
                 ctype: self.ctype.clone(),
                 lval: false,
                 constexpr: false,
                 location: self.location.clone(),
                 expr: ExprType::Deref(Box::new(self)),
-            },
-            _ => self,
+            }
+        } else {
+            self
         }
     }
     // Perform an integer conversion, including all relevant casts.

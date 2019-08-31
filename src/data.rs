@@ -30,7 +30,6 @@ pub enum Keyword {
     Goto,
 
     // types
-    Bool,
     Char,
     Short,
     Int,
@@ -44,10 +43,21 @@ pub enum Keyword {
     Union,
     Struct,
     Enum,
+    // weird types
+    Bool,
+    Complex,
+    Imaginary,
 
     // qualifiers
     Const,
     Volatile,
+    Restrict,
+    // weird qualifiers
+    Atomic,
+    ThreadLocal,
+    // function qualifiers
+    Inline,
+    NoReturn,
 
     // storage classes
     Auto,
@@ -55,7 +65,12 @@ pub enum Keyword {
     Static,
     Extern,
 
+    // intrinsics
     Sizeof,
+    Generic,
+    StaticAssert,
+    Alignas,
+    Alignof,
 }
 
 #[derive(Clone, Debug, PartialEq)]

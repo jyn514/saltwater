@@ -19,9 +19,7 @@ use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
 use cranelift_module::{self, DataContext, DataId, FuncId, Linkage, Module as CraneliftModule};
 
 use crate::backend::TARGET;
-use crate::data::{
-    prelude::*, ArrayType, FunctionType, Initializer, Qualifiers, Scope, StorageClass,
-};
+use crate::data::{prelude::*, ArrayType, FunctionType, Initializer, Scope, StorageClass};
 use crate::utils::warn;
 
 type Module = CraneliftModule<FaerieBackend>;
@@ -78,7 +76,6 @@ pub(crate) fn compile(
                 .compile_func(
                     decl.data.symbol.id,
                     func_type,
-                    decl.data.symbol.qualifiers,
                     decl.data.symbol.storage_class,
                     stmts,
                     decl.location,
@@ -217,7 +214,6 @@ impl LLVMCompiler {
         &mut self,
         id: String,
         func_type: FunctionType,
-        quals: Qualifiers,
         sc: StorageClass,
         stmts: Vec<Stmt>,
         location: Location,
@@ -404,7 +400,7 @@ impl LLVMCompiler {
                 self.assignment(*lval, *rval, token, location, builder)
             }
             ExprType::FuncCall(func, args) => match func.expr {
-                ExprType::Id(var) => self.call_direct(var.id, func.ctype, args, location, builder),
+                ExprType::Id(var) => self.call_direct(var.id, func.ctype, args, builder),
                 _ => unimplemented!("indirect function calls"),
             },
             ExprType::Comma(left, right) => {
@@ -653,7 +649,7 @@ impl LLVMCompiler {
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         match self.scope.get(&var.id).unwrap() {
-            Id::Function(func_id) => unimplemented!("address of function"),
+            Id::Function(_) => unimplemented!("address of function"),
             Id::Global(static_id) => {
                 let ir_type = var
                     .ctype
@@ -763,7 +759,6 @@ impl LLVMCompiler {
         func_name: String,
         ctype: Type,
         args: Vec<Expr>,
-        location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         // TODO: should type checking go here or in parsing?
@@ -814,7 +809,7 @@ impl LLVMCompiler {
                         .alignof()
                         .map_err(|err| err.to_string())
                         .and_then(|size| {
-                            size.try_into().map_err(|f| {
+                            size.try_into().map_err(|_| {
                                 format!("align of {} is greater than 256 bytes", symbol.id)
                             })
                         })

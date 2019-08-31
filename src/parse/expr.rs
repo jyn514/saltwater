@@ -425,7 +425,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     self.next_token();
                     let Locatable {
                         location,
-                        data: (ctype, quals),
+                        data: (ctype, _),
                     } = self.type_name()?;
                     self.expect(Token::RightParen)?;
                     let expr = self.cast_expr()?;
@@ -1050,8 +1050,8 @@ impl Expr {
             || self.ctype.is_pointer() && ctype.is_bool()
             || self.ctype.is_pointer()
                 && match ctype {
-                    Type::Pointer(t, quals) => match **t {
-                        Type::Void => true, // quals == self.ctype.quals,
+                    Type::Pointer(t, _) => match **t {
+                        Type::Void => true,
                         _ => false,
                     },
                     _ => false,

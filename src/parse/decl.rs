@@ -271,6 +271,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         // unsigned const int
         while let Some(locatable) = self.next_token() {
             let (location, keyword) = match locatable.data {
+                Token::Keyword(Keyword::Struct)
+                | Token::Keyword(Keyword::Union)
+                | Token::Keyword(Keyword::Enum) => {
+                    if let Some(ctype) = &ctype {
+                        errors.push(Locatable {
+                            data: format!(
+                                "cannot combine '{}' specifier with previous '{}' type specifier",
+                                locatable.data, ctype
+                            ),
+                            location: locatable.location,
+                        });
+                    } else {
+                        ctype = Some(self.compound_specifier()?);
+                    }
+                    continue;
+                }
                 Token::Keyword(k) if k.is_decl_specifier() => (locatable.location, k),
                 _ => {
                     self.unput(Some(locatable));
@@ -343,6 +359,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             qualifiers,
             ctype,
         ))
+    }
+    fn compound_specifier(&self) -> Result<Type, Locatable<String>> {
+        unimplemented!("structs, unions, and enums");
     }
     /*
      * function parameters

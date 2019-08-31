@@ -73,16 +73,26 @@ lazy_static! {
         "long" => Keyword::Long,
         "float" => Keyword::Float,
         "double" => Keyword::Double,
+        "_Complex" => Keyword::Complex,
+        "_Imaginary" => Keyword::Imaginary,
         "void" => Keyword::Void,
         "signed" => Keyword::Signed,
         "unsigned" => Keyword::Unsigned,
         "typedef" => Keyword::Typedef,
+        "enum" => Keyword::Enum,
         "union" => Keyword::Union,
         "struct" => Keyword::Struct,
 
         // qualifiers
         "const" => Keyword::Const,
         "volatile" => Keyword::Volatile,
+        "restrict" => Keyword::Restrict,
+        "_Atomic" => Keyword::Atomic,
+        "_Thread_local" => Keyword::ThreadLocal,
+
+        // function qualifiers
+        "inline" => Keyword::Inline,
+        "_Noreturn" => Keyword::NoReturn,
 
         // storage classes
         "auto" => Keyword::Auto,
@@ -90,8 +100,12 @@ lazy_static! {
         "static" => Keyword::Static,
         "extern" => Keyword::Extern,
 
-        // compiler intrinsics. so far, just 'sizeof'
-        "sizeof" => Keyword::Sizeof
+        // compiler intrinsics
+        "sizeof" => Keyword::Sizeof,
+        "_Alignof" => Keyword::Alignof,
+        "_Alignas" => Keyword::Alignas,
+        "_Generic" => Keyword::Generic,
+        "_Static_assert" => Keyword::StaticAssert,
     };
 }
 

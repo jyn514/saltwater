@@ -43,7 +43,7 @@ fn fold_compare_op<C, F>(
     constructor: C,
     op: F,
     compare: Token,
-) -> Result<ExprType, Locatable<String>>
+) -> SemanticResult<ExprType>
 where
     C: Fn(Box<Expr>, Box<Expr>) -> ExprType,
     F: Fn(T, T) -> bool,
@@ -115,9 +115,7 @@ impl Expr {
     }
     // first result: whether the expression itself is erroneous
     // second result: whether the expression was constexpr
-    pub fn constexpr(
-        self,
-    ) -> Result<Result<Locatable<(Token, Type)>, Location>, Locatable<String>> {
+    pub fn constexpr(self) -> SemanticResult<Result<Locatable<(Token, Type)>, Location>> {
         let folded = self.const_fold()?;
         let constexpr = match folded.expr {
             ExprType::Literal(token) => Ok(Locatable {
@@ -128,7 +126,7 @@ impl Expr {
         };
         Ok(constexpr)
     }
-    pub fn const_fold(self) -> Result<Expr, Locatable<String>> {
+    pub fn const_fold(self) -> SemanticResult<Expr> {
         let location = self.location;
         let folded = match self.expr {
             ExprType::Literal(_) => self.expr,
@@ -254,7 +252,7 @@ impl Expr {
                 let params: Vec<Expr> = params
                     .into_iter()
                     .map(Self::const_fold)
-                    .collect::<Result<_, Locatable<String>>>()?;
+                    .collect::<SemanticResult<_>>()?;
                 // function calls are always non-constant
                 // TODO: if we have access to the full source of a function, could we try to
                 // TODO: fold across function boundaries?
@@ -325,7 +323,7 @@ impl Token {
     }
 }
 
-fn cast(expr: Expr, ctype: &Type) -> Result<ExprType, Locatable<String>> {
+fn cast(expr: Expr, ctype: &Type) -> SemanticResult<ExprType> {
     let expr = expr.const_fold()?;
     Ok(if let ExprType::Literal(ref token) = expr.expr {
         if let Some(token) = const_cast(token, ctype) {
@@ -378,7 +376,7 @@ fn shift_right(
     right: Expr,
     ctype: &Type,
     location: &Location,
-) -> Result<ExprType, Locatable<String>> {
+) -> SemanticResult<ExprType> {
     let (left, right) = (left.const_fold()?, right.const_fold()?);
     if let ExprType::Literal(token) = right.expr {
         let shift = match token.non_negative_int() {
@@ -428,7 +426,7 @@ fn shift_left(
     right: Expr,
     ctype: &Type,
     location: &Location,
-) -> Result<ExprType, Locatable<String>> {
+) -> SemanticResult<ExprType> {
     let (left, right) = (left.const_fold()?, right.const_fold()?);
     if let ExprType::Literal(token) = right.expr {
         let shift = match token.non_negative_int() {

@@ -55,7 +55,7 @@ Use `cargo run -- --help` for all options.
 cargo test
 # optionally, you can fuzz the compiler
 # it may be more helpful to just `grep -R unimplemented src`, though
-cargo +nightly fuzz run garbage -- -timeout=1
+cargo +nightly fuzz run libfuzzer -- -timeout=1
 cd fuzz && {
   RUSTFLAGS="-Clink-arg=-fuse-ld=gold" cargo afl build --bin afl &&
   AFL_SKIP_CPUFREQ=1 cargo afl fuzz -i afl/inputs -o afl/outputs target/debug/afl

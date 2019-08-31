@@ -521,6 +521,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         }),
                     },
                     Token::Star => match &expr.ctype {
+                        Type::Array(t, _) => Ok(Expr {
+                            constexpr: false,
+                            lval: true,
+                            ctype: (**t).clone(),
+                            location,
+                            expr: expr.expr,
+                        }),
                         Type::Pointer(t, _) => Ok(Expr {
                             constexpr: expr.constexpr,
                             lval: !t.is_function(),
@@ -613,10 +620,31 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             match token {
                 // a[i] desugars to *(a + i)
                 Token::LeftBracket => {
+                    let array = expr.rval();
+                    let target_type = match array.ctype {
+                        Type::Pointer(ref target, _) => (**target).clone(),
+                        _ => err!(
+                            format!("cannot subscript non-array type '{}'", array.ctype),
+                            location,
+                        ),
+                    };
                     let index = self.expr()?;
+                    let index = Expr {
+                        lval: false,
+                        location: index.location.clone(),
+                        constexpr: index.constexpr,
+                        expr: ExprType::Cast(Box::new(index)),
+                        ctype: array.ctype.clone(),
+                    };
                     self.expect(Token::RightBracket)?;
-                    let sum = Expr::pointer_arithmetic_op(expr, index, true)?;
-                    Expr::deref_op(sum)
+                    Ok(Expr {
+                        lval: true,
+                        location,
+                        ctype: target_type,
+                        constexpr: array.constexpr && index.constexpr,
+                        // note that we do NOT call 'expr.rval()'
+                        expr: ExprType::Add(Box::new(array), Box::new(index)),
+                    })
                 }
                 // function call
                 Token::LeftParen => {
@@ -963,6 +991,15 @@ impl Expr {
     }
     // ensure an expression has a value
     pub fn rval(self) -> Expr {
+        if let Type::Array(to, _) = self.ctype {
+            // a + 1 is the same as &a + 1
+            return Expr {
+                lval: false,
+                ctype: Type::Pointer(to, Qualifiers::NONE),
+                constexpr: false,
+                ..self
+            };
+        }
         if self.lval {
             Expr {
                 ctype: self.ctype.clone(),
@@ -1028,14 +1065,6 @@ impl Expr {
             lval: false,
             expr: ExprType::LogicalNot(Box::new(self)),
         })
-    }
-    /// p + 1 where p is a pointer
-    fn pointer_arithmetic_op(left: Expr, right: Expr, addition: bool) -> ExprResult {
-        unimplemented!("pointer arithmetic not implemented")
-    }
-    /// *p where p is a pointer
-    fn deref_op(expr: Expr) -> ExprResult {
-        unimplemented!("dereference operator")
     }
     /// x + 5, f() where f is a function pointer
     fn implicit_deref_op(expr: Expr) -> ExprResult {

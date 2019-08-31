@@ -12,6 +12,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .expect(Token::LeftBrace)
             .expect("compound_statement should be called with '{' as the next token");
         let mut stmts = vec![];
+        // TODO: this behaves very badly for `int i, j;` because it doesn't look at self.pending
+        // TODO: refactor Stmt::Decl to have a list of declarations
         while self.peek_token() != Some(&Token::RightBrace) {
             if let Some(x) = self.statement()? {
                 stmts.push(x);
@@ -155,7 +157,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .expect(Token::Keyword(Keyword::If))
             .expect("parser shouldn't call if_statement without an if");
         self.expect(Token::LeftParen)?;
-        let condition = self.expr()?;
+        let condition = self.expr()?.rval();
         self.expect(Token::RightParen)?;
         let body = self.statement()?;
         let otherwise = if self.match_next(&Token::Keyword(Keyword::Else)).is_some() {
@@ -191,7 +193,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn switch_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::Switch))?;
         self.expect(Token::LeftParen)?;
-        let expr = self.expr()?;
+        let expr = self.expr()?.rval();
         self.expect(Token::RightParen)?;
         let body = self.statement()?;
         let stmt = if let Some(stmt) = body {

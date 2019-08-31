@@ -303,13 +303,17 @@ impl LLVMCompiler {
     fn compile_expr(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         let expr = expr.const_fold()?;
         let location = expr.location;
-        let ir_type = match expr.ctype.as_ir_basic_type() {
-            Ok(ir_type) => ir_type,
-            Err(err) => {
-                return Err(Locatable {
-                    data: err,
-                    location,
-                });
+        let ir_type = if expr.lval {
+            Type::ptr_type()
+        } else {
+            match expr.ctype.as_ir_basic_type() {
+                Ok(ir_type) => ir_type,
+                Err(err) => {
+                    return Err(Locatable {
+                        data: err,
+                        location,
+                    });
+                }
             }
         };
         match expr.expr {
@@ -325,7 +329,7 @@ impl LLVMCompiler {
                 Ok(Value {
                     ir_type,
                     ctype: expr.ctype,
-                    ir_val: builder.ins().load(val.ir_type, flags, val.ir_val, 0),
+                    ir_val: builder.ins().load(ir_type, flags, val.ir_val, 0),
                 })
             }
             ExprType::Cast(orig) => self.cast(*orig, expr.ctype, location, builder),

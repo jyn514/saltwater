@@ -212,5 +212,39 @@ fn pointers() {
                 return 1;
         return 0;
 }",
-    )
+    );
+}
+
+#[test]
+fn arrays() {
+    utils::assert_succeeds(
+        "
+int a[] = {0, 1, 2};
+int main() {
+    return *a;
+}",
+    );
+    utils::assert_code(
+        "
+int a[] = {0, 1, 2};
+int main() {
+    return *a = 2;
+}",
+        2,
+    );
+    utils::assert_succeeds(
+        "
+int a[] = {0, 1, 2};
+int main() {
+    return a[0];
+}",
+    );
+    utils::assert_code(
+        "
+int a[] = {0, 1, 2};
+int main() {
+    return a[0] = 2;
+}",
+        2,
+    );
 }

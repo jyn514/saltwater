@@ -1,0 +1,21 @@
+language: rust
+rust:
+    - stable
+    - beta
+    - nightly
+
+cache:
+    cargo: ""
+    directories:
+        - fuzz/artifacts
+        - fuzz/corpus/libfuzzer
+        - fuzz/afl/outputs
+
+script:
+    - tests/pre-commit.sh
+    - if [ TRAVIS_RUST_VERSION = "nightly" ]; then tests/fuzz.sh || true; fi
+
+matrix:
+    allow_failures:
+        - rust: nightly
+    fast_finish: true

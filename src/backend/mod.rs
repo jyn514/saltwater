@@ -49,7 +49,7 @@ impl Type {
             Pointer(_, _) => Ok(PTR_SIZE.into()),
             // now for the hard ones
             Array(t, ArrayType::Fixed(l)) => t.sizeof().and_then(|n| Ok(n * l)),
-            Array(t, ArrayType::Unbounded) => Err("cannot take sizeof variable length array"),
+            Array(_, ArrayType::Unbounded) => Err("cannot take sizeof variable length array"),
             Enum(symbols) => {
                 let uchar = CHAR_BIT as usize;
                 // integer division, but taking the ceiling instead of the floor
@@ -128,13 +128,14 @@ impl Type {
 
             // Aggregates
             // arrays decay to pointers at the assembly level
-            Array(t, l) => Ok(IrType::int(PTR_SIZE * CHAR_BIT)
+            Array(_, _) => Ok(IrType::int(PTR_SIZE * CHAR_BIT)
                 .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE))),
             Struct(members) => {
                 let llvm_elements: Vec<_> = members
                     .iter()
                     .map(|m| m.ctype.as_ir_basic_type())
                     .collect::<Result<_, String>>()?;
+                // need to figure out how padding works
                 unimplemented!("struct type -> IR");
             }
             // LLVM does not have a union type.

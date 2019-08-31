@@ -65,7 +65,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * and return the last.
      */
     pub fn declaration(&mut self) -> Result<Option<Locatable<Declaration>>, Locatable<String>> {
-        let (sc, qualifiers, ctype) = self.declaration_specifiers(true)?;
+        let (sc, mut qualifiers, ctype) = self.declaration_specifiers(true)?;
         if self.match_next(&Token::Semicolon).is_some() {
             warn(
                 "declaration does not declare anything",
@@ -107,6 +107,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             _ => None,
         };
         let is_func = first_type.is_function();
+        if is_func && qualifiers != Qualifiers::NONE {
+            warn(
+                &format!("{} has no effect on function return type", qualifiers),
+                &id.location,
+            );
+            qualifiers = Qualifiers::NONE;
+        }
         let symbol = Symbol {
             id: id.data,
             ctype: first_type,

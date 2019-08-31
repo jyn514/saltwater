@@ -758,6 +758,21 @@ impl Display for Token {
     }
 }
 
+impl Display for Qualifiers {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match (self.c_const, self.volatile) {
+                (true, true) => "'const volatile' type qualifiers",
+                (true, false) => "'const' type qualifier",
+                (false, true) => "'volatile' type qualifier",
+                (false, false) => "",
+            }
+        )
+    }
+}
+
 impl PartialEq for ArrayType {
     fn eq(&self, _: &Self) -> bool {
         true

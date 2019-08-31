@@ -493,7 +493,7 @@ impl<'a> Lexer<'a> {
                     Err(String::from("Multi-character character literal"))
                 }
             },
-            Ok(c) => {
+            Ok(_) => {
                 consume_until_quote(self);
                 Err(String::from("Multi-byte unicode character literal"))
             }

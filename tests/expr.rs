@@ -248,3 +248,15 @@ int main() {
         2,
     );
 }
+
+#[test]
+fn strings() {
+    utils::assert_code(
+        "
+int puts(const char *s);
+int main() {
+    return puts(\"hi\");
+}",
+        3,
+    );
+}

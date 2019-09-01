@@ -18,6 +18,37 @@ fn return_type() {
 }
 
 #[test]
+fn branch_return() {
+    utils::assert_code(
+        "int main() {
+    if (1) {
+        return 1;
+    }
+}",
+        1,
+    );
+    utils::assert_succeeds(
+        "int main() {
+    if (0) {
+        return 1;
+    }
+}",
+    );
+    utils::assert_compile_error(
+        "int main() {
+    if (1) { return 1; } else { return 0; }
+    return 2;
+}",
+    );
+    utils::assert_compile_error("int f() {}");
+    utils::assert_compile_error(
+        "int f() {
+    if (0) { return 0; }
+}",
+    );
+}
+
+#[test]
 fn main_is_special() {
     utils::assert_succeeds("int main() {}");
 }

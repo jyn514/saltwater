@@ -175,13 +175,13 @@ impl Type {
 }
 
 impl FunctionType {
-    pub fn signature(self, location: &Location) -> Result<Signature, Locatable<String>> {
+    pub fn signature(&self, location: &Location) -> Result<Signature, Locatable<String>> {
         let params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
             // no arguments
             Vec::new()
         } else {
             self.params
-                .into_iter()
+                .iter()
                 .map(|param| {
                     param
                         .ctype
@@ -194,8 +194,7 @@ impl FunctionType {
                 })
                 .collect::<Result<Vec<_>, Locatable<String>>>()?
         };
-        // we can't use `.should_return` because `self` was partially moved by `self.params.into_iter`
-        let return_type = if *self.return_type == Type::Void {
+        let return_type = if !self.should_return() {
             vec![]
         } else {
             vec![self

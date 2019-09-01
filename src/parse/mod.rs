@@ -48,8 +48,6 @@ struct FunctionData {
     location: Location,
     /// the type of the function
     ftype: FunctionType,
-    /// whether or not we've seen a return statement for this function
-    seen_ret: bool,
 }
 
 impl<I> Parser<I>

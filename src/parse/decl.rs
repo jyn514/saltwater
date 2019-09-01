@@ -695,6 +695,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     }) = self.match_any(&[
                         &Token::Keyword(Keyword::Const),
                         &Token::Keyword(Keyword::Volatile),
+                        &Token::Keyword(Keyword::Restrict),
+                        &Token::Keyword(Keyword::Atomic),
+                        &Token::Keyword(Keyword::ThreadLocal),
                     ]) {
                         if keyword == Keyword::Const {
                             if qualifiers.c_const {
@@ -708,6 +711,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             } else {
                                 qualifiers.volatile = true;
                             }
+                        } else {
+                            warn(
+                                &format!("qualifier '{}' has not yet been implemented", keyword),
+                                &location,
+                            );
                         }
                     }
                     // TODO: this is wrong

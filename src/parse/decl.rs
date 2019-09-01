@@ -732,10 +732,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 _ => self.direct_declarator(allow_abstract),
             }
         } else {
-            Err(Locatable {
-                location: self.next_location().clone(),
-                data: "expected declarator, got <end-of-file>".to_string(),
-            })
+            // this is useful for integration tests, even though there's no scenario
+            // where a type followed by EOF is legal in a real program
+            self.direct_declarator(allow_abstract)
         }
     }
     /// initializer

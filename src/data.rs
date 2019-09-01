@@ -627,7 +627,19 @@ impl Default for StorageClass {
 
 impl Display for Keyword {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", &format!("{:?}", self).to_lowercase())
+        match self {
+            Keyword::Alignas
+            | Keyword::Alignof
+            | Keyword::Bool
+            | Keyword::Complex
+            | Keyword::Imaginary
+            | Keyword::Atomic
+            | Keyword::ThreadLocal
+            | Keyword::NoReturn
+            | Keyword::Generic
+            | Keyword::StaticAssert => write!(f, "_{:?}", self),
+            _ => write!(f, "{}", &format!("{:?}", self).to_lowercase()),
+        }
     }
 }
 

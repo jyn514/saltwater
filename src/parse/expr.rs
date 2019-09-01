@@ -727,14 +727,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let member = self.expect(Token::Id(Default::default()))?;
                     unimplemented!("structs are very much not implemented");
                 }
-                Token::PlusPlus => {
-                    let Locatable { location, .. } = self.next_token().unwrap();
-                    Expr::increment_op(false, true, expr, location)
-                }
-                Token::MinusMinus => {
-                    let Locatable { location, .. } = self.next_token().unwrap();
-                    Expr::increment_op(false, false, expr, location)
-                }
+                Token::PlusPlus => Expr::increment_op(false, true, expr, location),
+                Token::MinusMinus => Expr::increment_op(false, false, expr, location),
                 _ => {
                     self.unput(Some(Locatable {
                         location,

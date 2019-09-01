@@ -23,7 +23,7 @@ use crate::data::{prelude::*, ArrayType, FunctionType, Initializer, Scope, Stora
 use crate::utils::warn;
 
 type Module = CraneliftModule<FaerieBackend>;
-type IrResult = Result<Value, Locatable<String>>;
+type IrResult = SemanticResult<Value>;
 
 enum Id {
     Function(FuncId),
@@ -46,10 +46,7 @@ struct Value {
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
-pub(crate) fn compile(
-    program: Vec<Locatable<Declaration>>,
-    debug: bool,
-) -> Result<Module, Locatable<String>> {
+pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> SemanticResult<Module> {
     let name = program
         .first()
         .map_or_else(|| "<empty>".to_string(), |decl| decl.data.symbol.id.clone());
@@ -131,7 +128,7 @@ impl LLVMCompiler {
         sc: StorageClass,
         location: &Location,
         cextern: bool,
-    ) -> Result<FuncId, Locatable<String>> {
+    ) -> SemanticResult<FuncId> {
         let mut linkage = sc.try_into().map_err(|err| Locatable {
             data: err,
             location: location.clone(),
@@ -152,7 +149,7 @@ impl LLVMCompiler {
         decl: Declaration,
         location: Location,
         builder: &mut FunctionBuilder,
-    ) -> Result<(), Locatable<String>> {
+    ) -> SemanticResult<()> {
         if let Type::Function(ftype) = decl.symbol.ctype {
             self.declare_func(
                 decl.symbol.id,
@@ -199,7 +196,7 @@ impl LLVMCompiler {
         ctype: Type,
         location: Location,
         builder: &mut FunctionBuilder,
-    ) -> Result<(), Locatable<String>> {
+    ) -> SemanticResult<()> {
         match init {
             Initializer::Scalar(expr) => {
                 let val = self.compile_expr(expr, builder)?;
@@ -217,7 +214,7 @@ impl LLVMCompiler {
         sc: StorageClass,
         stmts: Vec<Stmt>,
         location: Location,
-    ) -> Result<(), Locatable<String>> {
+    ) -> SemanticResult<()> {
         let signature = func_type.signature(&location)?;
         let func_id = self.declare_func(id, &signature, sc, &location, false)?;
         // external name is meant to be a lookup in a symbol table,
@@ -253,17 +250,13 @@ impl LLVMCompiler {
         &mut self,
         stmts: Vec<Stmt>,
         builder: &mut FunctionBuilder,
-    ) -> Result<(), Locatable<String>> {
+    ) -> SemanticResult<()> {
         for stmt in stmts {
             self.compile_stmt(stmt, builder)?;
         }
         Ok(())
     }
-    fn compile_stmt(
-        &mut self,
-        stmt: Stmt,
-        builder: &mut FunctionBuilder,
-    ) -> Result<(), Locatable<String>> {
+    fn compile_stmt(&mut self, stmt: Stmt, builder: &mut FunctionBuilder) -> SemanticResult<()> {
         if self.ebb_has_return {
             return Err(Locatable {
                 data: "unreachable statement".into(),
@@ -769,7 +762,7 @@ impl LLVMCompiler {
         let compiled_args: Vec<IrValue> = args
             .into_iter()
             .map(|arg| self.compile_expr(arg, builder).map(|val| val.ir_val))
-            .collect::<Result<_, Locatable<String>>>()?;
+            .collect::<SemanticResult<_>>()?;
         // TODO: need access to current scope for this to work
         let func_id: FuncId = match self.scope.get(&func_name) {
             Some(Id::Function(func_id)) => *func_id,
@@ -791,7 +784,7 @@ impl LLVMCompiler {
         symbol: Symbol,
         init: Option<Initializer>,
         location: Location,
-    ) -> Result<(), Locatable<String>> {
+    ) -> SemanticResult<()> {
         let err_closure = |err| Locatable {
             data: err,
             location: location.clone(),
@@ -846,7 +839,7 @@ impl LLVMCompiler {
         body: Stmt,
         otherwise: Option<Box<Stmt>>,
         builder: &mut FunctionBuilder,
-    ) -> Result<(), Locatable<String>> {
+    ) -> SemanticResult<()> {
         // If condtion is zero:
         //      If else_block exists, jump to else_block + compile_all
         //      Otherwise, jump to end_block
@@ -896,7 +889,7 @@ impl LLVMCompiler {
 }
 
 impl Initializer {
-    fn into_bytes(self, ctype: &Type, location: &Location) -> Result<Box<[u8]>, Locatable<String>> {
+    fn into_bytes(self, ctype: &Type, location: &Location) -> SemanticResult<Box<[u8]>> {
         match self {
             Initializer::InitializerList(mut initializers) => match ctype {
                 Type::Array(ty, ArrayType::Unbounded) => {
@@ -946,7 +939,7 @@ fn array_to_bytes(
     array_type: &Type,
     inner_type: &Type,
     location: &Location,
-) -> Result<Box<[u8]>, Locatable<String>> {
+) -> SemanticResult<Box<[u8]>> {
     if let Type::Array(_, ArrayType::Unbounded) = inner_type {
         err!(
             "nested array must declare the size of each inner array".into(),
@@ -975,7 +968,7 @@ fn array_to_bytes(
 }
 
 impl Expr {
-    fn into_bytes(self) -> Result<Box<[u8]>, Locatable<String>> {
+    fn into_bytes(self) -> SemanticResult<Box<[u8]>> {
         match self.constexpr()? {
             Ok(constexpr) => {
                 let (token, ctype) = constexpr.data;
@@ -1017,7 +1010,7 @@ macro_rules! bytes {
 }
 
 impl Token {
-    fn into_bytes(self, ctype: &Type, location: &Location) -> Result<Box<[u8]>, Locatable<String>> {
+    fn into_bytes(self, ctype: &Type, location: &Location) -> SemanticResult<Box<[u8]>> {
         let ir_type = match ctype.as_ir_basic_type() {
             Err(err) => {
                 return Err(Locatable {

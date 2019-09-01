@@ -11,11 +11,16 @@ cache:
         - fuzz/corpus/libfuzzer
         - fuzz/afl/outputs
 
+install:
+    - rustup component add rustfmt
+    - rustup component add clippy
+
 script:
     - tests/pre-commit.sh
-    - if [ TRAVIS_RUST_VERSION = "nightly" ]; then tests/fuzz.sh || true; fi
+    - echo $TRAVIS_RUST_VERSION; if [ $TRAVIS_RUST_VERSION = "nightly" ]; then tests/fuzz.sh || true; fi
 
 matrix:
     allow_failures:
         - rust: nightly
+        - rust: beta
     fast_finish: true

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::str::Chars;
 
-use super::data::{Keyword, Locatable, Location, Token};
+use super::data::{Keyword, Locatable, Location, SemanticResult, Token};
 use super::utils::warn;
 
 /// A Lexer takes the source code and turns it into tokens with location information.
@@ -246,7 +246,7 @@ impl<'a> Lexer<'a> {
     ///
     /// Before: chars{"hello this is a lot of text */ int main(){}"}
     /// After:  chars{" int main(){}"}
-    fn consume_multi_comment(&mut self) -> Result<(), Locatable<String>> {
+    fn consume_multi_comment(&mut self) -> SemanticResult<()> {
         while let Some(c) = self.next_char() {
             if c == '*' && self.peek() == Some('/') {
                 self.next_char();

@@ -7,9 +7,12 @@ use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
 
 use crate::backend::SIZE_T;
 
+pub type SemanticResult<T> = Result<T, Locatable<String>>;
+
 pub mod prelude {
     pub use super::{
-        Declaration, Expr, ExprType, Locatable, Location, Stmt, StmtType, Symbol, Token, Type,
+        Declaration, Expr, ExprType, Locatable, Location, SemanticResult, Stmt, StmtType, Symbol,
+        Token, Type,
     };
 }
 
@@ -508,7 +511,7 @@ pub enum LengthError {
 }
 
 impl Expr {
-    pub fn const_int(self) -> Result<SIZE_T, Locatable<String>> {
+    pub fn const_int(self) -> SemanticResult<SIZE_T> {
         if !self.ctype.is_integral() {
             return Err(Locatable {
                 data: LengthError::NonIntegral.into(),

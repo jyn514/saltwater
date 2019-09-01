@@ -36,6 +36,7 @@ struct LLVMCompiler {
     ebb_has_return: bool,
     scope: Scope<String, Id>,
     debug: bool,
+    str_index: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -118,6 +119,7 @@ impl LLVMCompiler {
             module: Module::new(builder),
             ebb_has_return: false,
             scope: Scope::new(),
+            str_index: 0,
             debug,
         }
     }
@@ -190,7 +192,7 @@ impl LLVMCompiler {
         Ok(())
     }
     fn store_stack(
-        &self,
+        &mut self,
         init: Initializer,
         stack_slot: StackSlot,
         ctype: Type,
@@ -289,7 +291,7 @@ impl LLVMCompiler {
     // clippy doesn't like big match statements, but this is kind of essential complexity,
     // it can't be any smaller without supporting fewer features
     #[allow(clippy::cognitive_complexity)]
-    fn compile_expr(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
+    fn compile_expr(&mut self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         let expr = expr.const_fold()?;
         let location = expr.location;
         let ir_type = if expr.lval {
@@ -306,7 +308,9 @@ impl LLVMCompiler {
             }
         };
         match expr.expr {
-            ExprType::Literal(token) => self.compile_literal(ir_type, expr.ctype, token, builder),
+            ExprType::Literal(token) => {
+                self.compile_literal(ir_type, expr.ctype, token, location, builder)
+            }
             ExprType::Id(var) => self.load_addr(var, location, builder),
 
             // unary operators
@@ -406,10 +410,11 @@ impl LLVMCompiler {
         }
     }
     fn compile_literal(
-        &self,
+        &mut self,
         ir_type: IrType,
         ctype: Type,
         token: Token,
+        location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let ir_val = match (token, ir_type) {
@@ -420,6 +425,7 @@ impl LLVMCompiler {
             (Token::Float(f), types::F32) => builder.ins().f32const(f as f32),
             (Token::Float(f), types::F64) => builder.ins().f64const(f),
             (Token::Char(c), _) => builder.ins().iconst(ir_type, i64::from(c)),
+            (Token::Str(string), _) => self.compile_string(string, builder, location)?,
             _ => unimplemented!("aggregate literals"),
         };
         Ok(Value {
@@ -428,7 +434,30 @@ impl LLVMCompiler {
             ctype,
         })
     }
-    fn unary_op<F>(&self, expr: Expr, builder: &mut FunctionBuilder, func: F) -> IrResult
+    fn compile_string(
+        &mut self,
+        string: String,
+        builder: &mut FunctionBuilder,
+        location: Location,
+    ) -> SemanticResult<IrValue> {
+        let name = format!("str.{}", self.str_index);
+        self.str_index += 1;
+        let str_id = match self.module.declare_data(&name, Linkage::Local, false, None) {
+            Ok(id) => id,
+            Err(err) => err!(format!("error declaring static string: {}", err), location),
+        };
+        let mut ctx = DataContext::new();
+        ctx.define(string.into_bytes().into_boxed_slice());
+        self.module
+            .define_data(str_id, &ctx)
+            .map_err(|err| Locatable {
+                data: format!("error defining static string: {}", err),
+                location,
+            })?;
+        let addr = self.module.declare_data_in_func(str_id, builder.func);
+        Ok(builder.ins().global_value(Type::ptr_type(), addr))
+    }
+    fn unary_op<F>(&mut self, expr: Expr, builder: &mut FunctionBuilder, func: F) -> IrResult
     where
         F: FnOnce(IrValue, IrType, &Type, &mut FunctionBuilder) -> IrValue,
     {
@@ -443,7 +472,7 @@ impl LLVMCompiler {
     }
     #[inline]
     fn binary_assign_op(
-        &self,
+        &mut self,
         left: Expr,
         right: Expr,
         ctype: Type,
@@ -501,7 +530,7 @@ impl LLVMCompiler {
         })
     }
     fn cast(
-        &self,
+        &mut self,
         expr: Expr,
         ctype: Type,
         location: Location,
@@ -598,7 +627,7 @@ impl LLVMCompiler {
             _ => unreachable!("cast from {} to {}", from, to),
         }
     }
-    fn logical_not(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
+    fn logical_not(&mut self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         self.unary_op(expr, builder, |ir_val, ir_type, ctype, builder| {
             let ir_bool = match ir_type {
                 types::F32 => {
@@ -628,7 +657,7 @@ impl LLVMCompiler {
             )
         })
     }
-    fn negate(&self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
+    fn negate(&mut self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         self.unary_op(expr, builder, |ir_val, ir_type, _, builder| match ir_type {
             i if i.is_int() => builder.ins().irsub_imm(ir_val, 0),
             f if f.is_float() => builder.ins().fneg(ir_val),
@@ -669,7 +698,7 @@ impl LLVMCompiler {
         }
     }
     fn compare(
-        &self,
+        &mut self,
         left: Expr,
         right: Expr,
         token: &Token,
@@ -700,7 +729,7 @@ impl LLVMCompiler {
         })
     }
     fn assignment(
-        &self,
+        &mut self,
         lval: Expr,
         rval: Expr,
         token: Token,
@@ -748,7 +777,7 @@ impl LLVMCompiler {
         Ok(value)
     }
     fn call_direct(
-        &self,
+        &mut self,
         func_name: String,
         ctype: Type,
         args: Vec<Expr>,

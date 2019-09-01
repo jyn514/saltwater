@@ -687,7 +687,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let promoted_args: Vec<Expr> = args
                         .into_iter()
                         .zip(&functype.params)
-                        .map(|(arg, expected)| arg.cast(&expected.ctype))
+                        .map(|(arg, expected)| arg.rval().cast(&expected.ctype))
                         .collect::<Result<_, Locatable<String>>>()?;
                     Ok(Expr {
                         location,

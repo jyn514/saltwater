@@ -638,7 +638,6 @@ impl Display for StorageClass {
 }
 
 impl Display for Type {
-    // TODO: this will break badly for anything that's not a primitive
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         use Type::*;
         match self {
@@ -651,49 +650,93 @@ impl Display for Type {
                 write!(f, "{}{}", if *signed { "" } else { "unsigned " }, substr)
             }
             Bool | Float | Double | Void => write!(f, "{}", format!("{:?}", self).to_lowercase()),
-            Pointer(to, Qualifiers { c_const, volatile }) => write!(
-                f,
-                "*{}{}",
-                match (c_const, volatile) {
-                    (true, true) => "const volatile ",
-                    (true, false) => "const ",
-                    (false, true) => "volatile ",
-                    (false, false) => "",
-                },
-                to,
-            ),
-            Array(of, size) => write!(
-                f,
-                "{}[{}]",
-                of,
-                match size {
-                    // TODO: don't use debug formatting here
-                    ArrayType::Fixed(expr) => format!("{:?}", expr),
-                    ArrayType::Unbounded => String::new(),
-                }
-            ),
+            Pointer(to, _) => {
+                to.print_pre(f)?;
+                self.print_mid(f)?;
+                to.print_post(f)
+            }
+            Array(of, size) => {
+                of.print_pre(f)?;
+                of.print_mid(f)?;
+                self.print_post(f)
+            }
             Function(FunctionType {
                 return_type,
                 params,
                 varargs,
             }) => {
                 write!(f, "{}", return_type)?;
+                self.print_post(f)
+            }
+            Union(_) | Struct(_) | Enum(_) | Bitfield(_) => unimplemented!(),
+        }
+    }
+}
+impl Type {
+    fn print_pre(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Type::Enum(_) | Type::Union(_) | Type::Struct(_) => {
+                unimplemented!("printing enum/union/struct")
+            }
+            Type::Bitfield(_) => unimplemented!("printing bitfield"),
+            Type::Void
+            | Type::Bool
+            | Type::Char(_)
+            | Type::Short(_)
+            | Type::Int(_)
+            | Type::Long(_)
+            | Type::Float
+            | Type::Double => write!(f, "{}", self),
+            Type::Pointer(t, _) | Type::Array(t, _) => t.print_pre(f),
+            Type::Function(func_type) => func_type.return_type.fmt(f),
+        }
+    }
+    fn print_mid(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Type::Pointer(to, quals) => {
+                to.print_mid(f)?;
+                let ptr_description = match (quals.c_const, quals.volatile) {
+                    (true, true) => "const volatile ",
+                    (true, false) => "const ",
+                    (false, true) => "volatile ",
+                    (false, false) => "",
+                };
+                match &**to {
+                    Type::Array(_, _) | Type::Function(_) => write!(f, "(*{})", ptr_description),
+                    _ => write!(f, " *{}", ptr_description),
+                }
+            }
+            Type::Array(to, _) => to.print_mid(f),
+            _ => Ok(()),
+        }
+    }
+    fn print_post(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Type::Array(to, size) => {
+                write!(f, "[")?;
+                if let ArrayType::Fixed(size) = size {
+                    write!(f, "{}", size)?;
+                }
+                write!(f, "]")?;
+                to.print_post(f)
+            }
+            Type::Function(func_type) => {
                 // https://stackoverflow.com/a/30325430
-                let mut comma_seperated = " (".to_string();
-                for param in params {
+                let mut comma_seperated = "(".to_string();
+                for param in &func_type.params {
                     comma_seperated.push_str(&param.ctype.to_string());
                     comma_seperated.push_str(", ");
                 }
-                if *varargs {
+                if func_type.varargs {
                     comma_seperated.push_str("...");
-                } else if !params.is_empty() {
+                } else if !func_type.params.is_empty() {
                     comma_seperated.pop();
                     comma_seperated.pop();
                 }
                 comma_seperated.push(')');
                 write!(f, "{}", comma_seperated)
             }
-            Union(_) | Struct(_) | Enum(_) | Bitfield(_) => unimplemented!(),
+            _ => Ok(()),
         }
     }
 }
@@ -794,3 +837,33 @@ impl PartialEq for Symbol {
 }
 
 impl Eq for Symbol {}
+
+mod tests {
+    #[test]
+    fn type_display() {
+        for ty in [
+            "int",
+            "int *",
+            "int[1][2][3]",
+            "int *(*)(int)",
+            "int *(*)[1][2][3]",
+        ]
+        .into_iter()
+        {
+            assert_eq!(
+                &format!(
+                    "{}",
+                    crate::Parser::new(
+                        crate::Lexer::new("<integration-test>".into(), ty.chars(), false),
+                        false
+                    )
+                    .type_name()
+                    .unwrap()
+                    .data
+                    .0
+                ),
+                ty
+            );
+        }
+    }
+}

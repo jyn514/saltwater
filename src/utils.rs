@@ -9,7 +9,7 @@ static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
 
 fn pretty_print(prefix: ANSIString, msg: &str, location: &Location) {
-    eprintln!(
+    println!(
         "{}:{}:{}: {}: {}",
         location.file, location.line, location.column, prefix, msg
     );

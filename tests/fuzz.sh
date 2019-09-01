@@ -17,7 +17,7 @@ exists() {
 if ! exists cargo-fuzz; then
 	$CARGO install cargo-fuzz
 fi
-$CARGO fuzz run libfuzzer -- -timeout=1 || true
+$CARGO fuzz run libfuzzer -- -timeout=1 >/dev/null || true
 
 if ! exists cargo-afl; then
 	cargo install afl

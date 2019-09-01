@@ -18,7 +18,7 @@ cranelift-module = "0.40"
 failure = "0.1"
 target-lexicon = "0.4"
 tempfile = "3"
-structopt = "0.2"
+pico-args = "0.2"
 
 [profile.release]
 lto = true

@@ -3,45 +3,56 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process;
 
-extern crate structopt;
-use structopt::StructOpt;
-
 extern crate compiler;
+extern crate pico_args;
 use compiler::{assemble, compile, link, utils, CompileError};
+use pico_args::Arguments;
+use std::ffi::OsStr;
 use tempfile::NamedTempFile;
 
-#[derive(StructOpt, Debug)]
-#[structopt(rename_all = "kebab")]
-pub struct Opt {
+const HELP: &str = "compiler 0.1.0
+Joshua Nelson <jyn514@gmail.com>
+A C compiler written in Rust, with a focus on good error messages.
+
+USAGE:
+    compiler [FLAGS] [OPTIONS] [file]
+
+FLAGS:
+        --debug-asm    If set, print the intermediate representation of the program in addition to compiling
+    -a, --debug-ast    If set, print the parsed abstract syntax tree in addition to compiling
+        --debug-lex    If set, print all tokens found by the lexer in addition to compiling.
+    -h, --help         Prints help information
+    -c, --no-link      If set, compile and assemble but do not link. Object file is machine-dependent.
+    -V, --version      Prints version information
+
+OPTIONS:
+    -o, --output <output>    The output file to use. [default: a.out]
+
+ARGS:
+    <file>    The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
+              Only one file at a time is currently accepted. [default: -]";
+
+#[derive(Debug)]
+struct Opt {
     /// The file to read C source from.
     /// "-" means stdin (use ./- to read a file called '-').
     /// Only one file at a time is currently accepted.
-    #[structopt(name = "FILE", default_value = "-", parse(from_os_str))]
     filename: PathBuf,
 
     /// If set, print all tokens found by the lexer in addition to compiling.
-    #[structopt(long)]
-    pub debug_lex: bool,
+    debug_lex: bool,
 
     /// If set, print the parsed abstract syntax tree in addition to compiling
-    #[structopt(short = "a", long)]
-    pub debug_ast: bool,
+    debug_ast: bool,
 
     /// If set, print the intermediate representation of the program in addition to compiling
-    #[structopt(long)]
-    pub debug_asm: bool,
-    /*
-    /// If set, do not assemble the compiled program. Implies 'no_link'.
-    #[structopt(short = "S", long)]
-    pub no_assemble: bool,
-    */
+    debug_asm: bool,
+
     /// If set, compile and assemble but do not link. Object file is machine-dependent.
-    #[structopt(short = "c", long)]
-    pub no_link: bool,
+    no_link: bool,
 
     /// The output file to use.
-    #[structopt(short = "o", long, default_value = "a.out", parse(from_os_str))]
-    pub output: PathBuf,
+    output: PathBuf,
 }
 
 impl Default for Opt {
@@ -76,7 +87,17 @@ fn real_main(buf: String, opt: Opt) -> Result<(), CompileError> {
 }
 
 fn main() {
-    let mut opt = Opt::from_args();
+    let mut opt = match parse_args() {
+        Ok(opt) => opt,
+        Err(err) => {
+            println!(
+                "{}: error parsing args: {}",
+                std::env::args().next().unwrap_or_else(|| "compiler".into()),
+                err
+            );
+            std::process::exit(1);
+        }
+    };
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
     opt.filename = if opt.filename == PathBuf::from("-") {
@@ -107,6 +128,30 @@ fn main() {
     // but when it's called, that's coerced to `!`,
     // so the closure has type `fn(...) -> i32`
     real_main(buf, opt).unwrap_or_else(|err| err_exit(err));
+}
+
+fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
+    Ok(os_str.into())
+}
+
+fn parse_args() -> Result<Opt, pico_args::Error> {
+    let mut input = Arguments::from_env();
+    if input.contains(["-h", "--help"]) {
+        println!("{}", HELP);
+        std::process::exit(1);
+    }
+    Ok(Opt {
+        debug_lex: input.contains("--debug-lex"),
+        debug_asm: input.contains("--debug-asm"),
+        debug_ast: input.contains(["-a", "--debug-ast"]),
+        no_link: input.contains(["-c", "--no-link"]),
+        output: input
+            .value_from_os_str(["-o", "--output"], os_str_to_path_buf)?
+            .unwrap_or_else(|| "a.out".into()),
+        filename: input
+            .free_from_os_str(os_str_to_path_buf)?
+            .unwrap_or_else(|| "-".into()),
+    })
 }
 
 fn err_exit(err: CompileError) -> ! {

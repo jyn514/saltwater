@@ -38,6 +38,17 @@ fn test_initializers() {
 }
 
 #[test]
+fn multiple_initializers() {
+    utils::assert_code(
+        "int main() {
+        int i = 1, *p = &i;
+        return *p;
+}",
+        1,
+    );
+}
+
+#[test]
 fn abstract_param_in_definition() {
     utils::assert_compile_error("int f(int) { return 1; }");
 }

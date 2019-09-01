@@ -92,13 +92,16 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 
             // if we're at the end of the file, return None
             self.peek_token()?;
-
-            // If declaration is None, we saw an empty specifier
-            match self.declaration() {
-                Err(err) => Some(Err(err)),
-                Ok(Some(decl)) => Some(Ok(decl)),
-                Ok(None) => self.next(),
-            }
+            let mut decls = match self.declaration() {
+                Ok(decls) => decls,
+                Err(err) => return Some(Err(err)),
+            };
+            let next = match decls.pop_front() {
+                Some(decl) => decl,
+                None => return self.next(),
+            };
+            self.pending.extend(decls.into_iter().map(Result::Ok));
+            Some(Ok(next))
         });
         if self.debug {
             println!("declaration: {:#?}", next);

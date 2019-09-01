@@ -286,7 +286,11 @@ impl LLVMCompiler {
         match stmt.data {
             StmtType::Compound(stmts) => self.compile_all(stmts, builder)?,
             // INVARIANT: symbol has not yet been declared in this scope
-            StmtType::Decl(decl) => self.declare_data(*decl, stmt.location, builder)?,
+            StmtType::Decl(decls) => {
+                for decl in decls {
+                    self.declare_data(decl.data, decl.location, builder)?
+                }
+            }
             StmtType::Expr(expr) => {
                 self.compile_expr(expr, builder)?;
             }

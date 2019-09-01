@@ -1,6 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use std::convert::TryFrom;
-use std::iter::Iterator;
+use std::iter::{FromIterator, Iterator};
 use std::mem;
 
 use super::{FunctionData, Lexeme, Parser};
@@ -64,14 +64,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
-    pub fn declaration(&mut self) -> Result<Option<Locatable<Declaration>>, Locatable<String>> {
+    pub fn declaration(&mut self) -> Result<VecDeque<Locatable<Declaration>>, Locatable<String>> {
         let (sc, mut qualifiers, ctype) = self.declaration_specifiers(true)?;
         if self.match_next(&Token::Semicolon).is_some() {
             warn(
                 "declaration does not declare anything",
                 self.next_location(),
             );
-            return Ok(None);
+            return Ok(VecDeque::new());
         }
 
         // special case functions bodies - they can only occur as the first declarator
@@ -83,7 +83,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let id = id.expect("declarator should return id when called with allow_abstract: false");
         if sc == StorageClass::Typedef {
             unimplemented!("typedefs");
-            //return Ok(None);
+            //return Ok(Default::default())
         }
 
         // if it's not a function, we still need to handle it
@@ -94,7 +94,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             (Type::Function(_), Some(Token::Equal)) => {
                 return Err(Locatable {
                     data: format!(
-                        "cannot only initialize function '{}' with function body",
+                        "can only initialize function '{}' with function body",
                         id.data
                     ),
                     location: id.location,
@@ -126,22 +126,23 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             location: id.location,
         };
         self.declare(&decl)?;
-        if (is_func && decl.data.init.is_some()) || self.match_next(&Token::Semicolon).is_some() {
-            return Ok(Some(decl));
+        let init = decl.data.init.is_some();
+        let mut pending = VecDeque::from_iter(std::iter::once(decl));
+        if (is_func && init) || self.match_next(&Token::Semicolon).is_some() {
+            return Ok(pending);
         } else {
-            self.pending.push_back(Ok(decl));
             self.expect(Token::Comma)?;
         }
         loop {
             let decl = self.init_declarator(sc, qualifiers.clone(), ctype.clone())?;
             self.declare(&decl)?;
-            self.pending.push_back(Ok(decl));
+            pending.push_back(decl);
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon)?;
                 break;
             }
         }
-        self.pending.pop_front().transpose()
+        Ok(pending)
     }
     // check if this is a valid signature for 'main'
     fn is_main_func_signature(ftype: &FunctionType) -> bool {

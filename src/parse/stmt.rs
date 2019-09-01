@@ -72,14 +72,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
                 // start of an expression statement
                 Keyword::Sizeof => self.expression_statement(),
-                decl if decl.is_decl_specifier() => match self.declaration() {
-                    Ok(Some(decl)) => Ok(Some(Stmt {
-                        data: StmtType::Decl(Box::new(decl.data)),
-                        location: decl.location,
-                    })),
-                    Ok(None) => Ok(None),
-                    Err(err) => Err(err),
-                },
+                decl if decl.is_decl_specifier() => {
+                    let decls = self.declaration()?;
+                    let location = match decls.front() {
+                        Some(decl) => decl.location.clone(),
+                        None => return Ok(None),
+                    };
+                    Ok(Some(Stmt {
+                        data: StmtType::Decl(decls),
+                        location,
+                    }))
+                }
                 other => unreachable!("unrecognized keyword '{}' while parsing statement", other),
             },
             Some(Token::Semicolon) => {

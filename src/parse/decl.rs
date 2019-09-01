@@ -924,7 +924,7 @@ fn declaration_specifier(
         }
     } else {
         match ctype {
-            None | Some(Type::Int(_)) => {
+            None => {
                 *ctype = Some(
                     Type::try_from(keyword)
                         .expect("keyword should be an integer or integer modifier"),

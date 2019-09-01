@@ -24,7 +24,7 @@ use failure::Error;
 
 pub type Product = <FaerieBackend as Backend>::Product;
 
-pub use data::{Declaration, Locatable};
+pub use data::{Declaration, Locatable, SemanticResult};
 pub use lex::Lexer;
 pub use parse::Parser;
 
@@ -66,7 +66,7 @@ pub fn compile(
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
     let parser = Parser::new(lexer, debug_ast);
     let hir = parser
-        .collect::<Result<Vec<Locatable<Declaration>>, Locatable<String>>>()
+        .collect::<SemanticResult<Vec<Locatable<Declaration>>>>()
         .map_err(CompileError::Semantic)?;
 
     ir::compile(hir, debug_ir)

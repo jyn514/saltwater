@@ -1,4 +1,6 @@
-# rust-c-compiler
+# rcc
+
+rcc: a Rust C compiler
 
 A C compiler written in Rust, with a focus on good error messages. Warning: my first rust project, code quality is pretty low
 

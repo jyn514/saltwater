@@ -218,7 +218,7 @@ impl LLVMCompiler {
         location: Location,
     ) -> SemanticResult<()> {
         let signature = func_type.signature(&location)?;
-        let func_id = self.declare_func(id, &signature, sc, &location, false)?;
+        let func_id = self.declare_func(id.clone(), &signature, sc, &location, false)?;
         // external name is meant to be a lookup in a symbol table,
         // but we just give it garbage values
         let mut func = Function::with_name_signature(ExternalName::user(0, 0), signature);
@@ -233,6 +233,24 @@ impl LLVMCompiler {
         self.ebb_has_return = false;
 
         self.compile_all(stmts, &mut builder)?;
+        if !self.ebb_has_return {
+            if id == "main" {
+                let ir_int = func_type
+                    .return_type
+                    .as_ir_basic_type()
+                    .expect("main should return an int");
+                let zero = [builder.ins().iconst(ir_int, 0)];
+                builder.ins().return_(&zero);
+            } else if func_type.should_return() {
+                err!(
+                    format!(
+                        "expected a return statement before end of function '{}' returning {}",
+                        id, func_type.return_type
+                    ),
+                    location
+                );
+            }
+        }
         if self.debug {
             let mut clif = String::new();
             codegen::write_function(&mut clif, &func, &None.into()).unwrap();
@@ -889,16 +907,18 @@ impl LLVMCompiler {
             if !self.ebb_has_return {
                 builder.ins().jump(end_body, &[]);
             }
+            let if_has_return = self.ebb_has_return;
 
             builder.switch_to_block(else_body);
             self.ebb_has_return = false;
             self.compile_stmt(*other, builder)?;
             if !self.ebb_has_return {
                 builder.ins().jump(end_body, &[]);
+            // if we returned in both 'if' and 'else' blocks, all following code is unreachable
+            } else if !if_has_return {
+                builder.switch_to_block(end_body);
+                self.ebb_has_return = false;
             }
-
-            builder.switch_to_block(end_body);
-            self.ebb_has_return = false;
         } else {
             builder.ins().brz(condition.ir_val, end_body, &[]);
             builder.ins().jump(if_body, &[]);

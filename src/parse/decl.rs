@@ -808,7 +808,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ftype: ftype.clone(),
             id: id.data,
             location: id.location,
-            seen_ret: false,
         });
 
         // function body
@@ -823,35 +822,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 x
             ),
         };
-        let func_data = self.current_function.take().unwrap();
-        let should_return = func_data.ftype.should_return();
-        if func_data.seen_ret != should_return {
-            assert!(
-                should_return,
-                "stmt should have already caught bad return types"
-            );
-            // allow `int main() {}`
-            // TODO: if compiling in a freestanding environment, don't do this
-            if func_data.id == "main" {
-                // make body explicitly mutable
-                let mut body = body;
-                body.push(Stmt {
-                    data: StmtType::Return(Some(Expr::zero())),
-                    location: Default::default(),
-                });
-                Ok(body)
-            } else {
-                Err(Locatable {
-                    data: format!(
-                        "expected a return statement before end of function '{}' returning {}",
-                        func_data.id, func_data.ftype.return_type
-                    ),
-                    location: func_data.location,
-                })
-            }
-        } else {
-            Ok(body)
-        }
+        self.current_function = None;
+        Ok(body)
     }
 }
 

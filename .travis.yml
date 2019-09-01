@@ -17,7 +17,7 @@ install:
 
 script:
     - tests/pre-commit.sh
-    - set -x; if [ TRAVIS_RUST_VERSION = "nightly" ]; then tests/fuzz.sh || true; fi
+    - echo $TRAVIS_RUST_VERSION; if [ $TRAVIS_RUST_VERSION = "nightly" ]; then tests/fuzz.sh || true; fi
 
 matrix:
     allow_failures:

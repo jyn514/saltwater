@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{self, Display, Formatter};
 use std::hash::Hash;
@@ -160,7 +160,7 @@ pub enum StmtType {
     Continue,
     Break,
     Return(Option<Expr>),
-    Decl(Box<Declaration>),
+    Decl(VecDeque<Locatable<Declaration>>),
 }
 
 #[derive(Clone, Debug, PartialEq)]

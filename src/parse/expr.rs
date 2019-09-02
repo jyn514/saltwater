@@ -1302,7 +1302,7 @@ impl Type {
     ///
     /// Examples:
     /// ```
-    /// use compiler::data::Type::*;
+    /// use rcc::data::Type::*;
     /// assert!(Long(true).rank() > Int(true).rank());
     /// assert!(Int(false).rank() > Short(false).rank());
     /// assert!(Short(true).rank() > Char(true).rank());

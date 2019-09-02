@@ -3,19 +3,19 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process;
 
-extern crate compiler;
 extern crate pico_args;
-use compiler::{assemble, compile, link, utils, CompileError};
+extern crate rcc;
 use pico_args::Arguments;
+use rcc::{assemble, compile, link, utils, CompileError};
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
 
-const HELP: &str = "compiler 0.1.0
+const HELP: &str = "rcc 0.1.0
 Joshua Nelson <jyn514@gmail.com>
 A C compiler written in Rust, with a focus on good error messages.
 
 USAGE:
-    compiler [FLAGS] [OPTIONS] [file]
+    rcc [FLAGS] [OPTIONS] [file]
 
 FLAGS:
         --debug-asm    If set, print the intermediate representation of the program in addition to compiling
@@ -92,7 +92,7 @@ fn main() {
         Err(err) => {
             println!(
                 "{}: error parsing args: {}",
-                std::env::args().next().unwrap_or_else(|| "compiler".into()),
+                std::env::args().next().unwrap_or_else(|| "rcc".into()),
                 err
             );
             std::process::exit(1);

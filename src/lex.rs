@@ -357,7 +357,7 @@ impl<'a> Lexer<'a> {
         } else {
             current
         };
-        Ok(if self.match_next('u') || self.match_next('U') {
+        let token = Ok(if self.match_next('u') || self.match_next('U') {
             let unsigned = u64::try_from(current)
                 .map_err(|_| "overflow while parsing unsigned integer literal")?;
             Token::UnsignedInt(unsigned)
@@ -365,7 +365,14 @@ impl<'a> Lexer<'a> {
             let long = i64::try_from(current)
                 .map_err(|_| "overflow while parsing signed integer literal")?;
             Token::Int(long)
-        })
+        });
+        // get rid of 'l' and 'll' suffixes, we don't handle them
+        if self.match_next('l') {
+            self.match_next('l');
+        } else if self.match_next('L') {
+            self.match_next('L');
+        }
+        token
     }
     // at this point we've already seen a '.', if we see one again it's an error
     fn parse_float(&mut self, start: i128, radix: u32) -> Result<Token, String> {

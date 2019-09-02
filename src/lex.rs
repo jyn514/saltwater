@@ -21,7 +21,7 @@ use super::utils::warn;
 /// Examples:
 ///
 /// ```
-/// use compiler::Lexer;
+/// use rcc::Lexer;
 ///
 /// let lexer = Lexer::new("<stdin>".to_string(),
 ///                        "int main(void) { char *hello = \"hi\"; }".chars(),
@@ -141,7 +141,7 @@ impl<'a> Lexer<'a> {
     ///
     /// Example:
     /// ```
-    /// use compiler::Lexer;
+    /// use rcc::Lexer;
     ///
     /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// assert!(lexer.next_char() == Some('i'));
@@ -171,7 +171,7 @@ impl<'a> Lexer<'a> {
     ///
     /// Examples:
     /// ```
-    /// use compiler::Lexer;
+    /// use rcc::Lexer;
     ///
     /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// let first = lexer.next_char();
@@ -187,7 +187,7 @@ impl<'a> Lexer<'a> {
     ///
     /// Examples:
     /// ```
-    /// use compiler::Lexer;
+    /// use rcc::Lexer;
     ///
     /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// assert!(lexer.peek() == Some('i'));
@@ -205,7 +205,7 @@ impl<'a> Lexer<'a> {
     ///
     /// Examples:
     /// ```
-    /// use compiler::Lexer;
+    /// use rcc::Lexer;
     ///
     /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// assert!(lexer.match_next('i'));

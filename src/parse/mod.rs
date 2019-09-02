@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn semicolons() {
         let mut buf = Vec::new();
-        buf.resize(1_000_000, ';');
+        buf.resize(10_000, ';');
         let buf: String = buf.into_iter().collect();
         assert!(parse(&buf).is_none());
     }

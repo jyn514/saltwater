@@ -4,10 +4,10 @@ use std::io::Error;
 use std::path::Path;
 use std::process::{Command, Output};
 
-extern crate compiler;
+extern crate rcc;
 extern crate tempfile;
 
-use compiler::CompileError;
+use rcc::CompileError;
 
 pub fn compile_and_run(program: String, args: &[&str]) -> Result<Output, CompileError> {
     let output = tempfile::NamedTempFile::new().unwrap().into_temp_path();
@@ -16,7 +16,7 @@ pub fn compile_and_run(program: String, args: &[&str]) -> Result<Output, Compile
 }
 
 pub fn compile(program: String, no_link: bool, output: &Path) -> Result<(), CompileError> {
-    let module = compiler::compile(
+    let module = rcc::compile(
         program,
         "<integration-test>".to_string(),
         false,
@@ -25,10 +25,10 @@ pub fn compile(program: String, no_link: bool, output: &Path) -> Result<(), Comp
     )?;
     if !no_link {
         let tmp_file = tempfile::NamedTempFile::new().unwrap();
-        compiler::assemble(module, tmp_file.as_ref())?;
-        compiler::link(tmp_file.as_ref(), &output).map_err(std::io::Error::into)
+        rcc::assemble(module, tmp_file.as_ref())?;
+        rcc::link(tmp_file.as_ref(), &output).map_err(std::io::Error::into)
     } else {
-        compiler::assemble(module, output)
+        rcc::assemble(module, output)
     }
 }
 

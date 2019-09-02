@@ -100,6 +100,24 @@ fn declare_global() {
     utils::assert_succeeds("int x; int main() { return x; }");
 }
 
+#[test]
+fn typedef() {
+    utils::assert_succeeds(
+        "
+    typedef int i;
+    i main() {}
+",
+    );
+    utils::assert_code(
+        "typedef int DWORD, INT, *INT_POINTER;
+    INT main() {
+        DWORD i = 1;
+        INT_POINTER p = &i;
+        return *p;
+    }",
+        1,
+    );
+}
 /* will fail until I add scoping
 #[test]
 fn local_function_goes_out_of_scope() {

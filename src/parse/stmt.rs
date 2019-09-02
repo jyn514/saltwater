@@ -1,6 +1,6 @@
 use super::{Lexeme, Parser};
 use crate::data::prelude::*;
-use crate::data::Keyword;
+use crate::data::{Keyword, StorageClass};
 use crate::utils::warn;
 use std::iter::Iterator;
 
@@ -91,16 +91,38 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Some(Token::Id(_)) => {
                 let locatable = self.next_token().unwrap();
+                let id = match locatable.data {
+                    Token::Id(id) => Locatable {
+                        data: id,
+                        location: locatable.location,
+                    },
+                    _ => unreachable!("peek should always be the same as next"),
+                };
                 if self.match_next(&Token::Colon).is_some() {
-                    match locatable.data {
-                        Token::Id(id) => Ok(Some(Stmt {
-                            data: StmtType::Label(id, self.statement()?.map(Box::new)),
-                            location: locatable.location,
-                        })),
-                        _ => unreachable!("peek should always be the same as next"),
-                    }
+                    return Ok(Some(Stmt {
+                        data: StmtType::Decl(self.declaration()?),
+                        location: id.location,
+                    }));
+                }
+                let is_typedef = match self.scope.get(&id.data) {
+                    Some(typedef) => typedef.storage_class == StorageClass::Typedef,
+                    _ => false,
+                };
+                self.unput(Some(Locatable {
+                    data: Token::Id(id.data),
+                    location: id.location,
+                }));
+                if is_typedef {
+                    let decls = self.declaration()?;
+                    let location = match decls.front() {
+                        Some(decl) => decl.location.clone(),
+                        None => return Ok(None),
+                    };
+                    Ok(Some(Stmt {
+                        data: StmtType::Decl(decls),
+                        location,
+                    }))
                 } else {
-                    self.unput(Some(locatable));
                     self.expression_statement()
                 }
             }

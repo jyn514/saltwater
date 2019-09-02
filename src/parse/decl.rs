@@ -82,8 +82,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             declarator.parse_type(ctype.clone(), self.last_location.as_ref().unwrap())?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
         if sc == StorageClass::Typedef {
-            unimplemented!("typedefs");
-            //return Ok(Default::default())
+            // evaluated only for its side effects
+            self.parse_typedef(id, first_type, qualifiers)?;
+            return Ok(VecDeque::new());
         }
 
         // if it's not a function, we still need to handle it
@@ -169,6 +170,62 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 _ => false,
             },
             _ => false,
+        }
+    }
+    fn parse_typedef(
+        &mut self,
+        first_id: Locatable<String>,
+        first_ctype: Type,
+        first_qualifiers: Qualifiers,
+    ) -> SemanticResult<()> {
+        self.declare_typedef(first_id, first_ctype.clone(), first_qualifiers.clone())?;
+        if self.match_next(&Token::Semicolon).is_some() {
+            return Ok(());
+        }
+        self.expect(Token::Comma)?;
+        loop {
+            let decl = self
+                .declarator(false)?
+                .expect("declarator should return Some when called with allow_abstract: false");
+            let location = decl.id().unwrap().location;
+            let (id, ctype) = decl.parse_type(first_ctype.clone(), &location)?;
+            let id = id.unwrap();
+            self.declare_typedef(id, ctype, first_qualifiers.clone())?;
+            if self.match_next(&Token::Comma).is_none() {
+                self.expect(Token::Semicolon)?;
+                return Ok(());
+            }
+        }
+    }
+    fn declare_typedef(
+        &mut self,
+        id: Locatable<String>,
+        ctype: Type,
+        qualifiers: Qualifiers,
+    ) -> SemanticResult<()> {
+        let typedef = Symbol {
+            id: id.data.clone(),
+            ctype: ctype.clone(),
+            qualifiers,
+            storage_class: StorageClass::Typedef,
+            init: true,
+        };
+        if let Some(existing_def) = self.scope.insert(id.data.clone(), typedef) {
+            let message = if existing_def.storage_class == StorageClass::Typedef {
+                // special case redefining the same type
+                if existing_def.ctype == ctype {
+                    return Ok(());
+                }
+                format!(
+                    "typedef '{}' for '{}' cannot be redefined as different type '{}'",
+                    existing_def.ctype, id.data, ctype
+                )
+            } else {
+                format!("cannot redefine variable '{}' as typedef", id.data)
+            };
+            err!(message, id.location)
+        } else {
+            Ok(())
         }
     }
     fn declare(&mut self, decl: &Locatable<Declaration>) -> Result<(), Locatable<String>> {
@@ -296,6 +353,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     continue;
                 }
                 Token::Keyword(k) if k.is_decl_specifier() => (locatable.location, k),
+                Token::Id(id) => match self.scope.get(&id) {
+                    Some(typedef) if typedef.storage_class == StorageClass::Typedef => {
+                        ctype = Some(dbg!(&typedef.ctype).clone());
+                        continue;
+                    }
+                    _ => {
+                        self.unput(Some(Locatable {
+                            data: Token::Id(id),
+                            location: locatable.location,
+                        }));
+                        break;
+                    }
+                },
                 _ => {
                     self.unput(Some(locatable));
                     break;

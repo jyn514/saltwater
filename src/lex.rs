@@ -290,7 +290,7 @@ impl<'a> Lexer<'a> {
             '0' as i64 <= start as i64 && start as i64 <= '9' as i64,
             "main loop should only pass [-.0-9] as start to parse_num"
         );
-        let mut current = start as i64 - '0' as i64;
+        let mut current = start as i128 - '0' as i128;
 
         // check for radix other than 10 - but if we see '.', use 10
         let radix = if current == 0 {
@@ -327,8 +327,9 @@ impl<'a> Lexer<'a> {
             if !err {
                 // catch overflow
                 match current
-                    .checked_mul(i64::from(radix))
-                    .and_then(|current| current.checked_add(c as i64 - '0' as i64))
+                    .checked_mul(i128::from(radix))
+                    // XXX: will overflow for u64
+                    .and_then(|current| current.checked_add(c as i128 - '0' as i128))
                 {
                     Some(c) => current = c,
                     None => err = true,
@@ -338,27 +339,36 @@ impl<'a> Lexer<'a> {
         if err {
             return Err(String::from("overflow while parsing integer literal"));
         }
-        if allow_float {
+        let current = if allow_float {
             let exp = self.parse_exponent()?;
             if exp.is_negative() {
                 // this may truncate
-                // TODO: conversion to f64 might lose precision? need to check
-                Ok(Token::Int((10_f64.powi(exp) * current as f64) as i64))
+                // TODO: conversion to f64 might lose precision
+                (10_f64.powi(exp) * current as f64) as i128
             } else {
-                match 10_i64
+                match 10_i128
                     .checked_pow(exp as u32)
                     .and_then(|p| p.checked_mul(current))
                 {
-                    Some(i) => Ok(Token::Int(i)),
-                    None => Err(String::from("overflow while parsing integer literal")),
+                    Some(i) => i,
+                    None => return Err("overflow while parsing integer literal".into()),
                 }
             }
         } else {
-            Ok(Token::Int(current))
-        }
+            current
+        };
+        Ok(if self.match_next('u') || self.match_next('U') {
+            let unsigned = u64::try_from(current)
+                .map_err(|_| "overflow while parsing unsigned integer literal")?;
+            Token::UnsignedInt(unsigned)
+        } else {
+            let long = i64::try_from(current)
+                .map_err(|_| "overflow while parsing signed integer literal")?;
+            Token::Int(long)
+        })
     }
     // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, start: i64, radix: u32) -> Result<Token, String> {
+    fn parse_float(&mut self, start: i128, radix: u32) -> Result<Token, String> {
         let radix_f = f64::from(radix);
         let (mut fraction, mut current_base): (f64, f64) = (0.0, 1.0 / radix_f);
         // parse fraction: second {digits} in regex
@@ -862,6 +872,8 @@ mod tests {
             &lex_all("-1e10"),
             &[Token::Minus, Token::Int(10000000000)]
         ));
+        assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
+            == Ok(Token::UnsignedInt(9223372036854775807u64))));
     }
 
     #[test]

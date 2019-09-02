@@ -789,6 +789,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Char(literal) => Ok(Expr::char_literal(literal, location)),
                 Str(literal) => Ok(Expr::string_literal(literal, location)),
                 Int(literal) => Ok(Expr::int_literal(literal, location)),
+                UnsignedInt(literal) => Ok(Expr::unsigned_int_literal(literal, location)),
                 Float(literal) => Ok(Expr::float_literal(literal, location)),
                 LeftParen => {
                     let expr = self.expr();
@@ -1197,6 +1198,13 @@ impl Expr {
             Type::Int(true),
             location,
             ExprType::Literal(Token::Int(value)),
+        )
+    }
+    fn unsigned_int_literal(value: u64, location: Location) -> Expr {
+        Expr::literal(
+            Type::Int(false),
+            location,
+            ExprType::Literal(Token::UnsignedInt(value)),
         )
     }
     fn float_literal(value: f64, location: Location) -> Expr {

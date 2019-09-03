@@ -145,12 +145,19 @@ pub enum Token {
 pub type Stmt = Locatable<StmtType>;
 
 #[derive(Clone, Debug, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum StmtType {
     Compound(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     Do(Box<Stmt>, Expr),
     While(Expr, Option<Box<Stmt>>),
-    For(Box<Stmt>, Expr, Box<Stmt>, Box<Stmt>),
+    // for(int i = 1, j = 2; i < 4; ++i) body
+    For(
+        VecDeque<Locatable<Declaration>>,
+        Box<Expr>,
+        Box<Expr>,
+        Box<Expr>,
+    ),
     Switch(Expr, Box<Stmt>),
     Label(String, Option<Box<Stmt>>),
     Case(Expr),
@@ -255,10 +262,13 @@ pub enum Type {
     Double,
     Pointer(Box<Type>, Qualifiers),
     Array(Box<Type>, ArrayType),
-    Union(Vec<Symbol>),
-    Struct(Vec<Symbol>),
     Function(FunctionType),
-    Enum(Vec<String>),
+    // name, members
+    // no members means a tentative definition (struct s;)
+    Union(Option<String>, Vec<Symbol>),
+    Struct(Option<String>, Vec<Symbol>),
+    // enums should always have members, since tentative definitions are not allowed
+    Enum(Option<String>, Vec<String>),
     Bitfield(Vec<BitfieldType>),
 }
 
@@ -418,7 +428,7 @@ impl Type {
     pub fn is_scalar(&self) -> bool {
         use Type::*;
         match self {
-            Enum(_) => true,
+            Enum(_, _) => true,
             k if k.is_arithmetic() || k.is_pointer() => true,
             _ => false,
         }
@@ -680,14 +690,14 @@ impl Display for Type {
                 write!(f, "{}", return_type)?;
                 self.print_post(f)
             }
-            Union(_) | Struct(_) | Enum(_) | Bitfield(_) => unimplemented!(),
+            Union(_, _) | Struct(_, _) | Enum(_, _) | Bitfield(_) => unimplemented!(),
         }
     }
 }
 impl Type {
     fn print_pre(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Type::Enum(_) | Type::Union(_) | Type::Struct(_) => {
+            Type::Enum(_, _) | Type::Union(_, _) | Type::Struct(_, _) => {
                 unimplemented!("printing enum/union/struct")
             }
             Type::Bitfield(_) => unimplemented!("printing bitfield"),

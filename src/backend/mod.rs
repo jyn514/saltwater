@@ -50,7 +50,7 @@ impl Type {
             // now for the hard ones
             Array(t, ArrayType::Fixed(l)) => t.sizeof().and_then(|n| Ok(n * l)),
             Array(_, ArrayType::Unbounded) => Err("cannot take sizeof variable length array"),
-            Enum(symbols) => {
+            Enum(_, symbols) => {
                 let uchar = CHAR_BIT as usize;
                 // integer division, but taking the ceiling instead of the floor
                 // https://stackoverflow.com/a/17974/7669110
@@ -60,13 +60,13 @@ impl Type {
                     .map_err(|_| "enum cannot be represented in 32 bits")
             }
             // TODO: this doesn't handle padding
-            Union(symbols) => symbols
+            Union(_, symbols) => symbols
                 .iter()
                 .map(|symbol| symbol.ctype.sizeof())
                 // max of member sizes
                 .try_fold(1, |n, size| Ok(max(n, size?))),
             // TODO: ditto padding
-            Struct(symbols) => symbols
+            Struct(_, symbols) => symbols
                 .iter()
                 .map(|symbol| symbol.ctype.sizeof())
                 // sum of member sizes
@@ -90,9 +90,9 @@ impl Type {
             | Double
             | Pointer(_, _)
             // TODO: is this correct? still need to worry about padding
-            | Union(_)
-            | Enum(_)
-            | Struct(_) => self.sizeof(),
+            | Union(_, _)
+            | Enum(_, _)
+            | Struct(_, _) => self.sizeof(),
             Array(t, _) => t.alignof(),
             Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
@@ -106,7 +106,7 @@ impl Type {
         match self {
             // Integers
             Bool => Ok(types::B1),
-            Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_) => {
+            Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_, _) => {
                 let int_size = SIZE_T::from(CHAR_BIT)
                     * self
                         .sizeof()
@@ -130,7 +130,7 @@ impl Type {
             // arrays decay to pointers at the assembly level
             Array(_, _) => Ok(IrType::int(PTR_SIZE * CHAR_BIT)
                 .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE))),
-            Struct(members) => {
+            Struct(_, members) => {
                 let llvm_elements: Vec<_> = members
                     .iter()
                     .map(|m| m.ctype.as_ir_basic_type())
@@ -142,7 +142,7 @@ impl Type {
             // What Clang does is cast it to the type of the largest member,
             // and then cast every element of the union as it is accessed.
             // See https://stackoverflow.com/questions/19549942/extracting-a-value-from-an-union#19550613
-            Union(members) => try_max_by_key(members.iter().map(|m| &m.ctype), Type::sizeof)
+            Union(_, members) => try_max_by_key(members.iter().map(|m| &m.ctype), Type::sizeof)
                 .expect("parser should ensure all unions have at least one member")?
                 .as_ir_basic_type(),
             Bitfield(_) => unimplemented!("bitfield to llvm type"),
@@ -157,14 +157,14 @@ impl Type {
             | Short(_)
             | Int(_)
             | Long(_)
-            | Enum(_)
+            | Enum(_, _)
             | Float
             | Double
             | Pointer(_, _)
             | Array(_, _)
-            | Struct(_)
+            | Struct(_, _)
             | Bitfield(_)
-            | Union(_) => self.as_ir_basic_type(),
+            | Union(_, _) => self.as_ir_basic_type(),
             // void cannot be loaded or stored
             Void => Ok(types::INVALID),
             // I don't think Cranelift IR has a representation for functions

@@ -970,8 +970,8 @@ impl Initializer {
                     assert_eq!(initializers.len(), 1);
                     initializers.remove(0).into_bytes(ctype, location)
                 }
-                Type::Union(_) => unimplemented!("union initializers"),
-                Type::Struct(_) => unimplemented!("struct initializers"),
+                Type::Union(_, _) => unimplemented!("union initializers"),
+                Type::Struct(_, _) => unimplemented!("struct initializers"),
                 Type::Bitfield(_) => unimplemented!("bitfield initalizers"),
 
                 Type::Function(_) => unreachable!("function initializers"),

@@ -705,7 +705,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         _ => unreachable!("bug in Parser::expect"),
                     };
                     match &expr.ctype {
-                        Type::Struct(members) | Type::Union(members) => {
+                        Type::Struct(_, members) | Type::Union(_, members) => {
                             if members.iter().any(|member| member.id == id) {
                                 unimplemented!(
                                     "struct and union members are very much not implemented"

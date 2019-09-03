@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{prelude::*, FunctionType, Keyword, Scope};
+use crate::data::{prelude::*, FunctionType, Scope};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
@@ -15,6 +15,8 @@ type Lexeme = Locatable<Result<Token, String>>;
 pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// the variables that have been declared
     scope: Scope<String, Symbol>,
+    /// the compound types that have been declared (struct/union/enum)
+    tag_scope: Scope<String, Type>,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,
@@ -57,6 +59,7 @@ where
     pub fn new(iter: I, debug: bool) -> Self {
         Parser {
             scope: Scope::new(),
+            tag_scope: Scope::new(),
             tokens: iter,
             pending: Default::default(),
             last_location: None,
@@ -179,7 +182,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn match_any(&mut self, choices: &[&Token]) -> Option<Locatable<Token>> {
         if let Some(data) = self.peek_token() {
             for token in choices {
-                if *token == data {
+                if token.same_kind(data) {
                     return self.next_token();
                 }
             }
@@ -199,44 +202,26 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
     }
     fn expect(&mut self, next: Token) -> Result<Locatable<Token>, Locatable<String>> {
-        // special case keywords - they must match exactly
-        if let Token::Keyword(n) = next {
-            if let Some(Token::Keyword(p)) = self.peek_token() {
-                if n == *p {
-                    return Ok(self.next_token().unwrap());
-                }
-            }
-        }
-        match self.peek_token() {
-            Some(data)
-                if mem::discriminant(data) == mem::discriminant(&next)
-                    && mem::discriminant(data)
-                        != mem::discriminant(&Token::Keyword(Keyword::Void)) =>
-            {
-                Ok(self.next_token().unwrap())
-            }
-            Some(data) => {
-                let message = data.to_string();
-                let location = self.next_location().clone();
-                // TODO: these errors don't seem to be reported?
+        let token = match self.peek_token() {
+            Some(t) => t,
+            None => {
                 let err = Err(Locatable {
-                    location,
-                    data: format!("expected '{}', got '{}'", next, message),
+                    location: self.next_location().clone(),
+                    data: format!("expected '{}', got '<end-of-file>'", next),
                 });
                 self.panic();
-                err
+                return err;
             }
-            None => {
-                let location = self
-                    .last_location
-                    .as_ref()
-                    .expect("parser.expect cannot be called at start of program")
-                    .clone();
-                Err(Locatable {
-                    location,
-                    data: format!("expected '{}', got <end-of-file>", next),
-                })
-            }
+        };
+        if token.same_kind(&next) {
+            Ok(self.next_token().unwrap())
+        } else {
+            let err = Err(Locatable {
+                data: format!("expected '{}', got '{}'", next, token),
+                location: self.next_location().clone(),
+            });
+            self.panic();
+            err
         }
     }
     /// replace `self.current` with `item`
@@ -245,6 +230,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn unput(&mut self, item: Option<Locatable<Token>>) {
         let tmp = mem::replace(&mut self.current, item);
         mem::replace(&mut self.next, tmp);
+    }
+}
+
+impl Token {
+    fn same_kind(&self, other: &Self) -> bool {
+        // special case keywords - they must match exactly
+        if let (Token::Keyword(left), Token::Keyword(right)) = (self, other) {
+            return left == right;
+        }
+        mem::discriminant(self) == mem::discriminant(other)
     }
 }
 

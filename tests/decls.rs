@@ -117,6 +117,19 @@ fn typedef() {
     }",
         1,
     );
+    utils::assert_code(
+        "typedef int INT; typedef INT i;
+         i main() { return 1; }",
+        1,
+    );
+}
+
+#[test]
+fn struct_and_enum() {
+    utils::assert_compile_error("enum e;");
+    utils::assert_compile_error("enum;");
+    utils::assert_compile_error("union;");
+    utils::assert_compile_error("struct;");
 }
 /* will fail until I add scoping
 #[test]

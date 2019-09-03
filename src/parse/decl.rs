@@ -27,7 +27,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// Used for casts and `sizeof` builtin.
     pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, Locatable<String>> {
-        let (sc, qualifiers, ctype) = self.declaration_specifiers(false)?;
+        let (sc, qualifiers, ctype, _) = self.declaration_specifiers(false)?;
         if sc != StorageClass::Auto {
             return Err(Locatable {
                 // TODO
@@ -65,12 +65,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * and return the last.
      */
     pub fn declaration(&mut self) -> Result<VecDeque<Locatable<Declaration>>, Locatable<String>> {
-        let (sc, mut qualifiers, ctype) = self.declaration_specifiers(true)?;
+        let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers(true)?;
         if self.match_next(&Token::Semicolon).is_some() {
-            warn(
-                "declaration does not declare anything",
-                self.next_location(),
-            );
+            if !seen_compound_type {
+                warn(
+                    "declaration does not declare anything",
+                    self.next_location(),
+                );
+            }
             return Ok(VecDeque::new());
         }
 
@@ -319,7 +321,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn declaration_specifiers(
         &mut self,
         file_scope: bool,
-    ) -> Result<(StorageClass, Qualifiers, Type), Locatable<String>> {
+    ) -> Result<(StorageClass, Qualifiers, Type, bool), Locatable<String>> {
         // TODO: initialization is a mess
         let mut keywords = HashSet::new();
         let mut storage_class = None;
@@ -327,6 +329,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut ctype = None;
         let mut signed = None;
         let mut errors = vec![];
+        let mut seen_compound = false;
         if self.peek_token().is_none() {
             return Err(Locatable {
                 data: "expected declaration specifier, got <end-of-file>".into(),
@@ -336,9 +339,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         // unsigned const int
         while let Some(locatable) = self.next_token() {
             let (location, keyword) = match locatable.data {
-                Token::Keyword(Keyword::Struct)
-                | Token::Keyword(Keyword::Union)
-                | Token::Keyword(Keyword::Enum) => {
+                Token::Keyword(kind @ Keyword::Struct)
+                | Token::Keyword(kind @ Keyword::Union)
+                | Token::Keyword(kind @ Keyword::Enum) => {
                     if let Some(ctype) = &ctype {
                         errors.push(Locatable {
                             data: format!(
@@ -348,14 +351,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             location: locatable.location,
                         });
                     } else {
-                        ctype = Some(self.compound_specifier()?);
+                        ctype = Some(self.compound_specifier(kind, locatable.location)?);
+                        seen_compound = true;
                     }
                     continue;
                 }
                 Token::Keyword(k) if k.is_decl_specifier() => (locatable.location, k),
                 Token::Id(id) => match self.scope.get(&id) {
                     Some(typedef) if typedef.storage_class == StorageClass::Typedef => {
-                        ctype = Some(dbg!(&typedef.ctype).clone());
+                        ctype = Some(typedef.ctype.clone());
                         continue;
                     }
                     _ => {
@@ -436,10 +440,87 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }),
             qualifiers,
             ctype,
+            seen_compound,
         ))
     }
-    fn compound_specifier(&self) -> Result<Type, Locatable<String>> {
-        unimplemented!("structs, unions, and enums");
+    /*
+    rewritten grammar:
+
+    struct_or_union_specifier
+    : (struct | union) '{' struct_declaration + '}'
+    | (struct | union) identifier '{' struct_declaration + '}'
+    | (struct | union) identifier
+    ;
+
+    struct_declaration: (type_specifier | type_qualifier)+ struct_declarator_list ';' ;
+    struct_declarator_list: struct_declarator (',' struct_declarator)* ;
+
+    enum_specifier
+        : ENUM '{' enumerator_list '}'
+        | ENUM identifier '{' enumerator_list '}'
+        | ENUM identifier
+        ;
+
+    enumerator_list: enumerator (',' enumerator)* ;
+    */
+    fn compound_specifier(
+        &mut self,
+        kind: Keyword,
+        location: Location,
+    ) -> Result<Type, Locatable<String>> {
+        let ident = match self.match_next(&Token::Id(String::new())) {
+            Some(Locatable {
+                data: Token::Id(data),
+                location,
+            }) => Some(Locatable { data, location }),
+            None => None,
+            _ => unreachable!("match_next"),
+        };
+        if self.match_next(&Token::LeftBrace).is_none() {
+            let (ident, location) = match ident {
+                Some(token) => (token.data, token.location),
+                None => err!(
+                    format!("bare {} as type specifier is not allowed", kind),
+                    location
+                ),
+            };
+            return Ok(if kind == Keyword::Struct {
+                Type::Struct(Some(ident), vec![])
+            } else if kind == Keyword::Union {
+                Type::Union(Some(ident), vec![])
+            } else if self.tag_scope.get(&ident).is_none() {
+                // see section 6.7.2.3 of the C11 standard
+                err!(
+                    format!("cannot have forward reference to enum type '{}'", ident),
+                    location
+                );
+            } else {
+                Type::Enum(Some(ident), vec![])
+            });
+        }
+        let ctype = if kind == Keyword::Enum {
+            self.enumerator(ident)
+        } else {
+            self.struct_declarator(ident)
+        };
+        self.expect(Token::RightBrace)?;
+        ctype
+    }
+    /* rewritten grammar:
+    enumerator: identifier ('=' constant_expr)? ;
+    */
+    fn enumerator(&mut self, ident: Option<Locatable<String>>) -> SemanticResult<Type> {
+        unimplemented!("enum members");
+    }
+    /* rewritten grammar:
+    struct_declarator
+    : declarator
+    | ':' constant_expr
+    | declarator ':' constant_expr
+    ;
+    */
+    fn struct_declarator(&mut self, ident: Option<Locatable<String>>) -> SemanticResult<Type> {
+        unimplemented!("struct and union members");
     }
     /*
      * function parameters
@@ -447,7 +528,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *
      *  parameter_type_list:
      *        parameter_list
-     *      | parameter_list ',' ELIPSIS
+     *      | parameter_list ',' ELLIPSIS
      *      ;
      *
      *  parameter_list:
@@ -488,7 +569,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     varargs: true,
                 }));
             }
-            let (sc, quals, param_type) = self.declaration_specifiers(false)?;
+            let (sc, quals, param_type, _) = self.declaration_specifiers(false)?;
             // true: allow abstract_declarators
             let declarator = match self.declarator(true) {
                 Err(x) => {
@@ -1159,7 +1240,7 @@ impl Type {
                 }
             }
             Type::Array(inner, _) => Ok(inner),
-            Type::Struct(symbols) => symbols.get(index).map_or_else(
+            Type::Struct(_, symbols) => symbols.get(index).map_or_else(
                 || {
                     Err(format!(
                         "too many initializers for struct (declared with {} elements, found {}",

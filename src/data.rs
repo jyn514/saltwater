@@ -460,7 +460,7 @@ impl Type {
     pub fn is_integral(&self) -> bool {
         use Type::*;
         match self {
-            Bool | Char(_) | Short(_) | Int(_) | Long(_) => true,
+            Bool | Char(_) | Short(_) | Int(_) | Long(_) | Enum(_, _) => true,
             _ => false,
         }
     }

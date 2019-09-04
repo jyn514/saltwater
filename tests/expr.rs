@@ -267,3 +267,14 @@ int main() {
         3,
     );
 }
+
+#[test]
+fn enumeration() {
+    utils::assert_code(
+        "enum e { A, B };
+        int main() {
+            return B;
+        }",
+        1,
+    );
+}

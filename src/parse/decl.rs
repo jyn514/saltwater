@@ -460,8 +460,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         | ENUM identifier '{' enumerator_list '}'
         | ENUM identifier
         ;
-
-    enumerator_list: enumerator (',' enumerator)* ;
     */
     fn compound_specifier(
         &mut self,
@@ -498,19 +496,76 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Type::Enum(Some(ident), vec![])
             });
         }
-        let ctype = if kind == Keyword::Enum {
-            self.enumerator(ident)
+        if kind == Keyword::Enum {
+            self.enumerators(ident)
         } else {
-            self.struct_declarator(ident)
-        };
-        self.expect(Token::RightBrace)?;
-        ctype
+            self.struct_declarators(ident)
+        }
     }
     /* rewritten grammar:
+    enumerator_list: enumerator (',' enumerator)* ;
     enumerator: identifier ('=' constant_expr)? ;
     */
-    fn enumerator(&mut self, ident: Option<Locatable<String>>) -> SemanticResult<Type> {
-        unimplemented!("enum members");
+    fn enumerators(&mut self, ident: Option<Locatable<String>>) -> SemanticResult<Type> {
+        if let Some(locatable) = self.match_next(&Token::RightBrace) {
+            err!("cannot have an empty enum".into(), locatable.location);
+        }
+        let mut current = 0;
+        let mut members = vec![];
+        loop {
+            let member = self.expect(Token::Id(String::new()))?;
+            let name = match member.data {
+                Token::Id(id) => id,
+                _ => unreachable!("expect is broken"),
+            };
+            if self.match_next(&Token::Equal).is_some() {
+                current = match self
+                    .constant_expr()?
+                    .constexpr()?
+                    .map(|l| (l.data.0, l.location))
+                {
+                    Ok((Token::Int(i), _)) => i,
+                    Ok((Token::UnsignedInt(u), location)) => match i64::try_from(u) {
+                        Ok(i) => i,
+                        Err(err) => err!(
+                            "values between INT_MAX and UINT_MAX are not supported for enums"
+                                .into(),
+                            location
+                        ),
+                    },
+                    Ok((Token::Char(c), _)) => i64::from(c),
+                    Ok((_, location)) | Err(location) => {
+                        err!("expression is not an integer constant".into(), location)
+                    }
+                };
+            }
+            members.push((name.clone(), current));
+            // TODO: declare enum members eagerly so you can write `enum { A, B = A };`
+            if self.match_next(&Token::Comma).is_none() {
+                break;
+            }
+            current += 1;
+        }
+        let location = self.expect(Token::RightBrace)?.location;
+        let ctype = Type::Enum(ident.map(|loc| loc.data), members);
+        match &ctype {
+            Type::Enum(_, members) => {
+                for (id, value) in members {
+                    self.scope.insert(
+                        id.clone(),
+                        Symbol {
+                            id: id.clone(),
+                            init: true,
+                            storage_class: StorageClass::Register,
+                            qualifiers: Qualifiers::NONE,
+                            ctype: ctype.clone(),
+                        },
+                    );
+                }
+            }
+            _ => unreachable!(),
+        }
+        Ok(ctype)
     }
     /* rewritten grammar:
     struct_declarator
@@ -519,7 +574,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     | declarator ':' constant_expr
     ;
     */
-    fn struct_declarator(&mut self, ident: Option<Locatable<String>>) -> SemanticResult<Type> {
+    fn struct_declarators(&mut self, ident: Option<Locatable<String>>) -> SemanticResult<Type> {
         unimplemented!("struct and union members");
     }
     /*
@@ -1675,6 +1730,34 @@ mod tests {
             // possibly with trailing commas
             parse("int a[] = {1, 2, 3,};"),
             parse("int a[3] = {1, 2, 3,};")
+        ));
+    }
+    #[test]
+    fn enum_declaration() {
+        assert!(parse("enum;").unwrap().is_err());
+        assert!(parse("enum e;").unwrap().is_err());
+        assert!(parse("enum e {};").unwrap().is_err());
+        assert!(parse("enum e { A }").unwrap().is_err());
+        assert!(parse("enum { A };").is_none());
+        assert!(match_type(
+            parse("enum { A } E;"),
+            Type::Enum(None, vec![("A".into(), 0)])
+        ));
+        assert!(match_type(
+            parse("enum e { A = 1, B } E;"),
+            Type::Enum(Some("e".into()), vec![("A".into(), 1), ("B".into(), 2)])
+        ));
+        assert!(match_type(
+            parse("enum { A = -5, B, C = 2, D } E;"),
+            Type::Enum(
+                None,
+                vec![
+                    ("A".into(), -5),
+                    ("B".into(), -4),
+                    ("C".into(), 2),
+                    ("D".into(), 3)
+                ]
+            )
         ));
     }
 }

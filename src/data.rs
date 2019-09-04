@@ -268,7 +268,7 @@ pub enum Type {
     Union(Option<String>, Vec<Symbol>),
     Struct(Option<String>, Vec<Symbol>),
     // enums should always have members, since tentative definitions are not allowed
-    Enum(Option<String>, Vec<String>),
+    Enum(Option<String>, Vec<(String, i64)>),
     Bitfield(Vec<BitfieldType>),
 }
 
@@ -690,7 +690,9 @@ impl Display for Type {
                 write!(f, "{}", return_type)?;
                 self.print_post(f)
             }
-            Union(_, _) | Struct(_, _) | Enum(_, _) | Bitfield(_) => unimplemented!(),
+            Union(_, _) | Struct(_, _) | Enum(_, _) | Bitfield(_) => {
+                unimplemented!("printing union/struct/enum/bitfield")
+            }
         }
     }
 }

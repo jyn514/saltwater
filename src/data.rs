@@ -690,9 +690,13 @@ impl Display for Type {
                 write!(f, "{}", return_type)?;
                 self.print_post(f)
             }
-            Union(_, _) | Struct(_, _) | Enum(_, _) | Bitfield(_) => {
-                unimplemented!("printing union/struct/enum/bitfield")
-            }
+            Enum(Some(ident), _) => write!(f, "enum {}", ident),
+            Enum(None, members) => write!(f, "<anonymous enum>"),
+            Union(Some(ident), _) => write!(f, "union {}", ident),
+            Union(None, members) => write!(f, "<anonymous union>"),
+            Struct(Some(ident), _) => write!(f, "struct {}", ident),
+            Struct(None, members) => write!(f, "<anonymous struct>"),
+            Bitfield(_) => unimplemented!("printing bitfield type"),
         }
     }
 }

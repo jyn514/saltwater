@@ -52,3 +52,20 @@ fn branch_return() {
 fn main_is_special() {
     utils::assert_succeeds("int main() {}");
 }
+
+#[test]
+fn readme_example() {
+    utils::assert_code(
+        "
+int i = 1;
+int a[3] = {1, 2, 3};
+float f = 2.5;
+
+int main(void) {
+  const int c = 4;
+  // should return 6
+  return i + f*a[2] - c/a[1];
+}",
+        6,
+    )
+}

@@ -506,7 +506,6 @@ impl LLVMCompiler {
             self.compile_expr(left, builder)?,
             self.compile_expr(right, builder)?,
         );
-        assert_eq!(left.ir_type, right.ir_type);
         Self::binary_assign_ir(left, right, ctype, token, location, builder)
     }
     fn binary_assign_ir(
@@ -518,6 +517,7 @@ impl LLVMCompiler {
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         use codegen::ir::InstBuilder as b;
+        assert_eq!(left.ir_type, right.ir_type);
         let ir_type = ctype
             .as_ir_basic_type()
             .map_err(|data| Locatable { data, location })?;

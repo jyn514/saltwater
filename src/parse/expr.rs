@@ -766,6 +766,29 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         location,
                         data: format!("use of undeclared identifier '{}'", name),
                     }),
+                    Some(Symbol {
+                        ctype: Type::Enum(ident, members),
+                        ..
+                    }) => Ok(Expr {
+                        constexpr: true,
+                        ctype: Type::Enum(ident.clone(), members.clone()),
+                        location,
+                        lval: false,
+                        expr: ExprType::Literal(Token::Int(
+                            *members
+                                .iter()
+                                .find_map(
+                                    |(member, value)| {
+                                        if name == *member {
+                                            Some(value)
+                                        } else {
+                                            None
+                                        }
+                                    },
+                                )
+                                .unwrap(),
+                        )),
+                    }),
                     Some(symbol) => Ok(Expr {
                         // TODO: this clone will get expensive fast
                         expr: ExprType::Id(symbol.clone()),

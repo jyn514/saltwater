@@ -1,6 +1,6 @@
 
 [package]
-name = "compiler-fuzz"
+name = "rcc-fuzz"
 version = "0.0.1"
 authors = ["Automatically generated"]
 publish = false
@@ -8,7 +8,7 @@ publish = false
 [package.metadata]
 cargo-fuzz = true
 
-[dependencies.compiler]
+[dependencies.rcc]
 path = ".."
 [dependencies.libfuzzer-sys]
 git = "https://github.com/rust-fuzz/libfuzzer-sys.git"

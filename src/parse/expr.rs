@@ -637,14 +637,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         ctype: array.ctype.clone(),
                     };
                     self.expect(Token::RightBracket)?;
-                    Ok(Expr {
-                        lval: true,
-                        location,
-                        ctype: target_type,
-                        constexpr: array.constexpr && index.constexpr,
-                        // note that we do NOT call 'expr.rval()'
-                        expr: ExprType::Add(Box::new(array), Box::new(index)),
-                    })
+                    Expr::pointer_arithmetic(array, index, target_type, location)
                 }
                 // function call
                 Token::LeftParen => {
@@ -1106,6 +1099,44 @@ impl Expr {
                 ),
             })
         }
+    }
+    fn pointer_arithmetic(
+        base: Expr,
+        offset: Expr,
+        pointee: Type,
+        location: Location,
+    ) -> ExprResult {
+        assert_eq!(base.ctype, offset.ctype);
+        let offset = offset.rval();
+        let size = pointee.sizeof().map_err(|_| Locatable {
+            location: location.clone(),
+            data: format!(
+                "cannot perform pointer arithmetic when size of pointed type '{}' is unknown",
+                pointee
+            ),
+        })?;
+        let size_literal = Expr::unsigned_int_literal(size, offset.location.clone());
+        let size_cast = Expr {
+            lval: false,
+            location: offset.location.clone(),
+            ctype: offset.ctype.clone(),
+            constexpr: true,
+            expr: ExprType::Cast(Box::new(size_literal)),
+        };
+        let offset = Expr {
+            lval: false,
+            location: offset.location.clone(),
+            ctype: offset.ctype.clone(),
+            constexpr: offset.constexpr,
+            expr: ExprType::Mul(Box::new(size_cast), Box::new(offset)),
+        };
+        Ok(Expr {
+            lval: true,
+            location,
+            ctype: pointee,
+            constexpr: base.constexpr && offset.constexpr,
+            expr: ExprType::Add(Box::new(base), Box::new(offset)),
+        })
     }
     fn increment_op(prefix: bool, increment: bool, expr: Expr, location: Location) -> ExprResult {
         if !expr.is_modifiable_lval() {

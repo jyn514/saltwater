@@ -42,7 +42,7 @@ float f = 2.5;
 int main(void) {
   const int c = 4;
   // should return 6
-  return i + 2.5*3 - c/2;
+  return i + f*a[2] - c/a[1];
 }
 ```
 

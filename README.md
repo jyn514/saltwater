@@ -23,11 +23,12 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 - Preprocessor
 - Multiple translation units (files)
 - Parse switch statements
-- Codegen for statements
+- Functions with parameters
+- Codegen for statements other than if
 - Scoping for variables
 - Structs, Unions, Enums
 - Bitfields?
-- pointer arithmetic (including arrays)
+- Implicit decay from arrays to pointers
 
 ## Running
 

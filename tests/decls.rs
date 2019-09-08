@@ -10,6 +10,7 @@ fn test_decl_and_func_definition() {
 #[test]
 fn test_decl_after_init() {
     utils::assert_succeeds("int main(); int main() {} int main();");
+    utils::assert_succeeds("int g(int); int g(int i) { return i; } int main() { return g(0); }")
 }
 
 #[test]

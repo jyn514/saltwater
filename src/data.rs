@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::convert::{TryFrom, TryInto};
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::hash::Hash;
 
 use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
@@ -144,7 +144,7 @@ pub enum Token {
 
 pub type Stmt = Locatable<StmtType>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum StmtType {
     Compound(Vec<Stmt>),
@@ -176,7 +176,7 @@ pub struct Declaration {
     pub init: Option<Initializer>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Initializer {
     Scalar(Expr),                      // int i = 5;
     InitializerList(Vec<Initializer>), // int a[] = { 1, 2, 3 };
@@ -303,7 +303,7 @@ pub struct Qualifiers {
     pub c_const: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq)]
 // note: old-style declarations are not supported at this time
 pub struct FunctionType {
     // why Symbol instead of Type?
@@ -719,7 +719,7 @@ impl Type {
             | Type::Float
             | Type::Double => write!(f, "{}", self),
             Type::Pointer(t, _) | Type::Array(t, _) => t.print_pre(f),
-            Type::Function(func_type) => func_type.return_type.fmt(f),
+            Type::Function(func_type) => Display::fmt(&func_type.return_type, f),
         }
     }
     fn print_mid(&self, f: &mut Formatter) -> fmt::Result {
@@ -850,6 +850,110 @@ impl Display for Qualifiers {
     }
 }
 
+impl Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.expr {
+            ExprType::Comma(left, right) => write!(f, "{}, {}", *left, *right),
+            ExprType::Literal(token) => write!(f, "{}", token),
+            ExprType::Id(symbol) => write!(f, "{}", symbol.id),
+            ExprType::Add(left, right) => write!(f, "({}) + ({})", left, right),
+            ExprType::Sub(left, right) => write!(f, "({}) - ({})", left, right),
+            ExprType::Mul(left, right) => write!(f, "({}) * ({})", left, right),
+            ExprType::Div(left, right) => write!(f, "({}) / ({})", left, right),
+            ExprType::Mod(left, right) => write!(f, "({}) % ({})", left, right),
+            ExprType::Xor(left, right) => write!(f, "({}) ^ ({})", left, right),
+            ExprType::BitwiseOr(left, right) => write!(f, "({}) | ({})", left, right),
+            ExprType::BitwiseAnd(left, right) => write!(f, "({}) & ({})", left, right),
+            ExprType::BitwiseNot(expr) => write!(f, "(~{})", expr),
+            ExprType::Deref(expr) => write!(f, "*({})", expr),
+            ExprType::Negate(expr) => write!(f, "-({})", expr),
+            ExprType::LogicalNot(expr) => write!(f, "!({})", expr),
+            ExprType::LogicalOr(left, right) => write!(f, "({}) || ({})", left, right),
+            ExprType::LogicalAnd(left, right) => write!(f, "({}) && ({})", left, right),
+            ExprType::Shift(val, by, left) => {
+                write!(f, "({}) {} ({})", val, if *left { "<<" } else { ">>" }, by)
+            }
+            ExprType::Compare(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
+            ExprType::Assign(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
+            ExprType::Ternary(cond, left, right) => {
+                write!(f, "({}) ? ({}) : ({})", cond, left, right)
+            }
+            ExprType::FuncCall(left, params) => {
+                let varargs = if let Type::Function(ftype) = &left.ctype {
+                    ftype.varargs
+                } else {
+                    unreachable!("parser should catch illegal function calls");
+                };
+                write!(
+                    f,
+                    "({})({})",
+                    left,
+                    print_func_call(params.as_slice(), varargs, |expr| {
+                        let mut s = String::new();
+                        write!(s, "{}", expr).unwrap();
+                        s
+                    })
+                )
+            }
+            ExprType::Cast(expr) => write!(f, "({})({})", self.ctype, expr),
+            ExprType::Sizeof(ty) => write!(f, "sizeof({})", ty),
+            ExprType::Member(compound, id) => write!(f, "({}).{}", compound, id),
+            ExprType::Increment(expr, pre, inc) => unimplemented!("printing increments"),
+        }
+    }
+}
+
+fn print_func_call<T, F: Fn(&T) -> String>(params: &[T], varargs: bool, print_func: F) -> String {
+    // https://stackoverflow.com/a/30325430
+    let mut comma_separated = String::new();
+    for param in params {
+        comma_separated.push_str(&print_func(param));
+        comma_separated.push_str(", ");
+    }
+    if varargs {
+        comma_separated.push_str("...");
+    } else if !params.is_empty() {
+        comma_separated.pop();
+        comma_separated.pop();
+    }
+    comma_separated
+}
+
+impl Debug for Initializer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Initializer::Scalar(expr) => write!(f, "{};", expr),
+            Initializer::InitializerList(list) => {
+                write!(f, "{{ ")?;
+                write!(
+                    f,
+                    "{}",
+                    print_func_call(list, false, |init| { format!("{:?}", init) })
+                )?;
+                write!(f, " }};")
+            }
+            Initializer::FunctionBody(body) => {
+                writeln!(f, "{{")?;
+                for stmt in body {
+                    writeln!(f, "{:?}", stmt.data)?;
+                }
+                write!(f, "}}")
+            }
+        }
+    }
+}
+
+impl Debug for StmtType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StmtType::Expr(expr) => write!(f, "{};", expr),
+            StmtType::Return(None) => write!(f, "return;"),
+            StmtType::Return(Some(expr)) => write!(f, "return {};", expr),
+            _ => unimplemented!("printing statement"),
+        }
+    }
+}
+
 impl PartialEq for ArrayType {
     fn eq(&self, _: &Self) -> bool {
         true
@@ -864,6 +968,21 @@ impl PartialEq for Symbol {
             && self.id == other.id
             && self.qualifiers == other.qualifiers
             && self.storage_class == other.storage_class
+    }
+}
+
+impl PartialEq for FunctionType {
+    fn eq(&self, other: &Self) -> bool {
+        self.varargs == other.varargs
+            && self.return_type == other.return_type
+            // don't require parameter names and storage_class to match
+            && self.params
+                .iter()
+                .zip(other.params.iter())
+                .all(|(this_param, other_param)| {
+                    this_param.ctype == other_param.ctype
+                        && this_param.qualifiers == other_param.qualifiers
+                })
     }
 }
 

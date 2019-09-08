@@ -628,7 +628,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             location,
                         ),
                     };
-                    let index = self.expr()?;
+                    let index = self.expr()?.rval();
                     let index = Expr {
                         lval: false,
                         location: index.location.clone(),

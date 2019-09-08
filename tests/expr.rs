@@ -254,6 +254,16 @@ int main() {
         }",
         1,
     );
+    utils::assert_code(
+        "
+int a[] = {1, 2, 3};
+int g(int i) {
+  return a[i];
+}
+int main() { return g(1); }
+",
+        2,
+    );
 }
 
 #[test]

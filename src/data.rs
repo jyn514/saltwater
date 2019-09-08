@@ -585,7 +585,7 @@ impl<K: Hash + Eq, V> Scope<K, V> {
         self.0.pop();
     }
     pub fn get(&self, name: &K) -> Option<&V> {
-        for map in self.0.iter() {
+        for map in self.0.iter().rev() {
             let current = map.get(name);
             if current.is_some() {
                 return current;
@@ -595,10 +595,10 @@ impl<K: Hash + Eq, V> Scope<K, V> {
     }
     // returns whether the _immediate_ scope contains `name`
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        self.0[0].insert(key, value)
+        self.0.last_mut().unwrap().insert(key, value)
     }
     pub fn get_immediate(&self, name: &K) -> Option<&V> {
-        self.0[0].get(name)
+        self.0.last().unwrap().get(name)
     }
 }
 

@@ -49,7 +49,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// Option: empty semicolons still count as a statement (so case labels can work)
     pub fn statement(&mut self) -> Result<Option<Stmt>, Locatable<String>> {
         match self.peek_token() {
-            Some(Token::LeftBrace) => self.compound_statement(),
+            Some(Token::LeftBrace) => {
+                self.scope.enter_scope();
+                let stmts = self.compound_statement();
+                self.scope.leave_scope();
+                stmts
+            }
             Some(Token::Keyword(k)) => match k {
                 // labeled_statement (excluding labels)
                 Keyword::Case => unimplemented!(),

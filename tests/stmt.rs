@@ -69,3 +69,40 @@ int main(void) {
         6,
     )
 }
+
+#[test]
+fn scope() {
+    utils::assert_compile_error(
+        "
+    int f(int i) {
+        int i = 2;
+        return i;
+    }",
+    );
+    utils::assert_compile_error(
+        "
+    int f(int i) {
+        int i = 2;
+        int i = 2;
+        return i;
+    }",
+    );
+    utils::assert_code(
+        "int i = 1;
+    int main() {
+        int i = 2;
+        return i;
+    }",
+        2,
+    );
+    utils::assert_code(
+        "int main() {
+    int i = 2;
+    {
+        int i = 3;
+        return i;
+    }
+}",
+        3,
+    );
+}

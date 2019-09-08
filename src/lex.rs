@@ -275,14 +275,14 @@ impl<'a> Lexer<'a> {
     /// function for both and just pass in a flag that says whether floats are allowed.
     ///
     /// I spent way too much time on this.
-    fn parse_num(&mut self, start: char, allow_float: bool) -> Result<Token, String> {
+    fn parse_num(&mut self, start: char, parsing_base: bool) -> Result<Token, String> {
         // we keep going on error so we don't get more errors from unconsumed input
         // for example, if we stopped halfway through 10000000000000000000 because of
         // overflow, we'd get a bogus Token::Int(0).
         let mut err = false;
 
         if start == '.' {
-            assert!(allow_float);
+            assert!(parsing_base);
             return self.parse_float(0, 10);
         }
         // start - '0' breaks for hex digits
@@ -315,7 +315,7 @@ impl<'a> Lexer<'a> {
         // main loop (the first {digits} in the regex)
         while let Some(c) = self.next_char() {
             if c == '.' {
-                if allow_float {
+                if parsing_base {
                     return self.parse_float(current, radix);
                 } else {
                     return Err(String::from("exponents cannot be floating point numbers"));
@@ -339,7 +339,7 @@ impl<'a> Lexer<'a> {
         if err {
             return Err(String::from("overflow while parsing integer literal"));
         }
-        let current = if allow_float {
+        let current = if parsing_base {
             let exp = self.parse_exponent()?;
             if exp.is_negative() {
                 // this may truncate
@@ -358,6 +358,9 @@ impl<'a> Lexer<'a> {
             current
         };
         let token = Ok(if self.match_next('u') || self.match_next('U') {
+            if !parsing_base {
+                return Err("invalid suffix 'u' for floating constant".into());
+            }
             let unsigned = u64::try_from(current)
                 .map_err(|_| "overflow while parsing unsigned integer literal")?;
             Token::UnsignedInt(unsigned)
@@ -432,7 +435,7 @@ impl<'a> Lexer<'a> {
             }),
             _ => unreachable!(
                 "parse_num should never return something besides Token::Int \
-                 when called with allow_float: false"
+                 when called with parsing_base: false"
             ),
         }
     }

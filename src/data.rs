@@ -895,7 +895,7 @@ impl Display for Expr {
                     })
                 )
             }
-            ExprType::Cast(expr) => write!(f, "({})({})", self.ctype, expr),
+            ExprType::Cast(expr) => write!(f, "({}){}", self.ctype, expr),
             ExprType::Sizeof(ty) => write!(f, "sizeof({})", ty),
             ExprType::Member(compound, id) => write!(f, "({}).{}", compound, id),
             ExprType::Increment(expr, pre, inc) => unimplemented!("printing increments"),

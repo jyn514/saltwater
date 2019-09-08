@@ -7,13 +7,14 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 ## Implemented
 
 - Lexer
-- Declarations (`int i, *p;`)
-- Binary expressions (+, -, \*, /, \<, \>, \<\<, \>\>, ==, !=)
+- Declarations (`int i, *p;`), including enums
+- Binary expressions (+, -, \*, /, \<\<, \>\>, ==, !=)
 - Implicit binary conversions (1.0 == 1)
 - Basic static initialization (i64, f64, arrays)
+- Typedefs and enums
 - Scalar dynamic initialization (`int i = 1` inside a function)
-- Local variables; loads and stores
-- Compiling to object files on x86_64
+- Local and global variables; loads and stores
+- Compiling to object files on x86\_64
 - Linking using host `cc` (similar to how the rust compiler does it)
 - Some error handling
 - Some command line arguments
@@ -26,24 +27,33 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 - Functions with parameters
 - Codegen for statements other than if
 - Scoping for variables
-- Structs, Unions, Enums
-- Bitfields?
+- Structs and unions
 - Implicit decay from arrays to pointers
+- Bitfields?
 
 ## Running
 
 `cargo run` from top level directory.
-Anything without pointers or control flow should work, try something like this:
+Anything without loops or structs should work, try something like this:
 
 ```c
 int i = 1;
 int a[3] = {1, 2, 3};
 float f = 2.5;
 
+int g(int);
+
 int main(void) {
   const int c = 4;
   // should return 6
-  return i + f*a[2] - c/a[1];
+  return i + f*a[2] - c/g(1);
+}
+
+int g(int i) {
+  if (i < 0 || i >= 3) {
+    return 0;
+  }
+  return a[i];
 }
 ```
 

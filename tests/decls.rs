@@ -4,7 +4,7 @@ mod utils;
 fn test_decl_and_func_definition() {
     utils::assert_compile_error("int i, main(void) { return 0; }");
     utils::assert_compile_error("int main(void) { return 0; }, i;");
-    //utils::assert_succeeds("int f(), i; int main(void) { return 0; }");
+    utils::assert_succeeds("int f(), i; int main(void) { return 0; }");
 }
 
 #[test]

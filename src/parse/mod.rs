@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{prelude::*, FunctionType, Scope};
+use crate::data::{prelude::*, Scope};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
@@ -48,8 +48,8 @@ struct FunctionData {
     id: String,
     /// where the function was declared
     location: Location,
-    /// the type of the function
-    ftype: FunctionType,
+    /// the return type of the function
+    return_type: Type,
 }
 
 impl<I> Parser<I>

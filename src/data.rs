@@ -575,12 +575,12 @@ impl<K: Hash + Eq, V> Scope<K, V> {
     pub fn new() -> Self {
         Self(vec![HashMap::new()])
     }
-    pub fn child(&mut self) {
+    pub fn enter_scope(&mut self) {
         self.0.push(HashMap::<K, V>::new())
     }
-    pub fn discard(&mut self) {
+    pub fn leave_scope(&mut self) {
         if self.0.len() == 1 {
-            panic!("cannot discard the global scope");
+            panic!("cannot leave the global scope");
         }
         self.0.pop();
     }
@@ -611,6 +611,9 @@ impl<K: Eq + Hash, V> Default for Scope<K, V> {
 impl FunctionType {
     pub fn should_return(&self) -> bool {
         *self.return_type != Type::Void
+    }
+    pub fn has_params(&self) -> bool {
+        !(self.params.len() == 1 && self.params[0].ctype == Type::Void)
     }
 }
 

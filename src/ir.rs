@@ -13,7 +13,8 @@ use cranelift::codegen::{
     settings::{self, Configurable},
 };
 use cranelift::prelude::{
-    types, FunctionBuilder, FunctionBuilderContext, Signature, Type as IrType, Value as IrValue,
+    types, Ebb, FunctionBuilder, FunctionBuilderContext, Signature, Type as IrType,
+    Value as IrValue,
 };
 use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
 use cranelift_module::{self, DataContext, DataId, FuncId, Linkage, Module as CraneliftModule};
@@ -39,7 +40,7 @@ struct LLVMCompiler {
     str_index: usize,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Value {
     ir_val: IrValue,
     ir_type: IrType,
@@ -202,10 +203,68 @@ impl LLVMCompiler {
         match init {
             Initializer::Scalar(expr) => {
                 let val = self.compile_expr(expr, builder)?;
-                builder.ins().stack_store(val.ir_val, stack_slot, 0);
+                // TODO: replace with `builder.ins().stack_store(val.ir_val, stack_slot, 0);`
+                // when Cranelift implements stack_store for i8 and i16
+                let addr = builder.ins().stack_addr(Type::ptr_type(), stack_slot, 0);
+                builder.ins().store(MemFlags::new(), val.ir_val, addr, 0);
             }
             Initializer::InitializerList(_) => unimplemented!("aggregate dynamic initialization"),
             Initializer::FunctionBody(_) => unreachable!("functions can't be stored on the stack"),
+        }
+        Ok(())
+    }
+    // TODO: this is grossly inefficient, ask Cranelift devs if
+    // there's an easier way to make parameters modifiable.
+    fn store_stack_params(
+        &mut self,
+        params: Vec<Symbol>,
+        func_start: Ebb,
+        location: &Location,
+        builder: &mut FunctionBuilder,
+    ) -> SemanticResult<()> {
+        // Cranelift requires that all EBB params are declared up front
+        let ir_vals: Vec<_> = params
+            .iter()
+            .map(|param| {
+                let ir_type = match param.ctype.as_ir_basic_type() {
+                    Err(data) => err!(data, location.clone()),
+                    Ok(ir_type) => ir_type,
+                };
+                Ok(builder.append_ebb_param(func_start, ir_type))
+            })
+            .collect::<Result<_, Locatable<String>>>()?;
+        for (param, ir_val) in params.into_iter().zip(ir_vals) {
+            let ir_type = param
+                .ctype
+                .as_ir_basic_type()
+                .expect("errors should already have been caught when adding ebb params");
+            let u64_size = match param.ctype.sizeof() {
+                Err(data) => err!(data.into(), location.clone()),
+                Ok(size) => size,
+            };
+            let u32_size = match u32::try_from(u64_size) {
+                Err(_) => err!(
+                    format!(
+                        "size {} is too large for stack (can only handle 32-bit values)",
+                        u64_size
+                    ),
+                    location.clone()
+                ),
+                Ok(size) => size,
+            };
+            let stack_data = StackSlotData {
+                kind: StackSlotKind::ExplicitSlot,
+                size: u32_size,
+                offset: None,
+            };
+            let slot = builder.create_stack_slot(stack_data);
+            // TODO: need to take the address before storing until Cranelift implements
+            // stores for i8 and i16
+            // then this can be replaced with `builder.ins().stack_store(ir_val, slot, 0);`
+            // See https://github.com/CraneStation/cranelift/issues/433
+            let addr = builder.ins().stack_addr(Type::ptr_type(), slot, 0);
+            builder.ins().store(MemFlags::new(), ir_val, addr, 0);
+            self.scope.insert(param.id, Id::Local(slot));
         }
         Ok(())
     }
@@ -228,10 +287,13 @@ impl LLVMCompiler {
         let mut builder = FunctionBuilder::new(&mut func, &mut ctx);
 
         let func_start = builder.create_ebb();
-        builder.append_ebb_params_for_function_params(func_start);
         builder.switch_to_block(func_start);
         self.ebb_has_return = false;
 
+        let should_ret = func_type.should_return();
+        if func_type.has_params() {
+            self.store_stack_params(func_type.params, func_start, &location, &mut builder)?;
+        }
         self.compile_all(stmts, &mut builder)?;
         if !self.ebb_has_return {
             if id == "main" {
@@ -241,7 +303,7 @@ impl LLVMCompiler {
                     .expect("main should return an int");
                 let zero = [builder.ins().iconst(ir_int, 0)];
                 builder.ins().return_(&zero);
-            } else if func_type.should_return() {
+            } else if should_ret {
                 err!(
                     format!(
                         "expected a return statement before end of function '{}' returning {}",

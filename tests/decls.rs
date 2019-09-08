@@ -131,6 +131,31 @@ fn struct_and_enum() {
     utils::assert_compile_error("union;");
     utils::assert_compile_error("struct;");
 }
+
+#[test]
+fn function() {
+    utils::assert_code(
+        "
+        int f(int i) { return i; }
+        int main() { return f(1); }
+    ",
+        1,
+    );
+    utils::assert_code(
+        "
+        int f(double d) { return d + .5; }
+        int main() { return f(1.2); }
+    ",
+        1,
+    );
+    utils::assert_code(
+        "
+        int f(char c) { return c + .5; }
+        int main(void) { return f(1.2); }
+    ",
+        1,
+    );
+}
 /* will fail until I add scoping
 #[test]
 fn local_function_goes_out_of_scope() {

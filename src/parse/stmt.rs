@@ -144,8 +144,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .current_function
             .as_mut()
             .expect("should have current_function set when parsing statements");
-        let ret_type = &current.ftype.return_type;
-        let stmt = match (expr, current.ftype.should_return()) {
+        let ret_type = &current.return_type;
+        let stmt = match (expr, *ret_type != Type::Void) {
             (None, false) => StmtType::Return(None),
             (None, true) => {
                 return Err(Locatable {
@@ -161,7 +161,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             (Some(expr), true) => {
                 let expr = expr.rval();
-                if expr.ctype != **ret_type {
+                if expr.ctype != *ret_type {
                     StmtType::Return(Some(Expr::cast(expr, ret_type)?))
                 } else {
                     StmtType::Return(Some(expr))

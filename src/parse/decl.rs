@@ -235,7 +235,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             if let Type::Function(ftype) = &decl.data.symbol.ctype {
                 if !Self::is_main_func_signature(ftype) {
                     return Err(Locatable {
-                        data: "illegal signature for main function (expected 'int main(void)' or 'int main(char **)'".into(),
+                        data: "illegal signature for main function (expected 'int main(void)' or 'int main(int, char **)'".into(),
                         location: decl.location.clone(),
                     });
                 }
@@ -652,13 +652,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }));
             }
             if let Some(decl) = declarator {
-                let (id, ctype) = decl.parse_type(
+                let (id, mut ctype) = decl.parse_type(
                     param_type,
                     &self
                         .last_location
                         .as_ref()
                         .expect("If we see a token, there should be at least one stored location"),
                 )?;
+                // int f(int a[]) is the same as int f(int *a)
+                // TODO: parse int f(int a[static 5])
+                if let Type::Array(to, _) = ctype {
+                    ctype = Type::Pointer(to, Qualifiers::NONE);
+                }
                 // I will probably regret this in the future
                 // default() for String is "",
                 // which can never be passed in by the lexer
@@ -984,19 +989,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         id: Locatable<String>,
         ftype: FunctionType,
     ) -> Result<Vec<Stmt>, Locatable<String>> {
-        if let Some(bad_index) = ftype
-            .params
-            .iter()
-            .position(|param| param.id == "" && param.ctype != Type::Void)
-        {
-            return Err(Locatable {
-                data: format!(
-                    "missing parameter name in function definition (parameter {} of type '{}')",
-                    bad_index, ftype.params[bad_index].ctype
-                ),
-                location: id.location,
-            });
-        }
         // if it's a function, set up state so we know the return type
         // TODO: rework all of this so semantic analysis is done _after_ parsing
         // TODO: that will remove a lot of clones and also make the logic much simpler
@@ -1011,8 +1003,27 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 ),
             });
         }
+        // add parameters to scope
+        self.scope.enter_scope();
+        let len = ftype.params.len();
+        for (i, param) in ftype.params.into_iter().enumerate() {
+            if param.id == "" {
+                if param.ctype == Type::Void {
+                    assert_eq!(len, 1);
+                    break;
+                }
+                err!(
+                    format!(
+                        "missing parameter name in function definition (parameter {} of type '{}')",
+                        i, param.ctype
+                    ),
+                    id.location,
+                );
+            }
+            self.scope.insert(param.id.clone(), param);
+        }
         self.current_function = Some(FunctionData {
-            ftype: ftype.clone(),
+            return_type: *ftype.return_type,
             id: id.data,
             location: id.location,
         });
@@ -1030,6 +1041,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ),
         };
         self.current_function = None;
+        self.scope.leave_scope();
         Ok(body)
     }
 }

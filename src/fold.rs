@@ -8,6 +8,7 @@ macro_rules! fold_int_bin_op {
             (ExprType::Literal(a), ExprType::Literal(b)) => {
                 match (a, b) {
                     (Token::Int(a), Token::Int(b)) => ExprType::Literal(Token::Int(a $op b)),
+                    (Token::UnsignedInt(a), Token::UnsignedInt(b)) => ExprType::Literal(Token::UnsignedInt(a $op b)),
                     (Token::Char(a), Token::Char(b)) => ExprType::Literal(Token::Char(a $op b)),
                     (_, _) => $constructor(Box::new(left), Box::new(right)),
                 }
@@ -24,6 +25,7 @@ macro_rules! fold_scalar_bin_op {
             (ExprType::Literal(a), ExprType::Literal(b)) => {
                 match (a, b) {
                     (Token::Int(a), Token::Int(b)) => ExprType::Literal(Token::Int(a $op b)),
+                    (Token::UnsignedInt(a), Token::UnsignedInt(b)) => ExprType::Literal(Token::UnsignedInt(a $op b)),
                     (Token::Float(a), Token::Float(b)) => ExprType::Literal(Token::Float(a $op b)),
                     (Token::Char(a), Token::Char(b)) => ExprType::Literal(Token::Char(a $op b)),
                     // TODO: find a way to do this that allows `"hello" + 2 - 1`
@@ -75,6 +77,7 @@ macro_rules! fold_compare_op {
             (ExprType::Literal(a), ExprType::Literal(b)) => {
                 match (a, b) {
                     (Token::Int(a), Token::Int(b)) => ExprType::Literal(Token::Int((a $op b) as i64)),
+                    (Token::UnsignedInt(a), Token::UnsignedInt(b)) => ExprType::Literal(Token::UnsignedInt((a $op b) as u64)),
                     #[allow(clippy::float_cmp)]
                     (Token::Float(a), Token::Float(b)) => ExprType::Literal(Token::Float(f64::from((a $op b) as u8))),
                     (Token::Char(a), Token::Char(b)) => ExprType::Literal(Token::Char((a $op b) as u8)),

@@ -406,7 +406,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         Token::Divide => ExprType::Div(Box::new(left), Box::new(right)),
                         Token::Mod => ExprType::Mod(Box::new(left), Box::new(right)),
                         _ => {
-                            panic!("left_associate_binary_op should only return tokens given to it")
+                            panic!("left_associative_binary_op should only return tokens given to it")
                         }
                     },
                 })
@@ -666,7 +666,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     if expected == 1 && functype.params[0].ctype == Type::Void {
                         expected = 0;
                     }
-                    if args.len() != expected {
+                    if args.len() < expected || args.len() > expected && !functype.varargs {
                         return Err(Locatable {
                             data: format!(
                                 "too {} arguments to function call: expected {}, have {}",

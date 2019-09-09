@@ -452,9 +452,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     | (struct | union) identifier
     ;
 
-    struct_declaration: (type_specifier | type_qualifier)+ struct_declarator_list ';' ;
-    struct_declarator_list: struct_declarator (',' struct_declarator)* ;
-
     enum_specifier
         : ENUM '{' enumerator_list '}'
         | ENUM identifier '{' enumerator_list '}'
@@ -496,20 +493,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Type::Enum(Some(ident), vec![])
             });
         }
-        if kind == Keyword::Enum {
+        if let Some(locatable) = self.match_next(&Token::RightBrace) {
+            err!(format!("cannot have an empty {}", kind), locatable.location);
+        }
+        let maybe_ctype = if kind == Keyword::Enum {
             self.enumerators(ident)
         } else {
-            self.struct_declarators(ident)
-        }
+            self.struct_declaration_list(ident)
+        };
+        self.expect(Token::RightBrace)?;
+        maybe_ctype
     }
     /* rewritten grammar:
     enumerator_list: enumerator (',' enumerator)* ;
     enumerator: identifier ('=' constant_expr)? ;
     */
     fn enumerators(&mut self, ident: Option<Locatable<String>>) -> SemanticResult<Type> {
-        if let Some(locatable) = self.match_next(&Token::RightBrace) {
-            err!("cannot have an empty enum".into(), locatable.location);
-        }
         let mut current = 0;
         let mut members = vec![];
         loop {
@@ -546,7 +545,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             current += 1;
         }
-        let location = self.expect(Token::RightBrace)?.location;
         let ctype = Type::Enum(ident.map(|loc| loc.data), members);
         match &ctype {
             Type::Enum(_, members) => {
@@ -568,14 +566,52 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         Ok(ctype)
     }
     /* rewritten grammar:
+    struct_declaration: (type_specifier | type_qualifier)+ struct_declarator_list ';' ;
+    struct_declarator_list: struct_declarator (',' struct_declarator)* ;
     struct_declarator
-    : declarator
-    | ':' constant_expr
-    | declarator ':' constant_expr
-    ;
+        : declarator
+        | ':' constant_expr
+        | declarator ':' constant_expr
+        ;
     */
-    fn struct_declarators(&mut self, ident: Option<Locatable<String>>) -> SemanticResult<Type> {
-        unimplemented!("struct and union members");
+    fn struct_declaration_list(
+        &mut self,
+        ident: Option<Locatable<String>>,
+    ) -> SemanticResult<Type> {
+        let mut members = vec![];
+        loop {
+            if let Some(Token::RightBrace) = self.peek_token() {
+                break;
+            }
+            let decls = self.declaration()?;
+            for decl in decls {
+                /* TODO: check that storage class isn't specified (probably requires rewriting declaration)
+                if decl.data.symbol.storage_class != StorageClass::Auto {
+                    err!(
+                        format!(
+                            "cannot specify storage class '{}' for struct member '{}'",
+                            decl.data.symbol.storage_class, decl.data.symbol.id
+                        ),
+                        decl.location
+                    );
+                }
+                */
+                if decl.data.symbol.init {
+                    err!(
+                        format!("cannot initialize struct member '{}'", decl.data.symbol.id),
+                        decl.location
+                    );
+                }
+                members.push(decl.data.symbol);
+            }
+        }
+        if members.is_empty() {
+            err!(
+                "cannot have empty struct".into(),
+                self.next_location().clone()
+            );
+        }
+        Ok(Type::Struct(ident.map(|i| i.data), members))
     }
     /*
      * function parameters
@@ -1164,7 +1200,6 @@ impl Keyword {
     fn is_storage_class(self) -> bool {
         StorageClass::try_from(self).is_ok()
     }
-    // TODO: catch structs, enums, and typedefs
     pub fn is_decl_specifier(self) -> bool {
         use Keyword::*;
         match self {

@@ -501,7 +501,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     expr: ExprType::Sizeof(ctype),
                     lval: false,
                     location,
-                    ctype: Type::Int(true),
+                    ctype: Type::Int(false),
                 })
             }
             Some(op) if op.is_unary_operator() => {

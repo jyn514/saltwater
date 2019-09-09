@@ -499,13 +499,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if let Some(locatable) = self.match_next(&Token::RightBrace) {
             err!(format!("cannot have an empty {}", kind), locatable.location);
         }
-        let maybe_ctype = if kind == Keyword::Enum {
+        let ctype = if kind == Keyword::Enum {
             self.enumerators(ident)
         } else {
             self.struct_declaration_list(ident)
-        };
+        }?;
         self.expect(Token::RightBrace)?;
-        maybe_ctype
+        Ok(ctype)
     }
     /* rewritten grammar:
     enumerator_list: enumerator (',' enumerator)* ;

@@ -87,6 +87,9 @@ lazy_static! {
         "const" => Keyword::Const,
         "volatile" => Keyword::Volatile,
         "restrict" => Keyword::Restrict,
+        // GCC aliases (boo!)
+        "__restrict" => Keyword::Restrict,
+        "__restrict__" => Keyword::Restrict,
         "_Atomic" => Keyword::Atomic,
         "_Thread_local" => Keyword::ThreadLocal,
 
@@ -767,7 +770,16 @@ impl<'a> Iterator for Lexer<'a> {
                 },
                 '?' => Ok(Token::Question),
                 '0'..='9' => self.parse_num(c, true),
-                'a'..='z' | 'A'..='Z' | '_' => self.parse_id(c),
+                'a'..='z' | 'A'..='Z' | '_' => {
+                    let maybe_id = self.parse_id(c);
+                    if let Ok(Token::Id(s)) = &maybe_id {
+                        // GCC puts these literally anywhere
+                        if s == "__extension__" {
+                            return self.next();
+                        }
+                    }
+                    maybe_id
+                }
                 '\'' => self.parse_char(),
                 '"' => {
                     self.unput(Some('"'));

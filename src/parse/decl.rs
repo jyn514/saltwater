@@ -88,6 +88,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             self.parse_typedef(id, first_type, qualifiers)?;
             return Ok(VecDeque::new());
         }
+        self.clear_gcc_extensions()?;
 
         // if it's not a function, we still need to handle it
         let init = match (&first_type, self.peek_token()) {
@@ -1079,6 +1080,53 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.current_function = None;
         self.scope.leave_scope();
         Ok(body)
+    }
+    fn clear_gcc_extensions(&mut self) -> SemanticResult<()> {
+        while let Some(Token::Id(s)) = self.peek_token() {
+            if s == "__attribute__" {
+                self.clear_gcc_extension(2)?;
+            } else if s == "__asm__" {
+                self.clear_gcc_extension(1)?;
+            } else {
+                break;
+            }
+        }
+        Ok(())
+    }
+    /// GCC supports __attribute__ extensions.
+    /// This would be fine, except they're everywhere in the standard includes,
+    /// so you have to parse them to do anything useful.
+    /// This understands just enough of the attribute syntax to ignore them entirely.
+    fn clear_gcc_extension(&mut self, num_parens: usize) -> SemanticResult<()> {
+        self.next_token();
+        let mut open_parens = 0;
+        while open_parens < num_parens {
+            self.expect(Token::LeftParen)?;
+            open_parens += 1;
+        }
+        while open_parens > num_parens - 1 {
+            match self.next_token() {
+                None => err!(
+                    "expected ')' while parsing __attribute__ extension, got <end-of-file>".into(),
+                    self.last_location.as_ref().unwrap().clone()
+                ),
+                Some(Locatable {
+                    data: Token::LeftParen,
+                    ..
+                }) => open_parens += 1,
+                Some(Locatable {
+                    data: Token::RightParen,
+                    ..
+                }) => open_parens -= 1,
+                _ => {}
+            }
+        }
+        // for __attribute__((...))
+        while open_parens > 0 {
+            self.expect(Token::RightParen)?;
+            open_parens -= 1;
+        }
+        Ok(())
     }
 }
 

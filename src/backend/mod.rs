@@ -75,6 +75,7 @@ impl Type {
             // illegal operations
             Function(_) => Err("cannot take `sizeof` a function"),
             Void => Err("cannot take `sizeof` void"),
+            VaList => Err("cannot take `sizeof` va_list"),
         }
     }
     // TODO: instead of doing this manually,
@@ -97,6 +98,7 @@ impl Type {
             Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),
+            VaList => Err("cannot take `alignof` va_list"),
         }
     }
     pub fn ptr_type() -> IrType {
@@ -146,7 +148,7 @@ impl Type {
                 .expect("parser should ensure all unions have at least one member")?
                 .as_ir_basic_type(),
             Bitfield(_) => unimplemented!("bitfield to llvm type"),
-            Void | Function(_) => Err(format!("{} is not a basic type", self)),
+            VaList | Void | Function(_) => Err(format!("{} is not a basic type", self)),
         }
     }
     pub fn as_ir_type(&self) -> Result<IrType, String> {
@@ -169,7 +171,7 @@ impl Type {
             Void => Ok(types::INVALID),
             // I don't think Cranelift IR has a representation for functions
             Function(_) => unimplemented!("functions to LLVM type"),
-            //Function(func_type) => Ok(ty.to_llvm_basic()?.func_type())
+            VaList => unimplemented!("variadic args"),
         }
     }
 }

@@ -123,6 +123,11 @@ fn typedef() {
          i main() { return 1; }",
         1,
     );
+    utils::assert_succeeds(
+        "int main() {
+    typedef void v;
+}",
+    );
 }
 
 #[test]

@@ -66,6 +66,7 @@ lazy_static! {
         "goto" => Keyword::Goto,
 
         // types
+        "__builtin_va_list" => Keyword::VaList,
         "_Bool" => Keyword::Bool,
         "char" => Keyword::Char,
         "short" => Keyword::Short,

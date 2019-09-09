@@ -50,6 +50,7 @@ pub enum Keyword {
     Bool,
     Complex,
     Imaginary,
+    VaList,
 
     // qualifiers
     Const,
@@ -270,6 +271,7 @@ pub enum Type {
     // enums should always have members, since tentative definitions are not allowed
     Enum(Option<String>, Vec<(String, i64)>),
     Bitfield(Vec<BitfieldType>),
+    VaList,
 }
 
 #[derive(Clone, Debug)]
@@ -663,6 +665,7 @@ impl Display for Keyword {
             | Keyword::NoReturn
             | Keyword::Generic
             | Keyword::StaticAssert => write!(f, "_{:?}", self),
+            Keyword::VaList => write!(f, "va_list"),
             _ => write!(f, "{}", &format!("{:?}", self).to_lowercase()),
         }
     }
@@ -712,6 +715,7 @@ impl Display for Type {
             Struct(Some(ident), _) => write!(f, "struct {}", ident),
             Struct(None, members) => write!(f, "<anonymous struct>"),
             Bitfield(_) => unimplemented!("printing bitfield type"),
+            VaList => write!(f, "va_list"),
         }
     }
 }
@@ -723,6 +727,7 @@ impl Type {
             }
             Type::Bitfield(_) => unimplemented!("printing bitfield"),
             Type::Void
+            | Type::VaList
             | Type::Bool
             | Type::Char(_)
             | Type::Short(_)

@@ -65,7 +65,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
+    #[inline(always)]
     pub fn declaration(&mut self) -> Result<VecDeque<Locatable<Declaration>>, Locatable<String>> {
+        self._impl_declaration(true)
+    }
+    pub fn _impl_declaration(
+        &mut self,
+        add_to_scope: bool,
+    ) -> Result<VecDeque<Locatable<Declaration>>, Locatable<String>> {
         let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers(true)?;
         if self.match_next(&Token::Semicolon).is_some() {
             if !seen_compound_type {
@@ -129,7 +136,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             data: Declaration { symbol, init },
             location: id.location,
         };
-        self.declare(&decl)?;
+        if add_to_scope {
+            self.declare(&decl)?;
+        }
         let init = decl.data.init.is_some();
         let mut pending = VecDeque::from_iter(std::iter::once(decl));
         if (is_func && init) || self.match_next(&Token::Semicolon).is_some() {
@@ -139,7 +148,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         loop {
             let decl = self.init_declarator(sc, qualifiers.clone(), ctype.clone())?;
-            self.declare(&decl)?;
+            if add_to_scope {
+                self.declare(&decl)?;
+            }
             pending.push_back(decl);
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon)?;
@@ -586,7 +597,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             if let Some(Token::RightBrace) = self.peek_token() {
                 break;
             }
-            let decls = self.declaration()?;
+            let decls = self._impl_declaration(false)?;
             for decl in decls {
                 /* TODO: check that storage class isn't specified (probably requires rewriting declaration)
                 if decl.data.symbol.storage_class != StorageClass::Auto {

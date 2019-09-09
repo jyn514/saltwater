@@ -1015,7 +1015,7 @@ mod tests {
             "int *(*)(int)",
             "int *(*)[1][2][3]",
         ]
-        .into_iter()
+        .iter()
         {
             assert_eq!(
                 &format!(

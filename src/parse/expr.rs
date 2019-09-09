@@ -144,9 +144,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn conditional_expr(&mut self) -> ExprResult {
         let condition = self.logical_or_expr()?;
         if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {
+            let condition = condition.rval();
             let then = self.expr()?;
             self.expect(Token::Colon)?;
             let otherwise = self.conditional_expr()?;
+            let (then, otherwise) = Expr::binary_promote(then, otherwise)?;
             if then.ctype == otherwise.ctype {
                 Ok(Expr {
                     ctype: then.ctype.clone(),
@@ -487,6 +489,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let result = self.unary_expr()?;
                     (result.location, result.ctype)
                 };
+                self.expect(Token::RightParen)?;
                 Ok(Expr {
                     // the C11 standard states (6.5.3.4)
                     // "If the type of the operand is a variable length array type, the operand is evaluated; otherwise, the operand is not evaluated and the result is an integer constant."
@@ -808,9 +811,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 UnsignedInt(literal) => Ok(Expr::unsigned_int_literal(literal, location)),
                 Float(literal) => Ok(Expr::float_literal(literal, location)),
                 LeftParen => {
-                    let expr = self.expr();
+                    let expr = self.expr()?;
                     self.expect(RightParen)?;
-                    expr
+                    Ok(expr)
                 }
                 other => {
                     let err = Err(Locatable {
@@ -1104,7 +1107,9 @@ impl Expr {
                 lval: false,
                 ctype: ctype.clone(),
             })
-        } else if self.expr == ExprType::Literal(Token::Int(0)) && ctype.is_pointer() {
+        } else if self.expr == ExprType::Literal(Token::Int(0)) && ctype.is_pointer()
+            || self.ctype.is_void_pointer() && ctype.is_pointer()
+        {
             self.ctype = ctype.clone();
             Ok(self)
         } else {

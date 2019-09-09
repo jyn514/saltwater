@@ -268,12 +268,12 @@ impl<'a> Lexer<'a> {
     /// NOTE: A-F is not allowed for hex digits and a-f _is_ allowed for the
     /// fractional part of the number.
     /// NOTE: Floats are not allowed for exponents.
-    /// NOTE: '-' is parsed as part of the number instead of a unary operator in order to make
     /// exponents easy to parse.
     /// TODO: return an error enum instead of Strings
     ///
     /// Since most of the code is the same for integers and floats, we use the same
     /// function for both and just pass in a flag that says whether floats are allowed.
+    /// This made the function much more complicated and I'm starting to regret it.
     ///
     /// I spent way too much time on this.
     fn parse_num(&mut self, start: char, parsing_base: bool) -> Result<Token, String> {
@@ -330,7 +330,7 @@ impl<'a> Lexer<'a> {
                 match current
                     .checked_mul(i128::from(radix))
                     // XXX: will overflow for u64
-                    .and_then(|current| current.checked_add(c as i128 - '0' as i128))
+                    .and_then(|current| current.checked_add(i128::from(c.to_digit(radix).unwrap())))
                 {
                     Some(c) => current = c,
                     None => err = true,
@@ -393,6 +393,8 @@ impl<'a> Lexer<'a> {
             }
         }
         let result = 10_f64.powi(self.parse_exponent()?) * (start as f64 + fraction);
+        // Ignored for compatibility reasons
+        self.match_next('f');
         if result == INFINITY || result == NEG_INFINITY {
             Err(String::from(
                 "overflow error while parsing floating literal",
@@ -820,7 +822,7 @@ mod tests {
 
     fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
         lexed
-            .into_iter()
+            .iter()
             .zip(expected)
             .all(|(actual, expected)| match &actual.data {
                 Ok(token) => token == expected,
@@ -877,11 +879,11 @@ mod tests {
         assert!(match_data(lex("0"), |lexed| lexed == Ok(Token::Int(0))));
         assert!(match_data(lex("0.1"), |lexed| lexed == Ok(Token::Float(0.1))));
         assert!(match_data(lex(".1"), |lexed| lexed == Ok(Token::Float(0.1))));
-        assert!(match_data(lex("1e10"), |lexed| lexed == Ok(Token::Int(10000000000))));
+        assert!(match_data(lex("1e10"), |lexed| lexed == Ok(Token::Int(10_000_000_000))));
         assert!(match_all(&lex_all("-1"), &[Token::Minus, Token::Int(1)]));
         assert!(match_all(
             &lex_all("-1e10"),
-            &[Token::Minus, Token::Int(10000000000)]
+            &[Token::Minus, Token::Int(10_000_000_000)]
         ));
         assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
             == Ok(Token::UnsignedInt(9223372036854775807u64))));

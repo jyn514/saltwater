@@ -596,15 +596,18 @@ impl LLVMCompiler {
             (Token::Divide, ty, _) if ty.is_float() => b::fdiv,
             (Token::Mod, ty, true) if ty.is_int() => b::srem,
             (Token::Mod, ty, false) if ty.is_int() => b::urem,
-            (Token::Ampersand, ty, true) if ty.is_int() => b::band,
-            (Token::BitwiseOr, ty, true) if ty.is_int() => b::bor,
+            (Token::Ampersand, ty, _) if ty.is_int() => b::band,
+            (Token::BitwiseOr, ty, _) if ty.is_int() => b::bor,
             (Token::ShiftLeft, ty, _) if ty.is_int() => b::ishl,
             // arithmetic shift: keeps the sign of `left`
             (Token::ShiftRight, ty, true) if ty.is_int() => b::sshr,
             // logical shift: shifts in zeros
             (Token::ShiftRight, ty, false) if ty.is_int() => b::ushr,
             (Token::Xor, ty, _) if ty.is_int() => b::bxor,
-            _ => unreachable!("only valid assign binary ops should be passed to binary_assign_op"),
+            (token, _, _) => unreachable!(
+                "only valid assign binary ops should be passed to binary_assign_op (got {})",
+                token
+            ),
         };
         let ir_val = func(builder.ins(), left.ir_val, right.ir_val);
         Ok(Value {

@@ -572,12 +572,15 @@ impl From<LengthError> for &'static str {
 }
 
 impl<K: Hash + Eq, V> Scope<K, V> {
+    #[inline]
     pub fn new() -> Self {
         Self(vec![HashMap::new()])
     }
+    #[inline]
     pub fn enter_scope(&mut self) {
         self.0.push(HashMap::<K, V>::new())
     }
+    #[inline]
     pub fn leave_scope(&mut self) {
         if self.0.len() == 1 {
             panic!("cannot leave the global scope");
@@ -594,11 +597,20 @@ impl<K: Hash + Eq, V> Scope<K, V> {
         None
     }
     // returns whether the _immediate_ scope contains `name`
+    #[inline]
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         self.0.last_mut().unwrap().insert(key, value)
     }
+    #[inline]
     pub fn get_immediate(&self, name: &K) -> Option<&V> {
         self.0.last().unwrap().get(name)
+    }
+    #[inline(always)]
+    pub fn depth(&self) -> usize {
+        self.0.len()
+    }
+    pub fn is_global(&self) -> bool {
+        self.0.len() == 1
     }
 }
 

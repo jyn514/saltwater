@@ -268,7 +268,6 @@ impl<'a> Lexer<'a> {
     /// NOTE: A-F is not allowed for hex digits and a-f _is_ allowed for the
     /// fractional part of the number.
     /// NOTE: Floats are not allowed for exponents.
-    /// exponents easy to parse.
     /// TODO: return an error enum instead of Strings
     ///
     /// Since most of the code is the same for integers and floats, we use the same
@@ -394,7 +393,9 @@ impl<'a> Lexer<'a> {
         }
         let result = 10_f64.powi(self.parse_exponent()?) * (start as f64 + fraction);
         // Ignored for compatibility reasons
-        self.match_next('f');
+        if !self.match_next('f') {
+            self.match_next('F');
+        }
         if result == INFINITY || result == NEG_INFINITY {
             Err(String::from(
                 "overflow error while parsing floating literal",
@@ -409,12 +410,13 @@ impl<'a> Lexer<'a> {
             return Ok(0);
         }
         self.next_char();
+        let seen_plus = self.match_next('+');
         let exp = match self.peek() {
             Some(c) if c.is_ascii_digit() => {
                 assert_eq!(self.next_char(), Some(c));
                 self.parse_num(c, false)?
             }
-            Some('-') => {
+            Some('-') if !seen_plus => {
                 assert_eq!(self.next_char(), Some('-'));
                 match self.peek() {
                     Some(c) if c.is_ascii_digit() => {
@@ -886,7 +888,7 @@ mod tests {
             &[Token::Minus, Token::Int(10_000_000_000)]
         ));
         assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
-            == Ok(Token::UnsignedInt(9223372036854775807u64))));
+            == Ok(Token::UnsignedInt(9_223_372_036_854_775_807u64))));
     }
 
     #[test]

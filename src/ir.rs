@@ -871,10 +871,17 @@ impl LLVMCompiler {
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         // TODO: should type checking go here or in parsing?
-        let ret_type = match ctype {
-            Type::Function(FunctionType { return_type, .. }) => *return_type,
+        let (ret_type, varargs) = match ctype {
+            Type::Function(FunctionType {
+                return_type,
+                varargs,
+                ..
+            }) => (*return_type, varargs),
             _ => unreachable!("parser should only allow calling functions"),
         };
+        if varargs {
+            unimplemented!("variadic argument calls");
+        }
         let compiled_args: Vec<IrValue> = args
             .into_iter()
             .map(|arg| self.compile_expr(arg, builder).map(|val| val.ir_val))

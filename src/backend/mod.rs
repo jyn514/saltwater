@@ -35,8 +35,6 @@ impl Type {
                     || self.sizeof() == other.sizeof() && self.is_signed() == other.is_signed())
     }
 
-    // TODO: instead of doing this manually,
-    // convert to LLVM type and call t.size_of()
     pub fn sizeof(&self) -> Result<SIZE_T, &'static str> {
         match self {
             Bool => Ok(BOOL_SIZE.into()),
@@ -78,8 +76,6 @@ impl Type {
             VaList => Err("cannot take `sizeof` va_list"),
         }
     }
-    // TODO: instead of doing this manually,
-    // convert to LLVM type and call t.size_of()
     pub fn alignof(&self) -> Result<SIZE_T, &'static str> {
         match self {
             Bool
@@ -104,7 +100,7 @@ impl Type {
     pub fn ptr_type() -> IrType {
         IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
     }
-    pub fn as_ir_basic_type(&self) -> Result<IrType, String> {
+    pub fn as_ir_type(&self) -> Result<IrType, String> {
         match self {
             // Integers
             Bool => Ok(types::B1),
@@ -123,8 +119,7 @@ impl Type {
             }
 
             // Floats
-            // TODO: this is hard-coded for x64 because LLVM doesn't allow specifying a
-            // custom type
+            // TODO: this is hard-coded for x64
             Float => Ok(types::F32),
             Double => Ok(types::F64),
 
@@ -133,44 +128,25 @@ impl Type {
             Array(_, _) => Ok(IrType::int(PTR_SIZE * CHAR_BIT)
                 .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE))),
             Struct(_, members) => {
-                let llvm_elements: Vec<_> = members
+                let ir_elements: Vec<_> = members
                     .iter()
-                    .map(|m| m.ctype.as_ir_basic_type())
+                    .map(|m| m.ctype.as_ir_type())
                     .collect::<Result<_, String>>()?;
                 // need to figure out how padding works
                 unimplemented!("struct type -> IR");
             }
-            // LLVM does not have a union type.
+            // Cranelift does not have a union type.
             // What Clang does is cast it to the type of the largest member,
             // and then cast every element of the union as it is accessed.
             // See https://stackoverflow.com/questions/19549942/extracting-a-value-from-an-union#19550613
             Union(_, members) => try_max_by_key(members.iter().map(|m| &m.ctype), Type::sizeof)
                 .expect("parser should ensure all unions have at least one member")?
-                .as_ir_basic_type(),
-            Bitfield(_) => unimplemented!("bitfield to llvm type"),
-            VaList | Void | Function(_) => Err(format!("{} is not a basic type", self)),
-        }
-    }
-    pub fn as_ir_type(&self) -> Result<IrType, String> {
-        match self {
-            // basic types (according to LLVM)
-            Bool
-            | Char(_)
-            | Short(_)
-            | Int(_)
-            | Long(_)
-            | Enum(_, _)
-            | Float
-            | Double
-            | Pointer(_, _)
-            | Array(_, _)
-            | Struct(_, _)
-            | Bitfield(_)
-            | Union(_, _) => self.as_ir_basic_type(),
+                .as_ir_type(),
             // void cannot be loaded or stored
-            Void => Ok(types::INVALID),
+            Void => Err("void cannot be represented".into()),
+            Bitfield(_) => unimplemented!("bitfield to ir type"),
             // I don't think Cranelift IR has a representation for functions
-            Function(_) => unimplemented!("functions to LLVM type"),
+            Function(_) => unimplemented!("functions to IR type"),
             VaList => unimplemented!("variadic args"),
         }
     }
@@ -187,7 +163,7 @@ impl FunctionType {
                 .map(|param| {
                     param
                         .ctype
-                        .as_ir_basic_type()
+                        .as_ir_type()
                         .map(AbiParam::new)
                         .map_err(|err| Locatable {
                             data: err,
@@ -201,7 +177,7 @@ impl FunctionType {
         } else {
             vec![self
                 .return_type
-                .as_ir_basic_type()
+                .as_ir_type()
                 .map(AbiParam::new)
                 .map_err(|err| Locatable {
                     data: err,

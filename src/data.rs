@@ -188,7 +188,7 @@ pub enum Initializer {
 ///
 /// This should be the datatype you use in APIs, etc.
 /// because it is more useful than the raw ExprType.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Expr {
     /// expr: holds the actual expression
     pub expr: ExprType,
@@ -722,21 +722,9 @@ impl Display for Type {
 impl Type {
     fn print_pre(&self, f: &mut Formatter) -> fmt::Result {
         match self {
-            Type::Enum(_, _) | Type::Union(_, _) | Type::Struct(_, _) => {
-                unimplemented!("printing enum/union/struct")
-            }
-            Type::Bitfield(_) => unimplemented!("printing bitfield"),
-            Type::Void
-            | Type::VaList
-            | Type::Bool
-            | Type::Char(_)
-            | Type::Short(_)
-            | Type::Int(_)
-            | Type::Long(_)
-            | Type::Float
-            | Type::Double => write!(f, "{}", self),
             Type::Pointer(t, _) | Type::Array(t, _) => t.print_pre(f),
             Type::Function(func_type) => Display::fmt(&func_type.return_type, f),
+            _ => write!(f, "{}", self),
         }
     }
     fn print_mid(&self, f: &mut Formatter) -> fmt::Result {
@@ -867,33 +855,41 @@ impl Display for Qualifiers {
     }
 }
 
-impl Display for Expr {
+impl Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.expr {
-            ExprType::Comma(left, right) => write!(f, "{}, {}", *left, *right),
+            ExprType::Comma(left, right) => write!(f, "{:?}, {:?}", *left, *right),
             ExprType::Literal(token) => write!(f, "{}", token),
             ExprType::Id(symbol) => write!(f, "{}", symbol.id),
-            ExprType::Add(left, right) => write!(f, "({}) + ({})", left, right),
-            ExprType::Sub(left, right) => write!(f, "({}) - ({})", left, right),
-            ExprType::Mul(left, right) => write!(f, "({}) * ({})", left, right),
-            ExprType::Div(left, right) => write!(f, "({}) / ({})", left, right),
-            ExprType::Mod(left, right) => write!(f, "({}) % ({})", left, right),
-            ExprType::Xor(left, right) => write!(f, "({}) ^ ({})", left, right),
-            ExprType::BitwiseOr(left, right) => write!(f, "({}) | ({})", left, right),
-            ExprType::BitwiseAnd(left, right) => write!(f, "({}) & ({})", left, right),
-            ExprType::BitwiseNot(expr) => write!(f, "(~{})", expr),
-            ExprType::Deref(expr) => write!(f, "*({})", expr),
-            ExprType::Negate(expr) => write!(f, "-({})", expr),
-            ExprType::LogicalNot(expr) => write!(f, "!({})", expr),
-            ExprType::LogicalOr(left, right) => write!(f, "({}) || ({})", left, right),
-            ExprType::LogicalAnd(left, right) => write!(f, "({}) && ({})", left, right),
-            ExprType::Shift(val, by, left) => {
-                write!(f, "({}) {} ({})", val, if *left { "<<" } else { ">>" }, by)
+            ExprType::Add(left, right) => write!(f, "({:?}) + ({:?})", left, right),
+            ExprType::Sub(left, right) => write!(f, "({:?}) - ({:?})", left, right),
+            ExprType::Mul(left, right) => write!(f, "({:?}) * ({:?})", left, right),
+            ExprType::Div(left, right) => write!(f, "({:?}) / ({:?})", left, right),
+            ExprType::Mod(left, right) => write!(f, "({:?}) % ({:?})", left, right),
+            ExprType::Xor(left, right) => write!(f, "({:?}) ^ ({:?})", left, right),
+            ExprType::BitwiseOr(left, right) => write!(f, "({:?}) | ({:?})", left, right),
+            ExprType::BitwiseAnd(left, right) => write!(f, "({:?}) & ({:?})", left, right),
+            ExprType::BitwiseNot(expr) => write!(f, "(~{:?})", expr),
+            ExprType::Deref(expr) => write!(f, "*({:?})", expr),
+            ExprType::Negate(expr) => write!(f, "-({:?})", expr),
+            ExprType::LogicalNot(expr) => write!(f, "!({:?})", expr),
+            ExprType::LogicalOr(left, right) => write!(f, "({:?}) || ({:?})", left, right),
+            ExprType::LogicalAnd(left, right) => write!(f, "({:?}) && ({:?})", left, right),
+            ExprType::Shift(val, by, left) => write!(
+                f,
+                "({:?}) {} ({:?})",
+                val,
+                if *left { "<<" } else { ">>" },
+                by
+            ),
+            ExprType::Compare(left, right, token) => {
+                write!(f, "({:?}) {} ({:?})", left, token, right)
             }
-            ExprType::Compare(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
-            ExprType::Assign(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
+            ExprType::Assign(left, right, token) => {
+                write!(f, "({:?}) {} ({:?})", left, token, right)
+            }
             ExprType::Ternary(cond, left, right) => {
-                write!(f, "({}) ? ({}) : ({})", cond, left, right)
+                write!(f, "({:?}) ? ({:?}) : ({:?})", cond, left, right)
             }
             ExprType::FuncCall(left, params) => {
                 let varargs = if let Type::Function(ftype) = &left.ctype {
@@ -903,18 +899,18 @@ impl Display for Expr {
                 };
                 write!(
                     f,
-                    "({})({})",
+                    "({:?})({})",
                     left,
                     print_func_call(params.as_slice(), varargs, |expr| {
                         let mut s = String::new();
-                        write!(s, "{}", expr).unwrap();
+                        write!(s, "{:?}", expr).unwrap();
                         s
                     })
                 )
             }
-            ExprType::Cast(expr) => write!(f, "({}){}", self.ctype, expr),
+            ExprType::Cast(expr) => write!(f, "({})({:?})", self.ctype, expr),
             ExprType::Sizeof(ty) => write!(f, "sizeof({})", ty),
-            ExprType::Member(compound, id) => write!(f, "({}).{}", compound, id),
+            ExprType::Member(compound, id) => write!(f, "({:?}).{}", compound, id),
             ExprType::Increment(expr, pre, inc) => unimplemented!("printing increments"),
         }
     }
@@ -939,7 +935,7 @@ fn print_func_call<T, F: Fn(&T) -> String>(params: &[T], varargs: bool, print_fu
 impl Debug for Initializer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Initializer::Scalar(expr) => write!(f, "{};", expr),
+            Initializer::Scalar(expr) => write!(f, "{:?};", expr),
             Initializer::InitializerList(list) => {
                 write!(f, "{{ ")?;
                 write!(
@@ -963,9 +959,9 @@ impl Debug for Initializer {
 impl Debug for StmtType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            StmtType::Expr(expr) => write!(f, "{};", expr),
+            StmtType::Expr(expr) => write!(f, "{:?};", expr),
             StmtType::Return(None) => write!(f, "return;"),
-            StmtType::Return(Some(expr)) => write!(f, "return {};", expr),
+            StmtType::Return(Some(expr)) => write!(f, "return {:?};", expr),
             _ => unimplemented!("printing statement"),
         }
     }

@@ -106,3 +106,16 @@ fn scope() {
         3,
     );
 }
+
+#[test]
+fn void() {
+    utils::assert_succeeds(
+        "int puts(const char *);
+    void f() {
+        puts(\"hi\");
+    }
+    int main() {
+        f();
+    }",
+    );
+}

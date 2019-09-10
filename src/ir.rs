@@ -32,7 +32,7 @@ enum Id {
     Local(StackSlot),
 }
 
-struct LLVMCompiler {
+struct Compiler {
     module: Module,
     ebb_has_return: bool,
     scope: Scope<String, Id>,
@@ -52,7 +52,7 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> Sema
     let name = program
         .first()
         .map_or_else(|| "<empty>".to_string(), |decl| decl.data.symbol.id.clone());
-    let mut compiler = LLVMCompiler::new(name, debug);
+    let mut compiler = Compiler::new(name, debug);
     for decl in program {
         match (decl.data.symbol.ctype.clone(), decl.data.init) {
             (Type::Function(func_type), None) => {
@@ -88,8 +88,8 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> Sema
     Ok(compiler.module)
 }
 
-impl LLVMCompiler {
-    fn new(name: String, debug: bool) -> LLVMCompiler {
+impl Compiler {
+    fn new(name: String, debug: bool) -> Compiler {
         let mut flags_builder = settings::builder();
         // allow creating shared libraries
         flags_builder
@@ -116,7 +116,7 @@ impl LLVMCompiler {
         )
         .expect("unknown error creating module");
 
-        LLVMCompiler {
+        Compiler {
             module: Module::new(builder),
             ebb_has_return: false,
             scope: Scope::new(),
@@ -311,6 +311,9 @@ impl LLVMCompiler {
                     ),
                     location
                 );
+            } else {
+                // void function, return nothing
+                builder.ins().return_(&[]);
             }
         }
         if self.debug {
@@ -380,6 +383,8 @@ impl LLVMCompiler {
         let location = expr.location;
         let ir_type = if expr.lval {
             Type::ptr_type()
+        } else if expr.ctype == Type::Void {
+            types::INVALID
         } else {
             match expr.ctype.as_ir_basic_type() {
                 Ok(ir_type) => ir_type,
@@ -398,8 +403,6 @@ impl LLVMCompiler {
             ExprType::Id(var) => self.load_addr(var, location, builder),
 
             // unary operators
-            // NOTE: this may be an implicit cast (float f = 1.2) not an explicit cast (1 + (int)1.2)
-            // NOTE: it may also be a widening conversion (1 + 1.2)
             ExprType::Deref(pointer) => {
                 let val = self.compile_expr(*pointer, builder)?;
                 let flags = MemFlags::new();
@@ -409,6 +412,8 @@ impl LLVMCompiler {
                     ir_val: builder.ins().load(ir_type, flags, val.ir_val, 0),
                 })
             }
+            // NOTE: this may be an implicit cast (float f = 1.2) not an explicit cast (1 + (int)1.2)
+            // NOTE: it may also be a widening conversion (1 + 1.2)
             ExprType::Cast(orig) => self.cast(*orig, expr.ctype, location, builder),
             ExprType::Negate(expr) => self.negate(*expr, builder),
             ExprType::BitwiseNot(expr) => self.unary_op(
@@ -893,7 +898,11 @@ impl LLVMCompiler {
         };
         let func_ref = self.module.declare_func_in_func(func_id, builder.func);
         let call = builder.ins().call(func_ref, compiled_args.as_slice());
-        let ir_val = builder.inst_results(call)[0];
+        let ir_val = match builder.inst_results(call).first() {
+            // Just a placeholder.
+            None => builder.ins().iconst(types::I32, 0),
+            Some(ret) => *ret,
+        };
         Ok(Value {
             ir_val,
             ir_type: ret_type

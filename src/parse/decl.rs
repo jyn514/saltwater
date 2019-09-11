@@ -513,7 +513,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let ctype = if kind == Keyword::Enum {
             self.enumerators(ident)
         } else {
-            self.struct_declaration_list(ident)
+            self.struct_declaration_list(ident, kind == Keyword::Struct)
         }?;
         self.expect(Token::RightBrace)?;
         Ok(ctype)
@@ -591,6 +591,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn struct_declaration_list(
         &mut self,
         ident: Option<Locatable<String>>,
+        c_struct: bool,
     ) -> SemanticResult<Type> {
         let mut members = vec![];
         loop {
@@ -625,7 +626,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 self.next_location().clone()
             );
         }
-        Ok(Type::Struct(ident.map(|i| i.data), members))
+        Ok(if c_struct { Type::Struct } else { Type::Union }(
+            ident.map(|i| i.data),
+            members,
+        ))
     }
     /*
      * function parameters

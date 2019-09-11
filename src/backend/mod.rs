@@ -88,9 +88,12 @@ impl Type {
             | Pointer(_, _)
             // TODO: is this correct? still need to worry about padding
             | Union(_, _)
-            | Enum(_, _)
-            | Struct(_, _) => self.sizeof(),
+            | Enum(_, _) => self.sizeof(),
             Array(t, _) => t.alignof(),
+            // Clang uses the largest alignment of any element as the alignment of the whole
+            // Not sure why, but who am I to argue
+            // Anyway, Faerie panics if the alignment isn't a power of two so it's probably for the best
+            Struct(_, members) => members.iter().try_fold(0, |max, member| Ok(std::cmp::max(member.ctype.sizeof()?, max))),
             Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),
@@ -99,6 +102,28 @@ impl Type {
     }
     pub fn ptr_type() -> IrType {
         IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
+    }
+    pub fn struct_offset(&self, member: &str) -> u64 {
+        let members = match self {
+            Type::Struct(_, members) => members,
+            Type::Union(_, members) => return 0,
+            _ => unreachable!("only structs and unions can have members"),
+        };
+        let mut current_offset = 0;
+        for formal in members {
+            if formal.id == member {
+                return current_offset;
+            }
+            let size = formal
+                .ctype
+                .sizeof()
+                .expect("struct members should have complete object type");
+            let align = self.alignof().expect("struct should have valid alignment");
+            // round up to the nearest multiple of align
+            let padded_size = size + (align - size) % align;
+            current_offset += padded_size;
+        }
+        unreachable!("cannot call struct_offset for member not in struct");
     }
     pub fn as_ir_type(&self) -> Result<IrType, String> {
         match self {

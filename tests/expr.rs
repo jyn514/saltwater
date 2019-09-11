@@ -288,3 +288,33 @@ fn enumeration() {
         1,
     );
 }
+
+#[test]
+fn union() {
+    utils::assert_code(
+        "
+    union u {
+        int i;
+        char c;
+    } u;
+    int main() {
+        u.i = 1;
+        return u.c;
+    }",
+        1,
+    )
+}
+
+#[test]
+fn cstruct() {
+    utils::assert_code(
+        "
+    struct s {
+        int i, j, k;
+} s;
+int main() {
+        return s.i = s.j = s.k = 1;
+}",
+        1,
+    );
+}

@@ -702,10 +702,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     };
                     match &expr.ctype {
                         Type::Struct(_, members) | Type::Union(_, members) => {
-                            if members.iter().any(|member| member.id == id) {
-                                unimplemented!(
-                                    "struct and union members are very much not implemented"
-                                )
+                            if let Some(member) = members.iter().find(|member| member.id == id) {
+                                Ok(Expr {
+                                    ctype: member.ctype.clone(),
+                                    constexpr: expr.constexpr,
+                                    lval: true,
+                                    location,
+                                    expr: ExprType::Member(Box::new(expr), Token::Id(id)),
+                                })
                             } else {
                                 Err(Locatable {
                                     data: format!("no member named '{}' in '{}'", id, expr.ctype),

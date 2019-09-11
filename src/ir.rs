@@ -493,6 +493,23 @@ impl Compiler {
                 self.compile_expr(*left, builder)?;
                 self.compile_expr(*right, builder)
             }
+            ExprType::Member(cstruct, id) => {
+                let ctype = cstruct.ctype.clone();
+                let pointer = self.compile_expr(*cstruct, builder)?;
+                let id = if let Token::Id(id) = id {
+                    id
+                } else {
+                    unreachable!("parser should only pass ids to ExprType::Member");
+                };
+                let offset = builder
+                    .ins()
+                    .iconst(Type::ptr_type(), ctype.struct_offset(&id) as i64);
+                Ok(Value {
+                    ir_val: builder.ins().iadd(pointer.ir_val, offset),
+                    ir_type,
+                    ctype,
+                })
+            }
             x => {
                 unimplemented!("{:?}", x);
             }
@@ -762,32 +779,20 @@ impl Compiler {
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        match self.scope.get(&var.id).unwrap() {
+        let ptr_type = Type::ptr_type();
+        let ir_val = match self.scope.get(&var.id).unwrap() {
             Id::Function(_) => unimplemented!("address of function"),
             Id::Global(static_id) => {
-                let ir_type = var
-                    .ctype
-                    .as_ir_type()
-                    .map_err(|data| Locatable { data, location })?;
                 let global = self.module.declare_data_in_func(*static_id, builder.func);
-                Ok(Value {
-                    ir_type,
-                    ir_val: builder.ins().global_value(Type::ptr_type(), global),
-                    ctype: var.ctype,
-                })
+                builder.ins().global_value(ptr_type, global)
             }
-            Id::Local(stack_slot) => {
-                let ir_type = var
-                    .ctype
-                    .as_ir_type()
-                    .map_err(|data| Locatable { data, location })?;
-                Ok(Value {
-                    ir_type,
-                    ir_val: builder.ins().stack_addr(Type::ptr_type(), *stack_slot, 0),
-                    ctype: var.ctype,
-                })
-            }
-        }
+            Id::Local(stack_slot) => builder.ins().stack_addr(ptr_type, *stack_slot, 0),
+        };
+        Ok(Value {
+            ir_type: ptr_type,
+            ir_val,
+            ctype: var.ctype,
+        })
     }
     fn compare(
         &mut self,
@@ -841,10 +846,17 @@ impl Compiler {
             let ir_target = target.ir_val;
             // need to deref explicitly to get an rval, the frontend didn't do it for us
             if is_id {
-                target.ir_val =
-                    builder
+                let ir_type = match target.ctype.as_ir_type() {
+                    Ok(ty) => ty,
+                    Err(data) => err!(data, location),
+                };
+                target = Value {
+                    ir_val: builder
                         .ins()
-                        .load(target.ir_type, MemFlags::new(), target.ir_val, 0);
+                        .load(ir_type, MemFlags::new(), target.ir_val, 0),
+                    ir_type,
+                    ctype: target.ctype,
+                };
             }
             if target.ir_type != value.ir_type {
                 unimplemented!("binary promotion for complex assignment");

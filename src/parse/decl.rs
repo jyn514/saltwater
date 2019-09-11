@@ -365,7 +365,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             location: locatable.location,
                         });
                     } else {
-                        ctype = Some(self.compound_specifier(kind, locatable.location)?);
+                        let mut compound = self.compound_specifier(kind, locatable.location)?;
+                        match &compound {
+                            Type::Enum(Some(ident), _)
+                            | Type::Struct(Some(ident), _)
+                            | Type::Union(Some(ident), _) => {
+                                if let Some(existing_type) = self.tag_scope.get(ident) {
+                                    compound = existing_type.clone();
+                                }
+                                // TODO: if not a forward declaration, throw an error
+                            }
+                            Type::Enum(None, _) | Type::Struct(None, _) | Type::Union(None, _) => {}
+                            _ => unreachable!(
+                                "compound specifier should only return enums, structs, or unions"
+                            ),
+                        }
+                        ctype = Some(compound);
                         seen_compound = true;
                     }
                     continue;
@@ -497,6 +512,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location
                 ),
             };
+            if let Some(ctype) = self.tag_scope.get(&ident) {
+                return Ok(ctype.clone());
+            }
             return Ok(if kind == Keyword::Struct {
                 Type::Struct(Some(ident), vec![])
             } else if kind == Keyword::Union {
@@ -514,11 +532,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if let Some(locatable) = self.match_next(&Token::RightBrace) {
             err!(format!("cannot have an empty {}", kind), locatable.location);
         }
+        let ident = ident.map(|loc| loc.data);
         let ctype = if kind == Keyword::Enum {
-            self.enumerators(ident)
+            self.enumerators(ident.clone())
         } else {
-            self.struct_declaration_list(ident, kind == Keyword::Struct)
+            self.struct_declaration_list(ident.clone(), kind == Keyword::Struct)
         }?;
+        if let Some(ident) = ident {
+            self.tag_scope.insert(ident, ctype.clone());
+        }
         self.expect(Token::RightBrace)?;
         Ok(ctype)
     }
@@ -526,7 +548,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     enumerator_list: enumerator (',' enumerator)* ;
     enumerator: identifier ('=' constant_expr)? ;
     */
-    fn enumerators(&mut self, ident: Option<Locatable<String>>) -> SemanticResult<Type> {
+    fn enumerators(&mut self, ident: Option<String>) -> SemanticResult<Type> {
         let mut current = 0;
         let mut members = vec![];
         loop {
@@ -563,7 +585,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             current += 1;
         }
-        let ctype = Type::Enum(ident.map(|loc| loc.data), members);
+        let ctype = Type::Enum(ident, members);
         match &ctype {
             Type::Enum(_, members) => {
                 for (id, value) in members {
@@ -594,7 +616,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     */
     fn struct_declaration_list(
         &mut self,
-        ident: Option<Locatable<String>>,
+        ident: Option<String>,
         c_struct: bool,
     ) -> SemanticResult<Type> {
         let mut members = vec![];
@@ -631,8 +653,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             );
         }
         Ok(if c_struct { Type::Struct } else { Type::Union }(
-            ident.map(|i| i.data),
-            members,
+            ident, members,
         ))
     }
     /*

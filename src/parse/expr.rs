@@ -700,32 +700,37 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         Token::Id(id) => id,
                         _ => unreachable!("bug in Parser::expect"),
                     };
-                    match &expr.ctype {
-                        Type::Struct(_, members) | Type::Union(_, members) => {
-                            if let Some(member) = members.iter().find(|member| member.id == id) {
-                                Ok(Expr {
-                                    ctype: member.ctype.clone(),
-                                    constexpr: expr.constexpr,
-                                    lval: true,
-                                    location,
-                                    expr: ExprType::Member(Box::new(expr), Token::Id(id)),
-                                })
-                            } else {
-                                Err(Locatable {
-                                    data: format!("no member named '{}' in '{}'", id, expr.ctype),
-                                    location,
-                                })
-                            }
-                        }
-                        _ => Err(Locatable {
-                            data: format!("expected struct or union, got type '{}'", expr.ctype),
-                            location,
-                        }),
-                    }
+                    self.struct_member(expr, id, location)
                 }
                 Token::StructDeref => {
-                    let member = self.expect(Token::Id(Default::default()))?;
-                    unimplemented!("structs are very much not implemented");
+                    let Locatable { location, data } =
+                        self.expect(Token::Id(Default::default()))?;
+                    let id = match data {
+                        Token::Id(id) => id,
+                        _ => unreachable!("bug in Parser::expect"),
+                    };
+                    let struct_type = match &expr.ctype {
+                        Type::Pointer(ctype, _) => match **ctype {
+                            Type::Union(_, _) | Type::Struct(_, _) => (**ctype).clone(),
+                            _ => err!(
+                                "pointer does not point to a struct or union".into(),
+                                location
+                            ),
+                        },
+                        _ => err!(
+                            "cannot use struct dereference shorthand on type that is not a pointer"
+                                .into(),
+                            location
+                        ),
+                    };
+                    let expr = Expr {
+                        constexpr: false,
+                        location: location.clone(),
+                        ctype: struct_type,
+                        lval: true,
+                        expr: ExprType::Deref(Box::new(expr)),
+                    };
+                    self.struct_member(expr, id, location)
                 }
                 Token::PlusPlus => Expr::increment_op(false, true, expr, location),
                 Token::MinusMinus => Expr::increment_op(false, false, expr, location),
@@ -836,6 +841,33 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 location: self.next_location().clone(),
                 data: "expected '(' or literal, got <end-of-file>".to_string(),
             })
+        }
+    }
+
+    // parse a struct member
+    // used for both s.a and s->a
+    fn struct_member(&mut self, expr: Expr, id: String, location: Location) -> ExprResult {
+        match &expr.ctype {
+            Type::Struct(_, members) | Type::Union(_, members) => {
+                if let Some(member) = members.iter().find(|member| member.id == id) {
+                    Ok(Expr {
+                        ctype: member.ctype.clone(),
+                        constexpr: expr.constexpr,
+                        lval: true,
+                        location,
+                        expr: ExprType::Member(Box::new(expr), Token::Id(id)),
+                    })
+                } else {
+                    Err(Locatable {
+                        data: format!("no member named '{}' in '{}'", id, expr.ctype),
+                        location,
+                    })
+                }
+            }
+            _ => Err(Locatable {
+                data: format!("expected struct or union, got type '{}'", expr.ctype),
+                location,
+            }),
         }
     }
 

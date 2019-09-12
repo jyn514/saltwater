@@ -321,3 +321,15 @@ int main() {
         2,
     );
 }
+
+#[test]
+fn typedef_cast() {
+    utils::assert_succeeds(
+        "
+    typedef int I;
+    int main() {
+        int i = (I)0;
+        return i;
+    }",
+    );
+}

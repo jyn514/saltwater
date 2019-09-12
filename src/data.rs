@@ -607,6 +607,10 @@ impl<K: Hash + Eq, V> Scope<K, V> {
     pub fn get_immediate(&self, name: &K) -> Option<&V> {
         self.0.last().unwrap().get(name)
     }
+    #[inline]
+    pub fn get_all_immediate(&mut self) -> &mut HashMap<K, V> {
+        self.0.last_mut().unwrap()
+    }
     #[inline(always)]
     pub fn depth(&self) -> usize {
         self.0.len()

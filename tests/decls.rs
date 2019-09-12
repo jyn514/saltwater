@@ -162,6 +162,19 @@ fn function() {
         1,
     );
 }
+
+#[test]
+fn forward_declaration_with_typedef() {
+    utils::assert_succeeds(
+        "
+    typedef struct s *sp;
+    struct s { int i; } my_s;
+    int main() {
+        sp my_p = &my_s;
+        return my_p->i = 0;
+    }",
+    );
+}
 /* will fail until I add scoping
 #[test]
 fn local_function_goes_out_of_scope() {

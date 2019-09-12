@@ -990,7 +990,12 @@ impl PartialEq for Symbol {
 
 impl PartialEq for FunctionType {
     fn eq(&self, other: &Self) -> bool {
-        self.varargs == other.varargs
+        // no prototype: any parameters are allowed
+        // TODO: issue a warning if a function has empty parameters, it's a holdover
+        // from C89
+        self.params.is_empty()
+            || other.params.is_empty()
+            || self.varargs == other.varargs
             && self.return_type == other.return_type
             // don't require parameter names and storage_class to match
             && self.params

@@ -151,11 +151,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if self.current.is_none() {
             self.current = mem::replace(&mut self.next, None).or_else(|| self.next_token());
         }
-        // NOTE: we can't just use self.current.map(|x| x.data) because of lifetimes
-        match &self.current {
-            Some(x) => Some(&x.data),
-            None => None,
-        }
+        self.current.as_ref().map(|x| &x.data)
     }
     // TODO: this is mostly copied from peek_token
     fn peek_next_token(&mut self) -> Option<&Token> {
@@ -165,11 +161,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             self.next = self.__impl_next_token();
         }
-        // NOTE: we can't just use self.current.map(|x| x.data) because of lifetimes
-        match &self.next {
-            Some(x) => Some(&x.data),
-            None => None,
-        }
+        self.next.as_ref().map(|x| &x.data)
     }
     fn next_location(&mut self) -> &Location {
         if self.peek_token().is_some() {

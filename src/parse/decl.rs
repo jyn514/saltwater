@@ -595,7 +595,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             members.push((name.clone(), current));
             // TODO: declare enum members eagerly so you can write `enum { A, B = A };`
-            if self.match_next(&Token::Comma).is_none() {
+            // allow trailing commas
+            if self.match_next(&Token::Comma).is_none()
+                || self.peek_token() == Some(&Token::RightBrace)
+            {
                 break;
             }
             current += 1;

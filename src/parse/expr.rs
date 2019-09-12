@@ -1,7 +1,7 @@
 use super::{Lexeme, Parser};
 use crate::backend::SIZE_T;
 use crate::data::prelude::*;
-use crate::data::{ArrayType, Keyword, Qualifiers};
+use crate::data::{ArrayType, Keyword, Qualifiers, StorageClass::Typedef};
 
 type ExprResult = Result<Expr, Locatable<String>>;
 
@@ -421,40 +421,49 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | '(' type_name ')' cast_expr
     /// ;
     fn cast_expr(&mut self) -> ExprResult {
-        if self.peek_token() == Some(&Token::LeftParen) {
-            match self.peek_next_token() {
-                Some(Token::Keyword(k)) if k.is_decl_specifier() => {
-                    self.next_token();
-                    let Locatable {
-                        location,
-                        data: (ctype, _),
-                    } = self.type_name()?;
-                    self.expect(Token::RightParen)?;
-                    let expr = self.cast_expr()?;
-                    if !ctype.is_scalar() {
-                        return Err(Locatable {
-                            data: format!("cannot cast to non-scalar type '{}'", ctype),
-                            location,
-                        });
-                    } else if expr.ctype.is_floating() && ctype.is_pointer()
-                        || expr.ctype.is_pointer() && ctype.is_floating()
-                    {
-                        return Err(Locatable {
-                            data: format!("cannot cast pointer to float or vice versa. hint: if you really want to do this, use '({})(int)' instead",
-                            ctype),
-                            location,
-                        });
+        let seen_param = self.peek_token() == Some(&Token::LeftParen);
+        let next_token = self.peek_next_token();
+        let is_cast = seen_param
+            && match next_token {
+                Some(Token::Keyword(k)) => k.is_decl_specifier(),
+                Some(Token::Id(id)) => {
+                    let id = id.clone();
+                    match self.scope.get(&id) {
+                        Some(symbol) => symbol.storage_class == Typedef,
+                        _ => false,
                     }
-                    Ok(Expr {
-                        lval: false,
-                        constexpr: expr.constexpr,
-                        expr: ExprType::Cast(Box::new(expr)),
-                        ctype,
-                        location,
-                    })
                 }
-                _ => self.unary_expr(),
+                _ => false,
+            };
+        if is_cast {
+            self.next_token();
+            let Locatable {
+                location,
+                data: (ctype, _),
+            } = self.type_name()?;
+            self.expect(Token::RightParen)?;
+            let expr = self.cast_expr()?;
+            if !ctype.is_scalar() {
+                return Err(Locatable {
+                    data: format!("cannot cast to non-scalar type '{}'", ctype),
+                    location,
+                });
+            } else if expr.ctype.is_floating() && ctype.is_pointer()
+                || expr.ctype.is_pointer() && ctype.is_floating()
+            {
+                return Err(Locatable {
+                    data: format!("cannot cast pointer to float or vice versa. hint: if you really want to do this, use '({})(int)' instead",
+                    ctype),
+                    location,
+                });
             }
+            Ok(Expr {
+                lval: false,
+                constexpr: expr.constexpr,
+                expr: ExprType::Cast(Box::new(expr)),
+                ctype,
+                location,
+            })
         } else {
             self.unary_expr()
         }
@@ -1396,6 +1405,8 @@ impl Type {
         match self {
             Char(sign) | Short(sign) | Int(sign) | Long(sign) => *sign,
             Bool => false,
+            // TODO: allow enums with values of UINT_MAX
+            Enum(_, _) => true,
             _ => panic!("Type::sign can only be called on integral types"),
         }
     }

@@ -81,8 +81,6 @@ macro_rules! fold_compare_op {
                     #[allow(clippy::float_cmp)]
                     (Token::Float(a), Token::Float(b)) => ExprType::Literal(Token::Int((a $op b) as i64)),
                     (Token::Char(a), Token::Char(b)) => ExprType::Literal(Token::Int((a $op b) as i64)),
-                    // TODO: find a way to do this that allows `"hello" + 2 - 1`
-                    //(Token::Str(s), Token::Int(i)) | (Token::Int(i), Token::Str(s)) => {
                     (_, _) => ExprType::$constructor(Box::new(left), Box::new(right), $compare),
                 }
             }

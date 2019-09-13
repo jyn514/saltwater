@@ -547,13 +547,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             {
                 err!(format!("redefinition of {} '{}'", kind, ident), location);
             } else {
-                for typedef in self
+                for existing_type in self
                     .scope
                     .get_all_immediate()
                     .values_mut()
-                    .filter(|symbol| symbol.storage_class == StorageClass::Typedef)
+                    .map(|symbol| &mut symbol.ctype)
+                    .chain(self.tag_scope.get_all_immediate().values_mut())
                 {
-                    Self::update_typedefs(&mut typedef.ctype, &ctype, &ident);
+                    Self::update_forward_declarations(existing_type, &ctype, &ident);
                 }
             }
         }
@@ -1142,22 +1143,24 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.scope.leave_scope();
         Ok(body)
     }
-    fn update_typedefs(typedef: &mut Type, new_type: &Type, ident: &str) {
+    fn update_forward_declarations(ctype: &mut Type, new_type: &Type, ident: &str) {
         use Type::*;
-        match typedef {
-            Array(inner, _) | Pointer(inner, _) => Self::update_typedefs(inner, new_type, ident),
+        match ctype {
+            Array(inner, _) | Pointer(inner, _) => {
+                Self::update_forward_declarations(inner, new_type, ident)
+            }
             Function(ftype) => {
-                Self::update_typedefs(&mut ftype.return_type, new_type, ident);
+                Self::update_forward_declarations(&mut ftype.return_type, new_type, ident);
                 for param in ftype.params.iter_mut() {
-                    Self::update_typedefs(&mut param.ctype, new_type, ident);
+                    Self::update_forward_declarations(&mut param.ctype, new_type, ident);
                 }
             }
             Union(Some(name), members) | Struct(Some(name), members) if name == ident => {
-                *typedef = new_type.clone();
+                *ctype = new_type.clone();
             }
             Union(_, members) | Struct(_, members) => {
                 for member in members {
-                    Self::update_typedefs(&mut member.ctype, new_type, ident)
+                    Self::update_forward_declarations(&mut member.ctype, new_type, ident)
                 }
             }
             Void

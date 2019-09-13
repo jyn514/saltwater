@@ -540,7 +540,7 @@ impl Expr {
                 data: LengthError::Negative.into(),
                 location: literal.location,
             }),
-            _ => unreachable!("should have been caught already"),
+            x => unreachable!("should have been caught already: {:?}", x),
         }
     }
     pub fn zero() -> Expr {

@@ -57,14 +57,36 @@ fn main_is_special() {
 fn readme_example() {
     utils::assert_code(
         "
+        typedef struct s *sp;
+
 int i = 1;
 int a[3] = {1, 2, 3};
 float f = 2.5;
 
+struct s {
+  union {
+    struct {
+      char a, b, c, d;
+    } s;
+    int inner;
+  } u;
+  int outer;
+} my_struct;
+
+int g(int);
+
 int main(void) {
-  const int c = 4;
+  sp my_struct_pointer = &my_struct;
+  const int c = my_struct_pointer->outer = 4;
   // should return 6
-  return i + f*a[2] - c/a[1];
+  return i + f*a[2] - c/g(1);
+}
+
+int g(int i) {
+  if (i < 0 || i >= 3) {
+    return 0;
+  }
+  return a[i];
 }",
         6,
     )

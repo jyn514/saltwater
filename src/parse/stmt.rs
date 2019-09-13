@@ -57,8 +57,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Some(Token::Keyword(k)) => match k {
                 // labeled_statement (excluding labels)
-                Keyword::Case => unimplemented!(),
-                Keyword::Default => unimplemented!(),
+                Keyword::Case => unimplemented!("case"),
+                Keyword::Default => unimplemented!("default"),
 
                 // selection_statement
                 Keyword::If => Ok(Some(self.if_statement()?)),
@@ -71,8 +71,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
                 // jump_statement
                 Keyword::Goto => Ok(Some(self.goto_statement()?)),
-                Keyword::Continue => unimplemented!(),
-                Keyword::Break => unimplemented!(),
+                Keyword::Continue => unimplemented!("continue"),
+                Keyword::Break => unimplemented!("break"),
                 Keyword::Return => Ok(Some(self.return_statement()?)),
 
                 // start of an expression statement

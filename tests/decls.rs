@@ -86,6 +86,18 @@ int main() {
 int f() { return 1; }",
         1,
     );
+    // make sure f goes out of scope
+    utils::assert_compile_error(
+        "
+int main() {
+    int f();
+    return f();
+}
+
+int g() {
+    return f();
+}",
+    );
 }
 
 #[test]
@@ -175,18 +187,18 @@ fn forward_declaration_with_typedef() {
     }",
     );
 }
-/* will fail until I add scoping
-#[test]
-fn local_function_goes_out_of_scope() {
-    utils::assert_compile_error(
-        "
-int main() {
-    int f();
-}
 
-int g() {
-    return f();
-}",
+#[test]
+#[ignore]
+fn forward_declaration_no_initializer() {
+    utils::assert_succeeds(
+        "
+    struct s my_s;
+    struct s {
+        int i;
+    }
+    int main() {
+        return my_s->i;
+    }",
     );
 }
-*/

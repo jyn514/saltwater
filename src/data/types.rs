@@ -9,7 +9,11 @@ pub type TypeIndex = usize;
 impl Types {
     pub fn get_or_insert(&mut self, ctype: Type) -> usize {
         // TODO: this is grossly inefficient
-        if let Some(index) = self.0.iter().position(|current| current.strong_eq(&ctype)) {
+        if let Some(index) = self
+            .0
+            .iter()
+            .position(|current| current.strong_eq(&ctype, self))
+        {
             index
         } else {
             self.0.push(ctype);

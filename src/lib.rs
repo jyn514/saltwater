@@ -69,7 +69,7 @@ pub fn compile(
         .collect::<SemanticResult<Vec<Locatable<Declaration>>>>()
         .map_err(CompileError::Semantic)?;
 
-    ir::compile(hir, debug_ir)
+    ir::compile(hir, parser.known_types, debug_ir)
         .map_err(CompileError::Semantic)
         .map(Module::<FaerieBackend>::finish)
 }

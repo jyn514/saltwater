@@ -36,6 +36,7 @@ struct Compiler {
     module: Module,
     ebb_has_return: bool,
     scope: Scope<String, Id>,
+    types: Types,
     debug: bool,
     str_index: usize,
 }
@@ -44,22 +45,29 @@ struct Compiler {
 struct Value {
     ir_val: IrValue,
     ir_type: IrType,
-    ctype: Type,
+    ctype: TypeIndex,
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
-pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> SemanticResult<Module> {
+pub(crate) fn compile(
+    program: Vec<Locatable<Declaration>>,
+    types: Types,
+    debug: bool,
+) -> SemanticResult<Module> {
     let name = program
         .first()
         .map_or_else(|| "<empty>".to_string(), |decl| decl.location.file.clone());
-    let mut compiler = Compiler::new(name, debug);
+    let mut compiler = Compiler::new(name, types, debug);
     for decl in program {
-        match (decl.data.symbol.ctype.clone(), decl.data.init) {
+        match (
+            compiler.types[decl.data.symbol.ctype.clone()],
+            decl.data.init,
+        ) {
             (Type::Function(func_type), None) => {
                 let location = decl.location;
                 compiler.declare_func(
                     decl.data.symbol.id,
-                    &func_type.signature(&location)?,
+                    &func_type.signature(&location, &compiler.types)?,
                     decl.data.symbol.storage_class,
                     &location,
                     // TODO: this doesn't allow declaring a function and then defining it
@@ -89,7 +97,7 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> Sema
 }
 
 impl Compiler {
-    fn new(name: String, debug: bool) -> Compiler {
+    fn new(name: String, types: Types, debug: bool) -> Compiler {
         let mut flags_builder = settings::builder();
         // allow creating shared libraries
         flags_builder
@@ -121,6 +129,7 @@ impl Compiler {
             ebb_has_return: false,
             scope: Scope::new(),
             str_index: 0,
+            types,
             debug,
         }
     }
@@ -153,17 +162,17 @@ impl Compiler {
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> SemanticResult<()> {
-        if let Type::Function(ftype) = decl.symbol.ctype {
+        if let Type::Function(ftype) = self.types[decl.symbol.ctype] {
             self.declare_func(
                 decl.symbol.id,
-                &ftype.signature(&location)?,
+                &ftype.signature(&location, &self.types)?,
                 decl.symbol.storage_class,
                 &location,
                 true,
             )?;
             return Ok(());
         }
-        let u64_size = match decl.symbol.ctype.sizeof() {
+        let u64_size = match self.types[decl.symbol.ctype].sizeof(&self.types) {
             Ok(size) => size,
             Err(err) => {
                 return Err(Locatable {
@@ -196,7 +205,7 @@ impl Compiler {
         &mut self,
         init: Initializer,
         stack_slot: StackSlot,
-        ctype: Type,
+        ctype: TypeIndex,
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> SemanticResult<()> {
@@ -223,22 +232,24 @@ impl Compiler {
         builder: &mut FunctionBuilder,
     ) -> SemanticResult<()> {
         // Cranelift requires that all EBB params are declared up front
-        let ir_vals: Vec<_> = params
+        let param_types: Vec<_> = params
             .iter()
-            .map(|param| {
-                let ir_type = match param.ctype.as_ir_type() {
+            .map(
+                |param| match self.types[param.ctype].as_ir_type(&self.types) {
                     Err(data) => err!(data, location.clone()),
-                    Ok(ir_type) => ir_type,
-                };
-                Ok(builder.append_ebb_param(func_start, ir_type))
-            })
+                    Ok(ir_type) => Ok(ir_type),
+                },
+            )
             .collect::<Result<_, Locatable<String>>>()?;
+        let ir_vals: Vec<_> = param_types
+            .iter()
+            .map(|&ir_type| builder.append_ebb_param(func_start, ir_type))
+            .collect();
         for (param, ir_val) in params.into_iter().zip(ir_vals) {
-            let ir_type = param
-                .ctype
-                .as_ir_type()
+            let ir_type = self.types[param.ctype]
+                .as_ir_type(&self.types)
                 .expect("errors should already have been caught when adding ebb params");
-            let u64_size = match param.ctype.sizeof() {
+            let u64_size = match self.types[param.ctype].sizeof(&self.types) {
                 Err(data) => err!(data.into(), location.clone()),
                 Ok(size) => size,
             };
@@ -276,7 +287,7 @@ impl Compiler {
         stmts: Vec<Stmt>,
         location: Location,
     ) -> SemanticResult<()> {
-        let signature = func_type.signature(&location)?;
+        let signature = func_type.signature(&location, &self.types)?;
         let func_id = self.declare_func(id.clone(), &signature, sc, &location, false)?;
         // external name is meant to be a lookup in a symbol table,
         // but we just give it garbage values
@@ -290,16 +301,15 @@ impl Compiler {
         builder.switch_to_block(func_start);
         self.ebb_has_return = false;
 
-        let should_ret = func_type.should_return();
-        if func_type.has_params() {
+        let should_ret = func_type.should_return(&self.types);
+        if func_type.has_params(&self.types) {
             self.store_stack_params(func_type.params, func_start, &location, &mut builder)?;
         }
         self.compile_all(stmts, &mut builder)?;
         if !self.ebb_has_return {
             if id == "main" {
-                let ir_int = func_type
-                    .return_type
-                    .as_ir_type()
+                let ir_int = self.types[func_type.return_type]
+                    .as_ir_type(&self.types)
                     .expect("main should return an int");
                 let zero = [builder.ins().iconst(ir_int, 0)];
                 builder.ins().return_(&zero);
@@ -379,14 +389,14 @@ impl Compiler {
     // it can't be any smaller without supporting fewer features
     #[allow(clippy::cognitive_complexity)]
     fn compile_expr(&mut self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
-        let expr = expr.const_fold()?;
+        let expr = expr.const_fold(&self.types)?;
         let location = expr.location;
         let ir_type = if expr.lval {
             Type::ptr_type()
-        } else if expr.ctype == Type::Void {
+        } else if self.types[expr.ctype] == Type::Void {
             types::INVALID
         } else {
-            match expr.ctype.as_ir_type() {
+            match self.types[expr.ctype].as_ir_type(&self.types) {
                 Ok(ir_type) => ir_type,
                 Err(err) => {
                     return Err(Locatable {
@@ -494,20 +504,20 @@ impl Compiler {
                 self.compile_expr(*right, builder)
             }
             ExprType::Member(cstruct, id) => {
-                let ctype = cstruct.ctype.clone();
                 let pointer = self.compile_expr(*cstruct, builder)?;
                 let id = if let Token::Id(id) = id {
                     id
                 } else {
                     unreachable!("parser should only pass ids to ExprType::Member");
                 };
-                let offset = builder
-                    .ins()
-                    .iconst(Type::ptr_type(), ctype.struct_offset(&id) as i64);
+                let offset = builder.ins().iconst(
+                    Type::ptr_type(),
+                    self.types[cstruct.ctype].struct_offset(&id, &self.types) as i64,
+                );
                 Ok(Value {
                     ir_val: builder.ins().iadd(pointer.ir_val, offset),
                     ir_type,
-                    ctype,
+                    ctype: cstruct.ctype,
                 })
             }
             x => {
@@ -518,7 +528,7 @@ impl Compiler {
     fn compile_literal(
         &mut self,
         ir_type: IrType,
-        ctype: Type,
+        ctype: TypeIndex,
         token: Token,
         location: Location,
         builder: &mut FunctionBuilder,
@@ -567,12 +577,11 @@ impl Compiler {
     where
         F: FnOnce(IrValue, IrType, &Type, &mut FunctionBuilder) -> IrValue,
     {
-        let ctype = expr.ctype.clone();
         let val = self.compile_expr(expr, builder)?;
-        let ir_val = func(val.ir_val, val.ir_type, &ctype, builder);
+        let ir_val = func(val.ir_val, val.ir_type, &self.types[expr.ctype], builder);
         Ok(Value {
             ir_val,
-            ctype,
+            ctype: expr.ctype,
             ir_type: val.ir_type,
         })
     }
@@ -581,7 +590,7 @@ impl Compiler {
         &mut self,
         left: Expr,
         right: Expr,
-        ctype: Type,
+        ctype: TypeIndex,
         token: Token,
         location: Location,
         builder: &mut FunctionBuilder,
@@ -590,22 +599,23 @@ impl Compiler {
             self.compile_expr(left, builder)?,
             self.compile_expr(right, builder)?,
         );
-        Self::binary_assign_ir(left, right, ctype, token, location, builder)
+        Self::binary_assign_ir(left, right, ctype, token, &self.types, location, builder)
     }
     fn binary_assign_ir(
         left: Value,
         right: Value,
-        ctype: Type,
+        ctype: TypeIndex,
         token: Token,
+        types: &Types,
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         use codegen::ir::InstBuilder as b;
         assert_eq!(left.ir_type, right.ir_type);
-        let ir_type = ctype
-            .as_ir_type()
+        let ir_type = types[ctype]
+            .as_ir_type(types)
             .map_err(|data| Locatable { data, location })?;
-        let signed = ctype.is_signed();
+        let signed = types[ctype].is_signed();
         let func = match (token, ir_type, signed) {
             (Token::Plus, ty, _) if ty.is_int() => b::iadd,
             (Token::Plus, ty, _) if ty.is_float() => b::fadd,
@@ -641,23 +651,25 @@ impl Compiler {
     fn cast(
         &mut self,
         expr: Expr,
-        ctype: Type,
+        ctype: TypeIndex,
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         // calculate this here before it's moved to `compile_expr`
-        let orig_signed = expr.ctype.is_signed();
+        let orig_signed = self.types[expr.ctype].is_signed();
         let original = self.compile_expr(expr, builder)?;
-        let cast_type = ctype.as_ir_type().map_err(|err| Locatable {
-            data: err,
-            location,
-        })?;
+        let cast_type = self.types[ctype]
+            .as_ir_type(&self.types)
+            .map_err(|err| Locatable {
+                data: err,
+                location,
+            })?;
         let cast = Self::cast_ir(
             original.ir_type,
             cast_type,
             original.ir_val,
             orig_signed,
-            ctype.is_signed(),
+            self.types[ctype].is_signed(),
             builder,
         );
         Ok(Value {
@@ -809,7 +821,7 @@ impl Compiler {
 
         let ir_val = if left.ir_type.is_int() {
             let code = token
-                .to_int_compare(left.ctype.is_signed())
+                .to_int_compare(self.types[left.ctype].is_signed())
                 .expect("Expr::Compare should only have comparison tokens");
             builder.ins().icmp(code, left.ir_val, right.ir_val)
         } else {
@@ -846,7 +858,7 @@ impl Compiler {
             let ir_target = target.ir_val;
             // need to deref explicitly to get an rval, the frontend didn't do it for us
             if is_id {
-                let ir_type = match target.ctype.as_ir_type() {
+                let ir_type = match self.types[target.ctype].as_ir_type(&self.types) {
                     Ok(ty) => ty,
                     Err(data) => err!(data, location),
                 };
@@ -868,6 +880,7 @@ impl Compiler {
                 token
                     .without_assignment()
                     .expect("only valid assignment tokens should be passed to assignment"),
+                &self.types,
                 location,
                 builder,
             )?;
@@ -883,17 +896,17 @@ impl Compiler {
     fn call_direct(
         &mut self,
         func_name: String,
-        ctype: Type,
+        ctype: TypeIndex,
         args: Vec<Expr>,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         // TODO: should type checking go here or in parsing?
-        let (ret_type, varargs) = match ctype {
+        let (ret_type, varargs) = match self.types[ctype] {
             Type::Function(FunctionType {
                 return_type,
                 varargs,
                 ..
-            }) => (*return_type, varargs),
+            }) => (return_type, varargs),
             _ => unreachable!("parser should only allow calling functions"),
         };
         if varargs {
@@ -917,11 +930,11 @@ impl Compiler {
         };
         Ok(Value {
             ir_val,
-            ir_type: if ret_type == Type::Void {
+            ir_type: if self.types[ret_type] == Type::Void {
                 types::INVALID
             } else {
-                ret_type
-                    .as_ir_type()
+                self.types[ret_type]
+                    .as_ir_type(&self.types)
                     .expect("parser should only allow legal function types to be called")
             },
             ctype: ret_type,
@@ -937,6 +950,7 @@ impl Compiler {
             data: err,
             location: location.clone(),
         };
+        let ctype = self.types[symbol.ctype];
         let linkage = symbol.storage_class.try_into().map_err(err_closure)?;
         let id = self
             .module
@@ -945,9 +959,8 @@ impl Compiler {
                 linkage,
                 !symbol.qualifiers.c_const,
                 Some(
-                    symbol
-                        .ctype
-                        .alignof()
+                    ctype
+                        .alignof(&self.types)
                         .map_err(|err| err.to_string())
                         .and_then(|size| {
                             size.try_into().map_err(|_| {
@@ -966,13 +979,12 @@ impl Compiler {
 
         let mut ctx = DataContext::new();
         if let Some(init) = init {
-            let data = init.into_bytes(&symbol.ctype, &location)?;
+            let data = init.into_bytes(&self.types[symbol.ctype], &self.types, &location)?;
             ctx.define(data)
         } else {
             ctx.define_zeroinit(
-                symbol
-                    .ctype
-                    .sizeof()
+                ctype
+                    .sizeof(&self.types)
                     .map_err(|err| err_closure(err.to_string()))? as usize,
             )
         };
@@ -1039,13 +1051,18 @@ impl Compiler {
 }
 
 impl Initializer {
-    fn into_bytes(self, ctype: &Type, location: &Location) -> SemanticResult<Box<[u8]>> {
+    fn into_bytes(
+        self,
+        ctype: &Type,
+        types: &Types,
+        location: &Location,
+    ) -> SemanticResult<Box<[u8]>> {
         match self {
             Initializer::InitializerList(mut initializers) => match ctype {
                 Type::Array(ty, ArrayType::Unbounded) => {
                     let len = initializers.len() as u64;
                     let array_type = Type::Array(ty.clone(), ArrayType::Fixed(len));
-                    array_to_bytes(initializers, len, &array_type, ty, location)
+                    array_to_bytes(initializers, len, &array_type, ty, types, location)
                 }
                 Type::Array(ty, ArrayType::Fixed(size)) => {
                     let size = *size;
@@ -1060,12 +1077,12 @@ impl Initializer {
                             location: location.clone(),
                         })
                     } else {
-                        array_to_bytes(initializers, size, ctype, ty, location)
+                        array_to_bytes(initializers, size, ctype, ty, types, location)
                     }
                 }
                 ty if ty.is_scalar() => {
                     assert_eq!(initializers.len(), 1);
-                    initializers.remove(0).into_bytes(ctype, location)
+                    initializers.remove(0).into_bytes(ctype, types, location)
                 }
                 Type::Union(_, _) => unimplemented!("union initializers"),
                 Type::Struct(_, _) => unimplemented!("struct initializers"),
@@ -1075,7 +1092,7 @@ impl Initializer {
                 Type::Void => unreachable!("initializer for void type"),
                 _ => unreachable!("scalar types should have been handled"),
             },
-            Initializer::Scalar(expr) => expr.into_bytes(),
+            Initializer::Scalar(expr) => expr.into_bytes(types),
             Initializer::FunctionBody(_) => {
                 panic!("function definitions should go through compile_function, not store_static")
             }
@@ -1088,6 +1105,7 @@ fn array_to_bytes(
     len: u64,
     array_type: &Type,
     inner_type: &Type,
+    types: &Types,
     location: &Location,
 ) -> SemanticResult<Box<[u8]>> {
     if let Type::Array(_, ArrayType::Unbounded) = inner_type {
@@ -1100,12 +1118,12 @@ fn array_to_bytes(
     let mut bytes = vec![];
     let elements = initializers
         .into_iter()
-        .map(|init| init.into_bytes(inner_type, location));
+        .map(|init| init.into_bytes(inner_type, types, location));
 
     for init in elements {
         bytes.extend_from_slice(&*init?);
     }
-    let sizeof = array_type.sizeof().map_err(|err| Locatable {
+    let sizeof = array_type.sizeof(types).map_err(|err| Locatable {
         location: location.clone(),
         data: err.to_string(),
     })?;
@@ -1118,11 +1136,11 @@ fn array_to_bytes(
 }
 
 impl Expr {
-    fn into_bytes(self) -> SemanticResult<Box<[u8]>> {
-        match self.constexpr()? {
+    fn into_bytes(self, types: &Types) -> SemanticResult<Box<[u8]>> {
+        match self.constexpr(types)? {
             Ok(constexpr) => {
                 let (token, ctype) = constexpr.data;
-                token.into_bytes(&ctype, &constexpr.location)
+                token.into_bytes(&ctype, types, &constexpr.location)
             }
             Err(location) => Err(Locatable {
                 data: "expression is not a compile time constant".into(),
@@ -1160,8 +1178,13 @@ macro_rules! bytes {
 }
 
 impl Token {
-    fn into_bytes(self, ctype: &Type, location: &Location) -> SemanticResult<Box<[u8]>> {
-        let ir_type = match ctype.as_ir_type() {
+    fn into_bytes(
+        self,
+        ctype: &Type,
+        types: &Types,
+        location: &Location,
+    ) -> SemanticResult<Box<[u8]>> {
+        let ir_type = match ctype.as_ir_type(types) {
             Err(err) => {
                 return Err(Locatable {
                     data: err,

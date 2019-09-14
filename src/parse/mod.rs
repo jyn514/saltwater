@@ -20,7 +20,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// types that we've seen before
     /// allows each expression to only store an index into the types
     /// instead of having to store the full type
-    known_types: Types,
+    pub known_types: Types,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,
@@ -53,7 +53,7 @@ struct FunctionData {
     /// where the function was declared
     location: Location,
     /// the return type of the function
-    return_type: Type,
+    return_type: TypeIndex,
 }
 
 /* public misc functions */

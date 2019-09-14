@@ -47,7 +47,7 @@ impl Type {
             Double => Ok(DOUBLE_SIZE.into()),
             Pointer(_, _) => Ok(PTR_SIZE.into()),
             // now for the hard ones
-            Array(t, ArrayType::Fixed(l)) => types[*t].sizeof(types).and_then(|n| Ok(n * l)),
+            Array(t, ArrayType::Fixed(l)) => t.sizeof(types).and_then(|n| Ok(n * l)),
             Array(_, ArrayType::Unbounded) => Err("cannot take sizeof variable length array"),
             Enum(_, symbols) => {
                 let uchar = CHAR_BIT as usize;
@@ -90,7 +90,7 @@ impl Type {
             // TODO: is this correct? still need to worry about padding
             | Union(_, _)
             | Enum(_, _) => self.sizeof(types),
-            Array(t, _) => types[*t].alignof(types),
+            Array(t, _) => t.alignof(types),
             // Clang uses the largest alignment of any element as the alignment of the whole
             // Not sure why, but who am I to argue
             // Anyway, Faerie panics if the alignment isn't a power of two so it's probably for the best

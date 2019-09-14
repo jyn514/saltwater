@@ -2,8 +2,8 @@ use crate::backend::CHAR_BIT;
 use crate::data::prelude::*;
 
 macro_rules! fold_int_bin_op {
-    ($left: expr, $right: expr, $constructor: expr, $op: tt) => {{
-        let (left, right) = ($left.const_fold()?, $right.const_fold()?);
+    ($left: expr, $right: expr, $constructor: expr, $types: expr, $op: tt) => {{
+        let (left, right) = ($left.const_fold($types)?, $right.const_fold($types)?);
         match (&left.expr, &right.expr) {
             (ExprType::Literal(a), ExprType::Literal(b)) => {
                 match (a, b) {
@@ -19,8 +19,8 @@ macro_rules! fold_int_bin_op {
 }
 
 macro_rules! fold_scalar_bin_op {
-    ($left: expr, $right: expr, $constructor: ident, $op: tt) => {{
-        let (left, right) = ($left.const_fold()?, $right.const_fold()?);
+    ($left: expr, $right: expr, $constructor: ident, $types: expr, $op: tt) => {{
+        let (left, right) = ($left.const_fold($types)?, $right.const_fold($types)?);
         match (&left.expr, &right.expr) {
             (ExprType::Literal(a), ExprType::Literal(b)) => {
                 match (a, b) {
@@ -71,8 +71,8 @@ where
 */
 
 macro_rules! fold_compare_op {
-($left: expr, $right: expr, $constructor: ident, $op: tt, $compare: expr) => {{
-        let (left, right) = ($left.const_fold()?, $right.const_fold()?);
+($left: expr, $right: expr, $constructor: ident, $op: tt, $compare: expr, $types: expr) => {{
+        let (left, right) = ($left.const_fold($types)?, $right.const_fold($types)?);
         match (&left.expr, &right.expr) {
             (ExprType::Literal(a), ExprType::Literal(b)) => {
                 match (a, b) {
@@ -116,48 +116,51 @@ impl Expr {
     }
     // first result: whether the expression itself is erroneous
     // second result: whether the expression was constexpr
-    pub fn constexpr(self) -> SemanticResult<Result<Locatable<(Token, Type)>, Location>> {
-        let folded = self.const_fold()?;
+    pub fn constexpr(
+        self,
+        types: &Types,
+    ) -> SemanticResult<Result<Locatable<(Token, Type)>, Location>> {
+        let folded = self.const_fold(types)?;
         let constexpr = match folded.expr {
             ExprType::Literal(token) => Ok(Locatable {
-                data: (token, folded.ctype),
+                data: (token, types[folded.ctype]),
                 location: folded.location,
             }),
             _ => Err(folded.location),
         };
         Ok(constexpr)
     }
-    pub fn const_fold(self) -> SemanticResult<Expr> {
+    pub fn const_fold(self, types: &Types) -> SemanticResult<Expr> {
         let location = self.location;
         let folded = match self.expr {
             ExprType::Literal(_) => self.expr,
             // TODO: if a variable were const, could we const fold Ids?
             ExprType::Id(_) => self.expr,
             ExprType::Sizeof(ctype) => {
-                let sizeof = ctype.sizeof().map_err(|data| Locatable {
+                let sizeof = types[ctype].sizeof(types).map_err(|data| Locatable {
                     data: data.into(),
                     location: location.clone(),
                 })?;
                 ExprType::Literal(Token::UnsignedInt(sizeof))
             }
             ExprType::Negate(expr) => {
-                let expr = expr.const_fold()?;
+                let expr = expr.const_fold(types)?;
                 match expr.expr {
                     ExprType::Literal(Token::Int(i)) => ExprType::Literal(Token::Int(-i)),
                     ExprType::Literal(Token::Float(f)) => ExprType::Literal(Token::Float(-f)),
                     _ => ExprType::Negate(Box::new(expr)),
                 }
             }
-            ExprType::LogicalNot(expr) => lnot_fold(expr.const_fold()?),
+            ExprType::LogicalNot(expr) => lnot_fold(expr.const_fold(types)?),
             ExprType::BitwiseNot(expr) => {
-                let expr = expr.const_fold()?;
+                let expr = expr.const_fold(types)?;
                 match expr.expr {
                     ExprType::Literal(Token::Int(i)) => ExprType::Literal(Token::Int(!i)),
                     _ => ExprType::BitwiseNot(Box::new(expr)),
                 }
             }
             ExprType::Comma(left, right) => {
-                let (left, right) = (left.const_fold()?, right.const_fold()?);
+                let (left, right) = (left.const_fold(types)?, right.const_fold(types)?);
                 // check if we can ignore left or it has side effects
                 if left.constexpr {
                     right.expr
@@ -166,7 +169,7 @@ impl Expr {
                 }
             }
             ExprType::Deref(expr) => {
-                let folded = expr.const_fold()?;
+                let folded = expr.const_fold(types)?;
                 if let ExprType::Literal(Token::Int(0)) = folded.expr {
                     return Err(Locatable {
                         data: "cannot dereference NULL pointer".into(),
@@ -175,69 +178,69 @@ impl Expr {
                 }
                 ExprType::Deref(Box::new(folded))
             }
-            ExprType::Add(left, right) => fold_scalar_bin_op!(left, right, Add, +),
-            ExprType::Sub(left, right) => fold_scalar_bin_op!(left, right, Sub, -),
-            ExprType::Mul(left, right) => fold_scalar_bin_op!(left, right, Mul, *),
+            ExprType::Add(left, right) => fold_scalar_bin_op!(left, right, Add, types, +),
+            ExprType::Sub(left, right) => fold_scalar_bin_op!(left, right, Sub, types, -),
+            ExprType::Mul(left, right) => fold_scalar_bin_op!(left, right, Mul, types, *),
             ExprType::Div(left, right) => {
-                let right = right.const_fold()?;
+                let right = right.const_fold(types)?;
                 if right.is_zero() {
                     return Err(Locatable {
                         data: "cannot divide by zero".into(),
                         location,
                     });
                 }
-                fold_scalar_bin_op!(left, right, Div, /)
+                fold_scalar_bin_op!(left, right, Div, types, /)
             }
 
             ExprType::Mod(left, right) => {
-                let right = right.const_fold()?;
+                let right = right.const_fold(types)?;
                 if right.is_zero() {
                     return Err(Locatable {
                         data: "cannot take remainder of division by zero".into(),
                         location,
                     });
                 }
-                fold_int_bin_op!(left, right, ExprType::Mod, %)
+                fold_int_bin_op!(left, right, ExprType::Mod, types, %)
             }
-            ExprType::Xor(left, right) => fold_int_bin_op!(left, right, ExprType::Xor, ^),
+            ExprType::Xor(left, right) => fold_int_bin_op!(left, right, ExprType::Xor, types, ^),
             ExprType::BitwiseAnd(left, right) => {
-                fold_int_bin_op!(left, right, ExprType::BitwiseAnd, &)
+                fold_int_bin_op!(left, right, ExprType::BitwiseAnd, types, &)
             }
             ExprType::BitwiseOr(left, right) => {
-                fold_int_bin_op!(left, right, ExprType::BitwiseOr, |)
+                fold_int_bin_op!(left, right, ExprType::BitwiseOr, types, |)
             }
             ExprType::Shift(left, right, true) => {
-                shift_left(*left, *right, &self.ctype, &location)?
+                shift_left(*left, *right, &types[self.ctype], types, &location)?
             }
             ExprType::Shift(left, right, false) => {
-                shift_right(*left, *right, &self.ctype, &location)?
+                shift_right(*left, *right, &types[self.ctype], types, &location)?
             }
             ExprType::Compare(left, right, Token::Less) => {
-                fold_compare_op!(left, right, Compare, <, Token::Less)
+                fold_compare_op!(left, right, Compare, <, Token::Less, types)
             }
             ExprType::Compare(left, right, Token::LessEqual) => {
-                fold_compare_op!(left, right, Compare, <=, Token::LessEqual)
+                fold_compare_op!(left, right, Compare, <=, Token::LessEqual, types)
             }
             ExprType::Compare(left, right, Token::Greater) => {
-                fold_compare_op!(left, right, Compare, >, Token::Greater)
+                fold_compare_op!(left, right, Compare, >, Token::Greater, types)
             }
             ExprType::Compare(left, right, Token::GreaterEqual) => {
-                fold_compare_op!(left, right, Compare, >=, Token::GreaterEqual)
+                fold_compare_op!(left, right, Compare, >=, Token::GreaterEqual, types)
             }
             ExprType::Compare(left, right, Token::EqualEqual) => {
-                fold_compare_op!(left, right, Compare, ==, Token::EqualEqual)
+                fold_compare_op!(left, right, Compare, ==, Token::EqualEqual, types)
             }
             ExprType::Compare(left, right, Token::NotEqual) => {
-                fold_compare_op!(left, right, Compare, !=, Token::NotEqual)
+                fold_compare_op!(left, right, Compare, !=, Token::NotEqual, types)
             }
             ExprType::Compare(_, _, _) => {
                 unreachable!("only comparison tokens should appear in ExprType::Compare")
             }
             ExprType::Ternary(condition, then, otherwise) => {
                 let (condition, then, otherwise) = (
-                    condition.const_fold()?,
-                    then.const_fold()?,
-                    otherwise.const_fold()?,
+                    condition.const_fold(types)?,
+                    then.const_fold(types)?,
+                    otherwise.const_fold(types)?,
                 );
                 match condition.expr {
                     ExprType::Literal(Token::Int(0)) => otherwise.expr,
@@ -248,11 +251,11 @@ impl Expr {
                 }
             }
             ExprType::FuncCall(func, params) => {
-                let func = func.const_fold()?;
+                let func = func.const_fold(types)?;
                 #[rustfmt::skip]
                 let params: Vec<Expr> = params
                     .into_iter()
-                    .map(Self::const_fold)
+                    .map(|param| param.const_fold(types))
                     .collect::<SemanticResult<_>>()?;
                 // function calls are always non-constant
                 // TODO: if we have access to the full source of a function, could we try to
@@ -260,40 +263,40 @@ impl Expr {
                 ExprType::FuncCall(Box::new(func), params)
             }
             ExprType::Member(expr, member) => {
-                let expr = expr.const_fold()?;
+                let expr = expr.const_fold(types)?;
                 ExprType::Member(Box::new(expr), member)
             }
             ExprType::Assign(target, value, token) => {
-                let (target, value) = (target.const_fold()?, value.const_fold()?);
+                let (target, value) = (target.const_fold(types)?, value.const_fold(types)?);
                 // TODO: could we propagate this information somehow?
                 // e.g. fold `int main() { int x = 1; return x; }` to `return 1;`
                 ExprType::Assign(Box::new(target), Box::new(value), token)
             }
             ExprType::Increment(expr, pre, post) => {
-                let expr = expr.const_fold()?;
+                let expr = expr.const_fold(types)?;
                 // this isn't constant for the same reason assignment isn't constant
                 ExprType::Increment(Box::new(expr), pre, post)
             }
-            ExprType::Cast(expr) => cast(*expr, &self.ctype)?,
+            ExprType::Cast(expr) => cast(*expr, &types[self.ctype], types)?,
             ExprType::LogicalAnd(left, right) => {
-                let left = cast(*left, &Type::Bool)?;
+                let left = cast(*left, &Type::Bool, types)?;
                 if let ExprType::Literal(Token::Int(i)) = left {
                     if i == 0 {
                         ExprType::Literal(Token::Int(0))
                     } else {
-                        cast(*right, &Type::Bool)?
+                        cast(*right, &Type::Bool, types)?
                     }
                 } else {
                     left
                 }
             }
             ExprType::LogicalOr(left, right) => {
-                let left = cast(*left, &Type::Bool)?;
+                let left = cast(*left, &Type::Bool, types)?;
                 if let ExprType::Literal(Token::Int(i)) = left {
                     if i != 0 {
                         ExprType::Literal(Token::Int(1))
                     } else {
-                        cast(*right, &Type::Bool)?
+                        cast(*right, &Type::Bool, types)?
                     }
                 } else {
                     left
@@ -324,8 +327,8 @@ impl Token {
     }
 }
 
-fn cast(expr: Expr, ctype: &Type) -> SemanticResult<ExprType> {
-    let expr = expr.const_fold()?;
+fn cast(expr: Expr, ctype: &Type, types: &Types) -> SemanticResult<ExprType> {
+    let expr = expr.const_fold(types)?;
     Ok(if let ExprType::Literal(ref token) = expr.expr {
         if let Some(token) = const_cast(token, ctype) {
             ExprType::Literal(token)
@@ -376,9 +379,10 @@ fn shift_right(
     left: Expr,
     right: Expr,
     ctype: &Type,
+    types: &Types,
     location: &Location,
 ) -> SemanticResult<ExprType> {
-    let (left, right) = (left.const_fold()?, right.const_fold()?);
+    let (left, right) = (left.const_fold(types)?, right.const_fold(types)?);
     if let ExprType::Literal(token) = right.expr {
         let shift = match token.non_negative_int() {
             Ok(u) => u,
@@ -387,7 +391,7 @@ fn shift_right(
                 location.clone()
             ),
         };
-        let sizeof = ctype.sizeof().map_err(|err| Locatable {
+        let sizeof = ctype.sizeof(types).map_err(|err| Locatable {
             data: err.into(),
             location: location.clone(),
         })?;
@@ -426,9 +430,10 @@ fn shift_left(
     left: Expr,
     right: Expr,
     ctype: &Type,
+    types: &Types,
     location: &Location,
 ) -> SemanticResult<ExprType> {
-    let (left, right) = (left.const_fold()?, right.const_fold()?);
+    let (left, right) = (left.const_fold(types)?, right.const_fold(types)?);
     if let ExprType::Literal(token) = right.expr {
         let shift = match token.non_negative_int() {
             Ok(u) => u,
@@ -437,8 +442,8 @@ fn shift_left(
                 location.clone()
             ),
         };
-        if left.ctype.is_signed() {
-            let size = match left.ctype.sizeof() {
+        if types[left.ctype].is_signed() {
+            let size = match types[left.ctype].sizeof(types) {
                 Ok(s) => s,
                 Err(err) => err!(err.into(), location.clone()),
             };

@@ -265,8 +265,8 @@ pub enum Type {
     Long(bool),
     Float,
     Double,
-    Pointer(TypeIndex, Qualifiers),
-    Array(TypeIndex, ArrayType),
+    Pointer(Box<Type>, Qualifiers),
+    Array(Box<Type>, ArrayType),
     Function(FunctionType),
     // name, members
     // no members means a tentative definition (struct s;)
@@ -514,7 +514,7 @@ impl Type {
     #[inline]
     pub fn is_void_pointer(&self, types: &Types) -> bool {
         match self {
-            Type::Pointer(t, _) => types[t] == Type::Void,
+            Type::Pointer(t, _) => **t == Type::Void,
             _ => false,
         }
     }
@@ -522,7 +522,7 @@ impl Type {
     /// used for pointer addition and subtraction, see section 6.5.6 of the C11 standard
     pub fn is_pointer_to_complete_object(&self, types: &Types) -> bool {
         match self {
-            Type::Pointer(ctype, _) => types[ctype].is_complete() && !types[ctype].is_function(),
+            Type::Pointer(ctype, _) => ctype.is_complete() && !ctype.is_function(),
             _ => false,
         }
     }
@@ -557,7 +557,7 @@ impl Expr {
                 location: self.location.clone(),
             });
         }
-        let literal = self.constexpr()?.map_err(|location| Locatable {
+        let literal = self.constexpr(types)?.map_err(|location| Locatable {
             data: LengthError::Dynamic.into(),
             location,
         })?;
@@ -927,23 +927,16 @@ impl Debug for Expr {
             ExprType::Ternary(cond, left, right) => {
                 write!(f, "({:?}) ? ({:?}) : ({:?})", cond, left, right)
             }
-            ExprType::FuncCall(left, params) => {
-                let varargs = if let Type::Function(ftype) = &left.ctype {
-                    ftype.varargs
-                } else {
-                    unreachable!("parser should catch illegal function calls");
-                };
-                write!(
-                    f,
-                    "({:?})({})",
-                    left,
-                    print_func_call(params.as_slice(), varargs, |expr| {
-                        let mut s = String::new();
-                        write!(s, "{:?}", expr).unwrap();
-                        s
-                    })
-                )
-            }
+            ExprType::FuncCall(left, params) => write!(
+                f,
+                "({:?})({})",
+                left,
+                print_func_call(params.as_slice(), |expr| {
+                    let mut s = String::new();
+                    write!(s, "{:?}", expr).unwrap();
+                    s
+                })
+            ),
             ExprType::Cast(expr) => write!(f, "({})({:?})", self.ctype, expr),
             ExprType::Sizeof(ty) => write!(f, "sizeof({})", ty),
             ExprType::Member(compound, id) => write!(f, "({:?}).{}", compound, id),
@@ -952,19 +945,15 @@ impl Debug for Expr {
     }
 }
 
-fn print_func_call<T, F: Fn(&T) -> String>(params: &[T], varargs: bool, print_func: F) -> String {
+fn print_func_call<T, F: Fn(&T) -> String>(params: &[T], print_func: F) -> String {
     // https://stackoverflow.com/a/30325430
     let mut comma_separated = String::new();
     for param in params {
         comma_separated.push_str(&print_func(param));
         comma_separated.push_str(", ");
     }
-    if varargs {
-        comma_separated.push_str("...");
-    } else if !params.is_empty() {
-        comma_separated.pop();
-        comma_separated.pop();
-    }
+    comma_separated.pop();
+    comma_separated.pop();
     comma_separated
 }
 
@@ -977,7 +966,7 @@ impl Debug for Initializer {
                 write!(
                     f,
                     "{}",
-                    print_func_call(list, false, |init| { format!("{:?}", init) })
+                    print_func_call(list, |init| { format!("{:?}", init) })
                 )?;
                 write!(f, " }};")
             }

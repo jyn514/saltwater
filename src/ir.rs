@@ -51,7 +51,7 @@ struct Value {
 pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> SemanticResult<Module> {
     let name = program
         .first()
-        .map_or_else(|| "<empty>".to_string(), |decl| decl.data.symbol.id.clone());
+        .map_or_else(|| "<empty>".to_string(), |decl| decl.location.file.clone());
     let mut compiler = Compiler::new(name, debug);
     for decl in program {
         match (decl.data.symbol.ctype.clone(), decl.data.init) {

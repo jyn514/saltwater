@@ -10,7 +10,7 @@ use cranelift::codegen::{
 };
 use target_lexicon::Triple;
 
-use crate::data::{ArrayType, FunctionType, Locatable, Location, Type};
+use crate::data::{types::Types, ArrayType, FunctionType, Locatable, Location, Type};
 use Type::*;
 
 // NOTE: this is required by the standard to always be one
@@ -27,15 +27,16 @@ mod x64;
 pub use x64::*;
 
 impl Type {
-    pub fn can_represent(&self, other: &Type) -> bool {
+    pub fn can_represent(&self, other: &Type, types: &Types) -> bool {
         self == other
             || *self == Type::Double && *other == Type::Float
             || (self.is_integral() && other.is_integral())
-                && (self.sizeof() > other.sizeof()
-                    || self.sizeof() == other.sizeof() && self.is_signed() == other.is_signed())
+                && (self.sizeof(types) > other.sizeof(types)
+                    || self.sizeof(types) == other.sizeof(types)
+                        && self.is_signed() == other.is_signed())
     }
 
-    pub fn sizeof(&self) -> Result<SIZE_T, &'static str> {
+    pub fn sizeof(&self, types: &Types) -> Result<SIZE_T, &'static str> {
         match self {
             Bool => Ok(BOOL_SIZE.into()),
             Char(_) => Ok(CHAR_SIZE.into()),
@@ -46,7 +47,7 @@ impl Type {
             Double => Ok(DOUBLE_SIZE.into()),
             Pointer(_, _) => Ok(PTR_SIZE.into()),
             // now for the hard ones
-            Array(t, ArrayType::Fixed(l)) => t.sizeof().and_then(|n| Ok(n * l)),
+            Array(t, ArrayType::Fixed(l)) => types[*t].sizeof(types).and_then(|n| Ok(n * l)),
             Array(_, ArrayType::Unbounded) => Err("cannot take sizeof variable length array"),
             Enum(_, symbols) => {
                 let uchar = CHAR_BIT as usize;
@@ -60,13 +61,13 @@ impl Type {
             // TODO: this doesn't handle padding
             Union(_, symbols) => symbols
                 .iter()
-                .map(|symbol| symbol.ctype.sizeof())
+                .map(|symbol| types[symbol.ctype].sizeof(types))
                 // max of member sizes
                 .try_fold(1, |n, size| Ok(max(n, size?))),
             // TODO: ditto padding
             Struct(_, symbols) => symbols
                 .iter()
-                .map(|symbol| symbol.ctype.sizeof())
+                .map(|symbol| types[symbol.ctype].sizeof(types))
                 // sum of member sizes
                 .try_fold(0, |n, size| Ok(n + size?)),
             Bitfield(_) => unimplemented!("sizeof(bitfield)"),
@@ -76,7 +77,7 @@ impl Type {
             VaList => Err("cannot take `sizeof` va_list"),
         }
     }
-    pub fn alignof(&self) -> Result<SIZE_T, &'static str> {
+    pub fn alignof(&self, types: &Types) -> Result<SIZE_T, &'static str> {
         match self {
             Bool
             | Char(_)
@@ -88,12 +89,12 @@ impl Type {
             | Pointer(_, _)
             // TODO: is this correct? still need to worry about padding
             | Union(_, _)
-            | Enum(_, _) => self.sizeof(),
-            Array(t, _) => t.alignof(),
+            | Enum(_, _) => self.sizeof(types),
+            Array(t, _) => types[*t].alignof(types),
             // Clang uses the largest alignment of any element as the alignment of the whole
             // Not sure why, but who am I to argue
             // Anyway, Faerie panics if the alignment isn't a power of two so it's probably for the best
-            Struct(_, members) => members.iter().try_fold(0, |max, member| Ok(std::cmp::max(member.ctype.sizeof()?, max))),
+            Struct(_, members) => members.iter().try_fold(0, |max, member| Ok(std::cmp::max(types[member.ctype].sizeof(types)?, max))),
             Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),
@@ -103,7 +104,7 @@ impl Type {
     pub fn ptr_type() -> IrType {
         IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
     }
-    pub fn struct_offset(&self, member: &str) -> u64 {
+    pub fn struct_offset(&self, member: &str, types: &Types) -> u64 {
         let members = match self {
             Type::Struct(_, members) => members,
             Type::Union(_, members) => return 0,
@@ -114,25 +115,26 @@ impl Type {
             if formal.id == member {
                 return current_offset;
             }
-            let size = formal
-                .ctype
-                .sizeof()
+            let size = types[formal.ctype]
+                .sizeof(types)
                 .expect("struct members should have complete object type");
-            let align = self.alignof().expect("struct should have valid alignment");
+            let align = self
+                .alignof(types)
+                .expect("struct should have valid alignment");
             // round up to the nearest multiple of align
             let padded_size = size + (align - size) % align;
             current_offset += padded_size;
         }
         unreachable!("cannot call struct_offset for member not in struct");
     }
-    pub fn as_ir_type(&self) -> Result<IrType, String> {
+    pub fn as_ir_type(&self, types: &Types) -> Result<IrType, String> {
         match self {
             // Integers
             Bool => Ok(types::B1),
             Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_, _) => {
                 let int_size = SIZE_T::from(CHAR_BIT)
                     * self
-                        .sizeof()
+                        .sizeof(types)
                         .expect("integers should always have a valid size");
                 Ok(IrType::int(int_size.try_into().unwrap_or_else(|_| {
                     panic!(
@@ -155,7 +157,7 @@ impl Type {
             Struct(_, members) => {
                 let ir_elements: Vec<_> = members
                     .iter()
-                    .map(|m| m.ctype.as_ir_type())
+                    .map(|m| types[m.ctype].as_ir_type(types))
                     .collect::<Result<_, String>>()?;
                 // need to figure out how padding works
                 unimplemented!("struct type -> IR");
@@ -164,9 +166,11 @@ impl Type {
             // What Clang does is cast it to the type of the largest member,
             // and then cast every element of the union as it is accessed.
             // See https://stackoverflow.com/questions/19549942/extracting-a-value-from-an-union#19550613
-            Union(_, members) => try_max_by_key(members.iter().map(|m| &m.ctype), Type::sizeof)
-                .expect("parser should ensure all unions have at least one member")?
-                .as_ir_type(),
+            Union(_, members) => try_max_by_key(members.iter().map(|m| &types[m.ctype]), |ty| {
+                ty.sizeof(types)
+            })
+            .expect("parser should ensure all unions have at least one member")?
+            .as_ir_type(types),
             // void cannot be loaded or stored
             Void => Err("void cannot be represented".into()),
             Bitfield(_) => unimplemented!("bitfield to ir type"),
@@ -178,17 +182,20 @@ impl Type {
 }
 
 impl FunctionType {
-    pub fn signature(&self, location: &Location) -> Result<Signature, Locatable<String>> {
-        let params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
+    pub fn signature(
+        &self,
+        location: &Location,
+        types: &Types,
+    ) -> Result<Signature, Locatable<String>> {
+        let params = if self.params.len() == 1 && types[self.params[0].ctype] == Type::Void {
             // no arguments
             Vec::new()
         } else {
             self.params
                 .iter()
                 .map(|param| {
-                    param
-                        .ctype
-                        .as_ir_type()
+                    types[param.ctype]
+                        .as_ir_type(types)
                         .map(AbiParam::new)
                         .map_err(|err| Locatable {
                             data: err,
@@ -197,12 +204,11 @@ impl FunctionType {
                 })
                 .collect::<Result<Vec<_>, Locatable<String>>>()?
         };
-        let return_type = if !self.should_return() {
+        let return_type = if !self.should_return(types) {
             vec![]
         } else {
-            vec![self
-                .return_type
-                .as_ir_type()
+            vec![types[self.return_type]
+                .as_ir_type(types)
                 .map(AbiParam::new)
                 .map_err(|err| Locatable {
                     data: err,

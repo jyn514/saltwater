@@ -12,8 +12,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .expect(Token::LeftBrace)
             .expect("compound_statement should be called with '{' as the next token");
         let mut stmts = vec![];
-        // TODO: this behaves very badly for `int i, j;` because it doesn't look at self.pending
-        // TODO: refactor Stmt::Decl to have a list of declarations
         while self.peek_token() != Some(&Token::RightBrace) {
             if let Some(x) = self.statement()? {
                 stmts.push(x);
@@ -166,7 +164,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             (Some(expr), true) => {
                 let expr = expr.rval();
-                if expr.ctype != *ret_type {
+                if !self.known_types.eq(expr.ctype, *ret_type) {
                     StmtType::Return(Some(Expr::cast(expr, ret_type)?))
                 } else {
                     StmtType::Return(Some(expr))

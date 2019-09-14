@@ -1,3 +1,5 @@
+pub mod types;
+
 use std::collections::{HashMap, VecDeque};
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{self, Debug, Display, Formatter, Write};
@@ -5,11 +7,13 @@ use std::hash::Hash;
 
 use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
 
+use self::types::{TypeIndex, Types};
 use crate::backend::SIZE_T;
 
 pub type SemanticResult<T> = Result<T, Locatable<String>>;
 
 pub mod prelude {
+    pub use super::types::{TypeIndex, Types};
     pub use super::{
         Declaration, Expr, ExprType, Locatable, Location, SemanticResult, Stmt, StmtType, Symbol,
         Token, Type,
@@ -194,7 +198,7 @@ pub struct Expr {
     pub expr: ExprType,
 
     /// ctype: holds the type of the expression
-    pub ctype: Type,
+    pub ctype: TypeIndex,
 
     /// constexpr: whether a value can be constant-folded at compile-time
     ///
@@ -225,7 +229,7 @@ pub enum ExprType {
     // pre/post inc/dec-rement
     Increment(Box<Expr>, bool, bool),
     Cast(Box<Expr>),
-    Sizeof(Type),
+    Sizeof(TypeIndex),
     Deref(Box<Expr>),
     Negate(Box<Expr>),
     LogicalNot(Box<Expr>),
@@ -261,8 +265,8 @@ pub enum Type {
     Long(bool),
     Float,
     Double,
-    Pointer(Box<Type>, Qualifiers),
-    Array(Box<Type>, ArrayType),
+    Pointer(TypeIndex, Qualifiers),
+    Array(TypeIndex, ArrayType),
     Function(FunctionType),
     // name, members
     // no members means a tentative definition (struct s;)
@@ -293,7 +297,7 @@ pub enum StorageClass {
 #[derive(Clone, Debug)]
 pub struct Symbol {
     pub id: String,
-    pub ctype: Type,
+    pub ctype: TypeIndex,
     pub qualifiers: Qualifiers,
     pub storage_class: StorageClass,
     pub init: bool,
@@ -315,7 +319,7 @@ pub struct FunctionType {
     // 2. when we do scoping, we need to know the names of formal parameters
     //    (as opposed to concrete arguments).
     //    this is as good a place to store them as any.
-    pub return_type: Box<Type>,
+    pub return_type: TypeIndex,
     pub params: Vec<Symbol>,
     pub varargs: bool,
 }
@@ -325,7 +329,7 @@ pub struct FunctionType {
 pub struct BitfieldType {
     pub offset: i32,
     pub name: Option<String>,
-    pub ctype: Type,
+    pub ctype: TypeIndex,
 }
 
 #[derive(Debug)]
@@ -420,11 +424,34 @@ impl Token {
     }
 }
 
-lazy_static! {
-    pub static ref INT_POINTER: Type =
-        { Type::Pointer(Box::new(Type::Int(true)), Qualifiers::NONE) };
-}
 impl Type {
+    pub fn strong_eq(&self, other: &Self, types: &Types) -> bool {
+        match (self, other) {
+            (Type::Void, Type::Void)
+            | (Type::Bool, Type::Bool)
+            | (Type::Float, Type::Float)
+            | (Type::Double, Type::Double)
+            | (Type::VaList, Type::VaList) => true,
+            (Type::Char(x), Type::Char(y))
+            | (Type::Short(x), Type::Short(y))
+            | (Type::Int(x), Type::Int(y))
+            | (Type::Long(x), Type::Long(y)) => x == y,
+            (Type::Pointer(x_p, x_qual), Type::Pointer(y_p, y_qual)) => {
+                x_p == y_p && x_qual == y_qual
+            }
+            (Type::Array(x_p, x_s), Type::Array(y_p, y_s)) => x_p == y_p && x_s == y_s,
+            (Type::Function(x), Type::Function(y)) => x.strong_eq(y, types),
+            (Type::Union(x_id, x_members), Type::Union(y_id, y_members))
+            | (Type::Struct(x_id, x_members), Type::Struct(y_id, y_members)) => {
+                x_id == y_id && x_members == y_members
+            }
+            (Type::Enum(x_id, x_members), Type::Enum(y_id, y_members)) => {
+                x_id == y_id && x_members == y_members
+            }
+            (Type::Bitfield(x), Type::Bitfield(y)) => x == y,
+            _ => false,
+        }
+    }
     /// https://stackoverflow.com/questions/14821936/what-is-a-scalar-object-in-c#14822074
     #[inline]
     pub fn is_scalar(&self) -> bool {
@@ -485,17 +512,17 @@ impl Type {
         }
     }
     #[inline]
-    pub fn is_void_pointer(&self) -> bool {
+    pub fn is_void_pointer(&self, types: &Types) -> bool {
         match self {
-            Type::Pointer(t, _) => **t == Type::Void,
+            Type::Pointer(t, _) => types[t] == Type::Void,
             _ => false,
         }
     }
     #[inline]
     /// used for pointer addition and subtraction, see section 6.5.6 of the C11 standard
-    pub fn is_pointer_to_complete_object(&self) -> bool {
+    pub fn is_pointer_to_complete_object(&self, types: &Types) -> bool {
         match self {
-            Type::Pointer(ctype, _) => ctype.is_complete() && !ctype.is_function(),
+            Type::Pointer(ctype, _) => types[ctype].is_complete() && !types[ctype].is_function(),
             _ => false,
         }
     }
@@ -523,8 +550,8 @@ pub enum LengthError {
 }
 
 impl Expr {
-    pub fn const_int(self) -> SemanticResult<SIZE_T> {
-        if !self.ctype.is_integral() {
+    pub fn const_int(self, types: &Types) -> SemanticResult<SIZE_T> {
+        if !types[self.ctype].is_integral() {
             return Err(Locatable {
                 data: LengthError::NonIntegral.into(),
                 location: self.location.clone(),
@@ -543,9 +570,9 @@ impl Expr {
             x => unreachable!("should have been caught already: {:?}", x),
         }
     }
-    pub fn zero() -> Expr {
+    pub fn zero(types: &mut Types) -> Expr {
         Expr {
-            ctype: Type::Int(true),
+            ctype: types.get_or_insert(Type::Int(true)),
             constexpr: true,
             expr: ExprType::Literal(Token::Int(0)),
             lval: false,
@@ -627,11 +654,16 @@ impl<K: Eq + Hash, V> Default for Scope<K, V> {
 }
 
 impl FunctionType {
-    pub fn should_return(&self) -> bool {
-        *self.return_type != Type::Void
+    pub fn strong_eq(&self, other: &Self, types: &Types) -> bool {
+        self.params == other.params
+            && types[self.return_type].strong_eq(&types[other.return_type], types)
+            && self.varargs == other.varargs
     }
-    pub fn has_params(&self) -> bool {
-        !(self.params.len() == 1 && self.params[0].ctype == Type::Void)
+    pub fn should_return(&self, types: &Types) -> bool {
+        types[self.return_type] != Type::Void
+    }
+    pub fn has_params(&self, types: &Types) -> bool {
+        !(self.params.len() == 1 && types[self.params[0].ctype] == Type::Void)
     }
 }
 

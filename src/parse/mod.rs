@@ -17,6 +17,10 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     scope: Scope<String, Symbol>,
     /// the compound types that have been declared (struct/union/enum)
     tag_scope: Scope<String, Type>,
+    /// types that we've seen before
+    /// allows each expression to only store an index into the types
+    /// instead of having to store the full type
+    known_types: Types,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,
@@ -52,6 +56,7 @@ struct FunctionData {
     return_type: Type,
 }
 
+/* public misc functions */
 impl<I> Parser<I>
 where
     I: Iterator<Item = Lexeme>,
@@ -60,6 +65,7 @@ where
         Parser {
             scope: Scope::new(),
             tag_scope: Scope::new(),
+            known_types: Default::default(),
             tokens: iter,
             pending: Default::default(),
             last_location: None,
@@ -68,6 +74,12 @@ where
             current_function: None,
             debug,
         }
+    }
+    pub fn current_scope(&self) -> &Scope<String, Symbol> {
+        &self.scope
+    }
+    pub fn current_tag_scope(&self) -> &Scope<String, Type> {
+        &self.tag_scope
     }
 }
 

@@ -918,12 +918,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location: token.location,
                 });
             }
+            let (left, right) = (left.rval(), right.rval());
             Ok(Expr {
                 lval: false,
                 constexpr: left.constexpr && right.constexpr,
                 location: token.location,
                 ctype: ctype.clone(),
-                expr: expr_func(left, right),
+                expr: expr_func(Box::new(left), Box::new(right)),
             })
         })
     }

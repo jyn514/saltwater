@@ -546,7 +546,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 .is_some()
             {
                 err!(format!("redefinition of {} '{}'", kind, ident), location);
-            } else {
+            } else if kind != Keyword::Enum {
                 for existing_type in self
                     .scope
                     .get_all_immediate()

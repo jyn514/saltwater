@@ -127,6 +127,16 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* utility functions */
+    #[inline(always)]
+    fn enter_scope(&mut self) {
+        self.scope.enter_scope();
+        self.tag_scope.enter_scope();
+    }
+    #[inline(always)]
+    fn leave_scope(&mut self) {
+        self.scope.leave_scope();
+        self.tag_scope.leave_scope();
+    }
     // don't use this, use next_token instead
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
         match self.tokens.next() {

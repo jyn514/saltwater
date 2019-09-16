@@ -50,9 +50,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     pub fn statement(&mut self) -> Result<Option<Stmt>, Locatable<String>> {
         match self.peek_token() {
             Some(Token::LeftBrace) => {
-                self.scope.enter_scope();
+                self.enter_scope();
                 let stmts = self.compound_statement();
-                self.scope.leave_scope();
+                self.leave_scope();
                 stmts
             }
             Some(Token::Keyword(k)) => match k {

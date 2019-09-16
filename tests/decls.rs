@@ -221,6 +221,16 @@ fn forward_declaration_no_initializer() {
 }
 
 #[test]
+fn scope() {
+    utils::assert_succeeds(
+        "struct T { int x; };
+int main() {
+        struct T { int z; };
+}",
+    );
+}
+
+#[test]
 fn redefinition() {
     utils::assert_compile_error("enum e { A }; enum e { A };");
     utils::assert_compile_error("struct s { int i; }; struct s { int i; };");

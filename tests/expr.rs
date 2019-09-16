@@ -145,6 +145,17 @@ fn assign() {
 }
 
 #[test]
+fn ternary() {
+    utils::assert_compile_error(
+        "
+    int i, *p;
+    int main() {
+        return 1 ? i : p;
+    }",
+    );
+}
+
+#[test]
 fn comma() {
     utils::assert_code("int main() { return 1, 2; }", 2);
     utils::assert_code("int main() { return 1 + 1, 2.4; }", 2);

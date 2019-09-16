@@ -163,11 +163,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn conditional_expr(&mut self) -> ExprResult {
         let condition = self.logical_or_expr()?;
         if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {
-            let condition = condition.rval();
-            let then = self.expr()?;
+            let condition = condition.truthy()?;
+            let mut then = self.expr()?;
             self.expect(Token::Colon)?;
-            let otherwise = self.conditional_expr()?;
-            let (then, otherwise) = Expr::binary_promote(then, otherwise)?;
+            let mut otherwise = self.conditional_expr()?;
+            // TODO: I feel like the type checking here is wrong
+            if then.ctype.is_arithmetic() && otherwise.ctype.is_arithmetic() {
+                let (tmp1, tmp2) = Expr::binary_promote(then, otherwise)?;
+                then = tmp1;
+                otherwise = tmp2;
+            }
             if then.ctype == otherwise.ctype {
                 Ok(Expr {
                     ctype: then.ctype.clone(),
@@ -1421,7 +1426,10 @@ impl Type {
             Bool => false,
             // TODO: allow enums with values of UINT_MAX
             Enum(_, _) => true,
-            _ => panic!("Type::sign can only be called on integral types"),
+            x => panic!(
+                "Type::sign can only be called on integral types (got {})",
+                x
+            ),
         }
     }
     /// Return the rank of an integral type, according to section 6.3.1.1 of the C standard.

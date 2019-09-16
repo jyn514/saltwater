@@ -1023,7 +1023,10 @@ impl Compiler {
             self.compile_stmt(*other, builder)?;
             if !self.ebb_has_return {
                 builder.ins().jump(end_body, &[]);
+                // ebb_has_return is already false
+                builder.switch_to_block(end_body);
             // if we returned in both 'if' and 'else' blocks, all following code is unreachable
+            // this is the case where we returned in 'else' but not 'if'
             } else if !if_has_return {
                 builder.switch_to_block(end_body);
                 self.ebb_has_return = false;

@@ -1194,7 +1194,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             });
         }
         // add parameters to scope
-        self.scope.enter_scope();
+        self.enter_scope();
         let len = ftype.params.len();
         for (i, param) in ftype.params.into_iter().enumerate() {
             if param.id == "" {
@@ -1231,7 +1231,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ),
         };
         self.current_function = None;
-        self.scope.leave_scope();
+        self.leave_scope();
         Ok(body)
     }
     fn update_forward_declarations(

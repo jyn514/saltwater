@@ -11,12 +11,20 @@ use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
 
+#[derive(Clone, Debug)]
+enum TagEntry {
+    Struct(Vec<Symbol>),
+    Union(Vec<Symbol>),
+    // list of (name, value)s
+    Enum(Vec<(String, i64)>),
+}
+
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// the variables that have been declared
     scope: Scope<String, Symbol>,
     /// the compound types that have been declared (struct/union/enum)
-    tag_scope: Scope<String, Type>,
+    tag_scope: Scope<String, TagEntry>,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,

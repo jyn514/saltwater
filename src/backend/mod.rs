@@ -10,7 +10,7 @@ use cranelift::codegen::{
 };
 use target_lexicon::Triple;
 
-use crate::data::{ArrayType, FunctionType, Locatable, Location, Type};
+use crate::data::{ArrayType, FunctionType, Locatable, Location, StructType, Symbol, Type};
 use Type::*;
 
 // NOTE: this is required by the standard to always be one
@@ -25,6 +25,29 @@ lazy_static! {
 }
 mod x64;
 pub use x64::*;
+
+pub fn union_size(symbols: &[Symbol]) -> Result<SIZE_T, &'static str> {
+    symbols
+        .iter()
+        .map(|symbol| symbol.ctype.sizeof())
+        // max of member sizes
+        .try_fold(1, |n, size| Ok(max(n, size?)))
+}
+
+pub fn struct_size(symbols: &[Symbol]) -> Result<SIZE_T, &'static str> {
+    // TODO: this doesn't handle padding
+    symbols
+        .iter()
+        .map(|symbol| symbol.ctype.sizeof())
+        // sum of member sizes
+        .try_fold(0, |n, size| Ok(n + size?))
+}
+
+pub fn struct_align(members: &[Symbol]) -> Result<SIZE_T, &'static str> {
+    members.iter().try_fold(0, |max, member| {
+        Ok(std::cmp::max(member.ctype.sizeof()?, max))
+    })
+}
 
 impl Type {
     pub fn can_represent(&self, other: &Type) -> bool {
@@ -57,18 +80,11 @@ impl Type {
                     .try_into()
                     .map_err(|_| "enum cannot be represented in 32 bits")
             }
-            // TODO: this doesn't handle padding
-            Union(_, symbols) => symbols
-                .iter()
-                .map(|symbol| symbol.ctype.sizeof())
-                // max of member sizes
-                .try_fold(1, |n, size| Ok(max(n, size?))),
-            // TODO: ditto padding
-            Struct(_, symbols) => symbols
-                .iter()
-                .map(|symbol| symbol.ctype.sizeof())
-                // sum of member sizes
-                .try_fold(0, |n, size| Ok(n + size?)),
+            Union(StructType::Named(_, size, _, _)) | Struct(StructType::Named(_, size, _, _)) => {
+                Ok(*size)
+            }
+            Struct(StructType::Anonymous(symbols)) => struct_size(&symbols),
+            Union(StructType::Anonymous(symbols)) => union_size(&symbols),
             Bitfield(_) => unimplemented!("sizeof(bitfield)"),
             // illegal operations
             Function(_) => Err("cannot take `sizeof` a function"),
@@ -87,13 +103,14 @@ impl Type {
             | Double
             | Pointer(_, _)
             // TODO: is this correct? still need to worry about padding
-            | Union(_, _)
+            | Union(_)
             | Enum(_, _) => self.sizeof(),
             Array(t, _) => t.alignof(),
             // Clang uses the largest alignment of any element as the alignment of the whole
             // Not sure why, but who am I to argue
             // Anyway, Faerie panics if the alignment isn't a power of two so it's probably for the best
-            Struct(_, members) => members.iter().try_fold(0, |max, member| Ok(std::cmp::max(member.ctype.sizeof()?, max))),
+            Struct(StructType::Named(_, _, align, _)) => Ok(*align),
+            Struct(StructType::Anonymous(members)) => struct_align(members),
             Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),
@@ -103,25 +120,22 @@ impl Type {
     pub fn ptr_type() -> IrType {
         IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
     }
-    pub fn struct_offset(&self, member: &str) -> u64 {
-        let members = match self {
-            Type::Struct(_, members) => members,
-            Type::Union(_, members) => return 0,
-            _ => unreachable!("only structs and unions can have members"),
-        };
+    pub fn struct_offset(&self, members: &[Symbol], member: &str) -> u64 {
         let mut current_offset = 0;
         for formal in members {
             if formal.id == member {
                 return current_offset;
             }
-            let size = formal
+            let mut size = formal
                 .ctype
                 .sizeof()
                 .expect("struct members should have complete object type");
             let align = self.alignof().expect("struct should have valid alignment");
             // round up to the nearest multiple of align
-            let padded_size = size + (align - size) % align;
-            current_offset += padded_size;
+            if size % align != 0 {
+                size += (align - size) % align;
+            }
+            current_offset += size;
         }
         unreachable!("cannot call struct_offset for member not in struct");
     }
@@ -152,27 +166,9 @@ impl Type {
             // arrays decay to pointers at the assembly level
             Array(_, _) => Ok(IrType::int(PTR_SIZE * CHAR_BIT)
                 .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE))),
-            Struct(_, members) => {
-                let ir_elements: Vec<_> = members
-                    .iter()
-                    .map(|m| m.ctype.as_ir_type())
-                    .collect::<Result<_, String>>()?;
-                // need to figure out how padding works
-                unimplemented!("struct type -> IR");
-            }
-            // Cranelift does not have a union type.
-            // What Clang does is cast it to the type of the largest member,
-            // and then cast every element of the union as it is accessed.
-            // See https://stackoverflow.com/questions/19549942/extracting-a-value-from-an-union#19550613
-            Union(_, members) => try_max_by_key(members.iter().map(|m| &m.ctype), Type::sizeof)
-                .expect("parser should ensure all unions have at least one member")?
-                .as_ir_type(),
             // void cannot be loaded or stored
             Void => Err("void cannot be represented".into()),
-            Bitfield(_) => unimplemented!("bitfield to ir type"),
-            // I don't think Cranelift IR has a representation for functions
-            Function(_) => unimplemented!("functions to IR type"),
-            VaList => unimplemented!("variadic args"),
+            x => Err(format!("{}: not a valid IR type", x)),
         }
     }
 }

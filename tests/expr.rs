@@ -217,12 +217,14 @@ fn pointers() {
 
 #[test]
 fn arrays() {
-    utils::assert_succeeds(
+    utils::assert_code(
         "
 int a[] = {0, 1, 2};
+int b[3][3] = {{1,2,3},{4,5,6},{7,8,9}};
 int main() {
-    return *a;
+    return *a + b[2][1];
 }",
+        8,
     );
     utils::assert_code(
         "

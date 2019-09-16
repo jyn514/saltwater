@@ -623,13 +623,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | postfix_expr DEC_OP
     /// ;
     fn postfix_expr(&mut self) -> ExprResult {
-        let expr = self.primary_expr()?;
-        if let Some(Locatable {
+        let mut expr = self.primary_expr()?;
+        while let Some(Locatable {
             location,
             data: token,
         }) = self.next_token()
         {
-            match token {
+            expr = match token {
                 // a[i] desugars to *(a + i)
                 Token::LeftBracket => {
                     let array = expr.rval();
@@ -649,7 +649,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         ctype: array.ctype.clone(),
                     };
                     self.expect(Token::RightBracket)?;
-                    Expr::pointer_arithmetic(array, index, target_type, location)
+                    Expr::pointer_arithmetic(array, index, target_type, location)?
                 }
                 // function call
                 Token::LeftParen => {
@@ -694,13 +694,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         .zip(&functype.params)
                         .map(|(arg, expected)| arg.rval().cast(&expected.ctype))
                         .collect::<Result<_, Locatable<String>>>()?;
-                    Ok(Expr {
+                    Expr {
                         location,
                         constexpr: false,
                         lval: false, // no move semantics here!
                         ctype: *functype.return_type.clone(),
                         expr: ExprType::FuncCall(Box::new(expr), promoted_args),
-                    })
+                    }
                 }
                 Token::Dot => {
                     let Locatable { location, data } =
@@ -709,7 +709,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         Token::Id(id) => id,
                         _ => unreachable!("bug in Parser::expect"),
                     };
-                    self.struct_member(expr, id, location)
+                    self.struct_member(expr, id, location)?
                 }
                 Token::StructDeref => {
                     let Locatable { location, data } =
@@ -727,8 +727,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             ),
                         },
                         _ => err!(
-                            "cannot use struct dereference shorthand on type that is not a pointer"
-                                .into(),
+                            "cannot use '->' operator on type that is not a pointer".into(),
                             location
                         ),
                     };
@@ -739,21 +738,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         lval: true,
                         expr: ExprType::Deref(Box::new(expr)),
                     };
-                    self.struct_member(expr, id, location)
+                    self.struct_member(expr, id, location)?
                 }
-                Token::PlusPlus => Expr::increment_op(false, true, expr, location),
-                Token::MinusMinus => Expr::increment_op(false, false, expr, location),
+                Token::PlusPlus => Expr::increment_op(false, true, expr, location)?,
+                Token::MinusMinus => Expr::increment_op(false, false, expr, location)?,
                 _ => {
                     self.unput(Some(Locatable {
                         location,
                         data: token,
                     }));
-                    Ok(expr)
+                    break;
                 }
             }
-        } else {
-            Ok(expr)
         }
+        Ok(expr)
     }
 
     /// argument_expr_list_opt

@@ -189,6 +189,23 @@ fn forward_declaration_with_typedef() {
 }
 
 #[test]
+fn recursive_struct() {
+    utils::assert_code(
+        "struct p {
+        int i;
+        struct p *q;
+    } my_p;
+    int main() {
+        my_p.q = &my_p;
+        my_p.q->q->q->i = 1;
+        return my_p.i;
+    }
+    ",
+        1,
+    );
+}
+
+#[test]
 #[ignore]
 fn forward_declaration_no_initializer() {
     utils::assert_succeeds(
@@ -196,9 +213,16 @@ fn forward_declaration_no_initializer() {
     struct s my_s;
     struct s {
         int i;
-    }
+    };
     int main() {
-        return my_s->i;
+        return my_s.i;
     }",
     );
+}
+
+#[test]
+fn redefinition() {
+    utils::assert_compile_error("enum e { A }; enum e { A };");
+    utils::assert_compile_error("struct s { int i; }; struct s { int i; };");
+    utils::assert_compile_error("union u { int i; }; union u { int i; };");
 }

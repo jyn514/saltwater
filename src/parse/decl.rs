@@ -1,11 +1,12 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::TryFrom;
 use std::iter::{FromIterator, Iterator};
 use std::mem;
 
-use super::{FunctionData, Lexeme, Parser};
+use super::{FunctionData, Lexeme, Parser, TagEntry};
+use crate::backend;
 use crate::data::{
-    prelude::*, ArrayType, FunctionType, Initializer, Keyword, Qualifiers, StorageClass,
+    prelude::*, ArrayType, FunctionType, Initializer, Keyword, Qualifiers, StorageClass, StructType,
 };
 use crate::utils::warn;
 
@@ -365,22 +366,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             location: locatable.location,
                         });
                     } else {
-                        let mut compound = self.compound_specifier(kind, locatable.location)?;
-                        match &compound {
-                            Type::Enum(Some(ident), _)
-                            | Type::Struct(Some(ident), _)
-                            | Type::Union(Some(ident), _) => {
-                                if let Some(existing_type) = self.tag_scope.get(ident) {
-                                    compound = existing_type.clone();
-                                }
-                                // TODO: if not a forward declaration, throw an error
-                            }
-                            Type::Enum(None, _) | Type::Struct(None, _) | Type::Union(None, _) => {}
-                            _ => unreachable!(
-                                "compound specifier should only return enums, structs, or unions"
-                            ),
-                        }
-                        ctype = Some(compound);
+                        ctype = Some(self.compound_specifier(kind, locatable.location)?);
                         seen_compound = true;
                     }
                     continue;
@@ -491,6 +477,29 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         | ENUM identifier
         ;
     */
+    fn struct_type(
+        members: Vec<Symbol>,
+        location: &Location,
+        is_struct: bool,
+    ) -> Result<(u64, u64, HashMap<String, u64>), &'static str> {
+        if is_struct {
+            let size = backend::struct_size(&members)?;
+            let align = backend::struct_align(&members)?;
+            let mut offsets = HashMap::new();
+            for member in &members {
+                let offset = member.ctype.struct_offset(&members, &member.id);
+                offsets.insert(member.id.clone(), offset);
+            }
+            Ok((size, align, offsets))
+        } else {
+            let size = backend::union_size(&members)?;
+            let mut offsets = HashMap::new();
+            for member in members {
+                offsets.insert(member.id, 0);
+            }
+            Ok((size, size, offsets))
+        }
+    }
     fn compound_specifier(
         &mut self,
         kind: Keyword,
@@ -512,59 +521,80 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location
                 ),
             };
-            if let Some(ctype) = self.tag_scope.get(&ident) {
-                return Ok(ctype.clone());
-            }
-            return Ok(if kind == Keyword::Struct {
-                Type::Struct(Some(ident), vec![])
+            return if let Some(entry) = self.tag_scope.get(&ident) {
+                match entry {
+                    TagEntry::Struct(members) => {
+                        if kind != Keyword::Struct {
+                            err!(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", ident, kind), location);
+                        }
+                        let (size, align, offsets) =
+                            Self::struct_type(members.clone(), &location, true).map_err(|err| {
+                                Locatable {
+                                    data: err.into(),
+                                    location,
+                                }
+                            })?;
+                        Ok(Type::Struct(StructType::Named(ident, size, align, offsets)))
+                    }
+                    TagEntry::Union(members) => {
+                        if kind != Keyword::Union {
+                            err!(format!("use of '{}' with type tag '{}' that does not match previous union declaration", ident, kind), location);
+                        }
+                        let (size, align, offsets) =
+                            Self::struct_type(members.clone(), &location, false).map_err(
+                                |err| Locatable {
+                                    data: err.into(),
+                                    location,
+                                },
+                            )?;
+                        Ok(Type::Union(StructType::Named(ident, size, align, offsets)))
+                    }
+                    TagEntry::Enum(members) => {
+                        if kind != Keyword::Enum {
+                            err!(format!("use of '{}' with type tag '{}' that does not match previous enum declaration", ident, kind), location);
+                        }
+                        Ok(Type::Enum(Some(ident), members.clone()))
+                    }
+                }
+            } else if kind == Keyword::Struct {
+                Ok(Type::Struct(StructType::Named(
+                    ident,
+                    0,
+                    0,
+                    Default::default(),
+                )))
             } else if kind == Keyword::Union {
-                Type::Union(Some(ident), vec![])
-            } else if self.tag_scope.get(&ident).is_none() {
+                Ok(Type::Union(StructType::Named(
+                    ident,
+                    0,
+                    0,
+                    Default::default(),
+                )))
+            } else {
                 // see section 6.7.2.3 of the C11 standard
                 err!(
                     format!("cannot have forward reference to enum type '{}'", ident),
                     location
                 );
-            } else {
-                Type::Enum(Some(ident), vec![])
-            });
+            };
         }
         if let Some(locatable) = self.match_next(&Token::RightBrace) {
             err!(format!("cannot have an empty {}", kind), locatable.location);
         }
         let ident = ident.map(|loc| loc.data);
         let ctype = if kind == Keyword::Enum {
-            self.enumerators(ident.clone())
+            self.enumerators(ident.clone(), location)
         } else {
-            self.struct_declaration_list(ident.clone(), kind == Keyword::Struct)
+            self.struct_declaration_list(ident.clone(), kind == Keyword::Struct, &location)
         }?;
         self.expect(Token::RightBrace)?;
-        if let Some(ident) = ident {
-            if self
-                .tag_scope
-                .insert(ident.clone(), ctype.clone())
-                .is_some()
-            {
-                err!(format!("redefinition of {} '{}'", kind, ident), location);
-            } else if kind != Keyword::Enum {
-                for existing_type in self
-                    .scope
-                    .get_all_immediate()
-                    .values_mut()
-                    .map(|symbol| &mut symbol.ctype)
-                    .chain(self.tag_scope.get_all_immediate().values_mut())
-                {
-                    Self::update_forward_declarations(existing_type, &ctype, &ident);
-                }
-            }
-        }
         Ok(ctype)
     }
     /* rewritten grammar:
     enumerator_list: enumerator (',' enumerator)* ;
     enumerator: identifier ('=' constant_expr)? ;
     */
-    fn enumerators(&mut self, ident: Option<String>) -> SemanticResult<Type> {
+    fn enumerators(&mut self, ident: Option<String>, location: Location) -> SemanticResult<Type> {
         let mut current = 0;
         let mut members = vec![];
         loop {
@@ -604,6 +634,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             current += 1;
         }
+        if let Some(id) = &ident {
+            if self
+                .tag_scope
+                .insert(id.clone(), TagEntry::Enum(members.clone()))
+                .is_some()
+            {
+                err!(format!("redefition of enum '{}'", id), location);
+            }
+        }
         let ctype = Type::Enum(ident, members);
         match &ctype {
             Type::Enum(_, members) => {
@@ -637,6 +676,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         ident: Option<String>,
         c_struct: bool,
+        location: &Location,
     ) -> SemanticResult<Type> {
         let mut members = vec![];
         loop {
@@ -671,9 +711,60 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 self.next_location().clone()
             );
         }
-        Ok(if c_struct { Type::Struct } else { Type::Union }(
-            ident, members,
-        ))
+        let constructor = if c_struct { Type::Struct } else { Type::Union };
+        if let Some(id) = ident {
+            if self
+                .tag_scope
+                .insert(
+                    id.clone(),
+                    if c_struct {
+                        TagEntry::Struct
+                    } else {
+                        TagEntry::Union
+                    }(members.clone()),
+                )
+                .is_some()
+            {
+                err!(
+                    format!(
+                        "redefinition of {} '{}'",
+                        if c_struct { "struct" } else { "union" },
+                        id
+                    ),
+                    location.clone()
+                );
+            } else {
+                let (size, align, offset) = Self::struct_type(members, location, c_struct)
+                    .map_err(|err| Locatable {
+                        data: err.into(),
+                        location: location.clone(),
+                    })?;
+                for tag in self.tag_scope.get_all_immediate().values_mut() {
+                    match tag {
+                        TagEntry::Union(members) | TagEntry::Struct(members) => {
+                            for member in members.iter_mut() {
+                                Self::update_forward_declarations(
+                                    &mut member.ctype,
+                                    (size, align, &offset),
+                                    &id,
+                                )
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                for variable in self.scope.get_all_immediate().values_mut() {
+                    Self::update_forward_declarations(
+                        &mut variable.ctype,
+                        (size, align, &offset),
+                        &id,
+                    );
+                }
+                Ok(constructor(StructType::Named(id, size, align, offset)))
+            }
+        } else {
+            Ok(constructor(StructType::Anonymous(members)))
+        }
     }
     /*
      * function parameters
@@ -1080,7 +1171,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         } else {
             // assignment_expr
             let expr = Expr::cast(self.assignment_expr()?, ctype)?;
-            Ok(Initializer::Scalar(expr))
+            Ok(Initializer::Scalar(Box::new(expr)))
         }
     }
     fn function_body(
@@ -1143,7 +1234,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.scope.leave_scope();
         Ok(body)
     }
-    fn update_forward_declarations(ctype: &mut Type, new_type: &Type, ident: &str) {
+    fn update_forward_declarations(
+        ctype: &mut Type,
+        new_type: (u64, u64, &HashMap<String, u64>),
+        ident: &str,
+    ) {
         use Type::*;
         match ctype {
             Array(inner, _) | Pointer(inner, _) => {
@@ -1155,10 +1250,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Self::update_forward_declarations(&mut param.ctype, new_type, ident);
                 }
             }
-            Union(Some(name), members) | Struct(Some(name), members) if name == ident => {
-                *ctype = new_type.clone();
+            Union(StructType::Named(name, size @ 0, align @ 0, offset))
+            | Struct(StructType::Named(name, size @ 0, align @ 0, offset))
+                if name == ident =>
+            {
+                *size = new_type.0;
+                *align = new_type.1;
+                *offset = new_type.2.clone();
             }
-            Union(_, members) | Struct(_, members) => {
+            Union(StructType::Anonymous(members)) | Struct(StructType::Anonymous(members)) => {
                 for member in members {
                     Self::update_forward_declarations(&mut member.ctype, new_type, ident)
                 }
@@ -1172,6 +1272,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             | Enum(_, _)
             | Float
             | Double
+            | Union(_)
+            | Struct(_)
             | VaList => {}
             Bitfield(_) => unimplemented!("updating bitfield after typedef"),
         }
@@ -1451,7 +1553,7 @@ impl Type {
                 }
             }
             Type::Array(inner, _) => Ok(inner),
-            Type::Struct(_, symbols) => symbols.get(index).map_or_else(
+            Type::Struct(StructType::Anonymous(symbols)) => symbols.get(index).map_or_else(
                 || {
                     Err(format!(
                         "too many initializers for struct (declared with {} elements, found {}",

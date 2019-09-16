@@ -179,7 +179,7 @@ pub struct Declaration {
 
 #[derive(Clone, PartialEq)]
 pub enum Initializer {
-    Scalar(Expr),                      // int i = 5;
+    Scalar(Box<Expr>),                 // int i = 5;
     InitializerList(Vec<Initializer>), // int a[] = { 1, 2, 3 };
     FunctionBody(Vec<Stmt>),           // int f() { return 0; }
 }
@@ -266,12 +266,34 @@ pub enum Type {
     Function(FunctionType),
     // name, members
     // no members means a tentative definition (struct s;)
-    Union(Option<String>, Vec<Symbol>),
-    Struct(Option<String>, Vec<Symbol>),
+    Union(StructType),
+    Struct(StructType),
     // enums should always have members, since tentative definitions are not allowed
     Enum(Option<String>, Vec<(String, i64)>),
     Bitfield(Vec<BitfieldType>),
     VaList,
+}
+
+/// Structs can be either named or anonymous.
+/// Anonymous structs carry all their information with them,
+/// there's no need (or way) to use tag_scope.
+/// Named structs can have forward declarations and be defined at any point
+/// in the program. In order to support self referential structs, named structs
+/// do NOT contain a list of their members, only the information that the
+/// backend needs to compile them.
+///
+/// The parser has access to a `tag_scope` that allows it to update the named
+/// structs as necessary.
+///
+/// WARNING: because the parser returns declarations eagerly, it may return a
+/// struct that has not yet been defined. This may be fixed at some point in
+/// the future. Until then, all consumers are stuck. See
+/// https://github.com/jyn514/rcc/issues/44 for an example of how this can manifest.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StructType {
+    // name, size, alignment, offsets
+    Named(String, u64, u64, HashMap<String, u64>),
+    Anonymous(Vec<Symbol>),
 }
 
 #[derive(Clone, Debug)]
@@ -714,10 +736,10 @@ impl Display for Type {
             }
             Enum(Some(ident), _) => write!(f, "enum {}", ident),
             Enum(None, members) => write!(f, "<anonymous enum>"),
-            Union(Some(ident), _) => write!(f, "union {}", ident),
-            Union(None, members) => write!(f, "<anonymous union>"),
-            Struct(Some(ident), _) => write!(f, "struct {}", ident),
-            Struct(None, members) => write!(f, "<anonymous struct>"),
+            Union(StructType::Named(ident, _, _, _)) => write!(f, "union {}", ident),
+            Union(_) => write!(f, "<anonymous union>"),
+            Struct(StructType::Named(ident, _, _, _)) => write!(f, "struct {}", ident),
+            Struct(_) => write!(f, "<anonymous struct>"),
             Bitfield(_) => unimplemented!("printing bitfield type"),
             VaList => write!(f, "va_list"),
         }

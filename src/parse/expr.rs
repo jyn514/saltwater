@@ -1,9 +1,28 @@
-use super::{Lexeme, Parser};
+use super::{Lexeme, Parser, TagEntry};
 use crate::backend::SIZE_T;
 use crate::data::prelude::*;
-use crate::data::{ArrayType, Keyword, Qualifiers, StorageClass::Typedef};
+use crate::data::{ArrayType, Keyword, Qualifiers, StorageClass::Typedef, StructType};
 
 type ExprResult = Result<Expr, Locatable<String>>;
+
+macro_rules! struct_member_helper {
+    ($members: expr, $expr: expr, $id: expr, $location: expr) => {
+        if let Some(member) = $members.iter().find(|member| member.id == $id) {
+            Ok(Expr {
+                ctype: member.ctype.clone(),
+                constexpr: $expr.constexpr,
+                lval: true,
+                location: $location,
+                expr: ExprType::Member(Box::new($expr), Token::Id($id)),
+            })
+        } else {
+            Err(Locatable {
+                data: format!("no member named '{}' in '{}'", $id, $expr.ctype),
+                location: $location,
+            })
+        }
+    };
+}
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// expr_opt: expr ';' | ';'
@@ -720,7 +739,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     };
                     let struct_type = match &expr.ctype {
                         Type::Pointer(ctype, _) => match **ctype {
-                            Type::Union(_, _) | Type::Struct(_, _) => (**ctype).clone(),
+                            Type::Union(_) | Type::Struct(_) => (**ctype).clone(),
                             _ => err!(
                                 "pointer does not point to a struct or union".into(),
                                 location
@@ -855,20 +874,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // used for both s.a and s->a
     fn struct_member(&mut self, expr: Expr, id: String, location: Location) -> ExprResult {
         match &expr.ctype {
-            Type::Struct(_, members) | Type::Union(_, members) => {
-                if let Some(member) = members.iter().find(|member| member.id == id) {
-                    Ok(Expr {
-                        ctype: member.ctype.clone(),
-                        constexpr: expr.constexpr,
-                        lval: true,
-                        location,
-                        expr: ExprType::Member(Box::new(expr), Token::Id(id)),
-                    })
-                } else {
-                    Err(Locatable {
-                        data: format!("no member named '{}' in '{}'", id, expr.ctype),
-                        location,
-                    })
+            Type::Struct(StructType::Anonymous(members))
+            | Type::Union(StructType::Anonymous(members)) => {
+                struct_member_helper!(members, expr, id, location)
+            }
+            Type::Struct(StructType::Named(name, _, _, _))
+            | Type::Union(StructType::Named(name, _, _, _)) => {
+                match self.tag_scope.get(name).unwrap() {
+                    TagEntry::Union(members) | TagEntry::Struct(members) => {
+                        struct_member_helper!(members, expr, id, location)
+                    }
+                    _ => unreachable!("parser should ensure types in scope are valid"),
                 }
             }
             _ => Err(Locatable {

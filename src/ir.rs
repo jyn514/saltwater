@@ -20,7 +20,9 @@ use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
 use cranelift_module::{self, DataContext, DataId, FuncId, Linkage, Module as CraneliftModule};
 
 use crate::backend::TARGET;
-use crate::data::{prelude::*, ArrayType, FunctionType, Initializer, Scope, StorageClass};
+use crate::data::{
+    prelude::*, ArrayType, FunctionType, Initializer, Scope, StorageClass, StructType,
+};
 use crate::utils::warn;
 
 type Module = CraneliftModule<FaerieBackend>;
@@ -202,7 +204,7 @@ impl Compiler {
     ) -> SemanticResult<()> {
         match init {
             Initializer::Scalar(expr) => {
-                let val = self.compile_expr(expr, builder)?;
+                let val = self.compile_expr(*expr, builder)?;
                 // TODO: replace with `builder.ins().stack_store(val.ir_val, stack_slot, 0);`
                 // when Cranelift implements stack_store for i8 and i16
                 let addr = builder.ins().stack_addr(Type::ptr_type(), stack_slot, 0);
@@ -501,11 +503,17 @@ impl Compiler {
                 } else {
                     unreachable!("parser should only pass ids to ExprType::Member");
                 };
-                let offset = builder
-                    .ins()
-                    .iconst(Type::ptr_type(), ctype.struct_offset(&id) as i64);
+                let offset = match &ctype {
+                    Type::Struct(StructType::Anonymous(members)) => {
+                        ctype.struct_offset(members, &id)
+                    }
+                    Type::Struct(StructType::Named(_, _, _, offsets)) => *offsets.get(&id).unwrap(),
+                    Type::Union(_) => 0,
+                    _ => unreachable!("only structs and unions can have members"),
+                };
+                let ir_offset = builder.ins().iconst(Type::ptr_type(), offset as i64);
                 Ok(Value {
-                    ir_val: builder.ins().iadd(pointer.ir_val, offset),
+                    ir_val: builder.ins().iadd(pointer.ir_val, ir_offset),
                     ir_type,
                     ctype,
                 })
@@ -1067,8 +1075,8 @@ impl Initializer {
                     assert_eq!(initializers.len(), 1);
                     initializers.remove(0).into_bytes(ctype, location)
                 }
-                Type::Union(_, _) => unimplemented!("union initializers"),
-                Type::Struct(_, _) => unimplemented!("struct initializers"),
+                Type::Union(_) => unimplemented!("union initializers"),
+                Type::Struct(_) => unimplemented!("struct initializers"),
                 Type::Bitfield(_) => unimplemented!("bitfield initalizers"),
 
                 Type::Function(_) => unreachable!("function initializers"),

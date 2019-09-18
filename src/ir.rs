@@ -34,6 +34,11 @@ enum Id {
     Local(StackSlot),
 }
 
+enum FuncCall {
+    Named(String),
+    Indirect(Value),
+}
+
 struct Compiler {
     module: Module,
     ebb_has_return: bool,
@@ -488,8 +493,18 @@ impl Compiler {
                 self.assignment(*lval, *rval, token, location, builder)
             }
             ExprType::FuncCall(func, args) => match func.expr {
-                ExprType::Id(var) => self.call_direct(var.id, func.ctype, args, builder),
-                _ => unimplemented!("indirect function calls"),
+                ExprType::Id(var) => self.call(
+                    FuncCall::Named(var.id),
+                    func.ctype,
+                    args,
+                    &location,
+                    builder,
+                ),
+                _ => {
+                    let ctype = func.ctype.clone();
+                    let val = self.compile_expr(*func, builder)?;
+                    self.call(FuncCall::Indirect(val), ctype, args, &location, builder)
+                }
             },
             ExprType::Comma(left, right) => {
                 self.compile_expr(*left, builder)?;
@@ -789,7 +804,10 @@ impl Compiler {
     ) -> IrResult {
         let ptr_type = Type::ptr_type();
         let ir_val = match self.scope.get(&var.id).unwrap() {
-            Id::Function(_) => unimplemented!("address of function"),
+            Id::Function(func_id) => {
+                let func_ref = self.module.declare_func_in_func(*func_id, builder.func);
+                builder.ins().func_addr(ptr_type, func_ref)
+            }
             Id::Global(static_id) => {
                 let global = self.module.declare_data_in_func(*static_id, builder.func);
                 builder.ins().global_value(ptr_type, global)
@@ -888,36 +906,43 @@ impl Compiler {
             .store(MemFlags::new(), value.ir_val, ir_target, 0);
         Ok(value)
     }
-    fn call_direct(
+    fn call(
         &mut self,
-        func_name: String,
+        func: FuncCall,
         ctype: Type,
         args: Vec<Expr>,
+        location: &Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         // TODO: should type checking go here or in parsing?
-        let (ret_type, varargs) = match ctype {
-            Type::Function(FunctionType {
-                return_type,
-                varargs,
-                ..
-            }) => (*return_type, varargs),
+        let ftype = match ctype {
+            Type::Function(ftype) => ftype,
             _ => unreachable!("parser should only allow calling functions"),
         };
-        if varargs {
+        if ftype.varargs {
             unimplemented!("variadic argument calls");
         }
         let compiled_args: Vec<IrValue> = args
             .into_iter()
             .map(|arg| self.compile_expr(arg, builder).map(|val| val.ir_val))
             .collect::<SemanticResult<_>>()?;
-        // TODO: need access to current scope for this to work
-        let func_id: FuncId = match self.scope.get(&func_name) {
-            Some(Id::Function(func_id)) => *func_id,
-            _ => panic!("parser should catch illegal function calls"),
+        let call = match func {
+            FuncCall::Named(func_name) => {
+                let func_id: FuncId = match self.scope.get(&func_name) {
+                    Some(Id::Function(func_id)) => *func_id,
+                    _ => panic!("parser should catch illegal function calls"),
+                };
+                let func_ref = self.module.declare_func_in_func(func_id, builder.func);
+                builder.ins().call(func_ref, compiled_args.as_slice())
+            }
+            FuncCall::Indirect(callee) => {
+                let sig = ftype.signature(location)?;
+                let sigref = builder.import_signature(sig);
+                builder
+                    .ins()
+                    .call_indirect(sigref, callee.ir_val, compiled_args.as_slice())
+            }
         };
-        let func_ref = self.module.declare_func_in_func(func_id, builder.func);
-        let call = builder.ins().call(func_ref, compiled_args.as_slice());
         let ir_val = match builder.inst_results(call).first() {
             // Just a placeholder.
             None => builder.ins().iconst(types::I32, 0),
@@ -925,14 +950,15 @@ impl Compiler {
         };
         Ok(Value {
             ir_val,
-            ir_type: if ret_type == Type::Void {
+            ir_type: if *ftype.return_type == Type::Void {
                 types::INVALID
             } else {
-                ret_type
+                ftype
+                    .return_type
                     .as_ir_type()
                     .expect("parser should only allow legal function types to be called")
             },
-            ctype: ret_type,
+            ctype: *ftype.return_type,
         })
     }
     fn store_static(

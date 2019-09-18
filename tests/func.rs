@@ -45,3 +45,17 @@ fn no_prototype() {
     }",
     );
 }
+
+#[test]
+fn func_pointers() {
+    utils::assert_code(
+        "
+int (*func)();
+int f() { return 1; }
+int main() {
+    func = &f;
+    return (*func)();
+}",
+        1,
+    );
+}

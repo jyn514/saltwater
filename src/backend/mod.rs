@@ -163,8 +163,8 @@ impl Type {
             Double => Ok(types::F64),
 
             // Aggregates
-            // arrays decay to pointers at the assembly level
-            Array(_, _) => Ok(IrType::int(PTR_SIZE * CHAR_BIT)
+            // arrays and functions decay to pointers
+            Function(_) | Array(_, _) => Ok(IrType::int(PTR_SIZE * CHAR_BIT)
                 .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE))),
             // void cannot be loaded or stored
             Void => Err("void cannot be represented".into()),

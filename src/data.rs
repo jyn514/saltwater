@@ -157,10 +157,10 @@ pub enum StmtType {
         VecDeque<Locatable<Declaration>>,
         Box<Expr>,
         Box<Expr>,
-        Box<Expr>,
+        Vec<Stmt>,
     ),
     Switch(Expr, Box<Stmt>),
-    Label(String, Option<Box<Stmt>>),
+    Label(String),
     Case(Expr),
     Default,
     Expr(Expr),
@@ -988,7 +988,46 @@ impl Debug for StmtType {
             StmtType::Expr(expr) => write!(f, "{:?};", expr),
             StmtType::Return(None) => write!(f, "return;"),
             StmtType::Return(Some(expr)) => write!(f, "return {:?};", expr),
-            _ => unimplemented!("printing statement"),
+            StmtType::Break => write!(f, "break;"),
+            StmtType::Continue => write!(f, "continue;"),
+            StmtType::Default => write!(f, "default:"),
+            StmtType::Case(expr) => write!(f, "case {:?}:", expr),
+            StmtType::Goto(id) => write!(f, "goto {};", id),
+            StmtType::Label(id) => write!(f, "{}: ", id),
+            StmtType::While(condition, None) => write!(f, "while ({:?}) {{}}", condition),
+            StmtType::While(condition, Some(body)) => {
+                write!(f, "while ({:?}) {:?}", condition, body)
+            }
+            StmtType::If(condition, body, None) => write!(f, "if ({:?}) {:?}", condition, body),
+            StmtType::If(condition, body, Some(otherwise)) => {
+                write!(f, "if ({:?}) {:?} else {:?}", condition, body, otherwise)
+            }
+            StmtType::Do(body, condition) => write!(f, "do {:?} while ({:?});", body, condition),
+            StmtType::For(decls, condition, post_loop, body) => {
+                write!(f, "for (")?;
+                let len = decls.len();
+                for (i, decl) in decls.iter().enumerate() {
+                    write!(f, "{:?}", decl.data)?;
+                    if i != len - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, "; {:?}; {:?};) {:?}", condition, post_loop, body)
+            }
+            StmtType::Decl(decls) => {
+                for decl in decls {
+                    writeln!(f, "{:?};", decl.data)?;
+                }
+                Ok(())
+            }
+            StmtType::Compound(stmts) => {
+                writeln!(f, "{{")?;
+                for stmt in stmts {
+                    writeln!(f, "{:?}", stmt)?;
+                }
+                write!(f, "}}")
+            }
+            StmtType::Switch(condition, body) => write!(f, "switch ({:?}) {:?}", condition, body),
         }
     }
 }

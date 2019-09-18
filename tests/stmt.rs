@@ -141,3 +141,19 @@ fn void() {
     }",
     );
 }
+
+#[test]
+fn while_loop() {
+    utils::assert_output(
+        "
+    int putchar(int);
+    int main() {
+        int i = 5;
+        while (i >= 0) {
+                putchar(i + 'a');
+                i -= 1;
+        }
+    }",
+        "fedcba",
+    );
+}

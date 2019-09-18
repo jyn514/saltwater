@@ -1105,6 +1105,9 @@ impl Expr {
     //
     // if (expr)
     pub fn truthy(self) -> Result<Expr, Locatable<String>> {
+        if self.ctype == Type::Bool {
+            return Ok(self);
+        }
         if !self.ctype.is_scalar() {
             Err(Locatable {
                 location: self.location,

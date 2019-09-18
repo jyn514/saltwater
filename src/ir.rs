@@ -45,6 +45,7 @@ struct Compiler {
     scope: Scope<String, Id>,
     debug: bool,
     str_index: usize,
+    loops: Vec<(Ebb, Ebb)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,6 +128,7 @@ impl Compiler {
             module: Module::new(builder),
             ebb_has_return: false,
             scope: Scope::new(),
+            loops: Vec::new(),
             str_index: 0,
             debug,
         }
@@ -356,15 +358,17 @@ impl Compiler {
             });
         }
         match stmt.data {
-            StmtType::Compound(stmts) => self.compile_all(stmts, builder)?,
+            StmtType::Compound(stmts) => self.compile_all(stmts, builder),
             // INVARIANT: symbol has not yet been declared in this scope
             StmtType::Decl(decls) => {
                 for decl in decls {
-                    self.declare_data(decl.data, decl.location, builder)?
+                    self.declare_data(decl.data, decl.location, builder)?;
                 }
+                Ok(())
             }
             StmtType::Expr(expr) => {
                 self.compile_expr(expr, builder)?;
+                Ok(())
             }
             StmtType::Return(expr) => {
                 let mut ret = vec![];
@@ -374,13 +378,24 @@ impl Compiler {
                 }
                 self.ebb_has_return = true;
                 builder.ins().return_(&ret);
+                Ok(())
             }
             StmtType::If(condition, body, otherwise) => {
-                self.if_stmt(condition, *body, otherwise, builder)?
+                self.if_stmt(condition, *body, otherwise, builder)
             }
-            _ => unimplemented!("almost every statement"),
-        };
-        Ok(())
+            StmtType::While(condition, maybe_body) => {
+                self.while_stmt(condition, maybe_body, builder)
+            }
+            StmtType::Break | StmtType::Continue => {
+                self.loop_exit(stmt.data == StmtType::Break, stmt.location, builder)
+            }
+            StmtType::For(decls, condition, post_loop, body) => unimplemented!("codegen for-loop"),
+            StmtType::Do(body, expr) => unimplemented!("codegen do-while-loop"),
+            StmtType::Switch(expr, body) => unimplemented!("codegen switch"),
+            StmtType::Label(label) | StmtType::Goto(label) => unimplemented!("codegen goto"),
+            StmtType::Case(expr) => unimplemented!("codegen case"),
+            StmtType::Default => unimplemented!("codegen case"),
+        }
     }
     // clippy doesn't like big match statements, but this is kind of essential complexity,
     // it can't be any smaller without supporting fewer features
@@ -1036,16 +1051,14 @@ impl Compiler {
             builder.ins().brz(condition.ir_val, else_body, &[]);
             builder.ins().jump(if_body, &[]);
 
-            builder.switch_to_block(if_body);
-            self.ebb_has_return = false;
+            self.switch_to_block(if_body, builder);
             self.compile_stmt(body, builder)?;
             if !self.ebb_has_return {
                 builder.ins().jump(end_body, &[]);
             }
             let if_has_return = self.ebb_has_return;
 
-            builder.switch_to_block(else_body);
-            self.ebb_has_return = false;
+            self.switch_to_block(else_body, builder);
             self.compile_stmt(*other, builder)?;
             if !self.ebb_has_return {
                 builder.ins().jump(end_body, &[]);
@@ -1054,24 +1067,72 @@ impl Compiler {
             // if we returned in both 'if' and 'else' blocks, all following code is unreachable
             // this is the case where we returned in 'else' but not 'if'
             } else if !if_has_return {
-                builder.switch_to_block(end_body);
-                self.ebb_has_return = false;
+                self.switch_to_block(end_body, builder);
             }
         } else {
             builder.ins().brz(condition.ir_val, end_body, &[]);
             builder.ins().jump(if_body, &[]);
 
-            builder.switch_to_block(if_body);
-            self.ebb_has_return = false;
+            self.switch_to_block(if_body, builder);
             self.compile_stmt(body, builder)?;
             if !self.ebb_has_return {
                 builder.ins().jump(end_body, &[]);
             }
 
-            builder.switch_to_block(end_body);
-            self.ebb_has_return = false;
+            self.switch_to_block(end_body, builder);
         };
         Ok(())
+    }
+    fn while_stmt(
+        &mut self,
+        condition: Expr,
+        maybe_body: Option<Box<Stmt>>,
+        builder: &mut FunctionBuilder,
+    ) -> SemanticResult<()> {
+        let (loop_body, end_body) = (builder.create_ebb(), builder.create_ebb());
+        self.loops.push((loop_body, end_body));
+
+        builder.ins().jump(loop_body, &[]);
+        self.switch_to_block(loop_body, builder);
+        let condition = self.compile_expr(condition, builder)?;
+        builder.ins().brz(condition.ir_val, end_body, &[]);
+
+        if let Some(body) = maybe_body {
+            self.compile_stmt(*body, builder)?;
+        }
+
+        builder.ins().jump(loop_body, &[]);
+        self.switch_to_block(end_body, builder);
+        self.loops.pop();
+        Ok(())
+    }
+    fn loop_exit(
+        &mut self,
+        is_break: bool,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> SemanticResult<()> {
+        if let Some((loop_start, loop_end)) = self.loops.last() {
+            if is_break {
+                builder.ins().jump(*loop_end, &[]);
+            } else {
+                builder.ins().jump(*loop_start, &[]);
+            }
+            Ok(())
+        } else {
+            err!(
+                format!(
+                    "'{}' statement not in loop or switch statement",
+                    if is_break { "break" } else { "continue" }
+                ),
+                location
+            );
+        }
+    }
+    #[inline]
+    fn switch_to_block(&mut self, ebb: Ebb, builder: &mut FunctionBuilder) {
+        builder.switch_to_block(ebb);
+        self.ebb_has_return = false;
     }
 }
 

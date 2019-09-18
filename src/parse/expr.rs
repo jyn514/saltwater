@@ -702,7 +702,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     if expected == 1 && functype.params[0].ctype == Type::Void {
                         expected = 0;
                     }
-                    if args.len() < expected || args.len() > expected && !functype.varargs {
+                    if !functype.params.is_empty()
+                        && (args.len() < expected || args.len() > expected && !functype.varargs)
+                    {
                         return Err(Locatable {
                             data: format!(
                                 "too {} arguments to function call: expected {}, have {}",
@@ -1553,7 +1555,13 @@ mod tests {
             qualifiers: Default::default(),
             storage_class: Default::default(),
             ctype: Type::Function(FunctionType {
-                params: vec![],
+                params: vec![Symbol {
+                    ctype: Type::Void,
+                    id: Default::default(),
+                    init: false,
+                    qualifiers: Default::default(),
+                    storage_class: StorageClass::Auto,
+                }],
                 return_type: Box::new(Type::Int(true)),
                 varargs: false,
             }),

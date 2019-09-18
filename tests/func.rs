@@ -34,3 +34,14 @@ int f() { return 0; }
 int main() { return f(); }",
     )
 }
+
+#[test]
+fn no_prototype() {
+    utils::assert_succeeds(
+        "
+    void f() {}
+    int main() {
+        f(1);
+    }",
+    );
+}

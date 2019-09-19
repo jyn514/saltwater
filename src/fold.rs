@@ -269,10 +269,10 @@ impl Expr {
                 // e.g. fold `int main() { int x = 1; return x; }` to `return 1;`
                 ExprType::Assign(Box::new(target), Box::new(value), token)
             }
-            ExprType::Increment(expr, pre, post) => {
+            ExprType::PostIncrement(expr, increase) => {
                 let expr = expr.const_fold()?;
                 // this isn't constant for the same reason assignment isn't constant
-                ExprType::Increment(Box::new(expr), pre, post)
+                ExprType::PostIncrement(Box::new(expr), increase)
             }
             ExprType::Cast(expr) => cast(*expr, &self.ctype)?,
             ExprType::LogicalAnd(left, right) => {

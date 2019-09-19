@@ -384,12 +384,14 @@ impl Compiler {
                 self.if_stmt(condition, *body, otherwise, builder)
             }
             StmtType::While(condition, maybe_body) => {
-                self.while_stmt(condition, maybe_body, builder)
+                self.while_stmt(Some(condition), maybe_body.map(|b| *b), builder)
             }
             StmtType::Break | StmtType::Continue => {
                 self.loop_exit(stmt.data == StmtType::Break, stmt.location, builder)
             }
-            StmtType::For(decls, condition, post_loop, body) => unimplemented!("codegen for-loop"),
+            StmtType::For(init, condition, post_loop, body) => {
+                self.for_loop(init, condition, post_loop, body, stmt.location, builder)
+            }
             StmtType::Do(body, expr) => unimplemented!("codegen do-while-loop"),
             StmtType::Switch(expr, body) => unimplemented!("codegen switch"),
             StmtType::Label(label) | StmtType::Goto(label) => unimplemented!("codegen goto"),
@@ -1085,8 +1087,8 @@ impl Compiler {
     }
     fn while_stmt(
         &mut self,
-        condition: Expr,
-        maybe_body: Option<Box<Stmt>>,
+        maybe_condition: Option<Expr>,
+        maybe_body: Option<Stmt>,
         builder: &mut FunctionBuilder,
     ) -> SemanticResult<()> {
         let (loop_body, end_body) = (builder.create_ebb(), builder.create_ebb());
@@ -1094,17 +1096,56 @@ impl Compiler {
 
         builder.ins().jump(loop_body, &[]);
         self.switch_to_block(loop_body, builder);
-        let condition = self.compile_expr(condition, builder)?;
-        builder.ins().brz(condition.ir_val, end_body, &[]);
+
+        // for loops can loop forever: `for (;;) {}`
+        if let Some(condition) = maybe_condition {
+            let condition = self.compile_expr(condition, builder)?;
+            builder.ins().brz(condition.ir_val, end_body, &[]);
+        }
 
         if let Some(body) = maybe_body {
-            self.compile_stmt(*body, builder)?;
+            self.compile_stmt(body, builder)?;
         }
 
         builder.ins().jump(loop_body, &[]);
         self.switch_to_block(end_body, builder);
         self.loops.pop();
         Ok(())
+    }
+    fn for_loop(
+        &mut self,
+        init: Option<Box<Stmt>>,
+        condition: Option<Expr>,
+        post_loop: Option<Expr>,
+        body: Option<Box<Stmt>>,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> SemanticResult<()> {
+        if let Some(init) = init {
+            self.compile_stmt(*init, builder)?;
+        }
+        let mut body = body.map(|x| *x);
+        if let Some(post_loop) = post_loop {
+            let post_loop = Stmt {
+                data: StmtType::Expr(post_loop),
+                location: location.clone(),
+            };
+            if let Some(Stmt {
+                data: StmtType::Compound(stmts),
+                ..
+            }) = &mut body
+            {
+                stmts.push(post_loop);
+            } else if let Some(other) = body {
+                body = Some(Stmt {
+                    data: StmtType::Compound(vec![other, post_loop]),
+                    location,
+                });
+            } else {
+                body = Some(post_loop);
+            };
+        }
+        self.while_stmt(condition, body, builder)
     }
     fn loop_exit(
         &mut self,

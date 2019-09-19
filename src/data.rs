@@ -153,11 +153,13 @@ pub enum StmtType {
     Do(Box<Stmt>, Expr),
     While(Expr, Option<Box<Stmt>>),
     // for(int i = 1, j = 2; i < 4; ++i) body
+    // for(i = 1; ; ++i) body
+    // for (;;) ;
     For(
-        VecDeque<Locatable<Declaration>>,
-        Box<Expr>,
-        Box<Expr>,
-        Vec<Stmt>,
+        Option<Box<Stmt>>,
+        Option<Expr>,
+        Option<Expr>,
+        Option<Box<Stmt>>,
     ),
     Switch(Expr, Box<Stmt>),
     Label(String),
@@ -1005,11 +1007,19 @@ impl Debug for StmtType {
             StmtType::Do(body, condition) => write!(f, "do {:?} while ({:?});", body, condition),
             StmtType::For(decls, condition, post_loop, body) => {
                 write!(f, "for (")?;
-                let len = decls.len();
-                for (i, decl) in decls.iter().enumerate() {
-                    write!(f, "{:?}", decl.data)?;
-                    if i != len - 1 {
-                        write!(f, ", ")?;
+                if let Some(init) = decls {
+                    match &init.data {
+                        StmtType::Decl(decls) => {
+                            let len = decls.len();
+                            for (i, decl) in decls.iter().enumerate() {
+                                write!(f, "{:?}", decl.data)?;
+                                if i != len - 1 {
+                                    write!(f, ", ")?;
+                                }
+                            }
+                        }
+                        StmtType::Expr(expr) => write!(f, "{:?}", expr)?,
+                        _ => unreachable!("for loop initialization other than decl or expr"),
                     }
                 }
                 write!(f, "; {:?}; {:?};) {:?}", condition, post_loop, body)

@@ -286,15 +286,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///     FOR '(' expr_opt ';' expr_opt ';' expr_opt ') statement
     ///   | FOR '(' declaration expr_opt ';' expr_opt ') statement
     fn for_statement(&mut self) -> StmtResult {
-        let start = self.expect(Token::Keyword(Keyword::For));
-        self.expect(Token::LeftParen)?;
-        match self.peek_token() {
-            Some(Token::Keyword(k)) if k.is_decl_specifier() => {
-                let decl = self.declaration();
-            }
-            Some(_) => {
-                let init = self.expr_opt(Token::Semicolon);
-            }
+        let start = self.expect(Token::Keyword(Keyword::For))?;
+        let paren = self.expect(Token::LeftParen)?;
+        let decl = match self.peek_token() {
+            Some(Token::Keyword(k)) if k.is_decl_specifier() => Some(Box::new(Stmt {
+                data: StmtType::Decl(self.declaration()?),
+                location: paren.location,
+            })),
+            Some(_) => match self.expr_opt(Token::Semicolon)? {
+                Some(expr) => Some(Box::new(Stmt {
+                    data: StmtType::Expr(expr),
+                    location: paren.location,
+                })),
+                None => None,
+            },
             None => {
                 return Err(Locatable {
                     location: self.last_location.as_ref().unwrap().clone(),
@@ -302,10 +307,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 })
             }
         };
-        let controlling_expr = self.expr_opt(Token::Semicolon)?.map(Expr::truthy);
-        let iter_expr = self.expr_opt(Token::RightParen);
-        let body = self.statement();
-        unimplemented!("for loops");
+        let controlling_expr = self
+            .expr_opt(Token::Semicolon)?
+            .map(Expr::truthy)
+            .transpose()?;
+        let iter_expr = self.expr_opt(Token::RightParen)?;
+        let body = self.statement()?.map(Box::new);
+        Ok(Stmt {
+            data: StmtType::For(decl, controlling_expr, iter_expr, body),
+            location: start.location,
+        })
     }
     /// goto_statement: GOTO identifier ';'
     fn goto_statement(&mut self) -> StmtResult {

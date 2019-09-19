@@ -11,15 +11,27 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 - Parse switch statements
 - Codegen for loops, switches, and gotos
 - Implicit decay from arrays to pointers
-- Function Pointers
+- Variadic args (e.g. printf)
 - Bitfields?
 
 ## Running
 
 `cargo run` from top level directory.
-Anything without loops or function pointers should work, try something like this:
+Anything without loops or function pointers should work.
+However, since there isn't a preprocessor, you need to declare library functions
+manually using the declarations from the manpage.
+
+Since varargs aren't implemented, you can't call `printf`.
+Additionally, since there's no preprocessor, you can't `#include <stdio.h>`
+and so can't call any function that requires a `FILE *`. This makes IO hard to do,
+but it is possible using `puts` and `putchar`.
+
+Try something like this:
 
 ```c
+int puts(const char *s);
+int putchar(char);
+
 typedef struct s *sp;
 
 int i = 1;
@@ -27,12 +39,6 @@ int a[3] = {1, 2, 3};
 float f = 2.5;
 
 struct s {
-  union {
-    struct {
-      char a, b, c, d;
-    } s;
-    int inner;
-  } u;
   int outer;
 } my_struct;
 
@@ -42,7 +48,11 @@ int main(void) {
   sp my_struct_pointer = &my_struct;
   const int c = my_struct_pointer->outer = 4;
   // should return 6
-  return i + f*a[2] - c/g(1);
+  int j = i + f*a[2] - c/g(1);
+  puts("i is ");
+  putchar('0' + j);
+  putchar('\n');
+  return j;
 }
 
 int g(int i) {

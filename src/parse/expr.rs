@@ -548,13 +548,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Token::Ampersand => match expr.expr {
                         // parse &*p as p
                         ExprType::Deref(inner) => Ok(*inner),
-                        _ => Ok(Expr {
+                        _ if expr.lval => Ok(Expr {
                             constexpr: false,
                             lval: false,
                             location,
                             ctype: Type::Pointer(Box::new(expr.ctype.clone()), Qualifiers::NONE),
                             expr: expr.expr,
                         }),
+                        _ => {
+                            err!("cannot take address of a value".into(), location);
+                        }
                     },
                     Token::Star => match &expr.ctype {
                         Type::Array(t, _) => Ok(Expr {

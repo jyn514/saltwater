@@ -1046,10 +1046,10 @@ impl Expr {
         }
         match &self.expr {
             // p = 5;
-            ExprType::Id(sym) => sym.qualifiers.c_const,
+            ExprType::Id(sym) => !sym.qualifiers.c_const,
             // *p = 1;
             ExprType::Deref(_) => match &self.ctype {
-                Type::Pointer(_, quals) => quals.c_const,
+                Type::Pointer(_, quals) => !quals.c_const,
                 _ => panic!("only pointers can be dereferenced"),
             },
             _ => unimplemented!("what's an lval but not a pointer or id?"),

@@ -224,6 +224,7 @@ fn pointers() {
         return 0;
 }",
     );
+    utils::assert_compile_error("int *p = &0;");
 }
 
 #[test]

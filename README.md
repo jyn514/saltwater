@@ -122,6 +122,26 @@ Note that there should be a very strong reason to add new libraries to the proje
 because each new library increases the build time substantially,
 making the compiler incrementally more frustrating to work on.
 
+### Reference
+
+You may find the following references useful.
+
+#### Other projects
+
+- [C11 Standard final draft](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf)
+- [C99 Standard final draft](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1256.pdf)
+- [C89 Standard final draft](https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf)
+- [Yacc grammar for C11](http://www.quut.com/c/ANSI-C-grammar-y.html)
+- [Lex grammar for C11](http://www.quut.com/c/ANSI-C-grammar-l-2011.html)
+- [8cc](https://github.com/rui314/8cc), a self-hosting C compiler
+- [tcc](https://github.com/LuaDist/tcc), a self-hosting C compiler originally [written for IOCCC](https://bellard.org/otcc/)
+
+#### Documentation
+
+- [cranelift_frontend::FunctionBuilder](https://docs.rs/cranelift-frontend/0.43.0/cranelift_frontend/struct.FunctionBuilder.html)
+- [cranelift_codegen::InstBuilder](https://docs.rs/cranelift-codegen/0.43.0/cranelift_codegen/ir/trait.InstBuilder.html)
+- [cranelift_module::Module](https://docs.rs/cranelift-module/0.43.0/cranelift_module/struct.Module.html)
+
 ## Code of Conduct
 
 There is not currently a code of conduct. Please do not do anything that would require me to make one.

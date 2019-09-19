@@ -1226,17 +1226,36 @@ impl Expr {
     }
     fn increment_op(prefix: bool, increment: bool, expr: Expr, location: Location) -> ExprResult {
         if !expr.is_modifiable_lval() {
-            Err(Locatable {
+            return Err(Locatable {
                 location: expr.location,
                 data: "expression is not assignable".to_string(),
-            })
+            });
         } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
-            Err(Locatable {
+            return Err(Locatable {
                 location: expr.location,
                 data: format!(
                     "cannot increment or decrement value of type '{}'",
                     expr.ctype
                 ),
+            });
+        }
+        let rval = Expr::int_literal(1, location.clone()).cast(&expr.ctype)?;
+        // ++i is syntactic sugar for i+=1
+        if prefix {
+            Ok(Expr {
+                ctype: expr.ctype.clone(),
+                constexpr: rval.constexpr,
+                lval: false, // `(i = j) = 4`; is invalid
+                expr: ExprType::Assign(
+                    Box::new(expr),
+                    Box::new(rval),
+                    if increment {
+                        Token::PlusEqual
+                    } else {
+                        Token::MinusEqual
+                    },
+                ),
+                location,
             })
         } else {
             Ok(Expr {
@@ -1244,7 +1263,7 @@ impl Expr {
                 lval: true,
                 ctype: expr.ctype.clone(),
                 // true, false: pre-decrement
-                expr: ExprType::Increment(Box::new(expr), prefix, increment),
+                expr: ExprType::PostIncrement(Box::new(expr), increment),
                 location,
             })
         }

@@ -142,6 +142,15 @@ fn assign() {
         1,
     );
     utils::assert_code("int main () { float f = 3; return f -= 2.1; }", 0);
+    utils::assert_code("int main() { int i = 3; return ++i; }", 4);
+    utils::assert_code(
+        "int main() {
+        int i = 3;
+        int j = i++;
+        return j == 3 && i == 4;
+    }",
+        1,
+    );
 }
 
 #[test]

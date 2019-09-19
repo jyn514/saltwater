@@ -224,8 +224,8 @@ pub enum ExprType {
     Literal(Token),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, Token),
-    // pre/post inc/dec-rement
-    Increment(Box<Expr>, bool, bool),
+    // post increment/decrement
+    PostIncrement(Box<Expr>, bool),
     Cast(Box<Expr>),
     Sizeof(Type),
     Deref(Box<Expr>),
@@ -939,7 +939,9 @@ impl Debug for Expr {
             ExprType::Cast(expr) => write!(f, "({})({:?})", self.ctype, expr),
             ExprType::Sizeof(ty) => write!(f, "sizeof({})", ty),
             ExprType::Member(compound, id) => write!(f, "({:?}).{}", compound, id),
-            ExprType::Increment(expr, pre, inc) => unimplemented!("printing increments"),
+            ExprType::PostIncrement(expr, inc) => {
+                write!(f, "({:?}){}=1", expr, if *inc { '+' } else { '-' })
+            }
         }
     }
 }

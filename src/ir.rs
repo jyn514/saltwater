@@ -550,6 +550,23 @@ impl Compiler {
                     ctype,
                 })
             }
+            ExprType::PostIncrement(lval, increase) => {
+                let lval = self.compile_expr(*lval, builder)?;
+                let addend = builder
+                    .ins()
+                    .iconst(lval.ir_type, if increase { 1 } else { -1 });
+                let previous_value = Value {
+                    ir_val: builder
+                        .ins()
+                        .load(lval.ir_type, MemFlags::new(), lval.ir_val, 0),
+                    ..lval
+                };
+                let new_value = builder.ins().iadd(previous_value.ir_val, addend);
+                builder
+                    .ins()
+                    .store(MemFlags::new(), new_value, lval.ir_val, 0);
+                Ok(previous_value)
+            }
             x => {
                 unimplemented!("{:?}", x);
             }

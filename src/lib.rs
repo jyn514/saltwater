@@ -1,4 +1,3 @@
-#![allow(unused_variables)]
 #![allow(clippy::cognitive_complexity)]
 #![warn(absolute_paths_not_starting_with_crate)]
 #![warn(explicit_outlives_requirements)]

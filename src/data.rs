@@ -726,21 +726,17 @@ impl Display for Type {
                 self.print_mid(f)?;
                 to.print_post(f)
             }
-            Array(of, size) => {
+            Array(of, _) => {
                 of.print_pre(f)?;
                 of.print_mid(f)?;
                 self.print_post(f)
             }
-            Function(FunctionType {
-                return_type,
-                params,
-                varargs,
-            }) => {
+            Function(FunctionType { return_type, .. }) => {
                 write!(f, "{}", return_type)?;
                 self.print_post(f)
             }
             Enum(Some(ident), _) => write!(f, "enum {}", ident),
-            Enum(None, members) => write!(f, "<anonymous enum>"),
+            Enum(None, _) => write!(f, "<anonymous enum>"),
             Union(StructType::Named(ident, _, _, _)) => write!(f, "union {}", ident),
             Union(_) => write!(f, "<anonymous union>"),
             Struct(StructType::Named(ident, _, _, _)) => write!(f, "struct {}", ident),

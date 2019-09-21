@@ -479,7 +479,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     */
     fn struct_type(
         members: Vec<Symbol>,
-        location: &Location,
         is_struct: bool,
     ) -> Result<(u64, u64, HashMap<String, u64>), &'static str> {
         if is_struct {
@@ -527,12 +526,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         if kind != Keyword::Struct {
                             err!(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", ident, kind), location);
                         }
-                        let (size, align, offsets) =
-                            Self::struct_type(members.clone(), &location, true).map_err(|err| {
-                                Locatable {
-                                    data: err.into(),
-                                    location,
-                                }
+                        let (size, align, offsets) = Self::struct_type(members.clone(), true)
+                            .map_err(|err| Locatable {
+                                data: err.into(),
+                                location,
                             })?;
                         Ok(Type::Struct(StructType::Named(ident, size, align, offsets)))
                     }
@@ -540,13 +537,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         if kind != Keyword::Union {
                             err!(format!("use of '{}' with type tag '{}' that does not match previous union declaration", ident, kind), location);
                         }
-                        let (size, align, offsets) =
-                            Self::struct_type(members.clone(), &location, false).map_err(
-                                |err| Locatable {
-                                    data: err.into(),
-                                    location,
-                                },
-                            )?;
+                        let (size, align, offsets) = Self::struct_type(members.clone(), false)
+                            .map_err(|err| Locatable {
+                                data: err.into(),
+                                location,
+                            })?;
                         Ok(Type::Union(StructType::Named(ident, size, align, offsets)))
                     }
                     TagEntry::Enum(members) => {
@@ -612,7 +607,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Ok((Token::Int(i), _)) => i,
                     Ok((Token::UnsignedInt(u), location)) => match i64::try_from(u) {
                         Ok(i) => i,
-                        Err(err) => err!(
+                        Err(_) => err!(
                             "values between INT_MAX and UINT_MAX are not supported for enums"
                                 .into(),
                             location
@@ -646,7 +641,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let ctype = Type::Enum(ident, members);
         match &ctype {
             Type::Enum(_, members) => {
-                for (id, value) in members {
+                for (id, _) in members {
                     self.scope.insert(
                         id.clone(),
                         Symbol {
@@ -734,8 +729,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location.clone()
                 );
             } else {
-                let (size, align, offset) = Self::struct_type(members, location, c_struct)
-                    .map_err(|err| Locatable {
+                let (size, align, offset) =
+                    Self::struct_type(members, c_struct).map_err(|err| Locatable {
                         data: err.into(),
                         location: location.clone(),
                     })?;
@@ -1995,7 +1990,7 @@ mod tests {
             Some(Ok(Locatable {
                 data:
                     Declaration {
-                        init: Some(Initializer::InitializerList(l)),
+                        init: Some(Initializer::InitializerList(_)),
                         ..
                     },
                 ..

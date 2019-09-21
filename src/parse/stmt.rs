@@ -225,7 +225,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let expr = self.expr()?.rval();
         self.expect(Token::RightParen)?;
         let body = self.statement()?;
-        let stmt = if let Some(stmt) = body {
+        let stmt = if body.is_some() {
             unimplemented!("switch body (esp. labels)");
         } else {
             not_executed_warning(

@@ -692,9 +692,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     self.expect(Token::RightParen)?;
                     // if fp is a function pointer, fp() desugars to (*fp)()
                     let expr = match expr.ctype {
-                        Type::Pointer(ref pointee, _) if pointee.is_function() => {
-                            Expr::implicit_deref_op(expr)?
-                        }
+                        Type::Pointer(ref pointee, _) if pointee.is_function() => Expr {
+                            lval: false,
+                            location: expr.location.clone(),
+                            constexpr: expr.constexpr,
+                            ctype: (**pointee).clone(),
+                            expr: ExprType::Deref(Box::new(expr)),
+                        },
                         _ => expr,
                     };
                     let functype = match expr.ctype {
@@ -1151,10 +1155,6 @@ impl Expr {
             lval: false,
             expr: ExprType::LogicalNot(Box::new(self)),
         })
-    }
-    /// x + 5, f() where f is a function pointer
-    fn implicit_deref_op(expr: Expr) -> ExprResult {
-        unimplemented!("implicit variable dereferences")
     }
     // Simple assignment rules, section 6.5.16.1 of the C standard
     pub fn cast(mut self, ctype: &Type) -> ExprResult {

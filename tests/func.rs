@@ -67,4 +67,12 @@ int main() {
 }",
         1,
     );
+    utils::assert_code(
+        "int f(), (*fp)() = f;
+    int main() {
+            return fp();
+    }
+    int f() { return 1; }",
+        1,
+    );
 }

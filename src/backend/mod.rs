@@ -10,7 +10,7 @@ use cranelift::codegen::{
 };
 use target_lexicon::Triple;
 
-use crate::data::{ArrayType, FunctionType, Locatable, Location, StructType, Symbol, Type};
+use crate::data::{ArrayType, FunctionType, StructType, Symbol, Type};
 use Type::*;
 
 // NOTE: this is required by the standard to always be one
@@ -173,7 +173,7 @@ impl Type {
 }
 
 impl FunctionType {
-    pub fn signature(&self, location: &Location) -> Result<Signature, Locatable<String>> {
+    pub fn signature(&self) -> Signature {
         let params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
             // no arguments
             Vec::new()
@@ -188,11 +188,11 @@ impl FunctionType {
         } else {
             vec![AbiParam::new(self.return_type.as_ir_type())]
         };
-        Ok(Signature {
+        Signature {
             call_conv: *CALLING_CONVENTION,
             params,
             returns: return_type,
-        })
+        }
     }
 }
 

@@ -67,7 +67,7 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> Sema
                 let location = decl.location;
                 compiler.declare_func(
                     decl.data.symbol.id,
-                    &func_type.signature(&location)?,
+                    &func_type.signature(),
                     decl.data.symbol.storage_class,
                     &location,
                     // TODO: this doesn't allow declaring a function and then defining it
@@ -165,7 +165,7 @@ impl Compiler {
         if let Type::Function(ftype) = decl.symbol.ctype {
             self.declare_func(
                 decl.symbol.id,
-                &ftype.signature(&location)?,
+                &ftype.signature(),
                 decl.symbol.storage_class,
                 &location,
                 true,
@@ -197,7 +197,7 @@ impl Compiler {
         let stack_slot = builder.create_stack_slot(data);
         self.scope.insert(decl.symbol.id, Id::Local(stack_slot));
         if let Some(init) = decl.init {
-            self.store_stack(init, stack_slot, decl.symbol.ctype, location, builder)?;
+            self.store_stack(init, stack_slot, builder)?;
         }
         Ok(())
     }
@@ -205,8 +205,6 @@ impl Compiler {
         &mut self,
         init: Initializer,
         stack_slot: StackSlot,
-        ctype: Type,
-        location: Location,
         builder: &mut FunctionBuilder,
     ) -> SemanticResult<()> {
         match init {
@@ -240,7 +238,6 @@ impl Compiler {
             })
             .collect::<Result<_, Locatable<String>>>()?;
         for (param, ir_val) in params.into_iter().zip(ir_vals) {
-            let ir_type = param.ctype.as_ir_type();
             let u64_size = match param.ctype.sizeof() {
                 Err(data) => err!(data.into(), location.clone()),
                 Ok(size) => size,
@@ -279,7 +276,7 @@ impl Compiler {
         stmts: Vec<Stmt>,
         location: Location,
     ) -> SemanticResult<()> {
-        let signature = func_type.signature(&location)?;
+        let signature = func_type.signature();
         let func_id = self.declare_func(id.clone(), &signature, sc, &location, false)?;
         // external name is meant to be a lookup in a symbol table,
         // but we just give it garbage values
@@ -383,10 +380,10 @@ impl Compiler {
             StmtType::For(init, condition, post_loop, body) => {
                 self.for_loop(init, condition, post_loop, body, stmt.location, builder)
             }
-            StmtType::Do(body, expr) => unimplemented!("codegen do-while-loop"),
-            StmtType::Switch(expr, body) => unimplemented!("codegen switch"),
-            StmtType::Label(label) | StmtType::Goto(label) => unimplemented!("codegen goto"),
-            StmtType::Case(expr) => unimplemented!("codegen case"),
+            StmtType::Do(_, _) => unimplemented!("codegen do-while-loop"),
+            StmtType::Switch(_, _) => unimplemented!("codegen switch"),
+            StmtType::Label(_) | StmtType::Goto(_) => unimplemented!("codegen goto"),
+            StmtType::Case(_) => unimplemented!("codegen case"),
             StmtType::Default => unimplemented!("codegen case"),
         }
     }
@@ -405,7 +402,7 @@ impl Compiler {
             ExprType::Literal(token) => {
                 self.compile_literal(ir_type, expr.ctype, token, location, builder)
             }
-            ExprType::Id(var) => self.load_addr(var, location, builder),
+            ExprType::Id(var) => self.load_addr(var, builder),
 
             // unary operators
             ExprType::Deref(pointer) => {
@@ -419,7 +416,7 @@ impl Compiler {
             }
             // NOTE: this may be an implicit cast (float f = 1.2) not an explicit cast (1 + (int)1.2)
             // NOTE: it may also be a widening conversion (1 + 1.2)
-            ExprType::Cast(orig) => self.cast(*orig, expr.ctype, location, builder),
+            ExprType::Cast(orig) => self.cast(*orig, expr.ctype, builder),
             ExprType::Negate(expr) => self.negate(*expr, builder),
             ExprType::BitwiseNot(expr) => self.unary_op(
                 *expr,
@@ -433,75 +430,47 @@ impl Compiler {
 
             // binary operators
             ExprType::Add(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Plus, location, builder)
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Plus, builder)
             }
             ExprType::Sub(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Minus, location, builder)
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Minus, builder)
             }
             ExprType::Mul(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Star, location, builder)
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Star, builder)
             }
             ExprType::Div(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Divide, location, builder)
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Divide, builder)
             }
             ExprType::Mod(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Mod, location, builder)
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Mod, builder)
             }
-            ExprType::BitwiseAnd(left, right) => self.binary_assign_op(
-                *left,
-                *right,
-                expr.ctype,
-                Token::Ampersand,
-                location,
-                builder,
-            ),
-            ExprType::BitwiseOr(left, right) => self.binary_assign_op(
-                *left,
-                *right,
-                expr.ctype,
-                Token::BitwiseOr,
-                location,
-                builder,
-            ),
+            ExprType::BitwiseAnd(left, right) => {
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Ampersand, builder)
+            }
+            ExprType::BitwiseOr(left, right) => {
+                self.binary_assign_op(*left, *right, expr.ctype, Token::BitwiseOr, builder)
+            }
             // left shift
-            ExprType::Shift(left, right, true) => self.binary_assign_op(
-                *left,
-                *right,
-                expr.ctype,
-                Token::ShiftRight,
-                location,
-                builder,
-            ),
+            ExprType::Shift(left, right, true) => {
+                self.binary_assign_op(*left, *right, expr.ctype, Token::ShiftRight, builder)
+            }
             // right shift
-            ExprType::Shift(left, right, false) => self.binary_assign_op(
-                *left,
-                *right,
-                expr.ctype,
-                Token::ShiftRight,
-                location,
-                builder,
-            ),
+            ExprType::Shift(left, right, false) => {
+                self.binary_assign_op(*left, *right, expr.ctype, Token::ShiftRight, builder)
+            }
             ExprType::Xor(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Xor, location, builder)
+                self.binary_assign_op(*left, *right, expr.ctype, Token::Xor, builder)
             }
             ExprType::Compare(left, right, token) => self.compare(*left, *right, &token, builder),
 
             // misfits
-            ExprType::Assign(lval, rval, token) => {
-                self.assignment(*lval, *rval, token, location, builder)
-            }
+            ExprType::Assign(lval, rval, token) => self.assignment(*lval, *rval, token, builder),
             ExprType::FuncCall(func, args) => match func.expr {
-                ExprType::Id(var) => self.call(
-                    FuncCall::Named(var.id),
-                    func.ctype,
-                    args,
-                    &location,
-                    builder,
-                ),
+                ExprType::Id(var) => self.call(FuncCall::Named(var.id), func.ctype, args, builder),
                 _ => {
                     let ctype = func.ctype.clone();
                     let val = self.compile_expr(*func, builder)?;
-                    self.call(FuncCall::Indirect(val), ctype, args, &location, builder)
+                    self.call(FuncCall::Indirect(val), ctype, args, builder)
                 }
             },
             ExprType::Comma(left, right) => {
@@ -621,21 +590,19 @@ impl Compiler {
         right: Expr,
         ctype: Type,
         token: Token,
-        location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let (left, right) = (
             self.compile_expr(left, builder)?,
             self.compile_expr(right, builder)?,
         );
-        Self::binary_assign_ir(left, right, ctype, token, location, builder)
+        Self::binary_assign_ir(left, right, ctype, token, builder)
     }
     fn binary_assign_ir(
         left: Value,
         right: Value,
         ctype: Type,
         token: Token,
-        location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         use codegen::ir::InstBuilder as b;
@@ -674,13 +641,7 @@ impl Compiler {
             ctype,
         })
     }
-    fn cast(
-        &mut self,
-        expr: Expr,
-        ctype: Type,
-        location: Location,
-        builder: &mut FunctionBuilder,
-    ) -> IrResult {
+    fn cast(&mut self, expr: Expr, ctype: Type, builder: &mut FunctionBuilder) -> IrResult {
         // calculate this here before it's moved to `compile_expr`
         let orig_signed = expr.ctype.is_signed();
         let original = self.compile_expr(expr, builder)?;
@@ -806,12 +767,7 @@ impl Compiler {
             _ => unreachable!("parser should catch illegal types"),
         })
     }
-    fn load_addr(
-        &self,
-        var: Symbol,
-        location: Location,
-        builder: &mut FunctionBuilder,
-    ) -> IrResult {
+    fn load_addr(&self, var: Symbol, builder: &mut FunctionBuilder) -> IrResult {
         let ptr_type = Type::ptr_type();
         let ir_val = match self.scope.get(&var.id).unwrap() {
             Id::Function(func_id) => {
@@ -866,7 +822,6 @@ impl Compiler {
         lval: Expr,
         rval: Expr,
         token: Token,
-        location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let ctype = lval.ctype.clone();
@@ -901,7 +856,6 @@ impl Compiler {
                 token
                     .without_assignment()
                     .expect("only valid assignment tokens should be passed to assignment"),
-                location,
                 builder,
             )?;
             ir_target
@@ -918,7 +872,6 @@ impl Compiler {
         func: FuncCall,
         ctype: Type,
         args: Vec<Expr>,
-        location: &Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         // TODO: should type checking go here or in parsing?
@@ -943,7 +896,7 @@ impl Compiler {
                 builder.ins().call(func_ref, compiled_args.as_slice())
             }
             FuncCall::Indirect(callee) => {
-                let sig = ftype.signature(location)?;
+                let sig = ftype.signature();
                 let sigref = builder.import_signature(sig);
                 builder
                     .ins()

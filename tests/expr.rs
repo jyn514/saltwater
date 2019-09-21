@@ -151,6 +151,13 @@ fn assign() {
     }",
         1,
     );
+    utils::assert_code(
+    "int main () {
+        int i = 1;
+        return i++;
+    }",
+        1
+    );
 }
 
 #[test]

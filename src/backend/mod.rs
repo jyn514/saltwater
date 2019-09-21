@@ -139,36 +139,35 @@ impl Type {
         }
         unreachable!("cannot call struct_offset for member not in struct");
     }
-    pub fn as_ir_type(&self) -> Result<IrType, String> {
+    pub fn as_ir_type(&self) -> IrType {
         match self {
             // Integers
-            Bool => Ok(types::B1),
+            Bool => types::B1,
             Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_, _) => {
                 let int_size = SIZE_T::from(CHAR_BIT)
                     * self
                         .sizeof()
                         .expect("integers should always have a valid size");
-                Ok(IrType::int(int_size.try_into().unwrap_or_else(|_| {
+                IrType::int(int_size.try_into().unwrap_or_else(|_| {
                     panic!(
                         "integers should never have a size larger than {}",
                         i16::max_value()
                     )
                 }))
-                .unwrap_or_else(|| panic!("unsupported size for IR: {}", int_size)))
+                .unwrap_or_else(|| panic!("unsupported size for IR: {}", int_size))
             }
 
             // Floats
             // TODO: this is hard-coded for x64
-            Float => Ok(types::F32),
-            Double => Ok(types::F64),
+            Float => types::F32,
+            Double => types::F64,
 
             // Aggregates
             // arrays and functions decay to pointers
-            Function(_) | Array(_, _) => Ok(IrType::int(PTR_SIZE * CHAR_BIT)
-                .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE))),
+            Function(_) | Array(_, _) => IrType::int(PTR_SIZE * CHAR_BIT)
+                .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE)),
             // void cannot be loaded or stored
-            Void => Err("void cannot be represented".into()),
-            x => Err(format!("{}: not a valid IR type", x)),
+            _ => types::INVALID,
         }
     }
 }
@@ -181,29 +180,13 @@ impl FunctionType {
         } else {
             self.params
                 .iter()
-                .map(|param| {
-                    param
-                        .ctype
-                        .as_ir_type()
-                        .map(AbiParam::new)
-                        .map_err(|err| Locatable {
-                            data: err,
-                            location: location.clone(),
-                        })
-                })
-                .collect::<Result<Vec<_>, Locatable<String>>>()?
+                .map(|param| AbiParam::new(param.ctype.as_ir_type()))
+                .collect()
         };
         let return_type = if !self.should_return() {
             vec![]
         } else {
-            vec![self
-                .return_type
-                .as_ir_type()
-                .map(AbiParam::new)
-                .map_err(|err| Locatable {
-                    data: err,
-                    location: location.clone(),
-                })?]
+            vec![AbiParam::new(self.return_type.as_ir_type())]
         };
         Ok(Signature {
             call_conv: *CALLING_CONVENTION,

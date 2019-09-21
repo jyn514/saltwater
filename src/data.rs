@@ -940,7 +940,7 @@ impl Debug for Expr {
             ExprType::Sizeof(ty) => write!(f, "sizeof({})", ty),
             ExprType::Member(compound, id) => write!(f, "({:?}).{}", compound, id),
             ExprType::PostIncrement(expr, inc) => {
-                write!(f, "({:?}){}=1", expr, if *inc { '+' } else { '-' })
+                write!(f, "({:?}){}", expr, if *inc { "++" } else { "--" })
             }
         }
     }

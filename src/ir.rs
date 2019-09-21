@@ -235,18 +235,12 @@ impl Compiler {
         let ir_vals: Vec<_> = params
             .iter()
             .map(|param| {
-                let ir_type = match param.ctype.as_ir_type() {
-                    Err(data) => err!(data, location.clone()),
-                    Ok(ir_type) => ir_type,
-                };
+                let ir_type = param.ctype.as_ir_type();
                 Ok(builder.append_ebb_param(func_start, ir_type))
             })
             .collect::<Result<_, Locatable<String>>>()?;
         for (param, ir_val) in params.into_iter().zip(ir_vals) {
-            let ir_type = param
-                .ctype
-                .as_ir_type()
-                .expect("errors should already have been caught when adding ebb params");
+            let ir_type = param.ctype.as_ir_type();
             let u64_size = match param.ctype.sizeof() {
                 Err(data) => err!(data.into(), location.clone()),
                 Ok(size) => size,
@@ -306,10 +300,7 @@ impl Compiler {
         self.compile_all(stmts, &mut builder)?;
         if !self.ebb_has_return {
             if id == "main" {
-                let ir_int = func_type
-                    .return_type
-                    .as_ir_type()
-                    .expect("main should return an int");
+                let ir_int = func_type.return_type.as_ir_type();
                 let zero = [builder.ins().iconst(ir_int, 0)];
                 builder.ins().return_(&zero);
             } else if should_ret {
@@ -407,18 +398,8 @@ impl Compiler {
         let location = expr.location;
         let ir_type = if expr.lval {
             Type::ptr_type()
-        } else if expr.ctype == Type::Void {
-            types::INVALID
         } else {
-            match expr.ctype.as_ir_type() {
-                Ok(ir_type) => ir_type,
-                Err(err) => {
-                    return Err(Locatable {
-                        data: err,
-                        location,
-                    });
-                }
-            }
+            expr.ctype.as_ir_type()
         };
         match expr.expr {
             ExprType::Literal(token) => {
@@ -659,9 +640,7 @@ impl Compiler {
     ) -> IrResult {
         use codegen::ir::InstBuilder as b;
         assert_eq!(left.ir_type, right.ir_type);
-        let ir_type = ctype
-            .as_ir_type()
-            .map_err(|data| Locatable { data, location })?;
+        let ir_type = ctype.as_ir_type();
         let signed = ctype.is_signed();
         let func = match (token, ir_type, signed) {
             (Token::Plus, ty, _) if ty.is_int() => b::iadd,
@@ -705,10 +684,7 @@ impl Compiler {
         // calculate this here before it's moved to `compile_expr`
         let orig_signed = expr.ctype.is_signed();
         let original = self.compile_expr(expr, builder)?;
-        let cast_type = ctype.as_ir_type().map_err(|err| Locatable {
-            data: err,
-            location,
-        })?;
+        let cast_type = ctype.as_ir_type();
         let cast = Self::cast_ir(
             original.ir_type,
             cast_type,
@@ -849,7 +825,7 @@ impl Compiler {
             Id::Local(stack_slot) => builder.ins().stack_addr(ptr_type, *stack_slot, 0),
         };
         Ok(Value {
-            ir_type: ptr_type,
+            ir_type: var.ctype.as_ir_type(),
             ir_val,
             ctype: var.ctype,
         })
@@ -906,10 +882,7 @@ impl Compiler {
             let ir_target = target.ir_val;
             // need to deref explicitly to get an rval, the frontend didn't do it for us
             if is_id {
-                let ir_type = match target.ctype.as_ir_type() {
-                    Ok(ty) => ty,
-                    Err(data) => err!(data, location),
-                };
+                let ir_type = target.ctype.as_ir_type();
                 target = Value {
                     ir_val: builder
                         .ins()
@@ -984,14 +957,7 @@ impl Compiler {
         };
         Ok(Value {
             ir_val,
-            ir_type: if *ftype.return_type == Type::Void {
-                types::INVALID
-            } else {
-                ftype
-                    .return_type
-                    .as_ir_type()
-                    .expect("parser should only allow legal function types to be called")
-            },
+            ir_type: ftype.return_type.as_ir_type(),
             ctype: *ftype.return_type,
         })
     }
@@ -1317,15 +1283,7 @@ macro_rules! bytes {
 
 impl Token {
     fn into_bytes(self, ctype: &Type, location: &Location) -> SemanticResult<Box<[u8]>> {
-        let ir_type = match ctype.as_ir_type() {
-            Err(err) => {
-                return Err(Locatable {
-                    data: err,
-                    location: location.clone(),
-                })
-            }
-            Ok(ir_type) => ir_type,
-        };
+        let ir_type = ctype.as_ir_type();
         let big_endian = TARGET
             .endianness()
             .expect("target should be big or little endian")

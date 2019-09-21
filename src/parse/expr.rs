@@ -1058,27 +1058,33 @@ impl Expr {
             _ => unimplemented!("what's an lval but not a pointer or id?"),
         }
     }
-    // ensure an expression has a value
+    // ensure an expression has a value. convert
+    // - arrays -> pointers
+    // - functions -> pointers
+    // - variables -> value stored in that variable
     pub fn rval(self) -> Expr {
-        if let Type::Array(to, _) = self.ctype {
+        match self.ctype {
             // a + 1 is the same as &a + 1
-            return Expr {
+            Type::Array(to, _) => Expr {
                 lval: false,
                 ctype: Type::Pointer(to, Qualifiers::NONE),
                 constexpr: false,
                 ..self
-            };
-        }
-        if self.lval {
-            Expr {
+            },
+            Type::Function(_) => Expr {
+                lval: false,
+                ctype: Type::Pointer(Box::new(self.ctype), Qualifiers::NONE),
+                constexpr: false, // TODO: is this right?
+                ..self
+            },
+            _ if self.lval => Expr {
                 ctype: self.ctype.clone(),
                 lval: false,
                 constexpr: false,
                 location: self.location.clone(),
                 expr: ExprType::Deref(Box::new(self)),
-            }
-        } else {
-            self
+            },
+            _ => self,
         }
     }
     // Perform an integer conversion, including all relevant casts.

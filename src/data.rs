@@ -611,12 +611,10 @@ impl<K: Hash + Eq, V> Scope<K, V> {
     }
     #[inline]
     pub fn leave_scope(&mut self) {
-        if self.0.len() == 1 {
-            panic!("cannot leave the global scope");
-        }
         self.0.pop();
     }
     pub fn get(&self, name: &K) -> Option<&V> {
+        debug_assert!(!self.0.is_empty());
         for map in self.0.iter().rev() {
             let current = map.get(name);
             if current.is_some() {
@@ -628,14 +626,17 @@ impl<K: Hash + Eq, V> Scope<K, V> {
     // returns whether the _immediate_ scope contains `name`
     #[inline]
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        debug_assert!(!self.0.is_empty());
         self.0.last_mut().unwrap().insert(key, value)
     }
     #[inline]
     pub fn get_immediate(&self, name: &K) -> Option<&V> {
+        debug_assert!(!self.0.is_empty());
         self.0.last().unwrap().get(name)
     }
     #[inline]
     pub fn get_all_immediate(&mut self) -> &mut HashMap<K, V> {
+        debug_assert!(!self.0.is_empty());
         self.0.last_mut().unwrap()
     }
     #[inline(always)]
@@ -643,6 +644,7 @@ impl<K: Hash + Eq, V> Scope<K, V> {
         self.0.len()
     }
     pub fn is_global(&self) -> bool {
+        debug_assert!(!self.0.is_empty());
         self.0.len() == 1
     }
 }

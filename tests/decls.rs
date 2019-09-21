@@ -57,7 +57,7 @@ fn static_initializers() {
 fn struct_initializers() {
     utils::assert_code(
         "struct s {
-        uint i;
+        int i;
         float f;
         union { int a; float b; } u;
     } m = { 1, 2.4, 3 };
@@ -211,6 +211,11 @@ fn function() {
     ",
         1,
     );
+}
+
+#[test]
+fn forward_declaration_no_definition() {
+    utils::assert_compile_error("struct s my_s;");
 }
 
 #[test]

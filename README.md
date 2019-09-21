@@ -1,5 +1,7 @@
 # rcc
 
+[![Build Status](https://travis-ci.org/jyn514/rcc.svg?branch=master)](https://travis-ci.org/jyn514/rcc)
+
 rcc: a Rust C compiler
 
 A C compiler written in Rust, with a focus on good error messages. Warning: my first rust project, code quality is pretty low

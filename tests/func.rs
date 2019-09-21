@@ -58,4 +58,13 @@ int main() {
 }",
         1,
     );
+    utils::assert_code(
+        "
+int f() { return 1; }
+int main() {
+    int (*func)() = f;
+    return (*func)();
+}",
+        1,
+    );
 }

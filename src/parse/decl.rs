@@ -1169,8 +1169,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Ok(Initializer::InitializerList(elements))
         } else {
-            // assignment_expr
-            let expr = Expr::cast(self.assignment_expr()?, ctype)?;
+            let mut expr = self.assignment_expr()?;
+            // See section 6.7.9 of the C11 standard:
+            // The initializer for a scalar shall be a single expression, optionally enclosed in braces.
+            // The initial value of the object is that of the expression (after conversion)
+            //
+            // The only time (that I know of) that an expression will initialize a non-scalar
+            // is for character literals.
+            if ctype.is_arithmetic() {
+                expr = expr.rval().cast(ctype)?;
+            }
             Ok(Initializer::Scalar(Box::new(expr)))
         }
     }

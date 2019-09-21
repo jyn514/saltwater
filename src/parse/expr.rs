@@ -1274,7 +1274,7 @@ impl Expr {
         } else {
             Ok(Expr {
                 constexpr: expr.constexpr,
-                lval: true,
+                lval: false,
                 ctype: expr.ctype.clone(),
                 // true, false: pre-decrement
                 expr: ExprType::PostIncrement(Box::new(expr), increment),

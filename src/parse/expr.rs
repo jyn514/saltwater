@@ -522,7 +522,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             (ty.location, ty.data.0)
                         }
                         _ => {
-                            let expr = self.constant_expr()?;
+                            let expr = self.unary_expr()?;
                             (expr.location, expr.ctype)
                         }
                     }

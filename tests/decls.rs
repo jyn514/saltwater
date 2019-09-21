@@ -214,12 +214,9 @@ fn function() {
 }
 
 #[test]
-fn forward_declaration_no_definition() {
+fn forward_declaration() {
     utils::assert_compile_error("struct s my_s;");
-}
-
-#[test]
-fn forward_declaration_with_typedef() {
+    utils::assert_compile_error("struct s { struct t t; };");
     utils::assert_succeeds(
         "
     typedef struct s *sp;

@@ -101,8 +101,11 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                 warn("extraneous semicolon at top level", &locatable.location);
             }
 
-            // if we're at the end of the file, return None
-            self.peek_token()?;
+            // check for end of file
+            if self.peek_token().is_none() {
+                self.leave_scope();
+                return self.pending.pop_front();
+            }
             let mut decls = match self.declaration() {
                 Ok(decls) => decls,
                 Err(err) => return Some(Err(err)),
@@ -132,8 +135,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.scope.enter_scope();
         self.tag_scope.enter_scope();
     }
-    #[inline(always)]
     fn leave_scope(&mut self) {
+        for object in self.scope.get_all_immediate().values() {
+            match &object.ctype {
+                Type::Struct(StructType::Named(name, size, _, _))
+                | Type::Union(StructType::Named(name, size, _, _)) => {
+                    if *size == 0 {
+                        self.pending.push_back(Err(Locatable {
+                            data: format!("forward declaration of {} is never completed", name),
+                            location: Default::default(),
+                        }));
+                    }
+                }
+                _ => {}
+            }
+        }
         self.scope.leave_scope();
         self.tag_scope.leave_scope();
     }

@@ -697,6 +697,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         decl.location
                     );
                 }
+                match decl.data.symbol.ctype {
+                    Type::Struct(StructType::Named(_, 0, _, _))
+                    | Type::Union(StructType::Named(_, 0, _, _)) => {
+                        return Err(Locatable {
+                            data: format!(
+                                "cannot use type '{}' before it has been defined",
+                                decl.data.symbol.ctype
+                            ),
+                            location: decl.location,
+                        });
+                    }
+                    _ => {}
+                }
                 members.push(decl.data.symbol);
             }
         }

@@ -963,7 +963,7 @@ impl Compiler {
     }
     fn store_static(
         &mut self,
-        symbol: Symbol,
+        mut symbol: Symbol,
         init: Option<Initializer>,
         location: Location,
     ) -> SemanticResult<()> {
@@ -1000,15 +1000,36 @@ impl Compiler {
 
         let mut ctx = DataContext::new();
         if let Some(init) = init {
-            let data = init.into_bytes(&symbol.ctype, &location)?;
-            ctx.define(data)
+            if let Type::Array(_, size @ ArrayType::Unbounded) = &mut symbol.ctype {
+                if let Some(len) = match &init {
+                    Initializer::InitializerList(list) => Some(list.len()),
+                    Initializer::Scalar(expr) => match &expr.expr {
+                        ExprType::Literal(Token::Str(s)) => Some(s.len()),
+                        _ => None,
+                    },
+                    _ => None,
+                } {
+                    *size = ArrayType::Fixed(len.try_into().unwrap());
+                };
+            }
+            let size_t = symbol.ctype.sizeof().map_err(|err| Locatable {
+                data: err.into(),
+                location: location.clone(),
+            })?;
+            let size = size_t
+                .try_into()
+                .expect("initializer is larger than SIZE_T on host platform");
+            let mut buf = vec![0; size];
+            let offset = 0;
+            self.init_symbol(&mut ctx, &mut buf, offset, init, &symbol.ctype, &location)?;
+            ctx.define(buf.into_boxed_slice());
         } else {
             ctx.define_zeroinit(
                 symbol
                     .ctype
                     .sizeof()
                     .map_err(|err| err_closure(err.to_string()))? as usize,
-            )
+            );
         };
         self.module.define_data(id, &ctx).map_err(|err| Locatable {
             data: format!("error defining static variable: {}", err),
@@ -1158,20 +1179,66 @@ impl Compiler {
         builder.switch_to_block(ebb);
         self.ebb_has_return = false;
     }
-}
-
-impl Initializer {
-    fn into_bytes(self, ctype: &Type, location: &Location) -> SemanticResult<Box<[u8]>> {
-        match self {
+    fn init_expr(
+        &self,
+        ctx: &mut DataContext,
+        buf: &mut [u8],
+        offset: u32,
+        expr: Expr,
+    ) -> SemanticResult<()> {
+        let expr = expr.const_fold()?;
+        // static address-of
+        match expr.expr {
+            ExprType::StaticRef(inner) => match inner.expr {
+                ExprType::Id(symbol) => match self.scope.get(&symbol.id) {
+                    Some(Id::Function(func_id)) => {
+                        let func_ref = self.module.declare_func_in_data(*func_id, ctx);
+                        ctx.write_function_addr(offset, func_ref);
+                    }
+                    Some(Id::Global(data_id)) => {
+                        let global_val = self.module.declare_data_in_data(*data_id, ctx);
+                        ctx.write_data_addr(offset, global_val, 0);
+                    }
+                    Some(Id::Local(_)) => {
+                        unreachable!("cannot have local variable at global scope")
+                    }
+                    None => err!(
+                        format!("use of undeclared identifier {}", symbol.id),
+                        expr.location
+                    ),
+                },
+                ExprType::Literal(Token::Str(_)) => {
+                    unimplemented!("address of literal in static context")
+                }
+                _ => err!("cannot take the address of an rvalue".into(), expr.location),
+            },
+            ExprType::Literal(token) => {
+                let bytes = token.into_bytes(&expr.ctype, &expr.location)?;
+                buf.copy_from_slice(&bytes);
+            }
+            _ => err!(
+                "expression is not a compile time constant".into(),
+                expr.location
+            ),
+        }
+        Ok(())
+    }
+    fn init_symbol(
+        &self,
+        ctx: &mut DataContext,
+        buf: &mut [u8],
+        offset: u32,
+        initializer: Initializer,
+        ctype: &Type,
+        location: &Location,
+    ) -> SemanticResult<()> {
+        match initializer {
             Initializer::InitializerList(mut initializers) => match ctype {
                 Type::Array(ty, ArrayType::Unbounded) => {
-                    let len = initializers.len() as u64;
-                    let array_type = Type::Array(ty.clone(), ArrayType::Fixed(len));
-                    array_to_bytes(initializers, len, &array_type, ty, location)
+                    self.init_array(ctx, buf, offset, initializers, ty, location)
                 }
                 Type::Array(ty, ArrayType::Fixed(size)) => {
-                    let size = *size;
-                    if initializers.len() as u64 > size {
+                    if initializers.len() as u64 > *size {
                         Err(Locatable {
                             data: format!(
                                 "too many elements for array (expected {}, got {})",
@@ -1182,12 +1249,12 @@ impl Initializer {
                             location: location.clone(),
                         })
                     } else {
-                        array_to_bytes(initializers, size, ctype, ty, location)
+                        self.init_array(ctx, buf, offset, initializers, ty, location)
                     }
                 }
                 ty if ty.is_scalar() => {
                     assert_eq!(initializers.len(), 1);
-                    initializers.remove(0).into_bytes(ctype, location)
+                    self.init_symbol(ctx, buf, offset, initializers.remove(0), ctype, location)
                 }
                 Type::Union(_) => unimplemented!("union initializers"),
                 Type::Struct(_) => unimplemented!("struct initializers"),
@@ -1197,60 +1264,52 @@ impl Initializer {
                 Type::Void => unreachable!("initializer for void type"),
                 _ => unreachable!("scalar types should have been handled"),
             },
-            Initializer::Scalar(expr) => expr.into_bytes(),
+            Initializer::Scalar(expr) => self.init_expr(ctx, buf, offset, *expr),
             Initializer::FunctionBody(_) => {
                 panic!("function definitions should go through compile_function, not store_static")
             }
         }
     }
-}
-
-fn array_to_bytes(
-    initializers: Vec<Initializer>,
-    len: u64,
-    array_type: &Type,
-    inner_type: &Type,
-    location: &Location,
-) -> SemanticResult<Box<[u8]>> {
-    if let Type::Array(_, ArrayType::Unbounded) = inner_type {
-        err!(
-            "nested array must declare the size of each inner array".into(),
-            location.clone()
-        );
-    }
-    let init_len = initializers.len();
-    let mut bytes = vec![];
-    let elements = initializers
-        .into_iter()
-        .map(|init| init.into_bytes(inner_type, location));
-
-    for init in elements {
-        bytes.extend_from_slice(&*init?);
-    }
-    let sizeof = array_type.sizeof().map_err(|err| Locatable {
-        location: location.clone(),
-        data: err.to_string(),
-    })?;
-    let remaining_bytes = sizeof * (len - init_len as u64);
-    let mut zero_init = Vec::new();
-    zero_init.resize(remaining_bytes as usize, 0);
-    bytes.append(&mut zero_init);
-
-    Ok(bytes.into_boxed_slice())
-}
-
-impl Expr {
-    fn into_bytes(self) -> SemanticResult<Box<[u8]>> {
-        match self.constexpr()? {
-            Ok(constexpr) => {
-                let (token, ctype) = constexpr.data;
-                token.into_bytes(&ctype, &constexpr.location)
-            }
-            Err(location) => Err(Locatable {
-                data: "expression is not a compile time constant".into(),
-                location,
-            }),
+    fn init_array(
+        &self,
+        ctx: &mut DataContext,
+        buf: &mut [u8],
+        mut offset: u32,
+        initializers: Vec<Initializer>,
+        inner_type: &Type,
+        location: &Location,
+    ) -> SemanticResult<()> {
+        if let Type::Array(_, ArrayType::Unbounded) = inner_type {
+            err!(
+                "nested array must declare the size of each inner array".into(),
+                location.clone()
+            );
         }
+        let inner_size: usize = inner_type
+            .sizeof()
+            .map_err(|err| Locatable {
+                data: err.into(),
+                location: location.clone(),
+            })?
+            .try_into()
+            .expect("cannot initialize array larger than address space of host");
+        let mut element_offset: usize = 0;
+        for init in initializers {
+            self.init_symbol(
+                ctx,
+                // pass a buffer of size `inner_size` to `init_symbol`
+                &mut buf[element_offset..element_offset + inner_size],
+                offset,
+                init,
+                inner_type,
+                location,
+            )?;
+            offset +=
+                u32::try_from(inner_size).expect("cannot initialize array larger than 2^32 bytes");
+            element_offset += inner_size;
+        }
+        // zero-init should already have been taken care of by init_symbol
+        Ok(())
     }
 }
 

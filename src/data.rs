@@ -251,6 +251,9 @@ pub enum ExprType {
     // Ternary: if ? then : else
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     Comma(Box<Expr>, Box<Expr>),
+    // &expr in static context
+    // requires cooperation with the linker
+    StaticRef(Box<Expr>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -942,6 +945,7 @@ impl Debug for Expr {
             ExprType::PostIncrement(expr, inc) => {
                 write!(f, "({:?}){}", expr, if *inc { "++" } else { "--" })
             }
+            ExprType::StaticRef(expr) => write!(f, "&{:?}", expr),
         }
     }
 }

@@ -39,6 +39,34 @@ fn test_initializers() {
 }
 
 #[test]
+fn static_initializers() {
+    utils::assert_code(
+        "int i = 0,
+        *p = &i,
+        f(),
+        (*fp)() = f,
+        a[] = {1, 2, 3};
+    int f() { return 1; }
+    int main() { return (*fp)(); }",
+        1,
+    );
+}
+
+#[test]
+#[ignore]
+fn struct_initializers() {
+    utils::assert_code(
+        "struct s {
+        uint i;
+        float f;
+        union { int a; float b; } u;
+    } m = { 1, 2.4, 3 };
+    int main() { return m.i; }",
+        1,
+    );
+}
+
+#[test]
 fn multiple_initializers() {
     utils::assert_code(
         "int main() {

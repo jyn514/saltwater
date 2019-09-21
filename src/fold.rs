@@ -299,6 +299,7 @@ impl Expr {
                     left
                 }
             }
+            ExprType::StaticRef(inner) => ExprType::StaticRef(Box::new(inner.const_fold()?)),
         };
         let is_constexpr = match folded {
             ExprType::Literal(_) => true,

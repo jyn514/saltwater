@@ -1176,8 +1176,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             //
             // The only time (that I know of) that an expression will initialize a non-scalar
             // is for character literals.
-            if ctype.is_arithmetic() {
+            if ctype.is_scalar() {
                 expr = expr.rval().cast(ctype)?;
+                if !expr.lval && self.scope.is_global() && ctype.is_pointer() {
+                    expr = Expr {
+                        lval: false,
+                        constexpr: false,
+                        location: expr.location.clone(),
+                        ctype: expr.ctype.clone(),
+                        expr: ExprType::StaticRef(Box::new(expr)),
+                    };
+                }
             }
             Ok(Initializer::Scalar(Box::new(expr)))
         }

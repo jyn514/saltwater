@@ -107,10 +107,10 @@ impl Compiler {
         flags_builder
             .enable("enable_verifier")
             .expect("enable_verifier should be a valid option");
-        // compile quickly, but without optimizations
+        // minimal optimizations
         flags_builder
-            .set("opt_level", "fastest")
-            .expect("opt_level: fastest should be a valid option");
+            .set("opt_level", "speed")
+            .expect("opt_level: speed should be a valid option");
 
         let isa = isa::lookup(TARGET.clone())
             .unwrap_or_else(|_| panic!("platform not supported: {}", *TARGET))

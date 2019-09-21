@@ -152,11 +152,11 @@ fn assign() {
         1,
     );
     utils::assert_code(
-    "int main () {
+        "int main () {
         int i = 1;
         return i++;
     }",
-        1
+        1,
     );
 }
 
@@ -176,6 +176,14 @@ fn comma() {
     utils::assert_code("int main() { return 1, 2; }", 2);
     utils::assert_code("int main() { return 1 + 1, 2.4; }", 2);
     utils::assert_code("int main() { int i = 1; return i = 2, i; }", 2);
+}
+
+#[test]
+fn sizeof() {
+    utils::assert_code(
+        "int main() { return sizeof(1); }",
+        rcc::data::Type::Long(true).sizeof().unwrap() as i32,
+    );
 }
 
 #[test]

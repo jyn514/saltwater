@@ -516,8 +516,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(Token::Keyword(Keyword::Sizeof)) => {
                 self.next_token();
                 let (location, ctype) = if self.match_next(&Token::LeftParen).is_some() {
-                    let result = self.type_name()?;
-                    (result.location, result.data.0)
+                    match self.peek_token() {
+                        Some(Token::Keyword(k)) if k.is_decl_specifier() => {
+                            let ty = self.type_name()?;
+                            (ty.location, ty.data.0)
+                        }
+                        _ => {
+                            let expr = self.constant_expr()?;
+                            (expr.location, expr.ctype)
+                        }
+                    }
                 } else {
                     let result = self.unary_expr()?;
                     (result.location, result.ctype)

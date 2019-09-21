@@ -211,8 +211,8 @@ fn explicit_casts() {
 fn overflow() {
     utils::assert_compile_error("int i = 1 << -1;");
     utils::assert_compile_error("int i = 1 >> -1;");
-    utils::assert_compile_error("int i = 1 << 33;");
-    utils::assert_succeeds("int i = 1 >> 33; int main() { return i; }");
+    utils::assert_compile_error("int i = 1 << 65;");
+    utils::assert_succeeds("int i = 1 >> 65; int main() { return i; }");
 
     utils::assert_compile_error("int i = 1/0;");
     utils::assert_compile_error("int i = 1%0;");

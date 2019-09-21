@@ -1359,14 +1359,14 @@ impl Expr {
     }
     fn int_literal(value: i64, location: Location) -> Expr {
         Expr::literal(
-            Type::Int(true),
+            Type::Long(true),
             location,
             ExprType::Literal(Token::Int(value)),
         )
     }
     fn unsigned_int_literal(value: u64, location: Location) -> Expr {
         Expr::literal(
-            Type::Int(false),
+            Type::Long(false),
             location,
             ExprType::Literal(Token::UnsignedInt(value)),
         )
@@ -1584,7 +1584,7 @@ mod tests {
     fn test_mul() {
         assert_type("1*1.0", Type::Double);
         assert_type("1*2.0 / 1.3", Type::Double);
-        assert_type("3%2", Type::Int(true));
+        assert_type("3%2", Type::Long(true));
     }
     #[test]
     fn test_funcall() {

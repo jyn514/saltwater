@@ -1148,6 +1148,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// initializer: assignment_expr
     ///     | '{' initializer (',' initializer)* '}'
     fn initializer(&mut self, ctype: &Type) -> Result<Initializer, Locatable<String>> {
+        if let Type::Union(struct_type) = ctype {
+            let members = match struct_type {
+                StructType::Anonymous(members) => members,
+                StructType::Named(name, _, _, _) => match self.tag_scope.get(name).unwrap() {
+                    TagEntry::Union(members) => members,
+                    _ => unreachable!(),
+                },
+            };
+            let first_ctype = members.first().unwrap().ctype.clone();
+            return self.initializer(&first_ctype);
+        }
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
             let mut elements = vec![];

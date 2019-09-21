@@ -75,10 +75,13 @@ impl Type {
                 let uchar = CHAR_BIT as usize;
                 // integer division, but taking the ceiling instead of the floor
                 // https://stackoverflow.com/a/17974/7669110
-                let ubytes = (symbols.len() + uchar - 1) / uchar;
-                ubytes
-                    .try_into()
-                    .map_err(|_| "enum cannot be represented in 32 bits")
+                Ok(match (symbols.len() + uchar - 1) / uchar {
+                    0..=8 => 8,
+                    9..=16 => 16,
+                    17..=32 => 32,
+                    33..=64 => 64,
+                    _ => return Err("enum cannot be represented in SIZE_T bits"),
+                })
             }
             Union(StructType::Named(_, size, _, _)) | Struct(StructType::Named(_, size, _, _)) => {
                 Ok(*size)

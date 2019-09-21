@@ -67,6 +67,16 @@ fn struct_initializers() {
 }
 
 #[test]
+fn union_initializers() {
+    utils::assert_code(
+        "
+    union { int a; float b; } u = 3;
+    int main() { return u.a; }",
+        3,
+    );
+}
+
+#[test]
 fn multiple_initializers() {
     utils::assert_code(
         "int main() {

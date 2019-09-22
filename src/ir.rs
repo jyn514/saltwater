@@ -2,6 +2,7 @@ use std::convert::{TryFrom, TryInto};
 
 use cranelift::codegen::{
     self,
+    cursor::Cursor,
     ir::{
         condcodes,
         entities::StackSlot,
@@ -12,6 +13,7 @@ use cranelift::codegen::{
     isa,
     settings::{self, Configurable},
 };
+use cranelift::frontend::Switch;
 use cranelift::prelude::{
     types, Ebb, FunctionBuilder, FunctionBuilderContext, Signature, Type as IrType,
     Value as IrValue,
@@ -41,11 +43,16 @@ enum FuncCall {
 
 struct Compiler {
     module: Module,
-    ebb_has_return: bool,
     scope: Scope<String, Id>,
     debug: bool,
+    // if false, we last saw a switch
+    last_saw_loop: bool,
     str_index: usize,
     loops: Vec<(Ebb, Ebb)>,
+    // switch, default, end
+    // if default is empty once we get to the end of a switch body,
+    // we didn't see a default case
+    switches: Vec<(Switch, Option<Ebb>, Ebb)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,9 +133,11 @@ impl Compiler {
 
         Compiler {
             module: Module::new(builder),
-            ebb_has_return: false,
             scope: Scope::new(),
             loops: Vec::new(),
+            switches: Vec::new(),
+            // the initial value doesn't really matter
+            last_saw_loop: true,
             str_index: 0,
             debug,
         }
@@ -288,14 +297,13 @@ impl Compiler {
 
         let func_start = builder.create_ebb();
         builder.switch_to_block(func_start);
-        self.ebb_has_return = false;
 
         let should_ret = func_type.should_return();
         if func_type.has_params() {
             self.store_stack_params(func_type.params, func_start, &location, &mut builder)?;
         }
         self.compile_all(stmts, &mut builder)?;
-        if !self.ebb_has_return {
+        if !builder.is_filled() {
             if id == "main" {
                 let ir_int = func_type.return_type.as_ir_type();
                 let zero = [builder.ins().iconst(ir_int, 0)];
@@ -339,7 +347,7 @@ impl Compiler {
         Ok(())
     }
     fn compile_stmt(&mut self, stmt: Stmt, builder: &mut FunctionBuilder) -> SemanticResult<()> {
-        if self.ebb_has_return {
+        if builder.is_filled() && !stmt.data.is_jump_target() {
             return Err(Locatable {
                 data: "unreachable statement".into(),
                 location: stmt.location,
@@ -364,7 +372,6 @@ impl Compiler {
                     let val = self.compile_expr(e, builder)?;
                     ret.push(val.ir_val);
                 }
-                self.ebb_has_return = true;
                 builder.ins().return_(&ret);
                 Ok(())
             }
@@ -381,10 +388,10 @@ impl Compiler {
                 self.for_loop(init, condition, post_loop, body, stmt.location, builder)
             }
             StmtType::Do(_, _) => unimplemented!("codegen do-while-loop"),
-            StmtType::Switch(_, _) => unimplemented!("codegen switch"),
+            StmtType::Switch(condition, body) => self.switch(condition, *body, builder),
             StmtType::Label(_) | StmtType::Goto(_) => unimplemented!("codegen goto"),
-            StmtType::Case(_) => unimplemented!("codegen case"),
-            StmtType::Default => unimplemented!("codegen case"),
+            StmtType::Case(constexpr) => self.case(constexpr, stmt.location, builder),
+            StmtType::Default => self.default(stmt.location, builder),
         }
     }
     // clippy doesn't like big match statements, but this is kind of essential complexity,
@@ -1010,35 +1017,30 @@ impl Compiler {
             builder.ins().brz(condition.ir_val, else_body, &[]);
             builder.ins().jump(if_body, &[]);
 
-            self.switch_to_block(if_body, builder);
+            builder.switch_to_block(if_body);
             self.compile_stmt(body, builder)?;
-            if !self.ebb_has_return {
-                builder.ins().jump(end_body, &[]);
-            }
-            let if_has_return = self.ebb_has_return;
+            self.jump_to_block(end_body, builder);
+            let if_has_return = builder.is_filled();
 
-            self.switch_to_block(else_body, builder);
+            builder.switch_to_block(else_body);
             self.compile_stmt(*other, builder)?;
-            if !self.ebb_has_return {
+            if !builder.is_filled() {
                 builder.ins().jump(end_body, &[]);
-                // ebb_has_return is already false
                 builder.switch_to_block(end_body);
             // if we returned in both 'if' and 'else' blocks, all following code is unreachable
             // this is the case where we returned in 'else' but not 'if'
             } else if !if_has_return {
-                self.switch_to_block(end_body, builder);
+                builder.switch_to_block(end_body);
             }
         } else {
             builder.ins().brz(condition.ir_val, end_body, &[]);
             builder.ins().jump(if_body, &[]);
 
-            self.switch_to_block(if_body, builder);
+            builder.switch_to_block(if_body);
             self.compile_stmt(body, builder)?;
-            if !self.ebb_has_return {
-                builder.ins().jump(end_body, &[]);
-            }
+            self.jump_to_block(end_body, builder);
 
-            self.switch_to_block(end_body, builder);
+            builder.switch_to_block(end_body);
         };
         Ok(())
     }
@@ -1050,9 +1052,10 @@ impl Compiler {
     ) -> SemanticResult<()> {
         let (loop_body, end_body) = (builder.create_ebb(), builder.create_ebb());
         self.loops.push((loop_body, end_body));
+        self.last_saw_loop = true;
 
         builder.ins().jump(loop_body, &[]);
-        self.switch_to_block(loop_body, builder);
+        builder.switch_to_block(loop_body);
 
         // for loops can loop forever: `for (;;) {}`
         if let Some(condition) = maybe_condition {
@@ -1063,9 +1066,9 @@ impl Compiler {
         if let Some(body) = maybe_body {
             self.compile_stmt(body, builder)?;
         }
+        self.jump_to_block(loop_body, builder);
 
-        builder.ins().jump(loop_body, &[]);
-        self.switch_to_block(end_body, builder);
+        builder.switch_to_block(end_body);
         self.loops.pop();
         Ok(())
     }
@@ -1104,33 +1107,130 @@ impl Compiler {
         }
         self.while_stmt(condition, body, builder)
     }
+    fn switch(
+        &mut self,
+        condition: Expr,
+        body: Stmt,
+        builder: &mut FunctionBuilder,
+    ) -> SemanticResult<()> {
+        let original_ebb = builder.cursor().current_ebb().unwrap();
+        let cond_val = self.compile_expr(condition, builder)?;
+        let start_block = builder.create_ebb();
+        builder.switch_to_block(start_block);
+        self.last_saw_loop = false;
+
+        self.switches
+            .push((Switch::new(), None, builder.create_ebb()));
+        self.compile_stmt(body, builder)?;
+        let (switch, default, end) = self.switches.pop().unwrap();
+
+        self.jump_to_block(end, builder);
+        builder.switch_to_block(original_ebb);
+        switch.emit(
+            builder,
+            cond_val.ir_val,
+            if let Some(default) = default {
+                default
+            } else {
+                end
+            },
+        );
+        builder.switch_to_block(end);
+        Ok(())
+    }
+    fn case(
+        &mut self,
+        constexpr: u64,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> SemanticResult<()> {
+        let (switch, _, _) = match self.switches.last_mut() {
+            Some(x) => x,
+            None => {
+                return Err(Locatable {
+                    data: "case outside of switch statement".into(),
+                    location,
+                })
+            }
+        };
+        if builder.is_pristine() {
+            let current = builder.cursor().current_ebb().unwrap();
+            switch.set_entry(constexpr, current);
+        } else {
+            let new = builder.create_ebb();
+            switch.set_entry(constexpr, new);
+            self.jump_to_block(new, builder);
+            builder.switch_to_block(new);
+        };
+        Ok(())
+    }
+    fn default(&mut self, location: Location, builder: &mut FunctionBuilder) -> SemanticResult<()> {
+        let (_, default, _) = match self.switches.last_mut() {
+            Some(x) => x,
+            None => {
+                return Err(Locatable {
+                    data: "default case outside of switch statement".into(),
+                    location,
+                })
+            }
+        };
+        if default.is_some() {
+            Err(Locatable {
+                data: "cannot have multiple default cases in a switch statement".into(),
+                location,
+            })
+        } else {
+            let default_ebb = if builder.is_pristine() {
+                builder.cursor().current_ebb().unwrap()
+            } else {
+                builder.create_ebb()
+            };
+            *default = Some(default_ebb);
+            builder.switch_to_block(default_ebb);
+            Ok(())
+        }
+    }
     fn loop_exit(
         &mut self,
         is_break: bool,
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> SemanticResult<()> {
-        if let Some((loop_start, loop_end)) = self.loops.last() {
-            if is_break {
-                builder.ins().jump(*loop_end, &[]);
+        if self.last_saw_loop {
+            // break from loop
+            if let Some((loop_start, loop_end)) = self.loops.last() {
+                if is_break {
+                    self.jump_to_block(*loop_end, builder);
+                } else {
+                    self.jump_to_block(*loop_start, builder);
+                }
+                Ok(())
             } else {
-                builder.ins().jump(*loop_start, &[]);
+                err!(
+                    format!(
+                        "'{}' statement not in loop or switch statement",
+                        if is_break { "break" } else { "continue" }
+                    ),
+                    location
+                );
             }
-            Ok(())
+        } else if !is_break {
+            err!("'continue' not in loop".into(), location);
         } else {
-            err!(
-                format!(
-                    "'{}' statement not in loop or switch statement",
-                    if is_break { "break" } else { "continue" }
-                ),
-                location
-            );
+            // break from switch
+            let (_, _, end_block) = self
+                .switches
+                .last()
+                .expect("should be in a switch if last_saw_loop is false");
+            builder.ins().jump(*end_block, &[]);
+            Ok(())
         }
     }
-    #[inline]
-    fn switch_to_block(&mut self, ebb: Ebb, builder: &mut FunctionBuilder) {
-        builder.switch_to_block(ebb);
-        self.ebb_has_return = false;
+    #[inline(always)]
+    fn jump_to_block(&self, ebb: Ebb, builder: &mut FunctionBuilder) {
+        if !builder.is_filled() {
+            builder.ins().jump(ebb, &[]);
+        }
     }
     fn init_expr(
         &self,
@@ -1341,6 +1441,15 @@ impl Token {
             Token::Str(string) => Ok(string.into_boxed_str().into()),
             Token::Char(c) => Ok(Box::new([c])),
             x => unimplemented!("storing static of type {:?}", x),
+        }
+    }
+}
+
+impl StmtType {
+    fn is_jump_target(&self) -> bool {
+        match self {
+            StmtType::Case(_) | StmtType::Default | StmtType::Label(_) => true,
+            _ => false,
         }
     }
 }

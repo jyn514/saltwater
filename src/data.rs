@@ -163,7 +163,7 @@ pub enum StmtType {
     ),
     Switch(Expr, Box<Stmt>),
     Label(String),
-    Case(Expr),
+    Case(u64),
     Default,
     Expr(Expr),
     Goto(String),

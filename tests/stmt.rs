@@ -171,3 +171,55 @@ int main() {
         "abcdefghij",
     );
 }
+
+#[test]
+fn switch() {
+    utils::assert_code(
+        "int i = 1;
+    int main() {
+        switch(i) {
+            case 1: return 1;
+        }
+    }",
+        1,
+    );
+    utils::assert_code(
+        "int i = 1;
+    int main() {
+        switch(i) {
+            default: return 1;
+        }
+    }",
+        1,
+    );
+    utils::assert_code(
+        "int i = 1;
+    int main() {
+        switch(i) {
+            case 1:
+            case 2:
+            default: return 1;
+        }
+    }",
+        1,
+    );
+    utils::assert_code(
+        "int i = 1;
+    int main() {
+        switch(i) {
+            case 2: return 2;
+        }
+    }",
+        0,
+    );
+    utils::assert_code(
+        "int i = 1;
+    int main() {
+        switch(i) {
+            case 1: break;
+            case 2: return 2;
+        }
+    }",
+        0,
+    );
+}

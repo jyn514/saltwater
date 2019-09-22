@@ -57,8 +57,34 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Some(Token::Keyword(k)) => match k {
                 // labeled_statement (excluding labels)
-                Keyword::Case => unimplemented!("case"),
-                Keyword::Default => unimplemented!("default"),
+                Keyword::Case => {
+                    let kw = self.next_token().unwrap();
+                    let expr = self.constant_expr()?;
+                    self.expect(Token::Colon)?;
+                    let int = match expr.expr {
+                        ExprType::Literal(Token::Int(i)) => i as u64,
+                        ExprType::Literal(Token::UnsignedInt(u)) => u,
+                        ExprType::Literal(Token::Char(c)) => u64::from(c),
+                        _ => {
+                            return Err(Locatable {
+                                data: "case expression is not an integer constant".into(),
+                                location: expr.location,
+                            })
+                        }
+                    };
+                    Ok(Some(Stmt {
+                        data: StmtType::Case(int),
+                        location: kw.location,
+                    }))
+                }
+                Keyword::Default => {
+                    let kw = self.next_token().unwrap();
+                    self.expect(Token::Colon)?;
+                    Ok(Some(Stmt {
+                        data: StmtType::Default,
+                        location: kw.location,
+                    }))
+                }
 
                 // selection_statement
                 Keyword::If => Ok(Some(self.if_statement()?)),
@@ -71,8 +97,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
                 // jump_statement
                 Keyword::Goto => Ok(Some(self.goto_statement()?)),
-                Keyword::Continue => unimplemented!("continue"),
-                Keyword::Break => unimplemented!("break"),
+                Keyword::Continue => {
+                    let kw = self.next_token().unwrap();
+                    self.expect(Token::Semicolon)?;
+                    Ok(Some(Stmt {
+                        data: StmtType::Continue,
+                        location: kw.location,
+                    }))
+                }
+                Keyword::Break => {
+                    let kw = self.next_token().unwrap();
+                    self.expect(Token::Semicolon)?;
+                    Ok(Some(Stmt {
+                        data: StmtType::Break,
+                        location: kw.location,
+                    }))
+                }
                 Keyword::Return => Ok(Some(self.return_statement()?)),
 
                 // start of an expression statement
@@ -225,8 +265,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let expr = self.expr()?.rval();
         self.expect(Token::RightParen)?;
         let body = self.statement()?;
-        let stmt = if body.is_some() {
-            unimplemented!("switch body (esp. labels)");
+        let stmt = if let Some(body) = body {
+            StmtType::Switch(expr, Box::new(body))
         } else {
             not_executed_warning(
                 "empty switch body is never executed",

@@ -1002,13 +1002,17 @@ impl Debug for StmtType {
             StmtType::Label(id) => write!(f, "{}: ", id),
             StmtType::While(condition, None) => write!(f, "while ({:?}) {{}}", condition),
             StmtType::While(condition, Some(body)) => {
-                write!(f, "while ({:?}) {:?}", condition, body)
+                write!(f, "while ({:?}) {:?}", condition, body.data)
             }
-            StmtType::If(condition, body, None) => write!(f, "if ({:?}) {:?}", condition, body),
+            StmtType::If(condition, body, None) => {
+                write!(f, "if ({:?}) {:?}", condition, body.data)
+            }
             StmtType::If(condition, body, Some(otherwise)) => {
                 write!(f, "if ({:?}) {:?} else {:?}", condition, body, otherwise)
             }
-            StmtType::Do(body, condition) => write!(f, "do {:?} while ({:?});", body, condition),
+            StmtType::Do(body, condition) => {
+                write!(f, "do {:?} while ({:?});", body.data, condition)
+            }
             StmtType::For(decls, condition, post_loop, body) => {
                 write!(f, "for (")?;
                 if let Some(init) = decls {
@@ -1026,7 +1030,17 @@ impl Debug for StmtType {
                         _ => unreachable!("for loop initialization other than decl or expr"),
                     }
                 }
-                write!(f, "; {:?}; {:?};) {:?}", condition, post_loop, body)
+                write!(
+                    f,
+                    "; {:?}; {:?};) {}",
+                    condition,
+                    post_loop,
+                    if let Some(body) = body {
+                        format!("{:?}", body.data)
+                    } else {
+                        ";".into()
+                    }
+                )
             }
             StmtType::Decl(decls) => {
                 for decl in decls {
@@ -1037,11 +1051,13 @@ impl Debug for StmtType {
             StmtType::Compound(stmts) => {
                 writeln!(f, "{{")?;
                 for stmt in stmts {
-                    writeln!(f, "{:?}", stmt)?;
+                    writeln!(f, "{:?}", stmt.data)?;
                 }
                 write!(f, "}}")
             }
-            StmtType::Switch(condition, body) => write!(f, "switch ({:?}) {:?}", condition, body),
+            StmtType::Switch(condition, body) => {
+                write!(f, "switch ({:?}) {:?}", condition, body.data)
+            }
         }
     }
 }

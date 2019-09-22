@@ -335,6 +335,24 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 data: StmtType::Decl(self.declaration()?),
                 location: paren.location,
             })),
+            Some(Token::Id(id)) => {
+                let id = id.clone();
+                match self.scope.get(&id) {
+                    Some(symbol) if symbol.storage_class == StorageClass::Typedef => {
+                        Some(Box::new(Stmt {
+                            data: StmtType::Decl(self.declaration()?),
+                            location: paren.location,
+                        }))
+                    }
+                    _ => match self.expr_opt(Token::Semicolon)? {
+                        Some(expr) => Some(Box::new(Stmt {
+                            data: StmtType::Expr(expr),
+                            location: paren.location,
+                        })),
+                        None => None,
+                    },
+                }
+            }
             Some(_) => match self.expr_opt(Token::Semicolon)? {
                 Some(expr) => Some(Box::new(Stmt {
                     data: StmtType::Expr(expr),

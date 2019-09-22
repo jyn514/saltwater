@@ -163,8 +163,8 @@ pub enum StmtType {
     ),
     Switch(Expr, Box<Stmt>),
     Label(String),
-    Case(u64),
-    Default,
+    Case(u64, Option<Box<Stmt>>),
+    Default(Option<Box<Stmt>>),
     Expr(Expr),
     Goto(String),
     Continue,
@@ -996,8 +996,25 @@ impl Debug for StmtType {
             StmtType::Return(Some(expr)) => write!(f, "return {:?};", expr),
             StmtType::Break => write!(f, "break;"),
             StmtType::Continue => write!(f, "continue;"),
-            StmtType::Default => write!(f, "default:"),
-            StmtType::Case(expr) => write!(f, "case {:?}:", expr),
+            StmtType::Default(stmt) => write!(
+                f,
+                "default:{}",
+                if let Some(stmt) = stmt {
+                    format!("\n{:?}", stmt)
+                } else {
+                    " ;".into()
+                }
+            ),
+            StmtType::Case(expr, stmt) => write!(
+                f,
+                "case {:?}:{}",
+                expr,
+                if let Some(stmt) = stmt {
+                    format!("\n{:?}", stmt)
+                } else {
+                    " ;".into()
+                }
+            ),
             StmtType::Goto(id) => write!(f, "goto {};", id),
             StmtType::Label(id) => write!(f, "{}: ", id),
             StmtType::While(condition, None) => write!(f, "while ({:?}) {{}}", condition),

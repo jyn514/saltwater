@@ -390,8 +390,8 @@ impl Compiler {
             StmtType::Do(_, _) => unimplemented!("codegen do-while-loop"),
             StmtType::Switch(condition, body) => self.switch(condition, *body, builder),
             StmtType::Label(_) | StmtType::Goto(_) => unimplemented!("codegen goto"),
-            StmtType::Case(constexpr) => self.case(constexpr, stmt.location, builder),
-            StmtType::Default => self.default(stmt.location, builder),
+            StmtType::Case(constexpr, inner) => self.case(constexpr, inner, stmt.location, builder),
+            StmtType::Default(inner) => self.default(inner, stmt.location, builder),
         }
     }
     // clippy doesn't like big match statements, but this is kind of essential complexity,
@@ -1141,6 +1141,7 @@ impl Compiler {
     fn case(
         &mut self,
         constexpr: u64,
+        stmt: Option<Box<Stmt>>,
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> SemanticResult<()> {
@@ -1162,9 +1163,18 @@ impl Compiler {
             self.jump_to_block(new, builder);
             builder.switch_to_block(new);
         };
-        Ok(())
+        if let Some(stmt) = stmt {
+            self.compile_stmt(*stmt, builder)
+        } else {
+            Ok(())
+        }
     }
-    fn default(&mut self, location: Location, builder: &mut FunctionBuilder) -> SemanticResult<()> {
+    fn default(
+        &mut self,
+        inner: Option<Box<Stmt>>,
+        location: Location,
+        builder: &mut FunctionBuilder,
+    ) -> SemanticResult<()> {
         let (_, default, _) = match self.switches.last_mut() {
             Some(x) => x,
             None => {
@@ -1187,7 +1197,11 @@ impl Compiler {
             };
             *default = Some(default_ebb);
             builder.switch_to_block(default_ebb);
-            Ok(())
+            if let Some(stmt) = inner {
+                self.compile_stmt(*stmt, builder)
+            } else {
+                Ok(())
+            }
         }
     }
     fn loop_exit(
@@ -1448,7 +1462,7 @@ impl Token {
 impl StmtType {
     fn is_jump_target(&self) -> bool {
         match self {
-            StmtType::Case(_) | StmtType::Default | StmtType::Label(_) => true,
+            StmtType::Case(_, _) | StmtType::Default(_) | StmtType::Label(_) => true,
             _ => false,
         }
     }

@@ -72,16 +72,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             })
                         }
                     };
+                    let inner = self.statement()?.map(Box::new);
                     Ok(Some(Stmt {
-                        data: StmtType::Case(int),
+                        data: StmtType::Case(int, inner),
                         location: kw.location,
                     }))
                 }
                 Keyword::Default => {
                     let kw = self.next_token().unwrap();
                     self.expect(Token::Colon)?;
+                    let inner = self.statement()?.map(Box::new);
                     Ok(Some(Stmt {
-                        data: StmtType::Default,
+                        data: StmtType::Default(inner),
                         location: kw.location,
                     }))
                 }

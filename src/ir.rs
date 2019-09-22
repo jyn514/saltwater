@@ -1019,7 +1019,7 @@ impl Compiler {
 
             builder.switch_to_block(if_body);
             self.compile_stmt(body, builder)?;
-            self.jump_to_block(end_body, builder);
+            Self::jump_to_block(end_body, builder);
             let if_has_return = builder.is_filled();
 
             builder.switch_to_block(else_body);
@@ -1038,7 +1038,7 @@ impl Compiler {
 
             builder.switch_to_block(if_body);
             self.compile_stmt(body, builder)?;
-            self.jump_to_block(end_body, builder);
+            Self::jump_to_block(end_body, builder);
 
             builder.switch_to_block(end_body);
         };
@@ -1066,7 +1066,7 @@ impl Compiler {
         if let Some(body) = maybe_body {
             self.compile_stmt(body, builder)?;
         }
-        self.jump_to_block(loop_body, builder);
+        Self::jump_to_block(loop_body, builder);
 
         builder.switch_to_block(end_body);
         self.loops.pop();
@@ -1124,7 +1124,7 @@ impl Compiler {
         self.compile_stmt(body, builder)?;
         let (switch, default, end) = self.switches.pop().unwrap();
 
-        self.jump_to_block(end, builder);
+        Self::jump_to_block(end, builder);
         builder.switch_to_block(original_ebb);
         switch.emit(
             builder,
@@ -1160,7 +1160,7 @@ impl Compiler {
         } else {
             let new = builder.create_ebb();
             switch.set_entry(constexpr, new);
-            self.jump_to_block(new, builder);
+            Self::jump_to_block(new, builder);
             builder.switch_to_block(new);
         };
         if let Some(stmt) = stmt {
@@ -1193,10 +1193,12 @@ impl Compiler {
             let default_ebb = if builder.is_pristine() {
                 builder.cursor().current_ebb().unwrap()
             } else {
-                builder.create_ebb()
+                let new = builder.create_ebb();
+                Self::jump_to_block(new, builder);
+                builder.switch_to_block(new);
+                new
             };
             *default = Some(default_ebb);
-            builder.switch_to_block(default_ebb);
             if let Some(stmt) = inner {
                 self.compile_stmt(*stmt, builder)
             } else {
@@ -1214,9 +1216,9 @@ impl Compiler {
             // break from loop
             if let Some((loop_start, loop_end)) = self.loops.last() {
                 if is_break {
-                    self.jump_to_block(*loop_end, builder);
+                    Self::jump_to_block(*loop_end, builder);
                 } else {
-                    self.jump_to_block(*loop_start, builder);
+                    Self::jump_to_block(*loop_start, builder);
                 }
                 Ok(())
             } else {
@@ -1241,7 +1243,7 @@ impl Compiler {
         }
     }
     #[inline(always)]
-    fn jump_to_block(&self, ebb: Ebb, builder: &mut FunctionBuilder) {
+    fn jump_to_block(ebb: Ebb, builder: &mut FunctionBuilder) {
         if !builder.is_filled() {
             builder.ins().jump(ebb, &[]);
         }

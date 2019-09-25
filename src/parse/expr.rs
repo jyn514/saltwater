@@ -1184,6 +1184,7 @@ impl Expr {
         {
             self.ctype = ctype.clone();
             Ok(self)
+        // TODO: allow implicit casts of const pointers
         } else {
             Err(Locatable {
                 location: self.location,

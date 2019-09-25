@@ -98,51 +98,60 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             return Ok(VecDeque::new());
         }
 
+        let mut symbol = Symbol {
+            id: id.data,
+            ctype: first_type,
+            qualifiers: qualifiers.clone(),
+            storage_class: sc,
+            init: false,
+        };
         // if it's not a function, we still need to handle it
-        let init = match (&first_type, self.peek_token()) {
-            (Type::Function(ftype), Some(Token::LeftBrace)) => Some(Initializer::FunctionBody(
-                self.function_body(id.clone(), ftype.clone())?,
-            )),
+        let init = match (&symbol.ctype, self.peek_token()) {
+            (Type::Function(ftype), Some(Token::LeftBrace)) => {
+                symbol.init = true;
+                self.declare(&symbol, &id.location)?;
+                Some(Initializer::FunctionBody(self.function_body(symbol.id.clone(), ftype.clone(), id.location.clone())?))
+            }
             (Type::Function(_), Some(Token::Equal)) => {
                 return Err(Locatable {
                     data: format!(
                         "can only initialize function '{}' with function body",
-                        id.data
+                        symbol.id,
                     ),
                     location: id.location,
                 });
             }
             (ctype, Some(Token::Equal)) => {
                 self.next_token();
-                Some(self.initializer(ctype)?)
+                let init = Some(self.initializer(ctype)?);
+                symbol.init = true;
+                if add_to_scope {
+                    self.declare(&symbol, &id.location)?;
+                }
+                init
             }
-            _ => None,
+            _ => {
+                if add_to_scope {
+                    self.declare(&symbol, &id.location)?;
+                }
+                None
+            }
         };
-        let is_func = first_type.is_function();
-        if is_func && qualifiers != Qualifiers::NONE {
+        if symbol.ctype.is_function() && qualifiers != Qualifiers::NONE {
             warn(
                 &format!("{} has no effect on function return type", qualifiers),
                 &id.location,
             );
             qualifiers = Qualifiers::NONE;
         }
-        let symbol = Symbol {
-            id: id.data,
-            ctype: first_type,
-            qualifiers: qualifiers.clone(),
-            storage_class: sc,
-            init: init.is_some(),
-        };
         let decl = Locatable {
             data: Declaration { symbol, init },
             location: id.location,
         };
-        if add_to_scope {
-            self.declare(&decl)?;
-        }
         let init = decl.data.init.is_some();
+        let is_function = decl.data.symbol.ctype.is_function();
         let mut pending = VecDeque::from_iter(std::iter::once(decl));
-        if (is_func && init) || self.match_next(&Token::Semicolon).is_some() {
+        if (is_function && init) || self.match_next(&Token::Semicolon).is_some() {
             return Ok(pending);
         } else {
             self.expect(Token::Comma)?;
@@ -150,7 +159,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         loop {
             let decl = self.init_declarator(sc, qualifiers.clone(), ctype.clone())?;
             if add_to_scope {
-                self.declare(&decl)?;
+                self.declare(&decl.data.symbol, &decl.location)?;
             }
             pending.push_back(decl);
             if self.match_next(&Token::Comma).is_none() {
@@ -244,27 +253,27 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(())
         }
     }
-    fn declare(&mut self, decl: &Locatable<Declaration>) -> Result<(), Locatable<String>> {
-        if decl.data.symbol.id == "main" {
-            if let Type::Function(ftype) = &decl.data.symbol.ctype {
+    fn declare(&mut self, decl: &Symbol, location: &Location) -> Result<(), Locatable<String>> {
+        if decl.id == "main" {
+            if let Type::Function(ftype) = &decl.ctype {
                 if !Self::is_main_func_signature(ftype) {
                     return Err(Locatable {
                         data: "illegal signature for main function (expected 'int main(void)' or 'int main(int, char **)'".into(),
-                        location: decl.location.clone(),
+                        location: location.clone(),
                     });
                 }
             }
         }
-        if let Some(existing) = self.scope.get_immediate(&decl.data.symbol.id) {
-            if existing == &decl.data.symbol {
-                if decl.data.init.is_some() && existing.init {
+        if let Some(existing) = self.scope.get_immediate(&decl.id) {
+            if existing == decl {
+                if decl.init && existing.init {
                     Err(Locatable {
-                        location: decl.location.clone(),
-                        data: format!("redefinition of '{}'", decl.data.symbol.id),
+                        location: location.clone(),
+                        data: format!("redefinition of '{}'", decl.id),
                     })
                 } else {
                     self.scope
-                        .insert(decl.data.symbol.id.clone(), decl.data.symbol.clone());
+                        .insert(decl.id.clone(), decl.clone());
                     Ok(())
                 }
             } else {
@@ -272,14 +281,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Err(Locatable {
                     data: format!(
                         "redeclaration of '{}' with different type (originally {}, now {})",
-                        existing.id, existing.ctype, decl.data.symbol.ctype
+                        existing.id, existing.ctype, decl.ctype
                     ),
-                    location: decl.location.clone(),
+                    location: location.clone(),
                 })
             }
         } else {
             self.scope
-                .insert(decl.data.symbol.id.clone(), decl.data.symbol.clone());
+                .insert(decl.id.clone(), decl.clone());
             Ok(())
         }
     }
@@ -1212,8 +1221,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn function_body(
         &mut self,
-        id: Locatable<String>,
+        id: String,
         ftype: FunctionType,
+        location: Location,
     ) -> Result<Vec<Stmt>, Locatable<String>> {
         // if it's a function, set up state so we know the return type
         // TODO: rework all of this so semantic analysis is done _after_ parsing
@@ -1222,10 +1232,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             // TODO: allow function _declarations_ at local scope
             // e.g. int main() { int f(); return f(); }
             return Err(Locatable {
-                location: id.location,
+                location,
                 data: format!(
                     "functions cannot be nested. hint: try declaring {} as `static` at file scope",
-                    id.data
+                    id
                 ),
             });
         }
@@ -1243,15 +1253,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         "missing parameter name in function definition (parameter {} of type '{}')",
                         i, param.ctype
                     ),
-                    id.location,
+                    location,
                 );
             }
             self.scope.insert(param.id.clone(), param);
         }
         self.current_function = Some(FunctionData {
             return_type: *ftype.return_type,
-            id: id.data,
-            location: id.location,
+            location,
+            id,
         });
 
         // function body

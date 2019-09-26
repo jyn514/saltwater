@@ -1279,6 +1279,14 @@ impl Compiler {
                 ExprType::Literal(Token::Str(_)) => {
                     unimplemented!("address of literal in static context")
                 }
+                ExprType::Literal(ref token) if token.is_zero() => {
+                    ctx.define_zeroinit(crate::backend::PTR_SIZE.try_into().unwrap())
+                }
+                ExprType::Cast(ref inner) if inner.is_zero() => ctx.define_zeroinit(
+                    crate::backend::PTR_SIZE
+                        .try_into()
+                        .expect("usize is less than 16 bits"),
+                ),
                 _ => err!("cannot take the address of an rvalue".into(), expr.location),
             },
             ExprType::Literal(token) => {

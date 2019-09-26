@@ -404,6 +404,14 @@ impl Qualifiers {
 }
 
 impl Token {
+    pub fn is_zero(&self) -> bool {
+        match *self {
+            Token::Int(i) => i == 0,
+            Token::UnsignedInt(u) => u == 0,
+            Token::Char(c) => c == 0,
+            _ => false,
+        }
+    }
     pub fn to_int_compare(&self, signed: bool) -> Result<IntCC, ()> {
         match (self, signed) {
             (Token::Less, true) => Ok(IntCC::SignedLessThan),

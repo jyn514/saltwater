@@ -631,7 +631,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 };
             }
             members.push((name.clone(), current));
-            // TODO: declare enum members eagerly so you can write `enum { A, B = A };`
+            // TODO: this is such a hack
+            let tmp_symbol = Symbol {
+                id: name.clone(),
+                qualifiers: Qualifiers::CONST,
+                storage_class: StorageClass::Register,
+                init: true,
+                ctype: Type::Enum(None, vec![(name.clone(), current)]),
+            };
+            self.scope.insert(name, tmp_symbol);
             // allow trailing commas
             if self.match_next(&Token::Comma).is_none()
                 || self.peek_token() == Some(&Token::RightBrace)
@@ -639,6 +647,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 break;
             }
             current += 1;
+        }
+        for (name, _) in &members {
+            self.scope._remove(name);
         }
         if let Some(id) = &ident {
             if self

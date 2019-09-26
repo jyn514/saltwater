@@ -131,8 +131,14 @@ impl Expr {
         let location = self.location;
         let folded = match self.expr {
             ExprType::Literal(_) => self.expr,
-            // TODO: if a variable were const, could we const fold Ids?
-            ExprType::Id(_) => self.expr,
+            ExprType::Id(ref name) => match dump!(&self.ctype) {
+                Type::Enum(_, members) => match members.iter().find(|member| member.0 == name.id) {
+                    Some(enum_literal) => ExprType::Literal(Token::Int(enum_literal.1)),
+                    _ => self.expr,
+                },
+                // TODO: if a variable were const, could we const fold Ids?
+                _ => self.expr,
+            },
             ExprType::Sizeof(ctype) => {
                 let sizeof = ctype.sizeof().map_err(|data| Locatable {
                     data: data.into(),

@@ -191,6 +191,21 @@ fn struct_and_enum() {
 }
 
 #[test]
+fn enum_self_assign() {
+    utils::assert_code(
+        "enum e {
+        A = 1,
+        B = A,
+        C = B + 1,
+    };
+    int main() {
+        return B;
+    }",
+        1,
+    );
+}
+
+#[test]
 fn function() {
     utils::assert_code(
         "

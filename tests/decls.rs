@@ -43,6 +43,8 @@ fn static_initializers() {
     utils::assert_code(
         "int i = 0,
         *p = &i,
+        *q = 0,
+        *r = (void*)0,
         f(),
         (*fp)() = f,
         a[] = {1, 2, 3};

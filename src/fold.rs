@@ -206,36 +206,20 @@ impl Expr {
                 fold_int_bin_op!(left, right, ExprType::Mod, %)
             }
             ExprType::Xor(left, right) => fold_int_bin_op!(left, right, ExprType::Xor, ^),
-            ExprType::BitwiseAnd(left, right) => {
-                fold_int_bin_op!(left, right, ExprType::BitwiseAnd, &)
-            }
-            ExprType::BitwiseOr(left, right) => {
-                fold_int_bin_op!(left, right, ExprType::BitwiseOr, |)
-            }
+            ExprType::BitwiseAnd(left, right) => fold_int_bin_op!(left, right, ExprType::BitwiseAnd, &),
+            ExprType::BitwiseOr(left, right) => fold_int_bin_op!(left, right, ExprType::BitwiseOr, |),
             ExprType::Shift(left, right, true) => {
                 shift_left(*left, *right, &self.ctype, &location)?
             }
             ExprType::Shift(left, right, false) => {
                 shift_right(*left, *right, &self.ctype, &location)?
             }
-            ExprType::Compare(left, right, Token::Less) => {
-                fold_compare_op!(left, right, Compare, <, Token::Less)
-            }
-            ExprType::Compare(left, right, Token::LessEqual) => {
-                fold_compare_op!(left, right, Compare, <=, Token::LessEqual)
-            }
-            ExprType::Compare(left, right, Token::Greater) => {
-                fold_compare_op!(left, right, Compare, >, Token::Greater)
-            }
-            ExprType::Compare(left, right, Token::GreaterEqual) => {
-                fold_compare_op!(left, right, Compare, >=, Token::GreaterEqual)
-            }
-            ExprType::Compare(left, right, Token::EqualEqual) => {
-                fold_compare_op!(left, right, Compare, ==, Token::EqualEqual)
-            }
-            ExprType::Compare(left, right, Token::NotEqual) => {
-                fold_compare_op!(left, right, Compare, !=, Token::NotEqual)
-            }
+            ExprType::Compare(left, right, Token::Less) => fold_compare_op!(left, right, Compare, <, Token::Less),
+            ExprType::Compare(left, right, Token::LessEqual) => fold_compare_op!(left, right, Compare, <=, Token::LessEqual),
+            ExprType::Compare(left, right, Token::Greater) => fold_compare_op!(left, right, Compare, >, Token::Greater),
+            ExprType::Compare(left, right, Token::GreaterEqual) => fold_compare_op!(left, right, Compare, >=, Token::GreaterEqual),
+            ExprType::Compare(left, right, Token::EqualEqual) => fold_compare_op!(left, right, Compare, ==, Token::EqualEqual),
+            ExprType::Compare(left, right, Token::NotEqual) => fold_compare_op!(left, right, Compare, !=, Token::NotEqual),
             ExprType::Compare(_, _, _) => {
                 unreachable!("only comparison tokens should appear in ExprType::Compare")
             }

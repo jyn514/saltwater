@@ -489,7 +489,7 @@ impl Type {
     pub fn is_signed(&self) -> bool {
         use Type::*;
         match self {
-            Bool | Char(true) | Short(true) | Int(true) | Long(true) => true,
+            Bool | Char(true) | Short(true) | Int(true) | Long(true) | Enum(_, _) => true,
             _ => false,
         }
     }
@@ -654,6 +654,10 @@ impl<K: Hash + Eq, V> Scope<K, V> {
     pub fn is_global(&self) -> bool {
         debug_assert!(!self.0.is_empty());
         self.0.len() == 1
+    }
+    pub fn _remove(&mut self, key: &K) -> Option<V> {
+        debug_assert!(!self.0.is_empty());
+        self.0.last_mut().unwrap().remove(key)
     }
 }
 

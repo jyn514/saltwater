@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use std::iter::{FromIterator, Iterator};
 use std::mem;
 
-use super::{FunctionData, Lexeme, Parser, TagEntry};
+use super::{FunctionData, Lexeme, Parser, TagEntry, TagScope};
 use crate::backend;
 use crate::data::{
     prelude::*, ArrayType, FunctionType, Initializer, Keyword, Qualifiers, StorageClass, StructType,
@@ -1187,11 +1187,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if self.match_next(&Token::LeftBrace).is_some() {
             let mut elements = vec![];
             while self.match_next(&Token::RightBrace).is_none() {
-                let elem_type = ctype.type_at(elements.len()).map_err(|err| Locatable {
-                    data: err,
-                    location: self.next_location().clone(),
-                })?;
-                elements.push(self.initializer(elem_type)?);
+                let elem_type = ctype
+                    .type_at(&self.tag_scope, elements.len())
+                    .map_err(|err| Locatable {
+                        data: err,
+                        location: self.next_location().clone(),
+                    })?;
+                elements.push(self.initializer(&elem_type)?);
                 if self.match_next(&Token::RightBrace).is_some() {
                     break;
                 }
@@ -1588,11 +1590,11 @@ impl Declarator {
 }
 
 impl Type {
-    fn type_at(&self, index: usize) -> Result<&Type, String> {
+    fn type_at(&self, tag_scope: &TagScope, index: usize) -> Result<Type, String> {
         match self {
             ty if ty.is_scalar() => {
                 if index == 0 {
-                    Ok(ty)
+                    Ok(ty.clone())
                 } else {
                     Err(format!(
                         "scalar initializers may only have one element (initialized with {})",
@@ -1600,18 +1602,27 @@ impl Type {
                     ))
                 }
             }
-            Type::Array(inner, _) => Ok(inner),
-            Type::Struct(StructType::Anonymous(symbols)) => symbols.get(index).map_or_else(
-                || {
-                    Err(format!(
-                        "too many initializers for struct (declared with {} elements, found {}",
-                        symbols.len(),
-                        index
-                    ))
-                },
-                |symbol| Ok(&symbol.ctype),
-            ),
-            _ => unimplemented!("type checking for aggregate initializers"),
+            Type::Array(inner, _) => Ok((**inner).clone()),
+            Type::Struct(struct_type) => {
+                let symbols = match struct_type {
+                    StructType::Anonymous(symbols) => symbols,
+                    StructType::Named(name, _, _, _) => match tag_scope.get(name).unwrap() {
+                        TagEntry::Struct(members) => members,
+                        _ => unreachable!(),
+                    },
+                };
+                symbols.get(index).map_or_else(
+                    || {
+                        Err(format!(
+                            "too many initializers for struct (declared with {} elements, found {}",
+                            symbols.len(),
+                            index
+                        ))
+                    },
+                    |symbol| Ok(symbol.ctype.clone()),
+                )
+            }
+            _ => unimplemented!("type checking for aggregate initializers of type {}", self),
         }
     }
 }

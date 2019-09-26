@@ -3,6 +3,7 @@ mod expr;
 mod stmt;
 
 use std::collections::VecDeque;
+use std::fmt;
 use std::iter::Iterator;
 use std::mem;
 
@@ -10,6 +11,7 @@ use crate::data::{prelude::*, Scope, StructType};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
+type TagScope = Scope<String, TagEntry>;
 
 #[derive(Clone, Debug)]
 enum TagEntry {
@@ -24,7 +26,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// the variables that have been declared
     scope: Scope<String, Symbol>,
     /// the compound types that have been declared (struct/union/enum)
-    tag_scope: Scope<String, TagEntry>,
+    tag_scope: TagScope,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,
@@ -260,6 +262,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn unput(&mut self, item: Option<Locatable<Token>>) {
         let tmp = mem::replace(&mut self.current, item);
         mem::replace(&mut self.next, tmp);
+    }
+}
+
+impl std::fmt::Display for TagEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TagEntry::Enum(_) => write!(f, "enum"),
+            TagEntry::Struct(_) => write!(f, "struct"),
+            TagEntry::Union(_) => write!(f, "union"),
+        }
     }
 }
 

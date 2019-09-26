@@ -246,11 +246,9 @@ fn recursive_struct() {
 }
 
 #[test]
-#[ignore]
-fn forward_declaration_no_initializer() {
+fn forward_struct_declaration() {
     utils::assert_succeeds(
-        "
-    struct s my_s;
+        "struct s my_s;
     struct s {
         int i;
     };

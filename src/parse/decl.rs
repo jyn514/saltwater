@@ -110,7 +110,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             (Type::Function(ftype), Some(Token::LeftBrace)) => {
                 symbol.init = true;
                 self.declare(&symbol, &id.location)?;
-                Some(Initializer::FunctionBody(self.function_body(symbol.id.clone(), ftype.clone(), id.location.clone())?))
+                Some(Initializer::FunctionBody(self.function_body(
+                    symbol.id.clone(),
+                    ftype.clone(),
+                    id.location.clone(),
+                )?))
             }
             (Type::Function(_), Some(Token::Equal)) => {
                 return Err(Locatable {
@@ -272,8 +276,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         data: format!("redefinition of '{}'", decl.id),
                     })
                 } else {
-                    self.scope
-                        .insert(decl.id.clone(), decl.clone());
+                    self.scope.insert(decl.id.clone(), decl.clone());
                     Ok(())
                 }
             } else {
@@ -287,8 +290,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 })
             }
         } else {
-            self.scope
-                .insert(decl.id.clone(), decl.clone());
+            self.scope.insert(decl.id.clone(), decl.clone());
             Ok(())
         }
     }

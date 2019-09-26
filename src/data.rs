@@ -145,7 +145,7 @@ pub enum Token {
 
 pub type Stmt = Locatable<StmtType>;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum StmtType {
     Compound(Vec<Stmt>),
@@ -190,7 +190,7 @@ pub enum Initializer {
 ///
 /// This should be the datatype you use in APIs, etc.
 /// because it is more useful than the raw ExprType.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Expr {
     /// expr: holds the actual expression
     pub expr: ExprType,
@@ -892,41 +892,33 @@ impl Display for Qualifiers {
     }
 }
 
-impl Debug for Expr {
+impl Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.expr {
-            ExprType::Comma(left, right) => write!(f, "{:?}, {:?}", *left, *right),
+            ExprType::Comma(left, right) => write!(f, "{}, {}", *left, *right),
             ExprType::Literal(token) => write!(f, "{}", token),
             ExprType::Id(symbol) => write!(f, "{}", symbol.id),
-            ExprType::Add(left, right) => write!(f, "({:?}) + ({:?})", left, right),
-            ExprType::Sub(left, right) => write!(f, "({:?}) - ({:?})", left, right),
-            ExprType::Mul(left, right) => write!(f, "({:?}) * ({:?})", left, right),
-            ExprType::Div(left, right) => write!(f, "({:?}) / ({:?})", left, right),
-            ExprType::Mod(left, right) => write!(f, "({:?}) % ({:?})", left, right),
-            ExprType::Xor(left, right) => write!(f, "({:?}) ^ ({:?})", left, right),
-            ExprType::BitwiseOr(left, right) => write!(f, "({:?}) | ({:?})", left, right),
-            ExprType::BitwiseAnd(left, right) => write!(f, "({:?}) & ({:?})", left, right),
-            ExprType::BitwiseNot(expr) => write!(f, "(~{:?})", expr),
-            ExprType::Deref(expr) => write!(f, "*({:?})", expr),
-            ExprType::Negate(expr) => write!(f, "-({:?})", expr),
-            ExprType::LogicalNot(expr) => write!(f, "!({:?})", expr),
-            ExprType::LogicalOr(left, right) => write!(f, "({:?}) || ({:?})", left, right),
-            ExprType::LogicalAnd(left, right) => write!(f, "({:?}) && ({:?})", left, right),
-            ExprType::Shift(val, by, left) => write!(
-                f,
-                "({:?}) {} ({:?})",
-                val,
-                if *left { "<<" } else { ">>" },
-                by
-            ),
-            ExprType::Compare(left, right, token) => {
-                write!(f, "({:?}) {} ({:?})", left, token, right)
+            ExprType::Add(left, right) => write!(f, "({}) + ({})", left, right),
+            ExprType::Sub(left, right) => write!(f, "({}) - ({})", left, right),
+            ExprType::Mul(left, right) => write!(f, "({}) * ({})", left, right),
+            ExprType::Div(left, right) => write!(f, "({}) / ({})", left, right),
+            ExprType::Mod(left, right) => write!(f, "({}) % ({})", left, right),
+            ExprType::Xor(left, right) => write!(f, "({}) ^ ({})", left, right),
+            ExprType::BitwiseOr(left, right) => write!(f, "({}) | ({})", left, right),
+            ExprType::BitwiseAnd(left, right) => write!(f, "({}) & ({})", left, right),
+            ExprType::BitwiseNot(expr) => write!(f, "(~{})", expr),
+            ExprType::Deref(expr) => write!(f, "*({})", expr),
+            ExprType::Negate(expr) => write!(f, "-({})", expr),
+            ExprType::LogicalNot(expr) => write!(f, "!({})", expr),
+            ExprType::LogicalOr(left, right) => write!(f, "({}) || ({})", left, right),
+            ExprType::LogicalAnd(left, right) => write!(f, "({}) && ({})", left, right),
+            ExprType::Shift(val, by, left) => {
+                write!(f, "({}) {} ({})", val, if *left { "<<" } else { ">>" }, by)
             }
-            ExprType::Assign(left, right, token) => {
-                write!(f, "({:?}) {} ({:?})", left, token, right)
-            }
+            ExprType::Compare(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
+            ExprType::Assign(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
             ExprType::Ternary(cond, left, right) => {
-                write!(f, "({:?}) ? ({:?}) : ({:?})", cond, left, right)
+                write!(f, "({}) ? ({}) : ({})", cond, left, right)
             }
             ExprType::FuncCall(left, params) => {
                 let varargs = if let Type::Function(ftype) = &left.ctype {
@@ -936,22 +928,22 @@ impl Debug for Expr {
                 };
                 write!(
                     f,
-                    "({:?})({})",
+                    "({})({})",
                     left,
                     print_func_call(params.as_slice(), varargs, |expr| {
                         let mut s = String::new();
-                        write!(s, "{:?}", expr).unwrap();
+                        write!(s, "{}", expr).unwrap();
                         s
                     })
                 )
             }
-            ExprType::Cast(expr) => write!(f, "({})({:?})", self.ctype, expr),
+            ExprType::Cast(expr) => write!(f, "({})({})", self.ctype, expr),
             ExprType::Sizeof(ty) => write!(f, "sizeof({})", ty),
-            ExprType::Member(compound, id) => write!(f, "({:?}).{}", compound, id),
+            ExprType::Member(compound, id) => write!(f, "({}).{}", compound, id),
             ExprType::PostIncrement(expr, inc) => {
-                write!(f, "({:?}){}", expr, if *inc { "++" } else { "--" })
+                write!(f, "({}){}", expr, if *inc { "++" } else { "--" })
             }
-            ExprType::StaticRef(expr) => write!(f, "&{:?}", expr),
+            ExprType::StaticRef(expr) => write!(f, "&{}", expr),
         }
     }
 }
@@ -996,45 +988,45 @@ impl Debug for Initializer {
     }
 }
 
-impl Debug for StmtType {
+impl Display for StmtType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            StmtType::Expr(expr) => write!(f, "{:?};", expr),
+            StmtType::Expr(expr) => write!(f, "{};", expr),
             StmtType::Return(None) => write!(f, "return;"),
-            StmtType::Return(Some(expr)) => write!(f, "return {:?};", expr),
+            StmtType::Return(Some(expr)) => write!(f, "return {};", expr),
             StmtType::Break => write!(f, "break;"),
             StmtType::Continue => write!(f, "continue;"),
             StmtType::Default(stmt) => write!(
                 f,
                 "default:{}",
                 if let Some(stmt) = stmt {
-                    format!("\n{:?}", stmt)
+                    format!("\n{}", stmt.data)
                 } else {
                     " ;".into()
                 }
             ),
             StmtType::Case(expr, stmt) => write!(
                 f,
-                "case {:?}:{}",
+                "case {}:{}",
                 expr,
                 if let Some(stmt) = stmt {
-                    format!("\n{:?}", stmt)
+                    format!("\n{}", stmt.data)
                 } else {
                     " ;".into()
                 }
             ),
             StmtType::Goto(id) => write!(f, "goto {};", id),
             StmtType::Label(id) => write!(f, "{}: ", id),
-            StmtType::While(condition, None) => write!(f, "while ({:?}) {{}}", condition),
+            StmtType::While(condition, None) => write!(f, "while ({}) {{}}", condition),
             StmtType::While(condition, Some(body)) => {
-                write!(f, "while ({:?}) {:?}", condition, body.data)
+                write!(f, "while ({}) {}", condition, body.data)
             }
-            StmtType::If(condition, body, None) => {
-                write!(f, "if ({:?}) {:?}", condition, body.data)
-            }
-            StmtType::If(condition, body, Some(otherwise)) => {
-                write!(f, "if ({:?}) {:?} else {:?}", condition, body, otherwise)
-            }
+            StmtType::If(condition, body, None) => write!(f, "if ({}) {}", condition, body.data),
+            StmtType::If(condition, body, Some(otherwise)) => write!(
+                f,
+                "if ({}) {} else {}",
+                condition, body.data, otherwise.data
+            ),
             StmtType::Do(body, condition) => {
                 write!(f, "do {:?} while ({:?});", body.data, condition)
             }
@@ -1045,23 +1037,29 @@ impl Debug for StmtType {
                         StmtType::Decl(decls) => {
                             let len = decls.len();
                             for (i, decl) in decls.iter().enumerate() {
-                                write!(f, "{:?}", decl.data)?;
+                                write!(f, "{}", decl.data)?;
                                 if i != len - 1 {
                                     write!(f, ", ")?;
                                 }
                             }
                         }
-                        StmtType::Expr(expr) => write!(f, "{:?}", expr)?,
+                        StmtType::Expr(expr) => write!(f, "{}", expr)?,
                         _ => unreachable!("for loop initialization other than decl or expr"),
                     }
                 }
+                match condition {
+                    Some(condition) => write!(f, "; {}; ", condition)?,
+                    None => write!(f, "; ; ")?,
+                };
+                match post_loop {
+                    Some(condition) => write!(f, " {})", condition)?,
+                    None => write!(f, ")")?,
+                };
                 write!(
                     f,
-                    "; {:?}; {:?};) {}",
-                    condition,
-                    post_loop,
+                    " {}",
                     if let Some(body) = body {
-                        format!("{:?}", body.data)
+                        format!("{}", body.data)
                     } else {
                         ";".into()
                     }
@@ -1069,20 +1067,39 @@ impl Debug for StmtType {
             }
             StmtType::Decl(decls) => {
                 for decl in decls {
-                    writeln!(f, "{:?};", decl.data)?;
+                    writeln!(f, "{};", decl.data)?;
                 }
                 Ok(())
             }
             StmtType::Compound(stmts) => {
                 writeln!(f, "{{")?;
                 for stmt in stmts {
-                    writeln!(f, "{:?}", stmt.data)?;
+                    writeln!(f, "{}", stmt.data)?;
                 }
                 write!(f, "}}")
             }
-            StmtType::Switch(condition, body) => {
-                write!(f, "switch ({:?}) {:?}", condition, body.data)
+            StmtType::Switch(condition, body) => write!(f, "switch ({}) {}", condition, body.data),
+        }
+    }
+}
+
+impl Display for Declaration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // TODO
+        write!(f, "{:?}", self.symbol)?;
+        match &self.init {
+            Some(Initializer::FunctionBody(body)) => {
+                write!(f, " {{")?;
+                for stmt in body {
+                    write!(f, "{}", stmt.data)?;
+                }
+                write!(f, "}}")
             }
+            Some(Initializer::Scalar(expr)) => write!(f, " = {};", expr),
+            Some(Initializer::InitializerList(inits)) => {
+                f.debug_set().entries(inits.iter()).finish()
+            }
+            None => write!(f, ";"),
         }
     }
 }

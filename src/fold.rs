@@ -131,7 +131,7 @@ impl Expr {
         let location = self.location;
         let folded = match self.expr {
             ExprType::Literal(_) => self.expr,
-            ExprType::Id(ref name) => match dump!(&self.ctype) {
+            ExprType::Id(ref name) => match &self.ctype {
                 Type::Enum(_, members) => match members.iter().find(|member| member.0 == name.id) {
                     Some(enum_literal) => ExprType::Literal(Token::Int(enum_literal.1)),
                     _ => self.expr,

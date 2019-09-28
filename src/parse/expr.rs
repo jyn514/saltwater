@@ -1,7 +1,7 @@
 use super::{Lexeme, Parser, TagEntry};
 use crate::backend::SIZE_T;
 use crate::data::prelude::*;
-use crate::data::{ArrayType, Keyword, Qualifiers, StorageClass::Typedef, StructType};
+use crate::data::{types::ArrayType, Keyword, Qualifiers, StorageClass::Typedef};
 
 type ExprResult = Result<Expr, Locatable<String>>;
 
@@ -1594,7 +1594,7 @@ mod tests {
             init: false,
             qualifiers: Default::default(),
             storage_class: Default::default(),
-            ctype: Type::Function(FunctionType {
+            ctype: Type::Function(types::FunctionType {
                 params: vec![Symbol {
                     ctype: Type::Void,
                     id: Default::default(),

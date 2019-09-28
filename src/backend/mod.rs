@@ -10,8 +10,13 @@ use cranelift::codegen::{
 };
 use target_lexicon::Triple;
 
-use crate::data::{ArrayType, FunctionType, StructType, Symbol, Type};
-use Type::*;
+use crate::data::{
+    types::{
+        ArrayType, FunctionType, StructType,
+        Type::{self, *},
+    },
+    Symbol,
+};
 
 // NOTE: this is required by the standard to always be one
 const CHAR_SIZE: u16 = 1;

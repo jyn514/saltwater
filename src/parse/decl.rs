@@ -6,7 +6,9 @@ use std::mem;
 use super::{FunctionData, Lexeme, Parser, TagEntry, TagScope};
 use crate::backend;
 use crate::data::{
-    prelude::*, ArrayType, FunctionType, Initializer, Keyword, Qualifiers, StorageClass, StructType,
+    prelude::*,
+    types::{ArrayType, FunctionType},
+    Initializer, Keyword, Qualifiers, StorageClass,
 };
 use crate::utils::warn;
 
@@ -1662,7 +1664,8 @@ struct Declarator {
 #[cfg(test)]
 mod tests {
     use crate::data::{
-        ArrayType, Declaration, FunctionType, Initializer, Locatable, Qualifiers, Symbol,
+        types::{ArrayType, FunctionType},
+        Declaration, Initializer, Locatable, Qualifiers, Symbol,
         Type::{self, *},
     };
     use crate::parse::tests::{match_all, match_data, parse, parse_all, ParseType};

@@ -1113,8 +1113,13 @@ impl Compiler {
         body: Stmt,
         builder: &mut FunctionBuilder,
     ) -> SemanticResult<()> {
-        let original_ebb = builder.cursor().current_ebb().unwrap();
         let cond_val = self.compile_expr(condition, builder)?;
+        // works around https://github.com/CraneStation/cranelift/issues/1057
+        // instead of switching to back to the current block to emit the Switch,
+        // fill a new dummy block
+        let dummy_block = builder.create_ebb();
+        Self::jump_to_block(dummy_block, builder);
+
         let start_block = builder.create_ebb();
         builder.switch_to_block(start_block);
         self.last_saw_loop = false;
@@ -1125,7 +1130,7 @@ impl Compiler {
         let (switch, default, end) = self.switches.pop().unwrap();
 
         Self::jump_to_block(end, builder);
-        builder.switch_to_block(original_ebb);
+        builder.switch_to_block(dummy_block);
         switch.emit(
             builder,
             cond_val.ir_val,

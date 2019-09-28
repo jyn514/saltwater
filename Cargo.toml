@@ -25,10 +25,6 @@ lto = true
 
 [profile.dev]
 debug = false  # speeds up link time
-# required for switch statements until
-# https://github.com/CraneStation/cranelift/issues/1057 is fixed
-debug-assertions = false
 
 [profile.test]
 debug = false
-debug-assertions = false

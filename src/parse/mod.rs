@@ -7,7 +7,7 @@ use std::fmt;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{prelude::*, Scope, StructType};
+use crate::data::{prelude::*, Scope};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;

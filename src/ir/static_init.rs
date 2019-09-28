@@ -6,7 +6,7 @@ use cranelift_module::DataContext;
 use super::{Compiler, Id};
 use crate::backend::{PTR_SIZE, TARGET};
 use crate::data::prelude::*;
-use crate::data::{ArrayType, Initializer};
+use crate::data::{types::ArrayType, Initializer};
 use crate::utils::warn;
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);

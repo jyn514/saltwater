@@ -4,7 +4,7 @@ use cranelift_module::{DataContext, FuncId};
 
 use super::{Compiler, Id};
 use crate::data::prelude::*;
-use crate::data::{Expr, ExprType, StructType, Token};
+use crate::data::{types::StructType, Expr, ExprType, Token};
 
 type IrResult = SemanticResult<Value>;
 

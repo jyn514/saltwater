@@ -218,10 +218,7 @@ impl std::fmt::Display for Type {
                 of.print_mid(f)?;
                 self.print_post(f)
             }
-            Function(FunctionType { return_type, .. }) => {
-                write!(f, "{}", return_type)?;
-                self.print_post(f)
-            }
+            Function(ftype) => ftype.fmt(f),
             Enum(Some(ident), _) => write!(f, "enum {}", ident),
             Enum(None, _) => write!(f, "<anonymous enum>"),
             Union(StructType::Named(ident, _, _, _)) => write!(f, "union {}", ident),
@@ -231,6 +228,32 @@ impl std::fmt::Display for Type {
             Bitfield(_) => unimplemented!("printing bitfield type"),
             VaList => write!(f, "va_list"),
         }
+    }
+}
+
+impl fmt::Display for FunctionType {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.return_type)?;
+        self.print_post(f)
+    }
+}
+
+impl FunctionType {
+    fn print_post(&self, f: &mut Formatter) -> fmt::Result {
+        // https://stackoverflow.com/a/30325430
+        let mut comma_seperated = "(".to_string();
+        for param in &self.params {
+            comma_seperated.push_str(&param.ctype.to_string());
+            comma_seperated.push_str(", ");
+        }
+        if self.varargs {
+            comma_seperated.push_str("...");
+        } else if !self.params.is_empty() {
+            comma_seperated.pop();
+            comma_seperated.pop();
+        }
+        comma_seperated.push(')');
+        write!(f, "{}", comma_seperated)
     }
 }
 
@@ -272,22 +295,7 @@ impl Type {
                 write!(f, "]")?;
                 to.print_post(f)
             }
-            Type::Function(func_type) => {
-                // https://stackoverflow.com/a/30325430
-                let mut comma_seperated = "(".to_string();
-                for param in &func_type.params {
-                    comma_seperated.push_str(&param.ctype.to_string());
-                    comma_seperated.push_str(", ");
-                }
-                if func_type.varargs {
-                    comma_seperated.push_str("...");
-                } else if !func_type.params.is_empty() {
-                    comma_seperated.pop();
-                    comma_seperated.pop();
-                }
-                comma_seperated.push(')');
-                write!(f, "{}", comma_seperated)
-            }
+            Type::Function(func_type) => func_type.print_post(f),
             _ => Ok(()),
         }
     }

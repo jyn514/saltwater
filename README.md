@@ -1,6 +1,7 @@
 # rcc
 
 [![Build Status](https://travis-ci.org/jyn514/rcc.svg?branch=master)](https://travis-ci.org/jyn514/rcc)
+[Join us on Discord](https://discord.gg/2jRDZDU)
 
 rcc: a Rust C compiler
 

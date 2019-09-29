@@ -266,6 +266,16 @@ impl<K: Hash + Eq, V> Scope<K, V> {
         }
         None
     }
+    pub fn get_mut(&mut self, name: &K) -> Option<&mut V> {
+        debug_assert!(!self.0.is_empty());
+        for map in self.0.iter_mut().rev() {
+            let current = map.get_mut(name);
+            if current.is_some() {
+                return current;
+            }
+        }
+        None
+    }
     // returns whether the _immediate_ scope contains `name`
     #[inline]
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {

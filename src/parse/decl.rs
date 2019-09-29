@@ -108,13 +108,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             init: false,
         };
         // if it's not a function, we still need to handle it
-        let init = match (&symbol.ctype, self.peek_token()) {
+        let init = match (&mut symbol.ctype, self.peek_token()) {
             (Type::Function(ftype), Some(Token::LeftBrace)) => {
                 symbol.init = true;
+                let saved_ftype = ftype.clone();
                 self.declare(&symbol, &id.location)?;
                 Some(Initializer::FunctionBody(self.function_body(
                     symbol.id.clone(),
-                    ftype.clone(),
+                    saved_ftype,
                     id.location.clone(),
                 )?))
             }
@@ -322,13 +323,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let decl = self
             .declarator(false)?
             .expect("declarator should never return None when called with allow_abstract: false");
-        let (id, ctype) =
+        let (id, mut ctype) =
             decl.parse_type(ctype.clone(), sc, &self.last_location.as_ref().unwrap())?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
 
         // optionally, parse an initializer
         let init = if self.match_next(&Token::Equal).is_some() {
-            Some(self.initializer(&ctype)?)
+            Some(self.initializer(&mut ctype)?)
         } else {
             None
         };
@@ -1199,29 +1200,29 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// Rewritten as
     /// initializer: assignment_expr
     ///     | '{' initializer (',' initializer)* '}'
-    fn initializer(&mut self, ctype: &Type) -> Result<Initializer, Locatable<String>> {
+    fn initializer(&mut self, ctype: &mut Type) -> Result<Initializer, Locatable<String>> {
         if let Type::Union(struct_type) = ctype {
             let members = match struct_type {
-                StructType::Anonymous(members) => members,
-                StructType::Named(name, _, _, _) => match self.tag_scope.get(name).unwrap() {
-                    TagEntry::Union(members) => members,
+                StructType::Anonymous(ref mut members) => members,
+                StructType::Named(name, _, _, _) => match self.tag_scope.get_mut(name).unwrap() {
+                    TagEntry::Union(ref mut members) => members,
                     _ => unreachable!(),
                 },
             };
-            let first_ctype = members.first().unwrap().ctype.clone();
-            return self.initializer(&first_ctype);
+            return self.initializer(&mut members.first_mut().unwrap().ctype);
         }
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
             let mut elements = vec![];
             while self.match_next(&Token::RightBrace).is_none() {
-                let elem_type = ctype
-                    .type_at(&self.tag_scope, elements.len())
-                    .map_err(|err| Locatable {
-                        data: err,
-                        location: self.next_location().clone(),
-                    })?;
-                elements.push(self.initializer(&elem_type)?);
+                let mut elem_type =
+                    ctype
+                        .type_at(&self.tag_scope, elements.len())
+                        .map_err(|err| Locatable {
+                            data: err,
+                            location: self.next_location().clone(),
+                        })?;
+                elements.push(self.initializer(&mut elem_type)?);
                 if self.match_next(&Token::RightBrace).is_some() {
                     break;
                 }
@@ -1232,8 +1233,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let mut expr = self.assignment_expr()?;
             // int (*fp)() = &f can actually influence the type of `fp`
             // also, this nesting is actually horrible
-            /*
-            if let Type::Pointer(to, _) = &ctype {
+            if let Type::Pointer(to, _) = ctype {
                 if let Type::Function(pointer_ftype) = &mut **to {
                     if pointer_ftype.params.is_empty() {
                         if let Type::Function(ftype) = &expr.ctype {
@@ -1242,7 +1242,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     }
                 }
             }
-            */
             // See section 6.7.9 of the C11 standard:
             // The initializer for a scalar shall be a single expression, optionally enclosed in braces.
             // The initial value of the object is that of the expression (after conversion)

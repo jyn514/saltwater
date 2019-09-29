@@ -25,6 +25,7 @@ use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageCl
 
 type Module = CraneliftModule<FaerieBackend>;
 
+#[derive(Debug)]
 enum Id {
     Function(FuncId),
     Global(DataId),
@@ -55,6 +56,9 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> Sema
         match (decl.data.symbol.ctype.clone(), decl.data.init) {
             (Type::Function(func_type), None) => {
                 let location = decl.location;
+                if func_type.params.is_empty() {
+                    continue; // function without prototype, don't pass it to cranelift
+                }
                 compiler.declare_func(
                     decl.data.symbol.id,
                     &func_type.signature(),

@@ -2,12 +2,12 @@ mod decl;
 mod expr;
 mod stmt;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::iter::Iterator;
 use std::mem;
 
-use crate::data::{prelude::*, Scope};
+use crate::data::{prelude::*, types::FunctionType, Scope};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
@@ -27,6 +27,13 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     scope: Scope<String, Symbol>,
     /// the compound types that have been declared (struct/union/enum)
     tag_scope: TagScope,
+    /// Most C compilers allow functions without prototypes to be called
+    /// with any number of arguments, even conflicting arguments.
+    /// Instead, we see the arguments that are used the first time the function is called
+    /// and assume the function always takes parameters of those types.
+    /// This both catches more errors and prevents the backend from trying to implement
+    /// function calls with unknown argument types.
+    prototypes: HashMap<String, FunctionType>,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,
@@ -70,6 +77,7 @@ where
         Parser {
             scope: Scope::new(),
             tag_scope: Scope::new(),
+            prototypes: HashMap::new(),
             tokens: iter,
             pending: Default::default(),
             last_location: None,
@@ -108,16 +116,15 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                 self.leave_scope();
                 return self.pending.pop_front();
             }
-            let mut decls = match self.declaration() {
+            let decls = match self.declaration() {
                 Ok(decls) => decls,
                 Err(err) => return Some(Err(err)),
             };
-            let next = match decls.pop_front() {
-                Some(decl) => decl,
-                None => return self.next(),
-            };
             self.pending.extend(decls.into_iter().map(Result::Ok));
-            Some(Ok(next))
+            match self.pending.pop_front() {
+                Some(decl) => Some(decl),
+                None => self.next(),
+            }
         });
         if self.debug {
             match &next {
@@ -282,6 +289,32 @@ impl Token {
             return left == right;
         }
         mem::discriminant(self) == mem::discriminant(other)
+    }
+}
+
+use crate::data::{Qualifiers, StorageClass};
+impl Type {
+    fn func_type_for_params<I: Iterator<Item = Type>>(
+        original_func: &FunctionType,
+        types: I,
+    ) -> FunctionType {
+        let mut new_func = original_func.clone();
+        Self::update_func_type_for_params(&mut new_func, types);
+        new_func
+    }
+    fn update_func_type_for_params<I: Iterator<Item = Type>>(
+        original_func: &mut FunctionType,
+        types: I,
+    ) {
+        original_func.params = types
+            .map(|ctype| Symbol {
+                ctype,
+                init: true,
+                id: Default::default(),
+                qualifiers: Qualifiers::NONE,
+                storage_class: StorageClass::Auto,
+            })
+            .collect();
     }
 }
 

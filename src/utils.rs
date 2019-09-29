@@ -36,6 +36,23 @@ pub fn get_errors() -> usize {
     ERRORS.load(Ordering::SeqCst)
 }
 
+/// like dbg!, but only when in debug mode
+/// Many thanks to @Senator-In-Exile Lokathor, who gave me the code on Discord
+#[macro_export]
+macro_rules! dump {
+    ($n:expr) => {{
+        if cfg!(debug_assertions) {
+            std::println!(
+                concat!("{}:{}> ", stringify!($n), ": {:?}"),
+                file!(),
+                line!(),
+                &$n
+            );
+        }
+        $n
+    }};
+}
+
 /// ensure that a condition is true at compile time
 /// thanks to https://nikolaivazquez.com/posts/programming/rust-static-assertions/
 macro_rules! const_assert {

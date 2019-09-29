@@ -525,7 +525,10 @@ impl Compiler {
             FuncCall::Named(func_name) => {
                 let func_id: FuncId = match self.scope.get(&func_name) {
                     Some(Id::Function(func_id)) => *func_id,
-                    _ => panic!("parser should catch illegal function calls"),
+                    x => panic!(
+                        "parser should catch illegal function calls: {:?}, {}",
+                        x, func_name
+                    ),
                 };
                 let func_ref = self.module.declare_func_in_func(func_id, builder.func);
                 builder.ins().call(func_ref, compiled_args.as_slice())

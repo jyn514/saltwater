@@ -1,7 +1,7 @@
 use super::{Lexeme, Parser, TagEntry};
 use crate::backend::SIZE_T;
 use crate::data::prelude::*;
-use crate::data::{types::ArrayType, Keyword, Qualifiers, StorageClass::Typedef};
+use crate::data::{types::ArrayType, Keyword, Qualifiers, StorageClass};
 
 type ExprResult = Result<Expr, Locatable<String>>;
 
@@ -453,7 +453,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Some(Token::Id(id)) => {
                     let id = id.clone();
                     match self.scope.get(&id) {
-                        Some(symbol) => symbol.storage_class == Typedef,
+                        Some(symbol) => symbol.storage_class == StorageClass::Typedef,
                         _ => false,
                     }
                 }
@@ -691,7 +691,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let args = self.argument_expr_list_opt()?;
                     self.expect(Token::RightParen)?;
                     // if fp is a function pointer, fp() desugars to (*fp)()
-                    let expr = match expr.ctype {
+                    let mut call_expr = match expr.ctype {
                         Type::Pointer(ref pointee, _) if pointee.is_function() => Expr {
                             lval: false,
                             location: expr.location.clone(),
@@ -701,25 +701,82 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         },
                         _ => expr,
                     };
-                    let functype = match expr.ctype {
-                        Type::Function(ref functype) => functype,
+                    let mut functype = match call_expr.ctype {
+                        Type::Function(ref mut functype) => functype,
                         _ => {
                             return Err(Locatable {
                                 data: format!(
                                     "called object of type '{}' is not a function",
-                                    expr.ctype
+                                    call_expr.ctype
                                 ),
                                 location,
                             })
                         }
                     };
+                    if functype.params.is_empty() {
+                        // function without prototype
+                        if let ExprType::Deref(_) = call_expr.expr {
+                            err!(
+                                "rcc does not support pointers to functions without a prototype
+                                  (see https://github.com/jyn514/rcc/issues/61)"
+                                    .into(),
+                                call_expr.location
+                            );
+                        }
+                        let name = if let ExprType::Id(name) = &call_expr.expr {
+                            name
+                        } else {
+                            unreachable!("can't have a variable of type function that's not named");
+                        };
+                        if let Some(prototype) = self.prototypes.get(&name.id) {
+                            let arg_types: Vec<_> = args.iter().map(|arg| &arg.ctype).collect();
+                            let param_types: Vec<_> = prototype
+                                .params
+                                .iter()
+                                .map(|symbol| &symbol.ctype)
+                                .collect();
+                            if arg_types != param_types {
+                                let actual_func_type = Type::Function(Type::func_type_for_params(
+                                    &functype,
+                                    arg_types.iter().map(|t| (*t).clone()),
+                                ));
+                                err!(
+                                    format!(
+                                        "inconsistent use of function without prototype; 
+                                        original usage had inferred prototype of {},
+                                        current usage has inferred prototype of {}",
+                                        prototype, actual_func_type,
+                                    ),
+                                    location
+                                );
+                            }
+                            functype.params = prototype.params.clone();
+                        } else {
+                            Type::update_func_type_for_params(
+                                functype,
+                                args.iter().map(|arg| arg.ctype.clone()),
+                            );
+                            self.prototypes.insert(name.id.clone(), functype.clone());
+                            self.pending.push_front(Ok(Locatable {
+                                data: Declaration {
+                                    init: None,
+                                    symbol: Symbol {
+                                        id: name.id.clone(),
+                                        init: false,
+                                        qualifiers: Qualifiers::NONE,
+                                        storage_class: StorageClass::Static,
+                                        ctype: Type::Function(functype.clone()),
+                                    },
+                                },
+                                location: call_expr.location.clone(),
+                            }));
+                        }
+                    }
                     let mut expected = functype.params.len();
                     if expected == 1 && functype.params[0].ctype == Type::Void {
                         expected = 0;
                     }
-                    if !functype.params.is_empty()
-                        && (args.len() < expected || args.len() > expected && !functype.varargs)
-                    {
+                    if args.len() < expected || args.len() > expected && !functype.varargs {
                         return Err(Locatable {
                             data: format!(
                                 "too {} arguments to function call: expected {}, have {}",
@@ -740,7 +797,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         constexpr: false,
                         lval: false, // no move semantics here!
                         ctype: *functype.return_type.clone(),
-                        expr: ExprType::FuncCall(Box::new(expr), promoted_args),
+                        expr: ExprType::FuncCall(Box::new(call_expr), promoted_args),
                     }
                 }
                 Token::Dot => {
@@ -1500,6 +1557,7 @@ impl Type {
             _ => std::usize::MAX,
         }
     }
+    // convenience functions
     pub fn for_string_literal(len: SIZE_T) -> Type {
         Type::Array(Box::new(Type::Char(true)), ArrayType::Fixed(len))
     }

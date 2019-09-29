@@ -45,7 +45,7 @@ fn static_initializers() {
         *p = &i,
         *q = 0,
         *r = (void*)0,
-        f(),
+        f(void),
         (*fp)() = f,
         a[] = {1, 2, 3};
     int f() { return 1; }

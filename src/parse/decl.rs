@@ -273,24 +273,39 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if let Some(existing) = self.scope.get_immediate(&decl.id) {
             if existing == decl {
                 if decl.init && existing.init {
-                    Err(Locatable {
+                    return Err(Locatable {
                         location: location.clone(),
                         data: format!("redefinition of '{}'", decl.id),
-                    })
-                } else {
-                    self.scope.insert(decl.id.clone(), decl.clone());
-                    Ok(())
+                    });
                 }
             } else {
                 // TODO: this gives a terrible error message if storage_class or qualifiers are different
-                Err(Locatable {
+                return Err(Locatable {
                     data: format!(
                         "redeclaration of '{}' with different type (originally {}, now {})",
                         existing.id, existing.ctype, decl.ctype
                     ),
                     location: location.clone(),
-                })
+                });
             }
+        }
+        if let Some(inferred_prototype) = self.prototypes.get(&decl.id) {
+            let decl_ftype = match &decl.ctype {
+                Type::Function(ftype) => ftype,
+                _ => unreachable!(),
+            };
+            if inferred_prototype != decl_ftype {
+                err!(
+                    format!(
+                        "inconsistent use of function without prototype; 
+                        original usage had inferred prototype of {},
+                        current declaration has type {}",
+                        inferred_prototype, decl.ctype,
+                    ),
+                    location.clone()
+                );
+            }
+            Ok(())
         } else {
             self.scope.insert(decl.id.clone(), decl.clone());
             Ok(())
@@ -1215,6 +1230,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(Initializer::InitializerList(elements))
         } else {
             let mut expr = self.assignment_expr()?;
+            // int (*fp)() = &f can actually influence the type of `fp`
+            // also, this nesting is actually horrible
+            /*
+            if let Type::Pointer(to, _) = &ctype {
+                if let Type::Function(pointer_ftype) = &mut **to {
+                    if pointer_ftype.params.is_empty() {
+                        if let Type::Function(ftype) = &expr.ctype {
+                            pointer_ftype.params = ftype.params.clone();
+                        }
+                    }
+                }
+            }
+            */
             // See section 6.7.9 of the C11 standard:
             // The initializer for a scalar shall be a single expression, optionally enclosed in braces.
             // The initial value of the object is that of the expression (after conversion)

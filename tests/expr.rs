@@ -130,6 +130,7 @@ fn cmp() {
     utils::assert_code("int main() { return 12.0 <= 12.5; }", 1);
     utils::assert_code("int main() { return 12.0 != 12.1; }", 1);
     utils::assert_compile_error("int a[1]; int main() { return a == 1; }");
+    utils::assert_code("int main() { int a[10]; int *p = a; return a == p; }", 1);
 }
 
 #[test]

@@ -1308,26 +1308,32 @@ impl Expr {
             let tmp = Expr::binary_promote(*left, *right)?;
             left = Box::new(tmp.0);
             right = Box::new(tmp.1);
-        } else if !((left.ctype.is_pointer() && left.ctype == right.ctype)
-            // equality operations have different rules :(
-            || ((token.data == Token::EqualEqual || token.data == Token::NotEqual)
-                // shoot me now
-                && ((left.ctype.is_pointer() && right.ctype.is_void_pointer())
-                    || (left.ctype.is_void_pointer() && right.ctype.is_pointer())
-                    || (left.is_null() && right.ctype.is_pointer())
-                    || (left.ctype.is_pointer() && right.is_null()))))
-        {
-            return Err(Locatable {
-                data: format!(
-                    "invalid types for '{}' (expected arithmetic types or compatible pointers, got {} {} {}",
-                    token.data,
-                    left.ctype,
-                    token.data,
-                    right.ctype
-                ),
-                location: token.location,
-            });
+        } else {
+            let (left_expr, right_expr) = (left.rval(), right.rval());
+            if !((left_expr.ctype.is_pointer() && left_expr.ctype == right_expr.ctype)
+                // equality operations have different rules :(
+                || ((token.data == Token::EqualEqual || token.data == Token::NotEqual)
+                    // shoot me now
+                    && ((left_expr.ctype.is_pointer() && right_expr.ctype.is_void_pointer())
+                        || (left_expr.ctype.is_void_pointer() && right_expr.ctype.is_pointer())
+                        || (left_expr.is_null() && right_expr.ctype.is_pointer())
+                        || (left_expr.ctype.is_pointer() && right_expr.is_null()))))
+            {
+                return Err(Locatable {
+                    data: format!(
+                        "invalid types for '{}' (expected arithmetic types or compatible pointers, got {} {} {}",
+                        token.data,
+                        left_expr.ctype,
+                        token.data,
+                        right_expr.ctype
+                    ),
+                    location: token.location,
+                });
+            }
+            left = Box::new(left_expr);
+            right = Box::new(right_expr);
         }
+        assert!(!left.lval && !right.lval);
         Ok(Expr {
             constexpr: left.constexpr && right.constexpr,
             lval: false,

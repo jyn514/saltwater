@@ -48,6 +48,8 @@ fn static_initializers() {
         f(void),
         (*fp)() = f,
         a[] = {1, 2, 3};
+        struct s { int i; } my_s;
+        int *s = &my_s.i;
     int f() { return 1; }
     int main() { return (*fp)(); }",
         1,

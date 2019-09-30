@@ -13,7 +13,7 @@ macro_rules! struct_member_helper {
                 constexpr: $expr.constexpr,
                 lval: true,
                 location: $location,
-                expr: ExprType::Member(Box::new($expr), Token::Id($id)),
+                expr: ExprType::Member(Box::new($expr), $id),
             })
         } else {
             Err(Locatable {

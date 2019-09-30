@@ -4,7 +4,7 @@ use cranelift_module::{DataContext, FuncId};
 
 use super::{Compiler, Id};
 use crate::data::prelude::*;
-use crate::data::{types::StructType, Expr, ExprType, Token};
+use crate::data::{Expr, ExprType, Token};
 
 type IrResult = SemanticResult<Value>;
 
@@ -114,19 +114,9 @@ impl Compiler {
             ExprType::Member(cstruct, id) => {
                 let ctype = cstruct.ctype.clone();
                 let pointer = self.compile_expr(*cstruct, builder)?;
-                let id = if let Token::Id(id) = id {
-                    id
-                } else {
-                    unreachable!("parser should only pass ids to ExprType::Member");
-                };
-                let offset = match &ctype {
-                    Type::Struct(StructType::Anonymous(members)) => {
-                        ctype.struct_offset(members, &id)
-                    }
-                    Type::Struct(StructType::Named(_, _, _, offsets)) => *offsets.get(&id).unwrap(),
-                    Type::Union(_) => 0,
-                    _ => unreachable!("only structs and unions can have members"),
-                };
+                let offset = ctype
+                    .member_offset(&id)
+                    .expect("only structs and unions can have members");
                 let ir_offset = builder.ins().iconst(Type::ptr_type(), offset as i64);
                 Ok(Value {
                     ir_val: builder.ins().iadd(pointer.ir_val, ir_offset),

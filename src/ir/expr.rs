@@ -280,6 +280,10 @@ impl Compiler {
         // calculate this here before it's moved to `compile_expr`
         let orig_signed = expr.ctype.is_signed();
         let original = self.compile_expr(expr, builder)?;
+        if ctype == Type::Void {
+            // this cast is a no-op, it's just here for the frontend
+            return Ok(original);
+        }
         let cast_type = ctype.as_ir_type();
         let cast = Self::cast_ir(
             original.ir_type,

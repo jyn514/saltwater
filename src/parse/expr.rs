@@ -467,6 +467,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             } = self.type_name()?;
             self.expect(Token::RightParen)?;
             let expr = self.cast_expr()?;
+            if ctype == Type::Void {
+                // casting anything to void is allowed
+                return Ok(Expr {
+                    lval: false,
+                    constexpr: expr.constexpr,
+                    ctype,
+                    // this just signals to the backend to ignore this outer expr
+                    expr: ExprType::Cast(Box::new(expr)),
+                    location,
+                });
+            }
             if !ctype.is_scalar() {
                 return Err(Locatable {
                     data: format!("cannot cast to non-scalar type '{}'", ctype),

@@ -156,6 +156,12 @@ fn while_loop() {
     }",
         "fedcba",
     );
+    utils::assert_succeeds(
+        "int main() {
+        int i = 1;
+        while (i) --i;
+    }",
+    )
 }
 
 #[test]

@@ -1125,7 +1125,8 @@ impl Expr {
     // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
     //
     // if (expr)
-    pub fn truthy(self) -> Result<Expr, Locatable<String>> {
+    pub fn truthy(mut self) -> Result<Expr, Locatable<String>> {
+        self = self.rval();
         if self.ctype == Type::Bool {
             return Ok(self);
         }

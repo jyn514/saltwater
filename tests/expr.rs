@@ -182,7 +182,7 @@ fn comma() {
 #[test]
 fn sizeof() {
     utils::assert_code(
-        "int main() { return sizeof(1) + sizeof 1 + sizeof(long); }",
+        "int main() { return sizeof(1 + 1) + sizeof 1 + sizeof(long); }",
         3 * rcc::data::Type::Long(true).sizeof().unwrap() as i32,
     );
 }

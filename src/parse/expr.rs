@@ -1176,14 +1176,8 @@ impl Expr {
         } else if self.ctype.is_arithmetic() && ctype.is_arithmetic()
             || self.is_null() && ctype.is_pointer()
             || self.ctype.is_pointer() && ctype.is_bool()
-            || self.ctype.is_pointer()
-                && match ctype {
-                    Type::Pointer(t, _) => match **t {
-                        Type::Void => true,
-                        _ => false,
-                    },
-                    _ => false,
-                }
+            || self.ctype.is_pointer() && ctype.is_void_pointer()
+            || self.ctype.is_pointer() && ctype.is_char_pointer()
         {
             Ok(Expr {
                 location: self.location.clone(),
@@ -1192,8 +1186,10 @@ impl Expr {
                 lval: false,
                 ctype: ctype.clone(),
             })
-        } else if self.expr == ExprType::Literal(Token::Int(0)) && ctype.is_pointer()
-            || self.ctype.is_void_pointer() && ctype.is_pointer()
+        } else if ctype.is_pointer()
+            && (self.expr == ExprType::Literal(Token::Int(0))
+                || self.ctype.is_void_pointer()
+                || self.ctype.is_char_pointer())
         {
             self.ctype = ctype.clone();
             Ok(self)

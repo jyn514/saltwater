@@ -22,6 +22,7 @@ fn test_different_types() {
 fn test_initializers() {
     utils::assert_compile_error("char c = '🙃';");
     utils::assert_compile_error("int a[-1];");
+    utils::assert_compile_error("int i = {};");
     utils::assert_succeeds(
         "
     int i = 1;

@@ -145,6 +145,16 @@ impl Type {
         }
     }
     #[inline]
+    pub fn is_char_pointer(&self) -> bool {
+        match self {
+            Type::Pointer(t, _) => match **t {
+                Type::Char(_) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+    #[inline]
     /// used for pointer addition and subtraction, see section 6.5.6 of the C11 standard
     pub fn is_pointer_to_complete_object(&self) -> bool {
         match self {

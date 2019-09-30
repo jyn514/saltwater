@@ -197,6 +197,17 @@ fn implicit_casts() {
     utils::assert_code("int main() { return 12.0 == 12; }", 1);
     utils::assert_code("int main() { return 12.0 <= 12; }", 1);
     utils::assert_code("int main() { return 1 + 2 > 1; }", 1);
+    utils::assert_code(
+        "int main() {
+        int i = 1, *p = &i;
+        char *c = p;
+        void *d = p;
+        p = d;
+        c = d;
+        return *c;
+        }",
+        1,
+    );
 }
 
 #[test]

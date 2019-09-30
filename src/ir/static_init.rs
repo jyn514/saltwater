@@ -99,28 +99,26 @@ impl Compiler {
         // static address-of
         match expr.expr {
             ExprType::StaticRef(inner) => match inner.expr {
-                ExprType::Id(symbol) => match self.scope.get(&symbol.id) {
-                    Some(Id::Function(func_id)) => {
-                        let func_ref = self.module.declare_func_in_data(*func_id, ctx);
-                        ctx.write_function_addr(offset, func_ref);
-                    }
-                    Some(Id::Global(data_id)) => {
-                        let global_val = self.module.declare_data_in_data(*data_id, ctx);
-                        ctx.write_data_addr(offset, global_val, 0);
-                    }
-                    Some(Id::Local(_)) => {
-                        unreachable!("cannot have local variable at global scope")
-                    }
-                    None => err!(
-                        format!("use of undeclared identifier {}", symbol.id),
-                        expr.location
-                    ),
-                },
+                ExprType::Id(symbol) => self.static_ref(symbol, 0, offset, ctx),
                 ExprType::Literal(Token::Str(_)) => {
                     unimplemented!("address of literal in static context")
                 }
                 ExprType::Literal(ref token) if token.is_zero() => buf.copy_from_slice(&ZERO_PTR),
                 ExprType::Cast(ref inner) if inner.is_zero() => buf.copy_from_slice(&ZERO_PTR),
+                ExprType::Member(struct_expr, member) => {
+                    let member_offset = struct_expr
+                        .ctype
+                        .member_offset(&member)
+                        .expect("parser shouldn't allow Member for non-struct types");
+                    if let ExprType::Id(symbol) = struct_expr.expr {
+                        self.static_ref(symbol, member_offset.try_into().unwrap(), offset, ctx);
+                    } else {
+                        err!(
+                            "expression is not a compile time constant".into(),
+                            struct_expr.location
+                        );
+                    }
+                }
                 _ => err!("cannot take the address of an rvalue".into(), expr.location),
             },
             ExprType::Literal(token) => {
@@ -133,6 +131,21 @@ impl Compiler {
             ),
         }
         Ok(())
+    }
+    fn static_ref(&self, symbol: Symbol, member_offset: i64, offset: u32, ctx: &mut DataContext) {
+        match self.scope.get(&symbol.id) {
+            Some(Id::Function(func_id)) => {
+                let func_ref = self.module.declare_func_in_data(*func_id, ctx);
+                debug_assert!(member_offset == 0);
+                ctx.write_function_addr(offset, func_ref);
+            }
+            Some(Id::Global(data_id)) => {
+                let global_val = self.module.declare_data_in_data(*data_id, ctx);
+                ctx.write_data_addr(offset, global_val, member_offset);
+            }
+            Some(Id::Local(_)) => unreachable!("cannot have local variable at global scope"),
+            None => unreachable!("parser should catch undeclared variables"),
+        }
     }
     fn init_symbol(
         &self,

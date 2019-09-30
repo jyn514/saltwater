@@ -98,7 +98,7 @@ pub enum ExprType {
     Id(Symbol),
     Literal(Token),
     FuncCall(Box<Expr>, Vec<Expr>),
-    Member(Box<Expr>, Token),
+    Member(Box<Expr>, String),
     // post increment/decrement
     PostIncrement(Box<Expr>, bool),
     Cast(Box<Expr>),

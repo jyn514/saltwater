@@ -516,7 +516,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(Token::Keyword(Keyword::Sizeof)) => {
                 self.next_token();
                 let (location, ctype) = if self.match_next(&Token::LeftParen).is_some() {
-                    match self.peek_token() {
+                    let ret = match self.peek_token() {
                         Some(Token::Keyword(k)) if k.is_decl_specifier() => {
                             let ty = self.type_name()?;
                             (ty.location, ty.data.0)
@@ -525,12 +525,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             let expr = self.unary_expr()?;
                             (expr.location, expr.ctype)
                         }
-                    }
+                    };
+                    self.expect(Token::RightParen)?;
+                    ret
                 } else {
                     let result = self.unary_expr()?;
                     (result.location, result.ctype)
                 };
-                self.expect(Token::RightParen)?;
                 Ok(Expr {
                     // the C11 standard states (6.5.3.4)
                     // "If the type of the operand is a variable length array type, the operand is evaluated; otherwise, the operand is not evaluated and the result is an integer constant."

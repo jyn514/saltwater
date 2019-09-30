@@ -50,7 +50,7 @@ pub fn struct_size(symbols: &[Symbol]) -> Result<SIZE_T, &'static str> {
 
 pub fn struct_align(members: &[Symbol]) -> Result<SIZE_T, &'static str> {
     members.iter().try_fold(0, |max, member| {
-        Ok(std::cmp::max(member.ctype.sizeof()?, max))
+        Ok(std::cmp::max(member.ctype.alignof()?, max))
     })
 }
 

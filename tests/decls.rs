@@ -209,6 +209,15 @@ fn enum_self_assign() {
 }
 
 #[test]
+fn alignment() {
+    utils::assert_code(
+        "struct s { int a[24]; } my_s;
+         int main() { return *my_s.a; }",
+        0,
+    );
+}
+
+#[test]
 fn function() {
     utils::assert_code(
         "

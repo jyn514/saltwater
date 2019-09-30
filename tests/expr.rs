@@ -206,6 +206,9 @@ fn explicit_casts() {
     utils::assert_succeeds("int main() { return (_Bool)0.0; }");
     utils::assert_succeeds("int main() { return (float)0; }");
     utils::assert_succeeds("int main() { return (_Bool)(int*)(int)0.0; }");
+    utils::assert_succeeds("int main() { (void)5; }");
+    utils::assert_compile_error("int main() { return (void)5; }");
+    utils::assert_compile_error("void f() { return (void)5; }");
 }
 
 #[test]

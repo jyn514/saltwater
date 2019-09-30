@@ -1199,6 +1199,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
             let mut elements = vec![];
+            if let Some(token) = self.match_next(&Token::RightBrace) {
+                err!("initializers cannot be empty".into(), token.location);
+            }
             while self.match_next(&Token::RightBrace).is_none() {
                 let elem_type = ctype
                     .type_at(&self.tag_scope, elements.len())

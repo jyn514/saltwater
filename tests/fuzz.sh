@@ -27,8 +27,9 @@ cd fuzz
 if ! [ "$(cat /proc/sys/kernel/core_pattern)" = "core" ]; then
 	echo "If this prompts you for sudo access, it's because your system is set up to send core dumps to apport instead of the parent process"
 	echo "See https://stackoverflow.com/questions/35441062/afl-fuzzing-without-root-avoid-modifying-proc-sys-kernel-core-pattern#35470012 if you want more details"
-	echo "If you don't want to run sudo from strange scripts, run 'sudo echo "core" > /proc/sys/kernel/core_pattern' and you won't be prompted again"
-	sudo echo "core" > /proc/sys/kernel/core_pattern
+	echo "If you don't want to run sudo from strange scripts, run the following command and you won't be prompted again"
+	echo "sudo sh -c 'echo \"core\" > /proc/sys/kernel/core_pattern'"
+	sudo sh -c 'echo "core" > /proc/sys/kernel/core_pattern'
 fi
 
 RUSTFLAGS="-Clink-arg=-fuse-ld=gold" cargo afl build --bin afl

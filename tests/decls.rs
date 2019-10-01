@@ -240,6 +240,9 @@ fn function() {
     ",
         1,
     );
+    utils::assert_compile_error("int f(void, void);");
+    utils::assert_compile_error("int f(int, void);");
+    utils::assert_compile_error("int f(..., void);");
 }
 
 #[test]

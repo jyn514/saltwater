@@ -40,12 +40,9 @@ pub fn union_size(symbols: &[Symbol]) -> Result<SIZE_T, &'static str> {
 }
 
 pub fn struct_size(symbols: &[Symbol]) -> Result<SIZE_T, &'static str> {
-    // TODO: this doesn't handle padding
-    symbols
-        .iter()
-        .map(|symbol| symbol.ctype.sizeof())
-        // sum of member sizes
-        .try_fold(0, |n, size| Ok(n + size?))
+    symbols.iter().try_fold(0, |offset, symbol| {
+        Ok(Type::next_offset(offset, &symbol.ctype)?)
+    })
 }
 
 pub fn struct_align(members: &[Symbol]) -> Result<SIZE_T, &'static str> {
@@ -134,18 +131,20 @@ impl Type {
             if formal.id == member {
                 return current_offset;
             }
-            let mut size = formal
-                .ctype
-                .sizeof()
-                .expect("struct members should have complete object type");
-            let align = self.alignof().expect("struct should have valid alignment");
-            // round up to the nearest multiple of align
-            if size % align != 0 {
-                size += (align - size) % align;
-            }
-            current_offset += size;
+            current_offset = Self::next_offset(current_offset, &formal.ctype)
+                .expect("structs should have valid size and alignment");
         }
         unreachable!("cannot call struct_offset for member not in struct");
+    }
+    fn next_offset(mut current_offset: u64, ctype: &Type) -> Result<u64, &'static str> {
+        let align = ctype.alignof()?;
+        // round up to the nearest multiple of align
+        let rem = current_offset % align;
+        if rem != 0 {
+            // for example: 7%4 == 3; 7 + ((4 - 3) = 1) == 8; 8 % 4 == 0
+            current_offset += align - rem;
+        }
+        Ok(current_offset + ctype.sizeof()?)
     }
     pub fn as_ir_type(&self) -> IrType {
         match self {
@@ -236,4 +235,116 @@ where
             }
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::{
+        types::{ArrayType, StructType},
+        Qualifiers, StorageClass, Symbol, Type,
+    };
+
+    fn type_for_size(size: u16) -> Type {
+        match size {
+            0 => Type::Void,
+            BOOL_SIZE => Type::Bool,
+            SHORT_SIZE => Type::Short(true),
+            INT_SIZE => Type::Int(true),
+            LONG_SIZE => Type::Long(true),
+            _ => complex_type_for_size(size),
+        }
+    }
+    fn complex_type_for_size(size: u16) -> Type {
+        let mut types = vec![];
+
+        let (div, mut rem) = (size / 8, size % 8);
+        if div != 0 {
+            types.push(Type::Array(
+                Box::new(Type::Long(true)),
+                ArrayType::Fixed(div.into()),
+            ));
+        }
+
+        for i in [4, 2, 1].iter() {
+            let div = rem / i;
+            rem %= i;
+            if div == 1 {
+                types.push(type_for_size(*i));
+            } else {
+                assert_eq!(div, 0);
+            }
+        }
+        assert_eq!(rem, 0);
+        struct_for_types(types)
+    }
+    fn symbol_for_type(ctype: Type, id: String) -> Symbol {
+        Symbol {
+            id,
+            ctype,
+            init: false,
+            qualifiers: Qualifiers::NONE,
+            storage_class: StorageClass::Auto,
+        }
+    }
+    fn struct_for_types(types: Vec<Type>) -> Type {
+        let members = {
+            let mut v = vec![];
+            for (i, ctype) in types.into_iter().enumerate() {
+                v.push(symbol_for_type(ctype, i.to_string()));
+            }
+            v
+        };
+        Type::Struct(StructType::Anonymous(members))
+    }
+    fn assert_offset(types: Vec<Type>, member_index: usize, offset: u64) {
+        let struct_type = struct_for_types(types);
+        let members = if let Type::Struct(StructType::Anonymous(m)) = &struct_type {
+            m
+        } else {
+            unreachable!()
+        };
+        let member = &members[member_index].id;
+        assert_eq!(struct_type.struct_offset(members, member), offset);
+    }
+    #[test]
+    fn first_member() {
+        for size in 1..128 {
+            let types = vec![type_for_size(size)];
+            assert_offset(types, 0, 0);
+        }
+    }
+    #[test]
+    fn second_member() {
+        for size in 1..128 {
+            let types = vec![type_for_size(size), Type::Bool];
+            assert_offset(types, 1, size.into());
+        }
+    }
+    #[test]
+    fn align() {
+        for size in 1..128 {
+            let align = type_for_size(size).alignof().unwrap();
+            assert_eq!(align, align.next_power_of_two());
+        }
+    }
+    #[test]
+    fn multiples() {
+        let two = type_for_size(2);
+        let four = type_for_size(4);
+        let eight = type_for_size(8);
+        let sixteen = type_for_size(16);
+        assert_offset(vec![four, two], 1, 4);
+        assert_offset(vec![eight.clone(), sixteen.clone()], 1, 8);
+        assert_offset(vec![sixteen.clone(), eight], 1, 16);
+        let twenty_four = type_for_size(24);
+        assert_offset(vec![twenty_four, sixteen], 1, 24);
+    }
+    #[test]
+    fn char_struct() {
+        let char_struct = type_for_size(5);
+        assert_eq!(char_struct.alignof().unwrap(), 4);
+        assert_offset(vec![Type::Int(true), Type::Char(true)], 1, 4);
+        assert_eq!(char_struct.sizeof().unwrap(), 5);
+    }
 }

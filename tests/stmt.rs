@@ -161,7 +161,23 @@ fn while_loop() {
         int i = 1;
         while (i) --i;
     }",
-    )
+    );
+}
+
+#[test]
+#[ignore]
+fn strlen() {
+    utils::assert_code(
+        "
+    typedef unsigned long size_t;
+    size_t strlen(char *str) {
+        size_t len = 0;
+        while (*str++) ++len;
+        return len;
+    }
+    int main() { return strlen(\"hi\"); }",
+        2,
+    );
 }
 
 #[test]

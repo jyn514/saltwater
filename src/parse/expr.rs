@@ -1151,12 +1151,14 @@ impl Expr {
                 ),
             })
         } else {
+            let zero = Expr::zero();
+            self = self.cast(&zero.ctype)?;
             Ok(Expr {
                 constexpr: self.constexpr,
                 lval: false,
                 location: self.location.clone(),
                 ctype: Type::Bool,
-                expr: ExprType::Compare(Box::new(self), Box::new(Expr::zero()), Token::NotEqual),
+                expr: ExprType::Compare(Box::new(self), Box::new(zero), Token::NotEqual),
             })
         }
     }
@@ -1263,7 +1265,13 @@ impl Expr {
                 ),
             });
         }
-        let rval = Expr::int_literal(1, location.clone()).cast(&expr.ctype)?;
+        let rval = Expr {
+            constexpr: true,
+            lval: false,
+            ctype: expr.ctype.clone(),
+            location: location.clone(),
+            expr: ExprType::Cast(Box::new(Expr::int_literal(1, location.clone()))),
+        };
         // ++i is syntactic sugar for i+=1
         if prefix {
             Ok(Expr {

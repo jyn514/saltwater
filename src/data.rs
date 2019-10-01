@@ -537,15 +537,19 @@ impl Display for StmtType {
 
 impl Display for Declaration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO
-        write!(f, "{:?}", self.symbol)?;
+        // TODO: this is not right
+        write!(
+            f,
+            "{} {} {}: {}",
+            self.symbol.storage_class, self.symbol.qualifiers, self.symbol.id, self.symbol.ctype
+        )?;
         match &self.init {
             Some(Initializer::FunctionBody(body)) => {
-                write!(f, " {{")?;
+                writeln!(f, " {{")?;
                 for stmt in body {
-                    write!(f, "{}", stmt.data)?;
+                    writeln!(f, "{}", stmt.data)?;
                 }
-                write!(f, "}}")
+                writeln!(f, "}}")
             }
             Some(Initializer::Scalar(expr)) => write!(f, " = {};", expr),
             Some(Initializer::InitializerList(inits)) => {

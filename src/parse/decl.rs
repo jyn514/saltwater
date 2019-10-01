@@ -833,10 +833,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         loop {
             if let Some(locatable) = self.match_next(&Token::Ellipsis) {
                 if params.is_empty() {
-                    errs.push_back(Err(Locatable {
+                    errs.push_back(Locatable {
                         location: locatable.location,
                         data: "ISO C requires a parameter before '...'".to_string(),
-                    }));
+                    });
                 }
                 // TODO: have a better error message for `int f(int, ..., int);`
                 self.expect(Token::RightParen)?;
@@ -849,13 +849,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             // true: allow abstract_declarators
             let declarator = match self.declarator(true) {
                 Err(x) => {
-                    errs.push_back(Err(x));
+                    errs.push_back(x);
                     continue;
                 }
                 Ok(declarator) => declarator,
             };
             if sc != StorageClass::Auto {
-                errs.push_back(Err(Locatable {
+                errs.push_back(Locatable {
                     location: self.last_location.as_ref().unwrap().clone(),
                     data: format!(
                         "cannot specify storage class '{}' for {}",
@@ -870,7 +870,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             "<parse-error>".to_string()
                         }
                     ),
-                }));
+                });
             }
             if let Some(decl) = declarator {
                 let (id, mut ctype) = decl.parse_type(
@@ -895,13 +895,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     data: Default::default(),
                 });
                 if data != "" && params.iter().any(|p| p.data.id == data) {
-                    errs.push_back(Err(Locatable {
+                    errs.push_back(Locatable {
                         location: location.clone(),
                         data: format!(
                             "duplicate parameter name '{}' in function declaration",
                             data,
                         ),
-                    }));
+                    });
                 }
                 params.push(Locatable {
                     location,
@@ -914,6 +914,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     },
                 });
             } else {
+                if param_type == Type::Void && !params.is_empty() {
+                    errs.push_back(Locatable {
+                        data: "void must be the first and only parameter if specified".into(),
+                        location: self.next_location().clone(),
+                    });
+                    continue;
+                }
                 // abstract param
                 params.push(Locatable {
                     location: self.next_location().clone(),
@@ -928,14 +935,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::RightParen)?;
-                // TODO: handle errors (what should the return type be?)
-                //let err = errs.pop_front();
-                self.pending.append(&mut errs);
-                //err.unwrap_or(
-                return Ok(DeclaratorType::Function(FunctionDeclarator {
-                    params,
-                    varargs: false,
-                }));
+                let err = errs.pop_front();
+                self.pending.extend(errs.into_iter().map(Err));
+                return match err {
+                    Some(err) => Err(err),
+                    None => Ok(DeclaratorType::Function(FunctionDeclarator {
+                        params,
+                        varargs: false,
+                    })),
+                };
             }
         }
     }

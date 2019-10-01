@@ -446,7 +446,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             | Some(Type::Short(ref mut s))
             | Some(Type::Int(ref mut s))
             | Some(Type::Long(ref mut s)) => {
-                *s = signed.unwrap_or(true);
+                if let Some(explicit) = signed {
+                    *s = explicit;
+                }
                 ctype.unwrap()
             }
             Some(ctype) => ctype,
@@ -2101,5 +2103,10 @@ mod tests {
                 ]
             )
         ));
+    }
+    #[test]
+    fn typedef_signed() {
+        let mut parsed = parse_all("typedef unsigned uint; uint i;");
+        assert!(match_type(parsed.pop(), Type::Int(false)));
     }
 }

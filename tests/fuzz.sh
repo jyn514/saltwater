@@ -22,8 +22,8 @@ $CARGO fuzz run libfuzzer -- -timeout=1 >/dev/null || true
 if ! exists cargo-afl; then
 	cargo install afl
 fi
-cd fuzz
 
+cd fuzz
 if ! [ "$(cat /proc/sys/kernel/core_pattern)" = "core" ]; then
 	echo "If this prompts you for sudo access, it's because your system is set up to send core dumps to apport instead of the parent process"
 	echo "See https://stackoverflow.com/questions/35441062/afl-fuzzing-without-root-avoid-modifying-proc-sys-kernel-core-pattern#35470012 if you want more details"
@@ -35,4 +35,3 @@ fi
 RUSTFLAGS="-Clink-arg=-fuse-ld=gold" cargo afl build --bin afl
 AFL_SKIP_CPUFREQ=1 timeout 120 cargo afl fuzz -i afl/inputs -o afl/outputs target/debug/afl || true
 cat afl/outputs/crashes/* afl/outputs/hangs/* || true
-cd ..

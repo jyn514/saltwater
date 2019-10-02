@@ -592,7 +592,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             lval: !t.is_function(),
                             ctype: (**t).clone(),
                             location,
-                            expr: ExprType::Deref(Box::new(expr)),
+                            expr: expr.rval().expr,
                         }),
                         _ => Err(Locatable {
                             data: format!(
@@ -1265,15 +1265,15 @@ impl Expr {
                 ),
             });
         }
-        let rval = Expr {
-            constexpr: true,
-            lval: false,
-            ctype: expr.ctype.clone(),
-            location: location.clone(),
-            expr: ExprType::Cast(Box::new(Expr::int_literal(1, location.clone()))),
-        };
         // ++i is syntactic sugar for i+=1
         if prefix {
+            let rval = Expr {
+                constexpr: true,
+                lval: false,
+                ctype: expr.ctype.clone(),
+                location: location.clone(),
+                expr: ExprType::Cast(Box::new(Expr::int_literal(1, location.clone()))),
+            };
             Ok(Expr {
                 ctype: expr.ctype.clone(),
                 constexpr: rval.constexpr,

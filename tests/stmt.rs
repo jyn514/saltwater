@@ -165,7 +165,6 @@ fn while_loop() {
 }
 
 #[test]
-#[ignore]
 fn strlen() {
     utils::assert_code(
         "

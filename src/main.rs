@@ -146,7 +146,7 @@ fn parse_args() -> Result<Opt, pico_args::Error> {
         debug_ast: input.contains(["-a", "--debug-ast"]),
         no_link: input.contains(["-c", "--no-link"]),
         output: input
-            .value_from_os_str(["-o", "--output"], os_str_to_path_buf)?
+            .opt_value_from_os_str(["-o", "--output"], os_str_to_path_buf)?
             .unwrap_or_else(|| "a.out".into()),
         filename: input
             .free_from_os_str(os_str_to_path_buf)?

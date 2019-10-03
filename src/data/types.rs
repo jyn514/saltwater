@@ -178,7 +178,7 @@ impl Type {
     }
     pub fn member_offset(&self, member: &str) -> Result<u64, ()> {
         match self {
-            Type::Struct(StructType::Anonymous(_)) => Ok(self.member_offset(member).unwrap()),
+            Type::Struct(StructType::Anonymous(members)) => Ok(self.struct_offset(members, member)),
             Type::Struct(StructType::Named(_, _, _, offsets)) => Ok(*offsets.get(member).unwrap()),
             Type::Union(_) => Ok(0),
             _ => Err(()),

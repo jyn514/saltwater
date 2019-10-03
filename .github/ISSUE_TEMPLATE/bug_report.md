@@ -20,11 +20,12 @@ A description of what actually happened.
 <!-- The code that's broken or doesn't do what you expect goes here -->
 
 ```c
+
 ```
 
 <details><summary>AST</summary>
 
-<!-- Please paste the output of `cargo run -- --debug-ast` here
+Please paste the output of `cargo run  --debug-ast` here.
 
 ```
 ```
@@ -34,7 +35,7 @@ A description of what actually happened.
 
 <details><summary>ASM</summary>
 
-<!-- Please paste the output of `cargo run -- --debug-asm` here
+Please paste the output of `cargo run -- --debug-asm` here.
 
 ```
 ```

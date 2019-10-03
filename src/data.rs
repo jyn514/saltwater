@@ -54,7 +54,7 @@ pub struct Declaration {
     pub init: Option<Initializer>,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Initializer {
     Scalar(Box<Expr>),                 // int i = 5;
     InitializerList(Vec<Initializer>), // int a[] = { 1, 2, 3 };
@@ -416,23 +416,23 @@ fn print_func_call<T, F: Fn(&T) -> String>(params: &[T], varargs: bool, print_fu
     comma_separated
 }
 
-impl Debug for Initializer {
+impl Display for Initializer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Initializer::Scalar(expr) => write!(f, "{:?};", expr),
+            Initializer::Scalar(expr) => write!(f, "{}", expr),
             Initializer::InitializerList(list) => {
                 write!(f, "{{ ")?;
                 write!(
                     f,
                     "{}",
-                    print_func_call(list, false, |init| { format!("{:?}", init) })
+                    print_func_call(list, false, |init| { format!("{}", init) })
                 )?;
-                write!(f, " }};")
+                write!(f, " }}")
             }
             Initializer::FunctionBody(body) => {
                 writeln!(f, "{{")?;
                 for stmt in body {
-                    writeln!(f, "{:?}", stmt.data)?;
+                    writeln!(f, "{}", stmt.data)?;
                 }
                 write!(f, "}}")
             }
@@ -553,7 +553,11 @@ impl Display for Declaration {
             }
             Some(Initializer::Scalar(expr)) => write!(f, " = {};", expr),
             Some(Initializer::InitializerList(inits)) => {
-                f.debug_set().entries(inits.iter()).finish()
+                write!(f, " = {{")?;
+                for init in inits {
+                    write!(f, "{}, ", init)?;
+                }
+                write!(f, "}};")
             }
             None => write!(f, ";"),
         }

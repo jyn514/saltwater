@@ -1124,14 +1124,9 @@ impl Expr {
     //
     // See `Type::binary_promote` for conversion rules.
     fn binary_promote(left: Expr, right: Expr) -> Result<(Expr, Expr), Locatable<String>> {
-        let (mut left, mut right) = (left.rval(), right.rval());
+        let (left, right) = (left.rval(), right.rval());
         let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
-        if ctype == left.ctype {
-            right = right.cast(&ctype)?;
-        } else {
-            left = left.cast(&ctype)?;
-        }
-        Ok((left, right))
+        Ok((left.cast(&ctype)?, right.cast(&ctype)?))
     }
     // Convert an expression to _Bool. Section 6.3.1.3 of the C standard:
     // "When any scalar value is converted to _Bool,

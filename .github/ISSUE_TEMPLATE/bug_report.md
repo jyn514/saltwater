@@ -8,13 +8,13 @@ assignees: ''
 ---
 
 **Describe the bug**
-A clear and concise description of what the bug is.
+<!-- A clear and concise description of what the bug is -->
 
 **Expected behavior**
-A clear and concise description of what you expected to happen.
+<!-- A clear and concise description of what you expected to happen -->
 
 **Actual Behavior**
-A description of what actually happened.
+<!-- A description of what actually happened -->
 
 **Code**
 <!-- The code that's broken or doesn't do what you expect goes here -->
@@ -25,7 +25,7 @@ A description of what actually happened.
 
 <details><summary>AST</summary>
 
-Please paste the output of `cargo run  --debug-ast` here.
+Please paste the output of `cargo run -- --debug-ast` here.
 
 ```
 ```

@@ -324,7 +324,7 @@ impl Compiler {
                     && small_int.is_int()
                     && big_int.lane_bits() > small_int.lane_bits() =>
             {
-                if to_signed {
+                if from_signed {
                     builder.ins().sextend(big_int, val)
                 } else {
                     builder.ins().uextend(big_int, val)

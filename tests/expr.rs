@@ -395,6 +395,13 @@ int main() {
 }",
         2,
     );
+    utils::assert_code(
+        "struct { int x; int y; } s;
+int main() {
+        return s.x = 1;
+}",
+        1,
+    );
 }
 
 #[test]

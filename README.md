@@ -11,9 +11,7 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 
 - Preprocessor
 - Multiple translation units (files)
-- Parse switch statements
-- Codegen for loops, switches, and gotos
-- Implicit decay from arrays to pointers
+- Codegen for gotos and do-while loops
 - Variadic args (e.g. printf)
 - Bitfields?
 - Compile on Windows (see https://github.com/jyn514/rcc/issues/77)
@@ -23,10 +21,6 @@ A C compiler written in Rust, with a focus on good error messages. Warning: my f
 ## Running
 
 `cargo run` from top level directory.
-Anything without loops or function pointers should work.
-However, since there isn't a preprocessor, you need to declare library functions
-manually using the declarations from the manpage.
-
 Since varargs aren't implemented, you can't call `printf`.
 Additionally, since there's no preprocessor, you can't `#include <stdio.h>`
 and so can't call any function that requires a `FILE *`. This makes IO hard to do,

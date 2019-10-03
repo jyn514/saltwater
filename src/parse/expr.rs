@@ -679,15 +679,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             expr = match token {
                 // a[i] desugars to *(a + i)
                 Token::LeftBracket => {
-                    let array = expr.rval();
-                    let target_type = match array.ctype {
-                        Type::Pointer(ref target, _) => (**target).clone(),
-                        _ => err!(
-                            format!("cannot subscript non-array type '{}'", array.ctype),
+                    let left = expr.rval();
+                    let right = self.expr()?.rval();
+                    self.expect(Token::RightBracket)?;
+                    let (target_type, array, index) = match (&left.ctype, &right.ctype) {
+                        (Type::Pointer(target, _), _) => ((**target).clone(), left, right),
+                        (_, Type::Pointer(target, _)) => ((**target).clone(), right, left),
+                        (l, r) => err!(
+                            format!("neither {} nor {} are pointers types", l, r),
                             location,
                         ),
                     };
-                    let index = self.expr()?.rval();
                     let index = Expr {
                         lval: false,
                         location: index.location.clone(),
@@ -695,7 +697,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         expr: ExprType::Cast(Box::new(index)),
                         ctype: array.ctype.clone(),
                     };
-                    self.expect(Token::RightBracket)?;
                     Expr::pointer_arithmetic(array, index, target_type, location)?
                 }
                 // function call

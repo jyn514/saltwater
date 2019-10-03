@@ -398,3 +398,15 @@ fn typedef_cast() {
     }",
     );
 }
+
+#[test]
+fn arrays_are_communtative() {
+    utils::assert_code(
+        "
+int p[2] = {1, 2};
+int main() {
+        return 1[p];
+}",
+        2,
+    );
+}

@@ -3,3 +3,4 @@
 **/*.rs.bk
 .vscode
 compiler.iml
+/fuzz/afl/outputs

@@ -1,6 +1,17 @@
 use crate::backend::CHAR_BIT;
 use crate::data::prelude::*;
 
+macro_rules! fold_int_unary_op {
+    ($($op: tt)*) => {
+        |token| match token {
+            Token::Int(i) => Token::Int($($op)*(i)),
+            Token::UnsignedInt(u) => Token::UnsignedInt($($op)*(u)),
+            Token::Char(c) => Token::Char($($op)*(c)),
+            _ => token,
+        }
+    };
+}
+
 macro_rules! fold_int_bin_op {
     ($op: tt) => {
         |a: &Token, b: &Token| match (a, b) {
@@ -113,13 +124,9 @@ impl Expr {
                 ExprType::Negate,
             ),
             ExprType::LogicalNot(expr) => lnot_fold(expr.const_fold()?),
-            ExprType::BitwiseNot(expr) => {
-                let expr = expr.const_fold()?;
-                match expr.expr {
-                    ExprType::Literal(Token::Int(i)) => ExprType::Literal(Token::Int(!i)),
-                    _ => ExprType::BitwiseNot(Box::new(expr)),
-                }
-            }
+            ExprType::BitwiseNot(expr) => expr
+                .const_fold()?
+                .map_literal(fold_int_unary_op!(!), ExprType::BitwiseNot),
             ExprType::Comma(left, right) => {
                 let (left, right) = (left.const_fold()?, right.const_fold()?);
                 // check if we can ignore left or it has side effects

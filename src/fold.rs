@@ -2,73 +2,29 @@ use crate::backend::CHAR_BIT;
 use crate::data::prelude::*;
 
 macro_rules! fold_int_bin_op {
-    ($left: expr, $right: expr, $constructor: expr, $op: tt) => {{
-        let (left, right) = ($left.const_fold()?, $right.const_fold()?);
-        match (&left.expr, &right.expr) {
-            (ExprType::Literal(a), ExprType::Literal(b)) => {
-                match (a, b) {
-                    (Token::Int(a), Token::Int(b)) => ExprType::Literal(Token::Int(a $op b)),
-                    (Token::UnsignedInt(a), Token::UnsignedInt(b)) => ExprType::Literal(Token::UnsignedInt(a $op b)),
-                    (Token::Char(a), Token::Char(b)) => ExprType::Literal(Token::Char(a $op b)),
-                    (_, _) => $constructor(Box::new(left), Box::new(right)),
-                }
-            }
-            _ => $constructor(Box::new(left), Box::new(right)),
+    ($op: tt) => {
+        |a: &Token, b: &Token| match (a, b) {
+            (Token::Int(a), Token::Int(b)) => Some(Token::Int(a $op b)),
+            (Token::UnsignedInt(a), Token::UnsignedInt(b)) => Some(Token::UnsignedInt(a $op b)),
+            (Token::Char(a), Token::Char(b)) => Some(Token::Char(a $op b)),
+            (_, _) => None,
         }
-    }}
+    }
 }
 
 macro_rules! fold_scalar_bin_op {
-    ($left: expr, $right: expr, $constructor: ident, $op: tt) => {{
-        let (left, right) = ($left.const_fold()?, $right.const_fold()?);
-        match (&left.expr, &right.expr) {
-            (ExprType::Literal(a), ExprType::Literal(b)) => {
-                match (a, b) {
-                    (Token::Int(a), Token::Int(b)) => ExprType::Literal(Token::Int(a $op b)),
-                    (Token::UnsignedInt(a), Token::UnsignedInt(b)) => ExprType::Literal(Token::UnsignedInt(a $op b)),
-                    (Token::Float(a), Token::Float(b)) => ExprType::Literal(Token::Float(a $op b)),
-                    (Token::Char(a), Token::Char(b)) => ExprType::Literal(Token::Char(a $op b)),
-                    // TODO: find a way to do this that allows `"hello" + 2 - 1`
-                    //(Token::Str(s), Token::Int(i)) | (Token::Int(i), Token::Str(s)) => {
-                    (_, _) => ExprType::$constructor(Box::new(left), Box::new(right)),
-                }
-            }
-            _ => ExprType::$constructor(Box::new(left), Box::new(right)),
+    ($op: tt) => {
+        |a: &Token, b: &Token| match (a, b) {
+            (Token::Int(a), Token::Int(b)) => Some(Token::Int(a $op b)),
+            (Token::UnsignedInt(a), Token::UnsignedInt(b)) => Some(Token::UnsignedInt(a $op b)),
+            (Token::Float(a), Token::Float(b)) => Some(Token::Float(a $op b)),
+            (Token::Char(a), Token::Char(b)) => Some(Token::Char(a $op b)),
+            // TODO: find a way to do this that allows `"hello" + 2 - 1`
+            //(Token::Str(s), Token::Int(i)) | (Token::Int(i), Token::Str(s)) => {
+            (_, _) => None,
         }
-    }}
-}
-
-/*
-fn fold_compare_op<C, F>(
-    left: Expr,
-    right: Expr,
-    constructor: C,
-    op: F,
-    compare: Token,
-) -> SemanticResult<ExprType>
-where
-    C: Fn(Box<Expr>, Box<Expr>) -> ExprType,
-    F: Fn(T, T) -> bool,
-    T: PartialEq + Ord,
-{
-    let (left, right) = (left.const_fold()?, right.const_fold()?);
-    match (&left.expr, &right.expr) {
-        (ExprType::Literal(a), ExprType::Literal(b)) => {
-            match (a, b) {
-                (Token::Int(a), Token::Int(b)) => ExprType::Literal(Token::Int(op(a, b) as i64)),
-                (Token::Float(a), Token::Float(b)) => {
-                    ExprType::Literal(Token::Float(op(a, b) as f64))
-                }
-                (Token::Char(a), Token::Char(b)) => ExprType::Literal(Token::Char(op(a, b) as u8)),
-                // TODO: find a way to do this that allows `"hello" + 2 - 1`
-                //(Token::Str(s), Token::Int(i)) | (Token::Int(i), Token::Str(s)) => {
-                (_, _) => constructor(Box::new(left), Box::new(right)),
-            }
-        }
-        _ => constructor(Box::new(left), Box::new(right)),
     }
 }
-*/
 
 macro_rules! fold_compare_op {
 ($left: expr, $right: expr, $constructor: ident, $op: tt, $compare: expr) => {{
@@ -146,14 +102,16 @@ impl Expr {
                 })?;
                 ExprType::Literal(Token::UnsignedInt(sizeof))
             }
-            ExprType::Negate(expr) => {
-                let expr = expr.const_fold()?;
-                match expr.expr {
-                    ExprType::Literal(Token::Int(i)) => ExprType::Literal(Token::Int(-i)),
-                    ExprType::Literal(Token::Float(f)) => ExprType::Literal(Token::Float(-f)),
-                    _ => ExprType::Negate(Box::new(expr)),
-                }
-            }
+            ExprType::Negate(expr) => expr.const_fold()?.map_literal(
+                |token| match token {
+                    Token::Int(i) => Token::Int(-i),
+                    Token::UnsignedInt(u) => Token::UnsignedInt(0u64.wrapping_sub(u)),
+                    Token::Char(c) => Token::Char(0u8.wrapping_sub(c)),
+                    Token::Float(f) => Token::Float(-f),
+                    _ => token,
+                },
+                ExprType::Negate,
+            ),
             ExprType::LogicalNot(expr) => lnot_fold(expr.const_fold()?),
             ExprType::BitwiseNot(expr) => {
                 let expr = expr.const_fold()?;
@@ -181,9 +139,15 @@ impl Expr {
                 }
                 ExprType::Deref(Box::new(folded))
             }
-            ExprType::Add(left, right) => fold_scalar_bin_op!(left, right, Add, +),
-            ExprType::Sub(left, right) => fold_scalar_bin_op!(left, right, Sub, -),
-            ExprType::Mul(left, right) => fold_scalar_bin_op!(left, right, Mul, *),
+            ExprType::Add(left, right) => {
+                left.literal_bin_op(*right, fold_scalar_bin_op!(+), ExprType::Add)?
+            }
+            ExprType::Sub(left, right) => {
+                left.literal_bin_op(*right, fold_scalar_bin_op!(-), ExprType::Sub)?
+            }
+            ExprType::Mul(left, right) => {
+                left.literal_bin_op(*right, fold_scalar_bin_op!(*), ExprType::Mul)?
+            }
             ExprType::Div(left, right) => {
                 let right = right.const_fold()?;
                 if right.is_zero() {
@@ -192,7 +156,7 @@ impl Expr {
                         location,
                     });
                 }
-                fold_scalar_bin_op!(left, right, Div, /)
+                left.literal_bin_op(right, fold_scalar_bin_op!(/), ExprType::Div)?
             }
 
             ExprType::Mod(left, right) => {
@@ -203,11 +167,17 @@ impl Expr {
                         location,
                     });
                 }
-                fold_int_bin_op!(left, right, ExprType::Mod, %)
+                left.literal_bin_op(right, fold_int_bin_op!(%), ExprType::Mod)?
             }
-            ExprType::Xor(left, right) => fold_int_bin_op!(left, right, ExprType::Xor, ^),
-            ExprType::BitwiseAnd(left, right) => fold_int_bin_op!(left, right, ExprType::BitwiseAnd, &),
-            ExprType::BitwiseOr(left, right) => fold_int_bin_op!(left, right, ExprType::BitwiseOr, |),
+            ExprType::Xor(left, right) => {
+                left.literal_bin_op(*right, fold_int_bin_op!(^), ExprType::Xor)?
+            }
+            ExprType::BitwiseAnd(left, right) => {
+                left.literal_bin_op(*right, fold_int_bin_op!(&), ExprType::BitwiseAnd)?
+            }
+            ExprType::BitwiseOr(left, right) => {
+                left.literal_bin_op(*right, fold_int_bin_op!(|), ExprType::BitwiseOr)?
+            }
             ExprType::Shift(left, right, true) => {
                 shift_left(*left, *right, &self.ctype, &location)?
             }
@@ -302,6 +272,35 @@ impl Expr {
             location,
             ..self
         })
+    }
+    fn literal_bin_op<F, C>(
+        self,
+        other: Expr,
+        fold_func: F,
+        constructor: C,
+    ) -> SemanticResult<ExprType>
+    where
+        F: FnOnce(&Token, &Token) -> Option<Token>,
+        C: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
+    {
+        let (left, right) = (self.const_fold()?, other.const_fold()?);
+        let literal = match (&left.expr, &right.expr) {
+            (ExprType::Literal(left), ExprType::Literal(right)) => {
+                fold_func(left, right).map(ExprType::Literal)
+            }
+            _ => None,
+        };
+        Ok(literal.unwrap_or_else(|| constructor(Box::new(left), Box::new(right))))
+    }
+    fn map_literal<F, C>(self, literal_func: F, constructor: C) -> ExprType
+    where
+        F: FnOnce(Token) -> Token,
+        C: FnOnce(Box<Expr>) -> ExprType,
+    {
+        match self.expr {
+            ExprType::Literal(token) => ExprType::Literal(literal_func(token)),
+            _ => constructor(Box::new(self)),
+        }
     }
 }
 

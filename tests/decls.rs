@@ -258,6 +258,8 @@ fn forward_declaration() {
         return my_p->i = 0;
     }",
     );
+    utils::assert_compile_error("union u my_u = my_u;");
+    utils::assert_compile_error("struct u my_u = my_u;");
 }
 
 #[test]

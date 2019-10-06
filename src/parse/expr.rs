@@ -1159,8 +1159,7 @@ impl Expr {
                 ),
             })
         } else {
-            let zero = Expr::zero();
-            self = self.cast(&zero.ctype)?;
+            let zero = Expr::zero().cast(&self.ctype).unwrap();
             Ok(Expr {
                 constexpr: self.constexpr,
                 lval: false,

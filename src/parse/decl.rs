@@ -1198,8 +1198,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if let Type::Union(struct_type) = ctype {
             let members = match struct_type {
                 StructType::Anonymous(members) => members,
-                StructType::Named(name, _, _, _) => match self.tag_scope.get(name).unwrap() {
-                    TagEntry::Union(members) => members,
+                StructType::Named(name, _, _, _) => match self.tag_scope.get(name) {
+                    None => err!(
+                        "cannot assign to variable with incomplete type".into(),
+                        self.last_location.as_ref().unwrap().clone()
+                    ),
+                    Some(TagEntry::Union(members)) => members,
                     _ => unreachable!(),
                 },
             };

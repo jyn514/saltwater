@@ -131,6 +131,17 @@ fn while_loop() {
 }
 
 #[test]
+fn pointer_cast() {
+    utils::assert_succeeds(
+        "int main() {
+    int *p;
+    while (p);
+    }",
+    );
+}
+
+#[test]
+#[ignore] // waiting on https://github.com/jyn514/rcc/issues/92
 fn strlen() {
     utils::assert_code(
         "

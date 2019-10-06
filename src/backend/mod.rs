@@ -107,15 +107,16 @@ impl Type {
             | Float
             | Double
             | Pointer(_, _)
-            // TODO: is this correct? still need to worry about padding
-            | Union(_)
             | Enum(_, _) => self.sizeof(),
             Array(t, _) => t.alignof(),
             // Clang uses the largest alignment of any element as the alignment of the whole
             // Not sure why, but who am I to argue
             // Anyway, Faerie panics if the alignment isn't a power of two so it's probably for the best
-            Struct(StructType::Named(_, _, align, _)) => Ok(*align),
-            Struct(StructType::Anonymous(members)) => struct_align(members),
+            Union(StructType::Named(_, _, align, _))
+            | Struct(StructType::Named(_, _, align, _)) => Ok(*align),
+            Union(StructType::Anonymous(members)) | Struct(StructType::Anonymous(members)) => {
+                struct_align(members)
+            }
             Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),

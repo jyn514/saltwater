@@ -215,6 +215,11 @@ fn alignment() {
          int main() { return *my_s.a; }",
         0,
     );
+    utils::assert_succeeds(
+        "struct s{int i,c,w;};
+         union u{struct s _;int _;}i;
+         int main() {}",
+    );
 }
 
 #[test]

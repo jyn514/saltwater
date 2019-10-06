@@ -507,11 +507,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok((size, align, offsets))
         } else {
             let size = backend::union_size(&members)?;
+            let align = backend::struct_align(&members)?;
             let mut offsets = HashMap::new();
             for member in members {
                 offsets.insert(member.id, 0);
             }
-            Ok((size, size, offsets))
+            Ok((size, align, offsets))
         }
     }
     fn compound_specifier(

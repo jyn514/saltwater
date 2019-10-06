@@ -274,6 +274,14 @@ fn pointers() {
 }",
     );
     utils::assert_compile_error("int *p = &0;");
+    utils::assert_code(
+        "int main() {
+    int x = 2;
+    void *p = &x;
+   return *(int*)p;
+}",
+        2,
+    );
 }
 
 #[test]

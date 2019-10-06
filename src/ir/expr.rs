@@ -409,10 +409,11 @@ impl Compiler {
             }
             Id::Local(stack_slot) => builder.ins().stack_addr(ptr_type, *stack_slot, 0),
         };
+        let ctype = Type::Pointer(Box::new(var.ctype), var.qualifiers);
         Ok(Value {
-            ir_type: var.ctype.as_ir_type(),
+            ir_type: ctype.as_ir_type(),
             ir_val,
-            ctype: var.ctype,
+            ctype,
         })
     }
     fn compare(

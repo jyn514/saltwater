@@ -22,6 +22,7 @@ use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule}
 
 use crate::backend::TARGET;
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
+use crate::utils;
 
 type Module = CraneliftModule<FaerieBackend>;
 
@@ -103,7 +104,7 @@ impl Compiler {
             .expect("opt_level: speed should be a valid option");
 
         let isa = isa::lookup(TARGET.clone())
-            .unwrap_or_else(|_| panic!("platform not supported: {}", *TARGET))
+            .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", *TARGET), 5))
             .finish(settings::Flags::new(flags_builder));
 
         let builder = FaerieBuilder::new(
@@ -143,7 +144,7 @@ impl Compiler {
         let func_id = self
             .module
             .declare_function(&id, linkage, &signature)
-            .expect("should not have an error declaring a function");
+            .unwrap_or_else(|err| utils::fatal(err, 6));
         self.scope.insert(id, Id::Function(func_id));
         Ok(func_id)
     }
@@ -304,19 +305,25 @@ impl Compiler {
                 builder.ins().return_(&[]);
             }
         }
-        if self.debug {
-            let mut clif = String::new();
-            codegen::write_function(&mut clif, &func, &None.into()).unwrap();
-            println!("{}", clif);
-        }
+        builder.seal_all_blocks();
+        builder.finalize();
 
         let flags = settings::Flags::new(settings::builder());
-        codegen::verify_function(&func, &flags).expect("should not have a compile error");
+        if let Err(err) = codegen::verify_function(&func, &flags) {
+            println!("{}", func);
+            utils::fatal(err, 3);
+        }
 
         let mut ctx = codegen::Context::for_function(func);
-        self.module
-            .define_function(func_id, &mut ctx)
-            .expect("should not have an error defining a function");
+        if let Err(err) = self.module.define_function(func_id, &mut ctx) {
+            println!("{}", ctx.func);
+            utils::fatal(err, 4);
+        }
+
+        if self.debug {
+            println!("{}", ctx.func);
+        }
+
         Ok(())
     }
 }

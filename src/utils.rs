@@ -23,7 +23,7 @@ pub fn error(msg: &str, location: &Location) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
     pretty_print(Colour::Red.bold().paint("error"), msg, location);
 }
-pub fn fatal(msg: &str, code: i32) -> ! {
+pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
     eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
     process::exit(code);
 }

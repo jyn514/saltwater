@@ -309,6 +309,11 @@ impl Compiler {
         builder.finalize();
 
         let flags = settings::Flags::new(settings::builder());
+
+        if self.debug {
+            println!("{}", func);
+        }
+
         if let Err(err) = codegen::verify_function(&func, &flags) {
             println!("{}", func);
             utils::fatal(err, 3);
@@ -318,10 +323,6 @@ impl Compiler {
         if let Err(err) = self.module.define_function(func_id, &mut ctx) {
             println!("{}", ctx.func);
             utils::fatal(err, 4);
-        }
-
-        if self.debug {
-            println!("{}", ctx.func);
         }
 
         Ok(())

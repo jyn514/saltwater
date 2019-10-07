@@ -126,20 +126,27 @@ impl Compiler {
             }
             ExprType::PostIncrement(lval, increase) => {
                 let lval = self.compile_expr(*lval, builder)?;
-                let addend = builder
-                    .ins()
-                    .iconst(lval.ir_type, if increase { 1 } else { -1 });
+                let loaded_ctype = match lval.ctype {
+                    Type::Pointer(t, _) => *dbg!(t),
+                    _ => lval.ctype,
+                };
+                let ir_type = loaded_ctype.as_ir_type();
+                let addend = builder.ins().iconst(ir_type, if increase { 1 } else { -1 });
                 let previous_value = Value {
-                    ir_val: builder
-                        .ins()
-                        .load(lval.ir_type, MemFlags::new(), lval.ir_val, 0),
-                    ..lval
+                    ir_val: builder.ins().load(ir_type, MemFlags::new(), lval.ir_val, 0),
+                    ir_type,
+                    ctype: loaded_ctype,
                 };
                 let new_value = builder.ins().iadd(previous_value.ir_val, addend);
                 builder
                     .ins()
                     .store(MemFlags::new(), new_value, lval.ir_val, 0);
                 Ok(previous_value)
+            }
+            ExprType::Noop(inner) => {
+                let mut val = self.compile_expr(*inner, builder)?;
+                val.ctype = expr.ctype;
+                Ok(val)
             }
             x => {
                 unimplemented!("{:?}", x);
@@ -467,17 +474,25 @@ impl Compiler {
             let ir_target = target.ir_val;
             // need to deref explicitly to get an rval, the frontend didn't do it for us
             if is_id {
-                let ir_type = target.ctype.as_ir_type();
+                let ctype = match target.ctype {
+                    Type::Pointer(t, _) => *t,
+                    _ => unreachable!("parser should only allow lvals to be assigned"),
+                };
+                let ir_type = ctype.as_ir_type();
                 target = Value {
                     ir_val: builder
                         .ins()
                         .load(ir_type, MemFlags::new(), target.ir_val, 0),
                     ir_type,
-                    ctype: target.ctype,
+                    ctype,
                 };
             }
-            if target.ir_type != value.ir_type {
-                unimplemented!("binary promotion for complex assignment");
+            if value.ir_type != target.ir_type {
+                unimplemented!(
+                    "binary promotion for complex assignment ({} -> {})",
+                    value.ir_type,
+                    target.ir_type
+                );
             }
             value = Self::binary_assign_ir(
                 target,

@@ -466,7 +466,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 data: (ctype, _),
             } = self.type_name()?;
             self.expect(Token::RightParen)?;
-            let expr = self.cast_expr()?;
+            let expr = self.cast_expr()?.rval();
             if ctype == Type::Void {
                 // casting anything to void is allowed
                 return Ok(Expr {
@@ -592,7 +592,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             lval: !t.is_function(),
                             ctype: (**t).clone(),
                             location,
-                            expr: expr.rval().expr,
+                            // this is super hacky but the only way I can think of to prevent
+                            // https://github.com/jyn514/rcc/issues/90
+                            expr: ExprType::Noop(Box::new(expr.rval())),
                         }),
                         _ => Err(Locatable {
                             data: format!(

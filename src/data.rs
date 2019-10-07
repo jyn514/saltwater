@@ -150,7 +150,7 @@ pub struct Symbol {
     pub init: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Qualifiers {
     pub volatile: bool,
     pub c_const: bool,

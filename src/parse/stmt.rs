@@ -118,7 +118,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Keyword::Return => Ok(Some(self.return_statement()?)),
 
                 // start of an expression statement
-                Keyword::Sizeof => self.expression_statement(),
+                Keyword::Sizeof
+                | Keyword::StaticAssert
+                | Keyword::Alignas
+                | Keyword::Alignof
+                | Keyword::Generic => self.expression_statement(),
                 decl if decl.is_decl_specifier() => {
                     let decls = self.declaration()?;
                     let location = match decls.front() {

@@ -105,6 +105,7 @@ pub enum ExprType {
     Sizeof(Type),
     Deref(Box<Expr>),
     Negate(Box<Expr>),
+    // getting rid of this is https://github.com/jyn514/rcc/issues/10
     LogicalNot(Box<Expr>),
     BitwiseNot(Box<Expr>),
     LogicalOr(Box<Expr>, Box<Expr>),
@@ -129,6 +130,8 @@ pub enum ExprType {
     // &expr in static context
     // requires cooperation with the linker
     StaticRef(Box<Expr>),
+    // used to work around various bugs, see places this is constructed for details
+    Noop(Box<Expr>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -396,6 +399,7 @@ impl Display for Expr {
                 write!(f, "({}){}", expr, if *inc { "++" } else { "--" })
             }
             ExprType::StaticRef(expr) => write!(f, "&{}", expr),
+            ExprType::Noop(expr) => write!(f, "{}", expr),
         }
     }
 }

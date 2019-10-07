@@ -136,6 +136,10 @@ impl Expr {
                     ExprType::Comma(Box::new(left), Box::new(right))
                 }
             }
+            ExprType::Noop(inner) => {
+                let inner = inner.const_fold()?;
+                ExprType::Noop(Box::new(inner))
+            }
             ExprType::Deref(expr) => {
                 let folded = expr.const_fold()?;
                 if let ExprType::Literal(Token::Int(0)) = folded.expr {

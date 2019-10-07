@@ -103,7 +103,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut symbol = Symbol {
             id: id.data,
             ctype: first_type,
-            qualifiers: qualifiers.clone(),
+            qualifiers,
             storage_class: sc,
             init: false,
         };
@@ -163,7 +163,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             self.expect(Token::Comma)?;
         }
         loop {
-            let decl = self.init_declarator(sc, qualifiers.clone(), ctype.clone())?;
+            let decl = self.init_declarator(sc, qualifiers, ctype.clone())?;
             if add_to_scope {
                 self.declare(&decl.data.symbol, &decl.location)?;
             }
@@ -208,7 +208,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         first_ctype: Type,
         first_qualifiers: Qualifiers,
     ) -> SemanticResult<()> {
-        self.declare_typedef(first_id, first_ctype.clone(), first_qualifiers.clone())?;
+        self.declare_typedef(first_id, first_ctype.clone(), first_qualifiers)?;
         if self.match_next(&Token::Semicolon).is_some() {
             return Ok(());
         }
@@ -221,7 +221,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let (id, ctype) =
                 decl.parse_type(first_ctype.clone(), StorageClass::Typedef, &location)?;
             let id = id.unwrap();
-            self.declare_typedef(id, ctype, first_qualifiers.clone())?;
+            self.declare_typedef(id, ctype, first_qualifiers)?;
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon)?;
                 return Ok(());

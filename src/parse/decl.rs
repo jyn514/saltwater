@@ -1471,10 +1471,10 @@ fn declaration_specifier(
     } else {
         match ctype {
             None => {
-                *ctype = Some(
-                    Type::try_from(keyword)
-                        .expect("keyword should be an integer or integer modifier"),
-                )
+                *ctype =
+                    Some(Type::try_from(keyword).unwrap_or_else(|_| {
+                        panic!("unrecognized declaration specifier {}", keyword)
+                    }))
             }
             Some(x) => errors.push(Locatable {
                 data: format!("cannot combine '{}' modifier with type '{}'", keyword, x),
@@ -1494,9 +1494,10 @@ impl Keyword {
     pub fn is_decl_specifier(self) -> bool {
         use Keyword::*;
         match self {
-            Unsigned | Signed | Void | Bool | Char | Short | Int | Long | Float | Double
-            | Extern | Static | Auto | Register | Const | Volatile | Struct | Union | Enum
-            | Typedef | VaList => true,
+            Unsigned | Signed | Bool | Char | Short | Int | Long | Float | Double | Void
+            | Struct | Union | Enum | VaList | Complex | Imaginary | Extern | Static | Auto
+            | Register | Typedef | Const | Volatile | Restrict | Atomic | ThreadLocal | Inline
+            | NoReturn => true,
             _ => false,
         }
     }

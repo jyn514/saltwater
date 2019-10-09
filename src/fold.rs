@@ -14,7 +14,7 @@ macro_rules! fold_int_unary_op {
 
 macro_rules! fold_int_bin_op {
     ($op: tt) => {
-        |a: &Token, b: &Token| match (a, b) {
+        |a: &Token, b: &Token, _| match (a, b) {
             (Token::Int(a), Token::Int(b)) => Some(Token::Int(a $op b)),
             (Token::UnsignedInt(a), Token::UnsignedInt(b)) => Some(Token::UnsignedInt(a $op b)),
             (Token::Char(a), Token::Char(b)) => Some(Token::Char(a $op b)),
@@ -25,7 +25,7 @@ macro_rules! fold_int_bin_op {
 
 macro_rules! fold_scalar_bin_op {
     ($op: tt) => {
-        |a: &Token, b: &Token| match (a, b) {
+        |a: &Token, b: &Token, _| match (a, b) {
             (Token::Int(a), Token::Int(b)) => Some(Token::Int(a $op b)),
             (Token::UnsignedInt(a), Token::UnsignedInt(b)) => Some(Token::UnsignedInt(a $op b)),
             (Token::Float(a), Token::Float(b)) => Some(Token::Float(a $op b)),
@@ -155,14 +155,20 @@ impl Expr {
             }
             ExprType::Sub(left, right) => left.literal_bin_op(
                 *right,
-                |a, b| match (a, b) {
+                |a, b, ctype| match (a, b) {
                     (Token::Int(a), Token::Int(b)) => Some(Token::Int(a - b)),
                     (Token::UnsignedInt(a), Token::UnsignedInt(b)) => {
                         Some(Token::UnsignedInt(a.wrapping_sub(*b)))
                     }
                     #[allow(clippy::float_cmp)]
                     (Token::Float(a), Token::Float(b)) => Some(Token::Float(a - b)),
-                    (Token::Char(a), Token::Char(b)) => Some(Token::Char(a.wrapping_sub(*b))),
+                    (Token::Char(a), Token::Char(b)) => {
+                        if ctype.is_signed() {
+                            Some(Token::Char(a - b))
+                        } else {
+                            Some(Token::Char(a.wrapping_sub(*b)))
+                        }
+                    }
                     (_, _) => None,
                 },
                 ExprType::Sub,
@@ -206,24 +212,12 @@ impl Expr {
             ExprType::Shift(left, right, false) => {
                 shift_right(*left, *right, &self.ctype, &location)?
             }
-            ExprType::Compare(left, right, Token::Less) => {
-                fold_compare_op!(left, right, Compare, <, Token::Less)
-            }
-            ExprType::Compare(left, right, Token::LessEqual) => {
-                fold_compare_op!(left, right, Compare, <=, Token::LessEqual)
-            }
-            ExprType::Compare(left, right, Token::Greater) => {
-                fold_compare_op!(left, right, Compare, >, Token::Greater)
-            }
-            ExprType::Compare(left, right, Token::GreaterEqual) => {
-                fold_compare_op!(left, right, Compare, >=, Token::GreaterEqual)
-            }
-            ExprType::Compare(left, right, Token::EqualEqual) => {
-                fold_compare_op!(left, right, Compare, ==, Token::EqualEqual)
-            }
-            ExprType::Compare(left, right, Token::NotEqual) => {
-                fold_compare_op!(left, right, Compare, !=, Token::NotEqual)
-            }
+            ExprType::Compare(left, right, Token::Less) => fold_compare_op!(left, right, Compare, <, Token::Less),
+            ExprType::Compare(left, right, Token::LessEqual) => fold_compare_op!(left, right, Compare, <=, Token::LessEqual),
+            ExprType::Compare(left, right, Token::Greater) => fold_compare_op!(left, right, Compare, >, Token::Greater),
+            ExprType::Compare(left, right, Token::GreaterEqual) => fold_compare_op!(left, right, Compare, >=, Token::GreaterEqual),
+            ExprType::Compare(left, right, Token::EqualEqual) => fold_compare_op!(left, right, Compare, ==, Token::EqualEqual),
+            ExprType::Compare(left, right, Token::NotEqual) => fold_compare_op!(left, right, Compare, !=, Token::NotEqual),
             ExprType::Compare(_, _, _) => {
                 unreachable!("only comparison tokens should appear in ExprType::Compare")
             }
@@ -314,13 +308,13 @@ impl Expr {
         constructor: C,
     ) -> SemanticResult<ExprType>
     where
-        F: FnOnce(&Token, &Token) -> Option<Token>,
+        F: FnOnce(&Token, &Token, &Type) -> Option<Token>,
         C: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
     {
         let (left, right) = (self.const_fold()?, other.const_fold()?);
         let literal = match (&left.expr, &right.expr) {
-            (ExprType::Literal(left), ExprType::Literal(right)) => {
-                fold_func(left, right).map(ExprType::Literal)
+            (ExprType::Literal(left_token), ExprType::Literal(right_token)) => {
+                fold_func(left_token, right_token, &left.ctype).map(ExprType::Literal)
             }
             _ => None,
         };

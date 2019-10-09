@@ -49,6 +49,7 @@ fn sub() {
     utils::assert_code("int main() { return 3 - 1; }", 2);
     utils::assert_code("int main() { return 10 - (1 - 2); }", 11);
     utils::assert_code("int main() { return 6.1 - 3.2; }", 2);
+    utils::assert_code("int main() { return (unsigned char)(0u - 1); }", 255);
 }
 
 #[test]

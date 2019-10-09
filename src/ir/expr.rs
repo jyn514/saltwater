@@ -127,7 +127,7 @@ impl Compiler {
             ExprType::PostIncrement(lval, increase) => {
                 let lval = self.compile_expr(*lval, builder)?;
                 let loaded_ctype = match lval.ctype {
-                    Type::Pointer(t, _) => *dbg!(t),
+                    Type::Pointer(t, _) => *t,
                     _ => lval.ctype,
                 };
                 let ir_type = loaded_ctype.as_ir_type();

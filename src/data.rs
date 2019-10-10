@@ -338,9 +338,9 @@ impl Display for Qualifiers {
             f,
             "{}",
             match (self.c_const, self.volatile) {
-                (true, true) => "'const volatile' type qualifiers",
-                (true, false) => "'const' type qualifier",
-                (false, true) => "'volatile' type qualifier",
+                (true, true) => "const volatile ",
+                (true, false) => "const ",
+                (false, true) => "volatile ",
                 (false, false) => "",
             }
         )
@@ -541,12 +541,12 @@ impl Display for StmtType {
 
 impl Display for Declaration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: this is not right
         write!(
             f,
-            "{} {} {}: {}",
-            self.symbol.storage_class, self.symbol.qualifiers, self.symbol.id, self.symbol.ctype
+            "{} {}",
+            self.symbol.storage_class, self.symbol.qualifiers
         )?;
+        types::print_type(&self.symbol.ctype, Some(&self.symbol.id), f)?;
         match &self.init {
             Some(Initializer::FunctionBody(body)) => {
                 writeln!(f, " {{")?;
@@ -583,15 +583,14 @@ impl Eq for Symbol {}
 mod tests {
     #[test]
     fn type_display() {
-        for ty in [
+        let types = [
             "int",
             "int *",
             "int[1][2][3]",
             "int *(*)(int)",
             "int *(*)[1][2][3]",
-        ]
-        .iter()
-        {
+        ];
+        for ty in types.iter() {
             assert_eq!(
                 &format!(
                     "{}",

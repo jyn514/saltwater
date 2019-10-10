@@ -63,7 +63,29 @@ impl Compiler {
             }
             StmtType::Do(body, condition) => self.do_loop(*body, condition, builder),
             StmtType::Switch(condition, body) => self.switch(condition, *body, builder),
-            StmtType::Label(_) | StmtType::Goto(_) => unimplemented!("codegen goto"),
+            StmtType::Label(name) => {
+                let new_block = builder.create_ebb();
+                Self::jump_to_block(new_block, builder);
+                builder.switch_to_block(new_block);
+                if let Some(previous) = self.labels.insert(name, new_block) {
+                    Err(Locatable {
+                        data: format!("redeclaration of label {}", previous),
+                        location: stmt.location,
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            StmtType::Goto(name) => match self.labels.get(&name) {
+                Some(ebb) => {
+                    Self::jump_to_block(*ebb, builder);
+                    Ok(())
+                }
+                None => Err(Locatable {
+                    data: format!("use of undeclared label {}", name),
+                    location: stmt.location,
+                }),
+            },
             StmtType::Case(constexpr, inner) => self.case(constexpr, inner, stmt.location, builder),
             StmtType::Default(inner) => self.default(inner, stmt.location, builder),
         }

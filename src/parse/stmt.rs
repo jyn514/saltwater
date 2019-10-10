@@ -151,7 +151,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 };
                 if self.match_next(&Token::Colon).is_some() {
                     return Ok(Some(Stmt {
-                        data: StmtType::Decl(self.declaration()?),
+                        data: StmtType::Label(id.data),
                         location: id.location,
                     }));
                 }

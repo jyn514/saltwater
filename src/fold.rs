@@ -15,10 +15,10 @@ macro_rules! fold_int_unary_op {
 macro_rules! fold_int_bin_op {
     ($op: tt) => {
         |a: &Token, b: &Token, _| match (a, b) {
-            (Token::Int(a), Token::Int(b)) => Some(Token::Int(a $op b)),
-            (Token::UnsignedInt(a), Token::UnsignedInt(b)) => Some(Token::UnsignedInt(a $op b)),
-            (Token::Char(a), Token::Char(b)) => Some(Token::Char(a $op b)),
-            (_, _) => None,
+            (Token::Int(a), Token::Int(b)) => Ok(Some(Token::Int(a $op b))),
+            (Token::UnsignedInt(a), Token::UnsignedInt(b)) => Ok(Some(Token::UnsignedInt(a $op b))),
+            (Token::Char(a), Token::Char(b)) => Ok(Some(Token::Char(a $op b))),
+            (_, _) => Ok(None),
         }
     }
 }
@@ -26,13 +26,13 @@ macro_rules! fold_int_bin_op {
 macro_rules! fold_scalar_bin_op {
     ($op: tt) => {
         |a: &Token, b: &Token, _| match (a, b) {
-            (Token::Int(a), Token::Int(b)) => Some(Token::Int(a $op b)),
-            (Token::UnsignedInt(a), Token::UnsignedInt(b)) => Some(Token::UnsignedInt(a $op b)),
-            (Token::Float(a), Token::Float(b)) => Some(Token::Float(a $op b)),
-            (Token::Char(a), Token::Char(b)) => Some(Token::Char(a $op b)),
+            (Token::Int(a), Token::Int(b)) => Ok(Some(Token::Int(a $op b))),
+            (Token::UnsignedInt(a), Token::UnsignedInt(b)) => Ok(Some(Token::UnsignedInt(a $op b))),
+            (Token::Float(a), Token::Float(b)) => Ok(Some(Token::Float(a $op b))),
+            (Token::Char(a), Token::Char(b)) => Ok(Some(Token::Char(a $op b))),
             // TODO: find a way to do this that allows `"hello" + 2 - 1`
             //(Token::Str(s), Token::Int(i)) | (Token::Int(i), Token::Str(s)) => {
-            (_, _) => None,
+            (_, _) => Ok(None),
         }
     }
 }
@@ -156,20 +156,20 @@ impl Expr {
             ExprType::Sub(left, right) => left.literal_bin_op(
                 *right,
                 |a, b, ctype| match (a, b) {
-                    (Token::Int(a), Token::Int(b)) => Some(Token::Int(a - b)),
+                    (Token::Int(a), Token::Int(b)) => Ok(Some(Token::Int(a - b))),
                     (Token::UnsignedInt(a), Token::UnsignedInt(b)) => {
-                        Some(Token::UnsignedInt(a.wrapping_sub(*b)))
+                        Ok(Some(Token::UnsignedInt(a.wrapping_sub(*b))))
                     }
                     #[allow(clippy::float_cmp)]
-                    (Token::Float(a), Token::Float(b)) => Some(Token::Float(a - b)),
+                    (Token::Float(a), Token::Float(b)) => Ok(Some(Token::Float(a - b))),
                     (Token::Char(a), Token::Char(b)) => {
                         if ctype.is_signed() {
-                            Some(Token::Char(a - b))
+                            Ok(Some(Token::Char(a - b)))
                         } else {
-                            Some(Token::Char(a.wrapping_sub(*b)))
+                            Ok(Some(Token::Char(a.wrapping_sub(*b))))
                         }
                     }
-                    (_, _) => None,
+                    (_, _) => Ok(None),
                 },
                 ExprType::Sub,
             )?,
@@ -308,13 +308,13 @@ impl Expr {
         constructor: C,
     ) -> SemanticResult<ExprType>
     where
-        F: FnOnce(&Token, &Token, &Type) -> Option<Token>,
+        F: FnOnce(&Token, &Token, &Type) -> SemanticResult<Option<Token>>,
         C: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
     {
         let (left, right) = (self.const_fold()?, other.const_fold()?);
         let literal = match (&left.expr, &right.expr) {
             (ExprType::Literal(left_token), ExprType::Literal(right_token)) => {
-                fold_func(left_token, right_token, &left.ctype).map(ExprType::Literal)
+                fold_func(left_token, right_token, &left.ctype)?.map(ExprType::Literal)
             }
             _ => None,
         };

@@ -29,7 +29,7 @@ pub use parse::Parser;
 
 #[macro_use]
 pub mod utils;
-pub mod backend;
+pub mod arch;
 pub mod data;
 mod fold;
 mod ir;

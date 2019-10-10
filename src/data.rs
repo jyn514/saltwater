@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use std::fmt::{self, Debug, Display, Formatter, Write};
 use std::hash::Hash;
 
-use crate::backend::SIZE_T;
+use crate::arch::SIZE_T;
 
 pub type SemanticResult<T> = Result<T, Locatable<String>>;
 

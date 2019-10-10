@@ -1,5 +1,5 @@
 use super::{Lexeme, Parser, TagEntry};
-use crate::backend::SIZE_T;
+use crate::arch::SIZE_T;
 use crate::data::prelude::*;
 use crate::data::{types::ArrayType, Keyword, Qualifiers, StorageClass::Typedef};
 

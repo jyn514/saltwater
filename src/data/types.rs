@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::{Qualifiers, Symbol};
-use crate::backend::SIZE_T;
+use crate::arch::SIZE_T;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {

@@ -4,7 +4,7 @@ use std::iter::{FromIterator, Iterator};
 use std::mem;
 
 use super::{FunctionData, Lexeme, Parser, TagEntry, TagScope};
-use crate::backend;
+use crate::arch;
 use crate::data::{
     prelude::*,
     types::{ArrayType, FunctionType},
@@ -497,8 +497,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         is_struct: bool,
     ) -> Result<(u64, u64, HashMap<String, u64>), &'static str> {
         if is_struct {
-            let size = backend::struct_size(&members)?;
-            let align = backend::struct_align(&members)?;
+            let size = arch::struct_size(&members)?;
+            let align = arch::struct_align(&members)?;
             let mut offsets = HashMap::new();
             for member in &members {
                 let offset = member.ctype.struct_offset(&members, &member.id);
@@ -506,8 +506,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Ok((size, align, offsets))
         } else {
-            let size = backend::union_size(&members)?;
-            let align = backend::struct_align(&members)?;
+            let size = arch::union_size(&members)?;
+            let align = arch::struct_align(&members)?;
             let mut offsets = HashMap::new();
             for member in members {
                 offsets.insert(member.id, 0);

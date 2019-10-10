@@ -211,7 +211,7 @@ impl FunctionType {
 /// Example:
 ///
 /// ```
-/// use rcc::backend::try_max_by_key;
+/// use rcc::arch::try_max_by_key;
 /// let list = [[1, 2, 3], [5, 4, 3], [1, 1, 4]];
 /// assert_eq!(try_max_by_key(list.iter(), |vec| vec.last().map(|&x| x).ok_or(())), Some(Ok(&[1, 1, 4])));
 ///

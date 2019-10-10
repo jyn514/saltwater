@@ -1,4 +1,4 @@
-use crate::backend::CHAR_BIT;
+use crate::arch::CHAR_BIT;
 use crate::data::prelude::*;
 
 macro_rules! fold_int_unary_op {

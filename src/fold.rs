@@ -151,10 +151,11 @@ impl Expr {
                 ExprType::Deref(Box::new(folded))
             }
             ExprType::Add(left, right) => {
-                left.literal_bin_op(*right, fold_scalar_bin_op!(+), ExprType::Add)?
+                left.literal_bin_op(*right, &location, fold_scalar_bin_op!(+), ExprType::Add)?
             }
             ExprType::Sub(left, right) => left.literal_bin_op(
                 *right,
+                &location,
                 |a, b, ctype| match (a, b) {
                     (Token::Int(a), Token::Int(b)) => Ok(Some(Token::Int(a - b))),
                     (Token::UnsignedInt(a), Token::UnsignedInt(b)) => {
@@ -174,7 +175,7 @@ impl Expr {
                 ExprType::Sub,
             )?,
             ExprType::Mul(left, right) => {
-                left.literal_bin_op(*right, fold_scalar_bin_op!(*), ExprType::Mul)?
+                left.literal_bin_op(*right, &location, fold_scalar_bin_op!(*), ExprType::Mul)?
             }
             ExprType::Div(left, right) => {
                 let right = right.const_fold()?;
@@ -184,7 +185,7 @@ impl Expr {
                         location,
                     });
                 }
-                left.literal_bin_op(right, fold_scalar_bin_op!(/), ExprType::Div)?
+                left.literal_bin_op(right, &location, fold_scalar_bin_op!(/), ExprType::Div)?
             }
 
             ExprType::Mod(left, right) => {
@@ -195,16 +196,16 @@ impl Expr {
                         location,
                     });
                 }
-                left.literal_bin_op(right, fold_int_bin_op!(%), ExprType::Mod)?
+                left.literal_bin_op(right, &location, fold_int_bin_op!(%), ExprType::Mod)?
             }
             ExprType::Xor(left, right) => {
-                left.literal_bin_op(*right, fold_int_bin_op!(^), ExprType::Xor)?
+                left.literal_bin_op(*right, &location, fold_int_bin_op!(^), ExprType::Xor)?
             }
             ExprType::BitwiseAnd(left, right) => {
-                left.literal_bin_op(*right, fold_int_bin_op!(&), ExprType::BitwiseAnd)?
+                left.literal_bin_op(*right, &location, fold_int_bin_op!(&), ExprType::BitwiseAnd)?
             }
             ExprType::BitwiseOr(left, right) => {
-                left.literal_bin_op(*right, fold_int_bin_op!(|), ExprType::BitwiseOr)?
+                left.literal_bin_op(*right, &location, fold_int_bin_op!(|), ExprType::BitwiseOr)?
             }
             ExprType::Shift(left, right, true) => {
                 shift_left(*left, *right, &self.ctype, &location)?
@@ -304,17 +305,21 @@ impl Expr {
     fn literal_bin_op<F, C>(
         self,
         other: Expr,
+        location: &Location,
         fold_func: F,
         constructor: C,
     ) -> SemanticResult<ExprType>
     where
-        F: FnOnce(&Token, &Token, &Type) -> SemanticResult<Option<Token>>,
+        F: FnOnce(&Token, &Token, &Type) -> Result<Option<Token>, String>,
         C: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
     {
         let (left, right) = (self.const_fold()?, other.const_fold()?);
         let literal = match (&left.expr, &right.expr) {
             (ExprType::Literal(left_token), ExprType::Literal(right_token)) => {
-                fold_func(left_token, right_token, &left.ctype)?.map(ExprType::Literal)
+                match fold_func(left_token, right_token, &left.ctype) {
+                    Err(data) => err!(data, location.clone()),
+                    Ok(token) => token.map(ExprType::Literal),
+                }
             }
             _ => None,
         };

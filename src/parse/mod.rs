@@ -120,10 +120,8 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
             Some(Ok(next))
         });
         if self.debug {
-            match &next {
-                Some(Ok(decl)) => println!("declaration: {}", decl.data),
-                Some(Err(err)) => println!("error: {:#?}", err.data),
-                None => {}
+            if let Some(Ok(decl)) = &next {
+                println!("{}", decl.data);
             }
         }
         next

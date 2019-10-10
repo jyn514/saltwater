@@ -215,99 +215,91 @@ impl PartialEq for FunctionType {
 
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        use Type::*;
-        match self {
-            Char(signed) | Short(signed) | Int(signed) | Long(signed) => {
-                let lower = &format!("{:?}", self).to_lowercase();
-                let substr = match lower.find('(') {
-                    Some(n) => &lower[..n],
-                    None => lower.as_str(),
-                };
-                write!(f, "{}{}", if *signed { "" } else { "unsigned " }, substr)
-            }
-            Bool | Float | Double | Void => write!(f, "{}", format!("{:?}", self).to_lowercase()),
-            Pointer(to, _) => {
-                to.print_pre(f)?;
-                self.print_mid(f)?;
-                to.print_post(f)
-            }
-            Array(of, _) => {
-                of.print_pre(f)?;
-                of.print_mid(f)?;
-                self.print_post(f)
-            }
-            Function(FunctionType { return_type, .. }) => {
-                write!(f, "{}", return_type)?;
-                self.print_post(f)
-            }
-            Enum(Some(ident), _) => write!(f, "enum {}", ident),
-            Enum(None, _) => write!(f, "<anonymous enum>"),
-            Union(StructType::Named(ident, _, _, _)) => write!(f, "union {}", ident),
-            Union(_) => write!(f, "<anonymous union>"),
-            Struct(StructType::Named(ident, _, _, _)) => write!(f, "struct {}", ident),
-            Struct(_) => write!(f, "<anonymous struct>"),
-            Bitfield(_) => unimplemented!("printing bitfield type"),
-            VaList => write!(f, "va_list"),
-        }
+        print_type(self, None, f)
     }
 }
 
 use std::fmt::{self, Formatter};
-impl Type {
-    fn print_pre(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Type::Pointer(t, _) | Type::Array(t, _) => t.print_pre(f),
-            Type::Function(func_type) => std::fmt::Display::fmt(&func_type.return_type, f),
-            _ => write!(f, "{}", self),
+
+pub fn print_type(ctype: &Type, name: Option<&str>, f: &mut Formatter) -> fmt::Result {
+    print_pre(ctype, f)?;
+    print_mid(ctype, name, f)?;
+    print_post(ctype, f)
+}
+
+fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
+    use Type::*;
+    match ctype {
+        Char(signed) | Short(signed) | Int(signed) | Long(signed) => {
+            let lower = &format!("{:?}", ctype).to_lowercase();
+            let substr = match lower.find('(') {
+                Some(n) => &lower[..n],
+                None => lower.as_str(),
+            };
+            write!(f, "{}{}", if *signed { "" } else { "unsigned " }, substr)
+        }
+        Bool | Float | Double | Void => write!(f, "{}", format!("{:?}", ctype).to_lowercase()),
+        Pointer(inner, _) | Array(inner, _) => print_pre(inner, f),
+        Function(ftype) => write!(f, "{}", ftype.return_type),
+        Enum(Some(ident), _) => write!(f, "enum {}", ident),
+        Enum(None, _) => write!(f, "<anonymous enum>"),
+        Union(StructType::Named(ident, _, _, _)) => write!(f, "union {}", ident),
+        Union(_) => write!(f, "<anonymous union>"),
+        Struct(StructType::Named(ident, _, _, _)) => write!(f, "struct {}", ident),
+        Struct(_) => write!(f, "<anonymous struct>"),
+        Bitfield(_) => unimplemented!("printing bitfield type"),
+        VaList => write!(f, "va_list"),
+    }
+}
+
+fn print_mid(ctype: &Type, name: Option<&str>, f: &mut Formatter) -> fmt::Result {
+    match ctype {
+        Type::Pointer(to, quals) => {
+            print_mid(to, None, f)?;
+            match &**to {
+                Type::Array(_, _) | Type::Function(_) => {
+                    write!(f, "(*{}{})", quals, name.unwrap_or_default())?
+                }
+                _ => write!(f, " *{}{}", quals, name.unwrap_or_default())?,
+            }
+        }
+        Type::Array(to, _) => print_mid(to, name, f)?,
+        _ => {
+            if let Some(name) = name {
+                write!(f, " {}", name)?;
+            }
         }
     }
-    fn print_mid(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Type::Pointer(to, quals) => {
-                to.print_mid(f)?;
-                let ptr_description = match (quals.c_const, quals.volatile) {
-                    (true, true) => "const volatile ",
-                    (true, false) => "const ",
-                    (false, true) => "volatile ",
-                    (false, false) => "",
-                };
-                match &**to {
-                    Type::Array(_, _) | Type::Function(_) => write!(f, "(*{})", ptr_description),
-                    _ => write!(f, " *{}", ptr_description),
-                }
+    Ok(())
+}
+fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
+    match ctype {
+        Type::Pointer(to, _) => print_post(to, f),
+        Type::Array(to, size) => {
+            write!(f, "[")?;
+            if let ArrayType::Fixed(size) = size {
+                write!(f, "{}", size)?;
             }
-            Type::Array(to, _) => to.print_mid(f),
-            _ => Ok(()),
+            write!(f, "]")?;
+            print_post(to, f)
         }
-    }
-    fn print_post(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Type::Array(to, size) => {
-                write!(f, "[")?;
-                if let ArrayType::Fixed(size) = size {
-                    write!(f, "{}", size)?;
-                }
-                write!(f, "]")?;
-                to.print_post(f)
+        Type::Function(func_type) => {
+            // https://stackoverflow.com/a/30325430
+            let mut comma_seperated = "(".to_string();
+            for param in &func_type.params {
+                comma_seperated.push_str(&param.ctype.to_string());
+                comma_seperated.push_str(", ");
             }
-            Type::Function(func_type) => {
-                // https://stackoverflow.com/a/30325430
-                let mut comma_seperated = "(".to_string();
-                for param in &func_type.params {
-                    comma_seperated.push_str(&param.ctype.to_string());
-                    comma_seperated.push_str(", ");
-                }
-                if func_type.varargs {
-                    comma_seperated.push_str("...");
-                } else if !func_type.params.is_empty() {
-                    comma_seperated.pop();
-                    comma_seperated.pop();
-                }
-                comma_seperated.push(')');
-                write!(f, "{}", comma_seperated)
+            if func_type.varargs {
+                comma_seperated.push_str("...");
+            } else if !func_type.params.is_empty() {
+                comma_seperated.pop();
+                comma_seperated.pop();
             }
-            _ => Ok(()),
+            comma_seperated.push(')');
+            write!(f, "{}", comma_seperated)
         }
+        _ => Ok(()),
     }
 }
 

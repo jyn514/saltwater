@@ -4,7 +4,7 @@ use cranelift::codegen::ir::types;
 use cranelift_module::DataContext;
 
 use super::{Compiler, Id};
-use crate::backend::{PTR_SIZE, TARGET};
+use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::prelude::*;
 use crate::data::{types::ArrayType, Initializer};
 use crate::utils::warn;

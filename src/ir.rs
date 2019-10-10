@@ -20,7 +20,7 @@ use cranelift::prelude::{Ebb, FunctionBuilder, FunctionBuilderContext, Signature
 use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
 use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule};
 
-use crate::backend::TARGET;
+use crate::arch::TARGET;
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
 use crate::utils;
 

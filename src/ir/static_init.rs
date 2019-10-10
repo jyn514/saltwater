@@ -1,3 +1,6 @@
+//! Store an object in static memory.
+//! TODO: move this into a semantic analysis stage so that it's easier to deal with structs
+//! TODO: see https://github.com/jyn514/rcc/issues/53
 use std::convert::{TryFrom, TryInto};
 
 use cranelift::codegen::ir::types;

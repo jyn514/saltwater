@@ -146,6 +146,20 @@ fn strlen() {
 }
 
 #[test]
+fn do_loop() {
+    utils::assert_code(
+        "int main() {
+    int i = 0;
+    do {
+            i += 1;
+    } while (i < 5);
+    return i;
+        }",
+        5,
+    );
+}
+
+#[test]
 fn for_loop() {
     utils::assert_output(
         "int putchar(char);

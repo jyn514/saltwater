@@ -61,7 +61,7 @@ impl Compiler {
             StmtType::For(init, condition, post_loop, body) => {
                 self.for_loop(init, condition, post_loop, body, stmt.location, builder)
             }
-            StmtType::Do(_, _) => unimplemented!("codegen do-while-loop"),
+            StmtType::Do(body, condition) => self.do_loop(*body, condition, builder),
             StmtType::Switch(condition, body) => self.switch(condition, *body, builder),
             StmtType::Label(_) | StmtType::Goto(_) => unimplemented!("codegen goto"),
             StmtType::Case(constexpr, inner) => self.case(constexpr, inner, stmt.location, builder),
@@ -116,18 +116,32 @@ impl Compiler {
         };
         Ok(())
     }
+    /// Enter a loop context:
+    /// - Create a new start and end EBB
+    /// - Switch to the start EBB
+    /// - Return (start, end, previous_last_saw_loop)
+    fn enter_loop(&mut self, builder: &mut FunctionBuilder) -> (Ebb, Ebb, bool) {
+        let (loop_body, end_body) = (builder.create_ebb(), builder.create_ebb());
+        self.loops.push((loop_body, end_body));
+        let old_saw_loop = self.last_saw_loop;
+        self.last_saw_loop = true;
+
+        builder.ins().jump(loop_body, &[]);
+        builder.switch_to_block(loop_body);
+        (loop_body, end_body, old_saw_loop)
+    }
+    /// Exit a loop
+    fn exit_loop(&mut self, old_saw_loop: bool) {
+        self.loops.pop();
+        self.last_saw_loop = old_saw_loop;
+    }
     fn while_stmt(
         &mut self,
         maybe_condition: Option<Expr>,
         maybe_body: Option<Stmt>,
         builder: &mut FunctionBuilder,
     ) -> SemanticResult<()> {
-        let (loop_body, end_body) = (builder.create_ebb(), builder.create_ebb());
-        self.loops.push((loop_body, end_body));
-        self.last_saw_loop = true;
-
-        builder.ins().jump(loop_body, &[]);
-        builder.switch_to_block(loop_body);
+        let (loop_body, end_body, old_saw_loop) = self.enter_loop(builder);
 
         // for loops can loop forever: `for (;;) {}`
         if let Some(condition) = maybe_condition {
@@ -141,7 +155,24 @@ impl Compiler {
         Self::jump_to_block(loop_body, builder);
 
         builder.switch_to_block(end_body);
-        self.loops.pop();
+        self.exit_loop(old_saw_loop);
+        Ok(())
+    }
+    fn do_loop(
+        &mut self,
+        body: Stmt,
+        condition: Expr,
+        builder: &mut FunctionBuilder,
+    ) -> SemanticResult<()> {
+        let (loop_body, end_body, old_saw_loop) = self.enter_loop(builder);
+
+        self.compile_stmt(body, builder)?;
+        let condition = self.compile_expr(condition, builder)?;
+        builder.ins().brz(condition.ir_val, end_body, &[]);
+        Self::jump_to_block(loop_body, builder);
+
+        builder.switch_to_block(end_body);
+        self.exit_loop(old_saw_loop);
         Ok(())
     }
     fn for_loop(
@@ -319,7 +350,7 @@ impl Compiler {
             Ok(())
         }
     }
-    #[inline(always)]
+    #[inline]
     fn jump_to_block(ebb: Ebb, builder: &mut FunctionBuilder) {
         if !builder.is_filled() {
             builder.ins().jump(ebb, &[]);

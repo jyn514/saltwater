@@ -2,6 +2,7 @@ mod expr;
 mod static_init;
 mod stmt;
 
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 
 use cranelift::codegen::{
@@ -44,6 +45,7 @@ struct Compiler {
     // if default is empty once we get to the end of a switch body,
     // we didn't see a default case
     switches: Vec<(Switch, Option<Ebb>, Ebb)>,
+    labels: HashMap<String, Ebb>,
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
@@ -120,6 +122,7 @@ impl Compiler {
             scope: Scope::new(),
             loops: Vec::new(),
             switches: Vec::new(),
+            labels: HashMap::new(),
             // the initial value doesn't really matter
             last_saw_loop: true,
             str_index: 0,

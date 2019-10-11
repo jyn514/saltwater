@@ -131,13 +131,22 @@ impl Compiler {
                     _ => lval.ctype,
                 };
                 let ir_type = loaded_ctype.as_ir_type();
-                let addend = builder.ins().iconst(ir_type, if increase { 1 } else { -1 });
                 let previous_value = Value {
                     ir_val: builder.ins().load(ir_type, MemFlags::new(), lval.ir_val, 0),
                     ir_type,
                     ctype: loaded_ctype,
                 };
-                let new_value = builder.ins().iadd(previous_value.ir_val, addend);
+
+                let addend = if increase { 1 } else { -1 };
+                let (addend_ir, add_func): (_, fn(_, _, _) -> _) = match previous_value.ctype {
+                    Type::Double => (builder.ins().f64const(addend as f64), InstBuilder::fadd),
+                    Type::Float => (builder.ins().f32const(addend as f32), InstBuilder::fadd),
+                    _ => (
+                        builder.ins().iconst(previous_value.ir_type, addend),
+                        InstBuilder::iadd,
+                    ),
+                };
+                let new_value = add_func(builder.ins(), previous_value.ir_val, addend_ir);
                 builder
                     .ins()
                     .store(MemFlags::new(), new_value, lval.ir_val, 0);

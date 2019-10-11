@@ -157,10 +157,44 @@ impl Compiler {
                 val.ctype = expr.ctype;
                 Ok(val)
             }
+            ExprType::LogicalOr(left, right) => self.logical_expr(*left, *right, false, builder),
+            ExprType::LogicalAnd(left, right) => self.logical_expr(*left, *right, true, builder),
             x => {
                 unimplemented!("{:?}", x);
             }
         }
+    }
+    fn logical_expr(
+        &mut self,
+        left: Expr,
+        right: Expr,
+        brz: bool,
+        builder: &mut FunctionBuilder,
+    ) -> IrResult {
+        let target_ebb = builder.create_ebb();
+        builder.append_ebb_param(target_ebb, types::B1);
+        let left = self.compile_expr(left, builder)?;
+
+        let branch_func = if brz {
+            InstBuilder::brz
+        } else {
+            InstBuilder::brnz
+        };
+        branch_func(builder.ins(), left.ir_val, target_ebb, &[left.ir_val]);
+
+        let right = self.compile_expr(right, builder)?;
+        println!("jumping, val is {}", right.ir_val);
+        builder.ins().jump(target_ebb, &[right.ir_val]);
+
+        builder.switch_to_block(target_ebb);
+        Ok(Value {
+            ir_val: *builder
+                .ebb_params(target_ebb)
+                .first()
+                .expect("if we passed an EBB arg it should be here"),
+            ir_type: types::B1,
+            ctype: Type::Bool,
+        })
     }
     fn compile_literal(
         &mut self,

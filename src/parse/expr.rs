@@ -217,7 +217,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn logical_or_expr(&mut self) -> ExprResult {
         self.scalar_left_associative_binary_op(
             Self::logical_and_expr,
-            ExprType::LogicalOr,
+            |a, b| {
+                Ok(ExprType::LogicalOr(
+                    Box::new(a.cast(&Type::Bool)?),
+                    Box::new(b.cast(&Type::Bool)?),
+                ))
+            },
             &Token::LogicalOr,
             Type::Bool,
         )
@@ -238,7 +243,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn logical_and_expr(&mut self) -> ExprResult {
         self.scalar_left_associative_binary_op(
             Self::inclusive_or_expr,
-            ExprType::LogicalAnd,
+            |a, b| {
+                Ok(ExprType::LogicalAnd(
+                    Box::new(a.cast(&Type::Bool)?),
+                    Box::new(b.cast(&Type::Bool)?),
+                ))
+            },
             &Token::LogicalAnd,
             Type::Bool,
         )
@@ -921,7 +931,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// rule:
     ///     grammar_item (TOKEN grammar_item)*
     ///
-    /// which requires its operands to be scalar.
+    /// which requires its operands to be scalar rvalues.
     ///
     /// next_grammar_func should parse `grammar_item`.
     /// `expr_func` is usually an Enum constructor.
@@ -935,7 +945,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ctype: Type,
     ) -> ExprResult
     where
-        E: Fn(Box<Expr>, Box<Expr>) -> ExprType,
+        E: Fn(Box<Expr>, Box<Expr>) -> SemanticResult<ExprType>,
         G: Fn(&mut Self) -> ExprResult,
     {
         self.left_associative_binary_op(next_grammar_func, &[token], move |left, right, token| {
@@ -960,7 +970,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 constexpr: left.constexpr && right.constexpr,
                 location: token.location,
                 ctype: ctype.clone(),
-                expr: expr_func(left, right),
+                expr: expr_func(Box::new(left.rval()), Box::new(right.rval()))?,
             })
         })
     }

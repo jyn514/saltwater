@@ -135,6 +135,26 @@ fn cmp() {
 }
 
 #[test]
+fn logical_exprs() {
+    utils::assert_code(
+        "int main() {
+        int x = 2;
+        return x || 0;
+    }",
+        1,
+    );
+    utils::assert_code("int main() { return 2 || 0; }", 1);
+    utils::assert_code(
+        "int main() {
+        int x = 2;
+        return x && 0;
+    }",
+        0,
+    );
+    utils::assert_code("int main() { return 2 && 0; }", 0);
+}
+
+#[test]
 fn assign() {
     utils::assert_code("int main () { int i = 3; return i += 4; }", 7);
     utils::assert_code("int i = 3; int main () { return i += 4; }", 7);

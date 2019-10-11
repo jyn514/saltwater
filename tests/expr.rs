@@ -160,6 +160,20 @@ fn assign() {
     }",
         1,
     );
+    utils::assert_code(
+        "int main() {
+        float f = 1;
+        return f++;
+    }",
+        1,
+    );
+    utils::assert_code(
+        "int main() {
+        float f = 1;
+        return ++f;
+    }",
+        2,
+    );
 }
 
 #[test]

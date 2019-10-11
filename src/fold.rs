@@ -264,30 +264,26 @@ impl Expr {
                 ExprType::PostIncrement(Box::new(expr), increase)
             }
             ExprType::Cast(expr) => cast(*expr, &self.ctype)?,
-            ExprType::LogicalAnd(left, right) => {
-                let left = cast(*left, &Type::Bool)?;
-                if let ExprType::Literal(Token::Int(i)) = left {
-                    if i == 0 {
-                        ExprType::Literal(Token::Int(0))
-                    } else {
-                        cast(*right, &Type::Bool)?
-                    }
-                } else {
-                    left
-                }
-            }
-            ExprType::LogicalOr(left, right) => {
-                let left = cast(*left, &Type::Bool)?;
-                if let ExprType::Literal(Token::Int(i)) = left {
-                    if i != 0 {
-                        ExprType::Literal(Token::Int(1))
-                    } else {
-                        cast(*right, &Type::Bool)?
-                    }
-                } else {
-                    left
-                }
-            }
+            ExprType::LogicalAnd(left, right) => left.literal_bin_op(
+                *right,
+                &location,
+                |left, right, _| match (left, right) {
+                    (Token::Int(1), Token::Int(1)) => Ok(Some(Token::Int(1))),
+                    (Token::Int(0), _) | (_, Token::Int(0)) => Ok(Some(Token::Int(0))),
+                    _ => Ok(None),
+                },
+                ExprType::LogicalAnd,
+            )?,
+            ExprType::LogicalOr(left, right) => left.literal_bin_op(
+                *right,
+                &location,
+                |left, right, _| match (left, right) {
+                    (Token::Int(0), Token::Int(0)) => Ok(Some(Token::Int(0))),
+                    (Token::Int(1), _) | (_, Token::Int(1)) => Ok(Some(Token::Int(1))),
+                    _ => Ok(None),
+                },
+                ExprType::LogicalOr,
+            )?,
             ExprType::StaticRef(inner) => ExprType::StaticRef(Box::new(inner.const_fold()?)),
         };
         let is_constexpr = match folded {

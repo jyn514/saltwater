@@ -155,6 +155,7 @@ fn logical_exprs() {
 }
 
 #[test]
+#[test]
 fn assign() {
     utils::assert_code("int main () { int i = 3; return i += 4; }", 7);
     utils::assert_code("int i = 3; int main () { return i += 4; }", 7);
@@ -205,6 +206,22 @@ fn ternary() {
         return 1 ? i : p;
     }",
     );
+    utils::assert_code(
+        "int main() {
+        int x = 2;
+        return x > 1 ? 4 : 255;
+    }",
+        4,
+    );
+    utils::assert_code("int main() { return 2 > 1 ? 4 : 255; }", 4);
+    utils::assert_code(
+        "int main() {
+        int x = 5;
+        return x < 7 ? 13 : 51;
+    }",
+        13,
+    );
+    utils::assert_code("int main() { return 5 < 7 ? 13 : 51; }", 13);
 }
 
 #[test]

@@ -159,10 +159,44 @@ impl Compiler {
             }
             ExprType::LogicalOr(left, right) => self.logical_expr(*left, *right, false, builder),
             ExprType::LogicalAnd(left, right) => self.logical_expr(*left, *right, true, builder),
+            ExprType::Ternary(condition, left, right) => {
+                self.ternary(*condition, *left, *right, builder)
+            }
             x => {
                 unimplemented!("{:?}", x);
             }
         }
+    }
+    fn ternary(
+        &mut self,
+        condition: Expr,
+        left: Expr,
+        right: Expr,
+        builder: &mut FunctionBuilder,
+    ) -> IrResult {
+        let target_ebb = builder.create_ebb();
+        let target_type = left.ctype.as_ir_type();
+        builder.append_ebb_param(target_ebb, target_type);
+
+        let condition = self.compile_expr(condition, builder)?;
+        let (ebb_if_true, ebb_if_false) = (builder.create_ebb(), builder.create_ebb());
+        builder.ins().brnz(condition.ir_val, ebb_if_true, &[]);
+        builder.ins().jump(ebb_if_false, &[]);
+
+        builder.switch_to_block(ebb_if_true);
+        let left_val = self.compile_expr(left, builder)?;
+        builder.ins().jump(target_ebb, &[left_val.ir_val]);
+
+        builder.switch_to_block(ebb_if_false);
+        let right_val = self.compile_expr(right, builder)?;
+        builder.ins().jump(target_ebb, &[right_val.ir_val]);
+        builder.switch_to_block(target_ebb);
+
+        Ok(Value {
+            ir_val: *builder.ebb_params(target_ebb).first().unwrap(),
+            ir_type: target_type,
+            ctype: left_val.ctype,
+        })
     }
     fn logical_expr(
         &mut self,

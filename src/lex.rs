@@ -1,6 +1,5 @@
 use lazy_static;
 
-use core::f64::{INFINITY, NEG_INFINITY};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::str::Chars;
@@ -262,7 +261,7 @@ impl<'a> Lexer<'a> {
     /// Parse a number literal, given the starting character and whether floats are allowed.
     ///
     /// A number matches the following regex:
-    /// `-?({digits}\.{digits}|{digits}|\.{digits})([eE]-?{digits})?`
+    /// `({digits}\.{digits}|{digits}|\.{digits})([eE]-?{digits})?`
     /// where {digits} is the regex `([0-9]*|0x[0-9a-f]+)`
     ///
     /// NOTE: A-F is not allowed for hex digits and a-f _is_ allowed for the
@@ -270,102 +269,59 @@ impl<'a> Lexer<'a> {
     /// NOTE: Floats are not allowed for exponents.
     /// TODO: return an error enum instead of Strings
     ///
-    /// Since most of the code is the same for integers and floats, we use the same
-    /// function for both and just pass in a flag that says whether floats are allowed.
-    /// This made the function much more complicated and I'm starting to regret it.
-    ///
     /// I spent way too much time on this.
-    fn parse_num(&mut self, start: char, parsing_base: bool) -> Result<Token, String> {
-        // we keep going on error so we don't get more errors from unconsumed input
-        // for example, if we stopped halfway through 10000000000000000000 because of
-        // overflow, we'd get a bogus Token::Int(0).
-        let mut err = false;
-
-        if start == '.' {
-            assert!(parsing_base);
-            return self.parse_float(0, 10);
-        }
+    fn parse_num(&mut self, start: char) -> Result<Token, String> {
         // start - '0' breaks for hex digits
         assert!(
-            '0' as i64 <= start as i64 && start as i64 <= '9' as i64,
+            '0' <= start && start <= '9',
             "main loop should only pass [-.0-9] as start to parse_num"
         );
-        let mut current = start as i128 - '0' as i128;
-
         // check for radix other than 10 - but if we see '.', use 10
-        let radix = if current == 0 {
-            match self.peek() {
+        let radix = if start == '0' {
+            match self.next_char() {
                 Some('b') => {
-                    self.next_char();
+                    crate::utils::warn("binary number literals are an extension", &self.location);
                     2
                 }
-                Some('x') => {
-                    self.next_char();
-                    16
-                }
+                Some('x') => 16,
                 // float: 0.431
-                Some('.') => 10,
+                Some('.') => return self.parse_float(0, 10).map(Token::Float),
                 // octal: 0755 => 493
-                _ => 8,
+                c => {
+                    self.unput(c);
+                    8
+                }
             }
         } else {
             10
         };
+        let start = start as u64 - '0' as u64;
 
         // main loop (the first {digits} in the regex)
-        while let Some(c) = self.next_char() {
-            if c == '.' {
-                if parsing_base {
-                    return self.parse_float(current, radix);
+        let digits = match self.parse_int(start, radix)? {
+            Some(int) => int,
+            None => {
+                if self.match_next('.') {
+                    return self.parse_float(start, radix).map(Token::Float);
+                } else if radix == 8 || radix == 10 {
+                    start
                 } else {
-                    return Err(String::from("exponents cannot be floating point numbers"));
-                }
-            } else if !c.is_digit(radix) {
-                self.unput(Some(c));
-                break;
-            }
-            if !err {
-                // catch overflow
-                match current
-                    .checked_mul(i128::from(radix))
-                    // XXX: will overflow for u64
-                    .and_then(|current| current.checked_add(i128::from(c.to_digit(radix).unwrap())))
-                {
-                    Some(c) => current = c,
-                    None => err = true,
+                    return Err(format!(
+                        "missing digits to {} integer constant",
+                        if radix == 2 { "binary" } else { "hexadecimal" }
+                    ));
                 }
             }
-        }
-        if err {
-            return Err(String::from("overflow while parsing integer literal"));
-        }
-        let current = if parsing_base {
-            let exp = self.parse_exponent()?;
-            if exp.is_negative() {
-                // this may truncate
-                // TODO: conversion to f64 might lose precision
-                (10_f64.powi(exp) * current as f64) as i128
-            } else {
-                match 10_i128
-                    .checked_pow(exp as u32)
-                    .and_then(|p| p.checked_mul(current))
-                {
-                    Some(i) => i,
-                    None => return Err("overflow while parsing integer literal".into()),
-                }
-            }
-        } else {
-            current
         };
+        if let Some(float) = self.parse_exponent(digits, 0.0)? {
+            return Ok(Token::Float(float));
+        }
         let token = Ok(if self.match_next('u') || self.match_next('U') {
-            if !parsing_base {
-                return Err("invalid suffix 'u' for floating constant".into());
-            }
-            let unsigned = u64::try_from(current)
+            let unsigned = u64::try_from(digits)
                 .map_err(|_| "overflow while parsing unsigned integer literal")?;
             Token::UnsignedInt(unsigned)
         } else {
-            let long = i64::try_from(current)
+            let long = i64::try_from(digits)
                 .map_err(|_| "overflow while parsing signed integer literal")?;
             Token::Int(long)
         });
@@ -378,70 +334,120 @@ impl<'a> Lexer<'a> {
         token
     }
     // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, start: i128, radix: u32) -> Result<Token, String> {
+    fn parse_float(&mut self, start: u64, radix: u32) -> Result<f64, String> {
         let radix_f = f64::from(radix);
         let (mut fraction, mut current_base): (f64, f64) = (0.0, 1.0 / radix_f);
         // parse fraction: second {digits} in regex
         while let Some(c) = self.peek() {
             if c.is_digit(radix) && current_base != 0.0 {
                 self.next_char();
-                fraction += (c as i64 - '0' as i64) as f64 * current_base;
+                fraction += f64::from(c as u8 - b'0') * current_base;
                 current_base /= radix_f;
             } else {
                 break;
             }
         }
-        let result = 10_f64.powi(self.parse_exponent()?) * (start as f64 + fraction);
+        let result = match self.parse_exponent(start, fraction)? {
+            Some(power) => power,
+            None => start as f64 + fraction,
+        };
         // Ignored for compatibility reasons
-        if !self.match_next('f') {
-            self.match_next('F');
+        if !(self.match_next('f') || self.match_next('F') || self.match_next('l')) {
+            self.match_next('L');
         }
-        if result == INFINITY || result == NEG_INFINITY {
+        if result.is_infinite() {
             Err(String::from(
                 "overflow error while parsing floating literal",
             ))
         } else {
-            Ok(Token::Float(result))
+            Ok(result)
         }
     }
     // should only be called at the end of a number. mostly error handling
-    fn parse_exponent(&mut self) -> Result<i32, String> {
-        if !(self.peek() == Some('e') || self.peek() == Some('E')) {
-            return Ok(0);
+    fn parse_exponent(&mut self, base: u64, mantissa: f64) -> Result<Option<f64>, String> {
+        if !self.match_next('e') && !self.match_next('E') {
+            return Ok(None);
         }
-        self.next_char();
-        let seen_plus = self.match_next('+');
-        let exp = match self.peek() {
+        let seen_neg = !self.match_next('+') && self.match_next('-');
+        let unsigned_exp = match self.peek() {
             Some(c) if c.is_ascii_digit() => {
-                assert_eq!(self.next_char(), Some(c));
-                self.parse_num(c, false)?
-            }
-            Some('-') if !seen_plus => {
-                assert_eq!(self.next_char(), Some('-'));
-                match self.peek() {
-                    Some(c) if c.is_ascii_digit() => {
-                        self.next_char();
-                        match self.parse_num(c, false) {
-                            Err(err) => return Err(err),
-                            Ok(Token::Int(i)) => Token::Int(-i),
-                            // INVARIANT: this needs to be caught later because it's a bug
-                            Ok(other) => other,
-                        }
-                    }
-                    Some(other) => return Err(format!("expected digit after '-', got {}", other)),
-                    None => return Err("expected digit after '-', got <end-of-file>".into()),
-                }
+                self.parse_int(0, 10)?.expect("peek should be accurate")
             }
             _ => return Err(String::from("exponent for floating literal has no digits")),
         };
-        match exp {
-            Token::Int(i) => i32::try_from(i).map_err(|_| {
-                "only 32-bit exponents are allowed, 64-bit exponents will overflow".to_string()
-            }),
-            _ => unreachable!(
-                "parse_num should never return something besides Token::Int \
-                 when called with parsing_base: false"
-            ),
+        let exp = match i32::try_from(unsigned_exp) {
+            Ok(i) if seen_neg => -i,
+            Ok(i) => i,
+            Err(_) => return Err("exponent is larger than i32 max".into()),
+        };
+        // TODO: will this lose precision?
+        let existing = base as f64 + mantissa;
+        let actual = 10_f64.powi(exp) * existing;
+        if actual.is_infinite() {
+            Err("overflow parsing floating literal".into())
+        } else if actual == 0.0 && (base != 0 || mantissa != 0.0) {
+            Err("underflow parsing floating literal".into())
+        } else {
+            Ok(Some(actual))
+        }
+    }
+    // returns None if there are no digits at the current position
+    fn parse_int(&mut self, mut acc: u64, radix: u32) -> Result<Option<u64>, String> {
+        let parse_digit = |c: char| match c.to_digit(16) {
+            None => Ok(None),
+            Some(digit) if digit < radix => Ok(Some(digit)),
+            // if we see 'e' or 'E', it's the end of the int, don't treat it as an error
+            // we only get this far if it's not a valid digit for the radix, i.e. radix != 16
+            Some(digit) if digit == 14 => Ok(None),
+            Some(digit) => Err(format!(
+                "invalid digit {} in {} constant",
+                digit,
+                match radix {
+                    2 => "binary",
+                    8 => "octal",
+                    10 => "decimal",
+                    16 => "hexadecimal",
+                    _ => unreachable!(),
+                }
+            )),
+        };
+        // if we didn't start with a digit, don't do anything
+        match self.peek() {
+            None => return Ok(None),
+            Some(c) => {
+                if parse_digit(c)?.is_none() {
+                    return Ok(None);
+                }
+            }
+        }
+        // we keep going on error so we don't get more errors from unconsumed input
+        // for example, if we stopped halfway through 10000000000000000000 because of
+        // overflow, we'd get a bogus Token::Int(0).
+        let mut err = false;
+        let radix = radix.into();
+        while let Some(c) = self.next_char() {
+            if err {
+                continue;
+            }
+            let digit = match parse_digit(c)? {
+                Some(d) => d,
+                None => {
+                    self.unput(Some(c));
+                    break;
+                }
+            };
+            let maybe_digits = acc
+                .checked_mul(radix)
+                .and_then(|a| a.checked_add(digit.into()));
+            match maybe_digits {
+                Some(digits) => acc = digits,
+                None => err = true,
+            }
+        }
+        if err {
+            Err("overflow parsing integer literal".into())
+        } else {
+            Ok(Some(acc))
         }
     }
     /// Read a logical character, which may be a character escape.
@@ -755,7 +761,7 @@ impl<'a> Iterator for Lexer<'a> {
                 ';' => Ok(Token::Semicolon),
                 ',' => Ok(Token::Comma),
                 '.' => match self.peek() {
-                    Some(c) if c.is_ascii_digit() => self.parse_num('.', true),
+                    Some(c) if c.is_ascii_digit() => self.parse_float(0, 10).map(Token::Float),
                     Some('.') => {
                         self.next_char();
                         if self.peek() == Some('.') {
@@ -771,7 +777,7 @@ impl<'a> Iterator for Lexer<'a> {
                     _ => Ok(Token::Dot),
                 },
                 '?' => Ok(Token::Question),
-                '0'..='9' => self.parse_num(c, true),
+                '0'..='9' => self.parse_num(c),
                 'a'..='z' | 'A'..='Z' | '_' => self.parse_id(c),
                 '\'' => self.parse_char(),
                 '"' => {
@@ -831,6 +837,25 @@ mod tests {
                 _ => false,
             })
     }
+    fn assert_int(s: &str, expected: i64) {
+        assert!(
+            match_data(lex(s), |lexed| lexed == Ok(Token::Int(expected))),
+            "{} != {}",
+            s,
+            expected
+        );
+    }
+    fn assert_float(s: &str, expected: f64) {
+        assert!(
+            match_data(lex(s), |lexed| lexed == Ok(Token::Float(expected))),
+            "{} != {}",
+            s,
+            expected
+        );
+    }
+    fn assert_err(s: &str) {
+        assert!(match_data(lex(s), |e| e.is_err()), "{} is not an error", s);
+    }
 
     #[test]
     fn test_plus() {
@@ -872,32 +897,51 @@ mod tests {
     }
 
     #[test]
-    fn test_num_literals() {
-        assert!(match_data(lex("10"), |lexed| lexed == Ok(Token::Int(10))));
-        assert!(match_data(lex("0x10"), |lexed| lexed == Ok(Token::Int(16))));
-        assert!(match_data(lex("0b10"), |lexed| lexed == Ok(Token::Int(2))));
-        assert!(match_data(lex("010"), |lexed| lexed == Ok(Token::Int(8))));
-        assert!(match_data(lex("02"), |lexed| lexed == Ok(Token::Int(2))));
-        assert!(match_data(lex("0"), |lexed| lexed == Ok(Token::Int(0))));
+    fn test_int_literals() {
+        assert_int("10", 10);
+        assert_int("0x10", 16);
+        assert_int("0b10", 2);
+        assert_int("010", 8);
+        assert_int("02", 2);
+        assert_int("0", 0);
+        assert_int("0xff", 255);
+        assert_int("0xFF", 255);
+        assert_err("0b");
+        assert_err("0x");
+        assert_err("09");
+        assert_eq!(lex_all("1a").len(), 2);
+    }
+    #[test]
+    fn test_float_literals() {
+        assert_float("0.1", 0.1);
+        assert_float(".1", 0.1);
+        for i in 0..10 {
+            assert_float(&format!("1{}e{}", "0".repeat(i), 10 - i), 1e10);
+        }
         assert!(match_data(lex("0.1"), |lexed| lexed == Ok(Token::Float(0.1))));
         assert!(match_data(lex(".1"), |lexed| lexed == Ok(Token::Float(0.1))));
-        assert!(match_data(lex("1e10"), |lexed| lexed == Ok(Token::Int(10_000_000_000))));
+        assert!(match_data(lex("1e10"), |lexed| lexed
+            == Ok(Token::Float(10_000_000_000.0))));
         assert!(match_all(&lex_all("-1"), &[Token::Minus, Token::Int(1)]));
         assert!(match_all(
             &lex_all("-1e10"),
-            &[Token::Minus, Token::Int(10_000_000_000)]
+            &[Token::Minus, Token::Float(10_000_000_000.0)]
         ));
         assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
             == Ok(Token::UnsignedInt(9_223_372_036_854_775_807u64))));
+        assert!(match_data(lex("0x.ep0"), |lexed| lexed == Ok(Token::Float(0.875))));
+        assert!(match_data(lex("0x.ep-0l"), |lexed| lexed == Ok(Token::Float(0.875))));
+        assert!(match_data(lex("0xe.p-4f"), |lexed| lexed == Ok(Token::Float(0.875))));
+        assert!(match_data(lex("0xep-4f"), |lexed| lexed == Ok(Token::Float(0.875))));
     }
 
     #[test]
     fn test_num_errors() {
-        assert!(match_data(lex("1e"), |t| t.is_err()));
-        assert!(match_data(lex("1e."), |t| t.is_err()));
-        assert!(match_data(lex("1e1.0"), |t| t.is_err()));
-        //assert!(match_data(lex("1e100000"), |t| t.is_err());
-        //assert!(match_data(lex("1e-100000"), |t| t.is_err());
+        assert_err("1e");
+        assert_err("1e.");
+        assert_err("1e100000");
+        assert_err("1e-100000");
+        assert_eq!(lex_all("1e1.0").len(), 2);
     }
 
     fn lots_of(c: char) -> String {

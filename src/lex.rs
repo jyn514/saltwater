@@ -297,7 +297,7 @@ impl<'a> Lexer<'a> {
         };
         let start = start as u64 - '0' as u64;
 
-        // main loop (the first {digits} in the regex)
+        // the first {digits} in the regex
         let digits = match self.parse_int(start, radix)? {
             Some(int) => int,
             None => {
@@ -397,8 +397,9 @@ impl<'a> Lexer<'a> {
             None => Ok(None),
             Some(digit) if digit < radix => Ok(Some(digit)),
             // if we see 'e' or 'E', it's the end of the int, don't treat it as an error
+            // if we see 'b' this could be part of a binary constant (0b1)
             // we only get this far if it's not a valid digit for the radix, i.e. radix != 16
-            Some(digit) if digit == 14 => Ok(None),
+            Some(11) | Some(14) => Ok(None),
             Some(digit) => Err(format!(
                 "invalid digit {} in {} constant",
                 digit,
@@ -411,28 +412,24 @@ impl<'a> Lexer<'a> {
                 }
             )),
         };
-        // if we didn't start with a digit, don't do anything
-        match self.peek() {
-            None => return Ok(None),
-            Some(c) => {
-                if parse_digit(c)?.is_none() {
-                    return Ok(None);
-                }
-            }
-        }
         // we keep going on error so we don't get more errors from unconsumed input
         // for example, if we stopped halfway through 10000000000000000000 because of
         // overflow, we'd get a bogus Token::Int(0).
         let mut err = false;
+        let mut saw_digit = false;
         let radix = radix.into();
-        while let Some(c) = self.next_char() {
+        while let Some(c) = self.peek() {
             if err {
+                self.next_char();
                 continue;
             }
             let digit = match parse_digit(c)? {
-                Some(d) => d,
+                Some(d) => {
+                    self.next_char();
+                    saw_digit = true;
+                    d
+                }
                 None => {
-                    self.unput(Some(c));
                     break;
                 }
             };
@@ -446,6 +443,8 @@ impl<'a> Lexer<'a> {
         }
         if err {
             Err("overflow parsing integer literal".into())
+        } else if !saw_digit {
+            Ok(None)
         } else {
             Ok(Some(acc))
         }
@@ -802,30 +801,43 @@ mod tests {
     type LexType = Locatable<Result<Token, String>>;
 
     fn lex(input: &str) -> Option<LexType> {
-        lex_all(input).get(0).cloned()
+        let mut lexed = lex_all(input);
+        assert!(
+            lexed.len() <= 1,
+            "too many lexemes for {}: {:?}",
+            input,
+            lexed
+        );
+        lexed.pop()
     }
     fn lex_all(input: &str) -> Vec<LexType> {
-        Lexer::new("<stdin>".to_string(), input.chars(), false).collect()
+        Lexer::new("<test suite>".to_string(), input.chars(), false).collect()
     }
 
     fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
     where
-        T: FnOnce(Result<Token, String>) -> bool,
+        T: FnOnce(&Result<Token, String>) -> bool,
+    {
+        match_data_ref(&lexed, closure)
+    }
+    fn match_data_ref<T>(lexed: &Option<LexType>, closure: T) -> bool
+    where
+        T: FnOnce(&Result<Token, String>) -> bool,
     {
         match lexed {
-            Some(result) => closure(result.data),
+            Some(result) => closure(&result.data),
             None => false,
         }
     }
 
     fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
-        match_data(lexed, |c| c == Ok(Token::Char(expected)))
+        match_data(lexed, |c| *c == Ok(Token::Char(expected)))
     }
 
     fn match_str(lexed: Option<LexType>, expected: &str) -> bool {
         let mut string = expected.to_string();
         string.push('\0');
-        match_data(lexed, |c| c == Ok(Token::Str(string)))
+        match_data(lexed, |c| *c == Ok(Token::Str(string)))
     }
 
     fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
@@ -839,22 +851,30 @@ mod tests {
     }
     fn assert_int(s: &str, expected: i64) {
         assert!(
-            match_data(lex(s), |lexed| lexed == Ok(Token::Int(expected))),
+            match_data(lex(s), |lexed| *lexed == Ok(Token::Int(expected))),
             "{} != {}",
             s,
             expected
         );
     }
     fn assert_float(s: &str, expected: f64) {
+        let lexed = lex(s);
         assert!(
-            match_data(lex(s), |lexed| lexed == Ok(Token::Float(expected))),
-            "{} != {}",
+            match_data_ref(&lexed, |lexed| *lexed == Ok(Token::Float(expected))),
+            "({}) {:?} != {}",
             s,
+            lexed,
             expected
         );
     }
     fn assert_err(s: &str) {
-        assert!(match_data(lex(s), |e| e.is_err()), "{} is not an error", s);
+        let lexed = lex_all(s);
+        assert!(
+            lexed.iter().any(|e| e.data.is_err()),
+            "{:?} is not an error (from {})",
+            &lexed,
+            s
+        );
     }
 
     #[test]
@@ -918,21 +938,17 @@ mod tests {
         for i in 0..10 {
             assert_float(&format!("1{}e{}", "0".repeat(i), 10 - i), 1e10);
         }
-        assert!(match_data(lex("0.1"), |lexed| lexed == Ok(Token::Float(0.1))));
-        assert!(match_data(lex(".1"), |lexed| lexed == Ok(Token::Float(0.1))));
-        assert!(match_data(lex("1e10"), |lexed| lexed
-            == Ok(Token::Float(10_000_000_000.0))));
         assert!(match_all(&lex_all("-1"), &[Token::Minus, Token::Int(1)]));
         assert!(match_all(
             &lex_all("-1e10"),
             &[Token::Minus, Token::Float(10_000_000_000.0)]
         ));
-        assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
+        assert!(match_data(lex("9223372036854775807u"), |lexed| *lexed
             == Ok(Token::UnsignedInt(9_223_372_036_854_775_807u64))));
-        assert!(match_data(lex("0x.ep0"), |lexed| lexed == Ok(Token::Float(0.875))));
-        assert!(match_data(lex("0x.ep-0l"), |lexed| lexed == Ok(Token::Float(0.875))));
-        assert!(match_data(lex("0xe.p-4f"), |lexed| lexed == Ok(Token::Float(0.875))));
-        assert!(match_data(lex("0xep-4f"), |lexed| lexed == Ok(Token::Float(0.875))));
+        assert_float("0x.ep0", 0.875);
+        assert_float("0x.ep-0l", 0.875);
+        assert_float("0xe.p-4f", 0.875);
+        assert_float("0xep-4f", 0.875);
     }
 
     #[test]

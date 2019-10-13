@@ -301,9 +301,7 @@ impl<'a> Lexer<'a> {
         let digits = match self.parse_int(start, radix)? {
             Some(int) => int,
             None => {
-                if self.match_next('.') {
-                    return self.parse_float(start, radix).map(Token::Float);
-                } else if radix == 8 || radix == 10 {
+                if radix == 8 || radix == 10 || self.peek() == Some('.') {
                     start
                 } else {
                     return Err(format!(
@@ -313,7 +311,11 @@ impl<'a> Lexer<'a> {
                 }
             }
         };
-        if let Some(float) = self.parse_exponent(digits, 0.0)? {
+        if self.match_next('.') {
+            return self.parse_float(digits, radix).map(Token::Float);
+        }
+        if let Some(float) = self.parse_exponent(digits, 0.0, radix)? {
+            self.consume_float_suffix();
             return Ok(Token::Float(float));
         }
         let token = Ok(if self.match_next('u') || self.match_next('U') {
@@ -341,20 +343,18 @@ impl<'a> Lexer<'a> {
         while let Some(c) = self.peek() {
             if c.is_digit(radix) && current_base != 0.0 {
                 self.next_char();
-                fraction += f64::from(c as u8 - b'0') * current_base;
+                // this unwrap is safe because we already checked it was a digit
+                fraction += f64::from(c.to_digit(radix).unwrap()) * current_base;
                 current_base /= radix_f;
             } else {
                 break;
             }
         }
-        let result = match self.parse_exponent(start, fraction)? {
+        let result = match self.parse_exponent(start, fraction, radix)? {
             Some(power) => power,
             None => start as f64 + fraction,
         };
-        // Ignored for compatibility reasons
-        if !(self.match_next('f') || self.match_next('F') || self.match_next('l')) {
-            self.match_next('L');
-        }
+        self.consume_float_suffix();
         if result.is_infinite() {
             Err(String::from(
                 "overflow error while parsing floating literal",
@@ -363,9 +363,24 @@ impl<'a> Lexer<'a> {
             Ok(result)
         }
     }
+    fn consume_float_suffix(&mut self) {
+        // Ignored for compatibility reasons
+        if !(self.match_next('f') || self.match_next('F') || self.match_next('l')) {
+            self.match_next('L');
+        }
+    }
     // should only be called at the end of a number. mostly error handling
-    fn parse_exponent(&mut self, base: u64, mantissa: f64) -> Result<Option<f64>, String> {
-        if !self.match_next('e') && !self.match_next('E') {
+    fn parse_exponent(
+        &mut self,
+        base: u64,
+        mantissa: f64,
+        radix: u32,
+    ) -> Result<Option<f64>, String> {
+        if radix == 16 {
+            if !self.match_next('p') && !self.match_next('P') {
+                return Ok(None);
+            }
+        } else if !self.match_next('e') && !self.match_next('E') {
             return Ok(None);
         }
         let seen_neg = !self.match_next('+') && self.match_next('-');
@@ -382,7 +397,8 @@ impl<'a> Lexer<'a> {
         };
         // TODO: will this lose precision?
         let existing = base as f64 + mantissa;
-        let actual = 10_f64.powi(exp) * existing;
+        let exp_radix = if radix == 16 { 2 } else { 10 };
+        let actual = f64::from(exp_radix).powi(exp) * existing;
         if actual.is_infinite() {
             Err("overflow parsing floating literal".into())
         } else if actual == 0.0 && (base != 0 || mantissa != 0.0) {
@@ -398,8 +414,9 @@ impl<'a> Lexer<'a> {
             Some(digit) if digit < radix => Ok(Some(digit)),
             // if we see 'e' or 'E', it's the end of the int, don't treat it as an error
             // if we see 'b' this could be part of a binary constant (0b1)
+            // if we see 'f' it could be a float suffix
             // we only get this far if it's not a valid digit for the radix, i.e. radix != 16
-            Some(11) | Some(14) => Ok(None),
+            Some(11) | Some(14) | Some(15) => Ok(None),
             Some(digit) => Err(format!(
                 "invalid digit {} in {} constant",
                 digit,
@@ -417,7 +434,6 @@ impl<'a> Lexer<'a> {
         // overflow, we'd get a bogus Token::Int(0).
         let mut err = false;
         let mut saw_digit = false;
-        let radix = radix.into();
         while let Some(c) = self.peek() {
             if err {
                 self.next_char();
@@ -434,7 +450,7 @@ impl<'a> Lexer<'a> {
                 }
             };
             let maybe_digits = acc
-                .checked_mul(radix)
+                .checked_mul(radix.into())
                 .and_then(|a| a.checked_add(digit.into()));
             match maybe_digits {
                 Some(digits) => acc = digits,

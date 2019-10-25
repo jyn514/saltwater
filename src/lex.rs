@@ -938,8 +938,8 @@ mod tests {
         assert_int("0x10", 16);
         assert_int("0b10", 2);
         assert_int("010", 8);
-        assert_int("02", 2);
-        assert_int("0", 0);
+        assert_int("02l", 2);
+        assert_int("0L", 0);
         assert_int("0xff", 255);
         assert_int("0xFF", 255);
         assert_err("0b");

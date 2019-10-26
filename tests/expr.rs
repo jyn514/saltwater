@@ -462,6 +462,10 @@ int main() {
 }",
         1,
     );
+    utils::assert_compile_error(
+        "struct { int x; int y; } s;
+        int main() { return (int)s; }",
+    )
 }
 
 #[test]

@@ -131,6 +131,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if rval.ctype != lval.ctype {
                     rval = rval.cast(&lval.ctype)?;
                 }
+                if rval.ctype.is_struct() {
+                    unimplemented!("struct assignment");
+                }
                 Ok(Expr {
                     ctype: lval.ctype.clone(),
                     constexpr: rval.constexpr,
@@ -499,6 +502,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 return Err(Locatable {
                     data: format!("cannot cast pointer to float or vice versa. hint: if you really want to do this, use '({})(int)' instead",
                     ctype),
+                    location,
+                });
+            } else if expr.ctype.is_struct() {
+                // not implemented: galaga (https://github.com/jyn514/rcc/issues/98)
+                return Err(Locatable {
+                    data: "cannot cast a struct to any type".into(),
                     location,
                 });
             }

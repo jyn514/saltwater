@@ -162,6 +162,14 @@ impl Type {
             _ => false,
         }
     }
+    #[inline]
+    pub fn is_struct(&self) -> bool {
+        match self {
+            Type::Struct(_) | Type::Union(_) => true,
+            _ => false,
+        }
+    }
+    #[inline]
     pub fn is_complete(&self) -> bool {
         match self {
             Type::Void | Type::Array(_, ArrayType::Unbounded) => false,

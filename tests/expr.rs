@@ -387,6 +387,11 @@ int main() { return g(1); }
 ",
         2,
     );
+    utils::assert_code(
+        "int a[] = {1, 2, 3};
+        int main() { return *(a + 1); }",
+        2,
+    );
 }
 
 #[test]
@@ -485,7 +490,7 @@ fn typedef_cast() {
 }
 
 #[test]
-fn arrays_are_communtative() {
+fn arrays_are_commutative() {
     utils::assert_code(
         "
 int p[2] = {1, 2};

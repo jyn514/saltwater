@@ -363,17 +363,26 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Self::multiplicative_expr,
             &[&Token::Plus, &Token::Minus],
             |mut left, mut right, token| {
+                match (&left.ctype, &right.ctype) {
+                    (Type::Pointer(to, _), i)
+                    | (Type::Array(to, _), i) if i.is_integral() && to.is_complete() => {
+                        let to = to.clone();
+                        return Expr::pointer_arithmetic(*left, *right, &*to, token.location);
+                    }
+                    (i, Type::Pointer(to, _))
+                        // `i - p` for pointer p is not valid
+                    | (i, Type::Array(to, _)) if i.is_integral() && token.data == Token::Plus && to.is_complete() => {
+                        let to = to.clone();
+                        return Expr::pointer_arithmetic(*right, *left, &*to, token.location);
+                    }
+                    _ => {}
+                };
                 let (ctype, lval) = if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
                     let tmp = Expr::binary_promote(*left, *right)?;
                     left = Box::new(tmp.0);
                     right = Box::new(tmp.1);
                     (left.ctype.clone(), false)
-                } else if left.ctype.is_pointer_to_complete_object() && right.ctype.is_integral() {
-                    (left.ctype.clone(), true)
-                    // `i - p` for pointer p is not valid
-                } else if token.data == Token::Plus && left.ctype.is_integral() && right.ctype.is_pointer_to_complete_object() {
-                    (right.ctype.clone(), true)
-                    // `p1 + p2` for pointers p1 and p2 is not valid
+                // `p1 + p2` for pointers p1 and p2 is not valid
                 } else if token.data == Token::Minus && left.ctype.is_pointer_to_complete_object() && left.ctype == right.ctype {
                     // not sure what type to use here, C11 standard doesn't mention it
                     (left.ctype.clone(), true)
@@ -711,14 +720,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             location,
                         ),
                     };
-                    let index = Expr {
-                        lval: false,
-                        location: index.location.clone(),
-                        constexpr: index.constexpr,
-                        expr: ExprType::Cast(Box::new(index)),
-                        ctype: array.ctype.clone(),
-                    };
-                    Expr::pointer_arithmetic(array, index, target_type, location)?
+                    let mut addr = Expr::pointer_arithmetic(array, index, &target_type, location)?;
+                    addr.ctype = target_type;
+                    addr
                 }
                 // function call
                 Token::LeftParen => {
@@ -1232,12 +1236,18 @@ impl Expr {
     }
     fn pointer_arithmetic(
         base: Expr,
-        offset: Expr,
-        pointee: Type,
+        index: Expr,
+        pointee: &Type,
         location: Location,
     ) -> ExprResult {
-        assert_eq!(base.ctype, offset.ctype);
-        let offset = offset.rval();
+        let offset = Expr {
+            lval: false,
+            location: index.location.clone(),
+            constexpr: index.constexpr,
+            expr: ExprType::Cast(Box::new(index)),
+            ctype: base.ctype.clone(),
+        }
+        .rval();
         let size = pointee.sizeof().map_err(|_| Locatable {
             location: location.clone(),
             data: format!(
@@ -1263,7 +1273,7 @@ impl Expr {
         Ok(Expr {
             lval: true,
             location,
-            ctype: pointee,
+            ctype: base.ctype.clone(),
             constexpr: base.constexpr && offset.constexpr,
             expr: ExprType::Add(Box::new(base), Box::new(offset)),
         })

@@ -140,7 +140,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             match &object.ctype {
                 Type::Struct(StructType::Named(name, size, _, _))
                 | Type::Union(StructType::Named(name, size, _, _)) => {
-                    if *size == 0 {
+                    if *size == 0 && object.storage_class != crate::data::StorageClass::Extern {
                         self.pending.push_back(Err(Locatable {
                             data: format!("forward declaration of {} is never completed", name),
                             location: Default::default(),

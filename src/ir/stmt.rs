@@ -163,12 +163,21 @@ impl Compiler {
         maybe_body: Option<Stmt>,
         builder: &mut FunctionBuilder,
     ) -> SemanticResult<()> {
+        use cranelift::prelude::types;
         let (loop_body, end_body, old_saw_loop) = self.enter_loop(builder);
 
         // for loops can loop forever: `for (;;) {}`
         if let Some(condition) = maybe_condition {
             let condition = self.compile_expr(condition, builder)?;
-            builder.ins().brz(condition.ir_val, end_body, &[]);
+            let int = Self::cast_ir(
+                condition.ir_type,
+                types::I32,
+                condition.ir_val,
+                false,
+                false,
+                builder,
+            );
+            builder.ins().brz(int, end_body, &[]);
         }
 
         if let Some(body) = maybe_body {

@@ -11,7 +11,7 @@ type IrResult = SemanticResult<Value>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Value {
     pub(crate) ir_val: IrValue,
-    ir_type: IrType,
+    pub(crate) ir_type: IrType,
     ctype: Type,
 }
 
@@ -373,7 +373,7 @@ impl Compiler {
             ctype,
         })
     }
-    fn cast_ir(
+    pub(crate) fn cast_ir(
         from: IrType,
         to: IrType,
         val: IrValue,

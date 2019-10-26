@@ -27,25 +27,22 @@ impl Compiler {
             location: location.clone(),
         };
         let linkage = symbol.storage_class.try_into().map_err(err_closure)?;
+        let align = symbol
+            .ctype
+            .alignof()
+            .map_err(|err| err.to_string())
+            .and_then(|size| {
+                size.try_into()
+                    .map_err(|_| format!("align of {} is greater than 256 bytes", symbol.id))
+            })
+            .map_err(err_closure)?;
+        if align == 0 {
+            // struct that was declared but never used
+            return Ok(());
+        }
         let id = self
             .module
-            .declare_data(
-                &symbol.id,
-                linkage,
-                !symbol.qualifiers.c_const,
-                Some(
-                    symbol
-                        .ctype
-                        .alignof()
-                        .map_err(|err| err.to_string())
-                        .and_then(|size| {
-                            size.try_into().map_err(|_| {
-                                format!("align of {} is greater than 256 bytes", symbol.id)
-                            })
-                        })
-                        .map_err(err_closure)?,
-                ),
-            )
+            .declare_data(&symbol.id, linkage, !symbol.qualifiers.c_const, Some(align))
             .map_err(|err| Locatable {
                 data: format!("error storing static value: {}", err),
                 location: location.clone(),

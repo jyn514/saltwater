@@ -252,7 +252,9 @@ fn function() {
 
 #[test]
 fn forward_declaration() {
-    utils::assert_compile_error("struct s my_s;");
+    // declaration of a struct without a usage is allowed
+    // TODO: warn that this does nothing
+    utils::assert_succeeds("struct s my_s; int main(){}");
     utils::assert_compile_error("struct s { struct t t; };");
     utils::assert_succeeds(
         "

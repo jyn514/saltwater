@@ -921,14 +921,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 struct_member_helper!(members, expr, id, location)
             }
             Type::Struct(StructType::Named(name, _, _, _))
-            | Type::Union(StructType::Named(name, _, _, _)) => {
-                match self.tag_scope.get(name).unwrap() {
-                    TagEntry::Union(members) | TagEntry::Struct(members) => {
-                        struct_member_helper!(members, expr, id, location)
-                    }
-                    _ => unreachable!("parser should ensure types in scope are valid"),
+            | Type::Union(StructType::Named(name, _, _, _)) => match self.tag_scope.get(name) {
+                Some(TagEntry::Union(members)) | Some(TagEntry::Struct(members)) => {
+                    struct_member_helper!(members, expr, id, location)
                 }
-            }
+                None => Err(Locatable::new(
+                    format!("{} has not yet been defined", expr.ctype),
+                    location,
+                )),
+                _ => unreachable!("parser should ensure types in scope are valid"),
+            },
             _ => Err(Locatable {
                 data: format!("expected struct or union, got type '{}'", expr.ctype),
                 location,

@@ -159,6 +159,7 @@ impl Type {
     pub fn is_pointer_to_complete_object(&self) -> bool {
         match self {
             Type::Pointer(ctype, _) => ctype.is_complete() && !ctype.is_function(),
+            Type::Array(_, _) => true,
             _ => false,
         }
     }
@@ -172,7 +173,7 @@ impl Type {
     #[inline]
     pub fn is_complete(&self) -> bool {
         match self {
-            Type::Void | Type::Array(_, ArrayType::Unbounded) => false,
+            Type::Void | Type::Function(_) | Type::Array(_, ArrayType::Unbounded) => false,
             // TODO: update when we allow incomplete struct and union types (e.g. `struct s;`)
             _ => true,
         }

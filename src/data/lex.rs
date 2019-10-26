@@ -149,6 +149,11 @@ impl<T: PartialEq> PartialEq for Locatable<T> {
 }
 
 impl<T: Eq> Eq for Locatable<T> {}
+impl<T> Locatable<T> {
+    pub fn new(data: T, location: Location) -> Self {
+        Self { data, location }
+    }
+}
 
 use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
 impl Token {

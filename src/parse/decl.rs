@@ -30,7 +30,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// Used for casts and `sizeof` builtin.
     pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, Locatable<String>> {
-        let (sc, qualifiers, ctype, _) = self.declaration_specifiers(false)?;
+        let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
         if sc != StorageClass::Auto {
             return Err(Locatable {
                 // TODO
@@ -76,7 +76,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         add_to_scope: bool,
     ) -> Result<VecDeque<Locatable<Declaration>>, Locatable<String>> {
-        let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers(true)?;
+        let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers()?;
         if self.match_next(&Token::Semicolon).is_some() {
             if !seen_compound_type {
                 warn(
@@ -111,10 +111,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let init = match (&symbol.ctype, self.peek_token()) {
             (Type::Function(ftype), Some(Token::LeftBrace)) => {
                 symbol.init = true;
-                self.declare(&symbol, &id.location)?;
+                let ftype = ftype.clone();
+                self.declare(&mut symbol, &id.location)?;
                 Some(Initializer::FunctionBody(self.function_body(
                     symbol.id.clone(),
-                    ftype.clone(),
+                    ftype,
                     id.location.clone(),
                 )?))
             }
@@ -132,13 +133,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let init = Some(self.initializer(ctype)?);
                 symbol.init = true;
                 if add_to_scope {
-                    self.declare(&symbol, &id.location)?;
+                    self.declare(&mut symbol, &id.location)?;
                 }
                 init
             }
             _ => {
                 if add_to_scope {
-                    self.declare(&symbol, &id.location)?;
+                    self.declare(&mut symbol, &id.location)?;
                 }
                 None
             }
@@ -163,9 +164,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             self.expect(Token::Comma)?;
         }
         loop {
-            let decl = self.init_declarator(sc, qualifiers, ctype.clone())?;
+            let mut decl = self.init_declarator(sc, qualifiers, ctype.clone())?;
             if add_to_scope {
-                self.declare(&decl.data.symbol, &decl.location)?;
+                self.declare(&mut decl.data.symbol, &decl.location)?;
             }
             pending.push_back(decl);
             if self.match_next(&Token::Comma).is_none() {
@@ -259,7 +260,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(())
         }
     }
-    fn declare(&mut self, decl: &Symbol, location: &Location) -> Result<(), Locatable<String>> {
+    fn declare(&mut self, decl: &mut Symbol, location: &Location) -> Result<(), Locatable<String>> {
         if decl.id == "main" {
             if let Type::Function(ftype) = &decl.ctype {
                 if !Self::is_main_func_signature(ftype) {
@@ -269,6 +270,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     });
                 }
             }
+        }
+        // e.g. extern int i = 1;
+        // this is a silly thing to do, but valid: https://stackoverflow.com/a/57900212/7669110
+        if decl.storage_class == StorageClass::Extern && decl.init {
+            crate::utils::warn(
+                "this is a definition, not a declaration, the 'extern' keyword has no effect",
+                &location,
+            );
+            decl.storage_class = StorageClass::Auto;
         }
         if let Some(existing) = self.scope.get_immediate(&decl.id) {
             if existing == decl {
@@ -348,7 +358,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn declaration_specifiers(
         &mut self,
-        file_scope: bool,
     ) -> Result<(StorageClass, Qualifiers, Type, bool), Locatable<String>> {
         // TODO: initialization is a mess
         let mut keywords = HashSet::new();
@@ -466,16 +475,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Type::Int(signed.unwrap_or(true))
             }
         };
-        Ok((
-            storage_class.unwrap_or(if file_scope {
-                StorageClass::Extern
-            } else {
-                StorageClass::Auto
-            }),
-            qualifiers,
-            ctype,
-            seen_compound,
-        ))
+        let sc = storage_class.unwrap_or(if ctype.is_function() {
+            StorageClass::Extern
+        } else {
+            StorageClass::Auto
+        });
+        Ok((sc, qualifiers, ctype, seen_compound))
     }
     /*
     rewritten grammar:
@@ -848,7 +853,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     varargs: true,
                 }));
             }
-            let (sc, quals, param_type, _) = self.declaration_specifiers(false)?;
+            let (sc, quals, param_type, _) = self.declaration_specifiers()?;
             // true: allow abstract_declarators
             let declarator = match self.declarator(true) {
                 Err(x) => {

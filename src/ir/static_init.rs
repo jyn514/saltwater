@@ -50,6 +50,11 @@ impl Compiler {
 
         self.scope.insert(symbol.id, Id::Global(id));
 
+        if linkage == Linkage::Import {
+            debug_assert!(init.is_none());
+            return Ok(());
+        }
+
         let mut ctx = DataContext::new();
         if let Some(init) = init {
             if let Type::Array(_, size @ ArrayType::Unbounded) = &mut symbol.ctype {
@@ -321,13 +326,16 @@ use cranelift_module::Linkage;
 
 impl TryFrom<StorageClass> for Linkage {
     type Error = String;
+    // INVARIANT: this should be the linkage for an object, not for a function
     fn try_from(sc: StorageClass) -> Result<Linkage, String> {
         match sc {
-            StorageClass::Extern => Ok(Linkage::Export),
+            StorageClass::Extern => Ok(Linkage::Import),
             StorageClass::Static => Ok(Linkage::Local),
-            StorageClass::Auto | StorageClass::Register | StorageClass::Typedef => {
+            StorageClass::Auto => Ok(Linkage::Export),
+            StorageClass::Register => {
                 Err(format!("illegal storage class {} for global variable", sc))
             }
+            StorageClass::Typedef => unreachable!("typedefs should be handled by parser"),
         }
     }
 }

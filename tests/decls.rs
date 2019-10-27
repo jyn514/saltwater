@@ -254,7 +254,7 @@ fn function() {
 fn forward_declaration() {
     // declaration of a struct without a usage is allowed
     // TODO: warn that this does nothing
-    utils::assert_succeeds("struct s my_s; int main(){}");
+    utils::assert_succeeds("extern struct s my_s; int main(){}");
     utils::assert_compile_error("struct s { struct t t; };");
     utils::assert_succeeds(
         "
@@ -315,4 +315,10 @@ fn redefinition() {
     utils::assert_compile_error("enum e { A }; enum e { A };");
     utils::assert_compile_error("struct s { int i; }; struct s { int i; };");
     utils::assert_compile_error("union u { int i; }; union u { int i; };");
+}
+
+#[test]
+fn extern_decl() {
+    utils::assert_code("extern int a[] = {1, 2, 3}; int main() { return *a; }", 1);
+    utils::assert_succeeds("extern int a[]; int main() {}");
 }

@@ -334,6 +334,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn for_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::For))?;
         let paren = self.expect(Token::LeftParen)?;
+        self.enter_scope();
         let decl = match self.peek_token() {
             Some(Token::Keyword(k)) if k.is_decl_specifier() => Some(Box::new(Stmt {
                 data: StmtType::Decl(self.declaration()?),
@@ -377,6 +378,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .transpose()?;
         let iter_expr = self.expr_opt(Token::RightParen)?;
         let body = self.statement()?.map(Box::new);
+        self.leave_scope();
         Ok(Stmt {
             data: StmtType::For(decl, controlling_expr, iter_expr, body),
             location: start.location,

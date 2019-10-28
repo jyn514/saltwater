@@ -30,7 +30,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// Used for casts and `sizeof` builtin.
     pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, Locatable<String>> {
-        let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
+        let (sc, qualifiers, ctype, _) = self.declaration_specifiers(false)?;
         if sc != StorageClass::Auto {
             return Err(Locatable {
                 // TODO
@@ -76,7 +76,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         add_to_scope: bool,
     ) -> Result<VecDeque<Locatable<Declaration>>, Locatable<String>> {
-        let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers()?;
+        let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers(true)?;
         if self.match_next(&Token::Semicolon).is_some() {
             if !seen_compound_type {
                 warn(
@@ -358,6 +358,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn declaration_specifiers(
         &mut self,
+        file_scope: bool,
     ) -> Result<(StorageClass, Qualifiers, Type, bool), Locatable<String>> {
         // TODO: initialization is a mess
         let mut keywords = HashSet::new();
@@ -475,7 +476,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Type::Int(signed.unwrap_or(true))
             }
         };
-        let sc = storage_class.unwrap_or(if ctype.is_function() {
+        let sc = storage_class.unwrap_or(if ctype.is_function() && file_scope {
             StorageClass::Extern
         } else {
             StorageClass::Auto
@@ -853,7 +854,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     varargs: true,
                 }));
             }
-            let (sc, quals, param_type, _) = self.declaration_specifiers()?;
+            let (sc, quals, param_type, _) = self.declaration_specifiers(false)?;
             // true: allow abstract_declarators
             let declarator = match self.declarator(true) {
                 Err(x) => {

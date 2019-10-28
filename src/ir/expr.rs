@@ -217,7 +217,6 @@ impl Compiler {
         branch_func(builder.ins(), left.ir_val, target_ebb, &[left.ir_val]);
 
         let right = self.compile_expr(right, builder)?;
-        println!("jumping, val is {}", right.ir_val);
         builder.ins().jump(target_ebb, &[right.ir_val]);
 
         builder.switch_to_block(target_ebb);

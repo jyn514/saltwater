@@ -297,6 +297,10 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
             let mut comma_seperated = "(".to_string();
             for param in &func_type.params {
                 comma_seperated.push_str(&param.ctype.to_string());
+                if !param.id.is_empty() {
+                    comma_seperated.push(' ');
+                    comma_seperated.push_str(&param.id);
+                }
                 comma_seperated.push_str(", ");
             }
             if func_type.varargs {

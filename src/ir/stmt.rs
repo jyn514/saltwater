@@ -113,8 +113,8 @@ impl Compiler {
 
             builder.switch_to_block(if_body);
             self.compile_stmt(body, builder)?;
-            Self::jump_to_block(end_body, builder);
             let if_has_return = builder.is_filled();
+            Self::jump_to_block(end_body, builder);
 
             builder.switch_to_block(else_body);
             self.compile_stmt(*other, builder)?;

@@ -147,7 +147,7 @@ impl Compiler {
         let linkage = match sc {
             StorageClass::Auto | StorageClass::Extern if is_definition => Linkage::Export,
             StorageClass::Auto | StorageClass::Extern => Linkage::Import,
-            StorageClass::Static => Linkage::Import,
+            StorageClass::Static => Linkage::Local,
             StorageClass::Register | StorageClass::Typedef => unreachable!(),
         };
         let func_id = self

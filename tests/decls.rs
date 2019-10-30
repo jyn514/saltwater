@@ -318,8 +318,9 @@ fn redefinition() {
 }
 
 #[test]
-fn extern_decl() {
+fn linkage() {
     utils::assert_code("extern int a[] = {1, 2, 3}; int main() { return *a; }", 1);
     utils::assert_succeeds("extern int a[]; int main() {}");
-    utils::assert_succeeds("extern int main(); extern int main() {}; extern int main();")
+    utils::assert_succeeds("extern int main(); extern int main() {}; extern int main();");
+    utils::assert_succeeds("static int f() { return 1; } int main() {}");
 }

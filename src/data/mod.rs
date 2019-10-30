@@ -537,14 +537,16 @@ impl Display for StmtType {
     }
 }
 
+impl Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.storage_class, self.qualifiers)?;
+        types::print_type(&self.ctype, Some(&self.id), f)
+    }
+}
+
 impl Display for Declaration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{} {}",
-            self.symbol.storage_class, self.symbol.qualifiers
-        )?;
-        types::print_type(&self.symbol.ctype, Some(&self.symbol.id), f)?;
+        write!(f, "{}", self.symbol)?;
         match &self.init {
             Some(Initializer::FunctionBody(body)) => {
                 writeln!(f, " {{")?;

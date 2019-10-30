@@ -321,4 +321,5 @@ fn redefinition() {
 fn extern_decl() {
     utils::assert_code("extern int a[] = {1, 2, 3}; int main() { return *a; }", 1);
     utils::assert_succeeds("extern int a[]; int main() {}");
+    utils::assert_succeeds("extern int main(); extern int main() {}; extern int main();")
 }

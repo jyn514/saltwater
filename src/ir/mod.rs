@@ -3,7 +3,7 @@ mod static_init;
 mod stmt;
 
 use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use cranelift::codegen::{
     self,
@@ -57,18 +57,11 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> Sema
     for decl in program {
         match (decl.data.symbol.ctype.clone(), decl.data.init) {
             (Type::Function(func_type), None) => {
-                let location = decl.location;
                 compiler.declare_func(
                     decl.data.symbol.id,
                     &func_type.signature(),
                     decl.data.symbol.storage_class,
-                    &location,
-                    // TODO: this doesn't allow declaring a function and then defining it
-                    // TODO: the reason this is here is because if you declare a function without defining it
-                    // e.g. `int puts(char *)`, Cranelift will throw an error
-                    // TODO: to work around this, you can use `static` when declaring a function instead,
-                    // or just define a function up front
-                    true,
+                    false,
                 )?;
             }
             (Type::Void, _) => unreachable!("parser let an incomplete type through"),
@@ -129,21 +122,34 @@ impl Compiler {
             debug,
         }
     }
+    // we have to consider the following cases:
+    // 1. declaration before definition
+    // 2. 2nd declaration before definition
+    // 3. definition
+    // 4. declaration after definition
+
+    // 1. should declare `id` a import unless specified as `static`.
+    // 3. should always declare `id` as export or local.
+    // 2. and 4. should be a no-op.
     fn declare_func(
         &mut self,
         id: String,
         signature: &Signature,
         sc: StorageClass,
-        location: &Location,
-        cextern: bool,
+        is_definition: bool,
     ) -> SemanticResult<FuncId> {
-        let mut linkage = sc.try_into().map_err(|err| Locatable {
-            data: err,
-            location: location.clone(),
-        })?;
-        if linkage == Linkage::Export && cextern {
-            linkage = Linkage::Import;
+        if !is_definition {
+            // case 2 and 4
+            if let Some(Id::Function(func_id)) = self.scope.get(&id) {
+                return Ok(*func_id);
+            }
         }
+        let linkage = match sc {
+            StorageClass::Auto | StorageClass::Extern if is_definition => Linkage::Export,
+            StorageClass::Auto | StorageClass::Extern => Linkage::Import,
+            StorageClass::Static => Linkage::Import,
+            StorageClass::Register | StorageClass::Typedef => unreachable!(),
+        };
         let func_id = self
             .module
             .declare_function(&id, linkage, &signature)
@@ -163,8 +169,7 @@ impl Compiler {
                 decl.symbol.id,
                 &ftype.signature(),
                 decl.symbol.storage_class,
-                &location,
-                true,
+                false,
             )?;
             return Ok(());
         }
@@ -273,7 +278,7 @@ impl Compiler {
         location: Location,
     ) -> SemanticResult<()> {
         let signature = func_type.signature();
-        let func_id = self.declare_func(id.clone(), &signature, sc, &location, false)?;
+        let func_id = self.declare_func(id.clone(), &signature, sc, true)?;
         // external name is meant to be a lookup in a symbol table,
         // but we just give it garbage values
         let mut func = Function::with_name_signature(ExternalName::user(0, 0), signature);

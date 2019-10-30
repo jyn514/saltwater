@@ -292,11 +292,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Ok(())
                 }
             } else {
-                // TODO: this gives a terrible error message if storage_class or qualifiers are different
                 Err(Locatable {
                     data: format!(
-                        "redeclaration of '{}' with different type (originally {}, now {})",
-                        existing.id, existing.ctype, decl.ctype
+                        "redeclaration of '{}' with different type or qualifiers (originally {}, now {})",
+                        existing.id, existing, decl
                     ),
                     location: location.clone(),
                 })

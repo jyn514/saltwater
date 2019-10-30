@@ -31,7 +31,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// Used for casts and `sizeof` builtin.
     pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, Locatable<String>> {
         let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
-        if sc != StorageClass::Auto {
+        if sc != None {
             return Err(Locatable {
                 // TODO
                 location: self.last_location.as_ref().unwrap().clone(),
@@ -42,7 +42,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             None => ctype,
             Some(decl) => {
                 let (id, ctype) =
-                    decl.parse_type(ctype, sc, &self.last_location.as_ref().unwrap())?;
+                    decl.parse_type(ctype, false, &self.last_location.as_ref().unwrap())?;
                 if let Some(Locatable {
                     location,
                     data: name,
@@ -91,9 +91,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let declarator = self
             .declarator(false)?
             .expect("declarator should return id when called with allow_abstract: false");
-        let (id, first_type) =
-            declarator.parse_type(ctype.clone(), sc, self.last_location.as_ref().unwrap())?;
+        let (id, first_type) = declarator.parse_type(
+            ctype.clone(),
+            sc == Some(StorageClass::Typedef),
+            self.last_location.as_ref().unwrap(),
+        )?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
+        let sc = match sc {
+            Some(sc) => sc,
+            None if first_type.is_function() => StorageClass::Extern,
+            None => StorageClass::Auto,
+        };
         if sc == StorageClass::Typedef {
             // evaluated only for its side effects
             self.parse_typedef(id, first_type, qualifiers)?;
@@ -219,8 +227,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 .declarator(false)?
                 .expect("declarator should return Some when called with allow_abstract: false");
             let location = decl.id().unwrap().location;
-            let (id, ctype) =
-                decl.parse_type(first_ctype.clone(), StorageClass::Typedef, &location)?;
+            let (id, ctype) = decl.parse_type(first_ctype.clone(), true, &location)?;
             let id = id.unwrap();
             self.declare_typedef(id, ctype, first_qualifiers)?;
             if self.match_next(&Token::Comma).is_none() {
@@ -273,7 +280,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         // e.g. extern int i = 1;
         // this is a silly thing to do, but valid: https://stackoverflow.com/a/57900212/7669110
-        if decl.storage_class == StorageClass::Extern && decl.init {
+        if decl.storage_class == StorageClass::Extern && !decl.ctype.is_function() && decl.init {
             crate::utils::warn(
                 "this is a definition, not a declaration, the 'extern' keyword has no effect",
                 &location,
@@ -317,7 +324,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .declarator(false)?
             .expect("declarator should never return None when called with allow_abstract: false");
         let (id, ctype) =
-            decl.parse_type(ctype.clone(), sc, &self.last_location.as_ref().unwrap())?;
+            decl.parse_type(ctype.clone(), false, &self.last_location.as_ref().unwrap())?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
 
         // optionally, parse an initializer
@@ -330,9 +337,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         // clean up and go home
         let symbol = Symbol {
             id: id.data,
-            ctype,
             qualifiers,
-            storage_class: sc,
+            storage_class: if sc == StorageClass::Auto && ctype.is_function() {
+                StorageClass::Extern
+            } else {
+                sc
+            },
+            ctype,
             init: init.is_some(),
         };
         Ok(Locatable {
@@ -357,7 +368,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn declaration_specifiers(
         &mut self,
-    ) -> Result<(StorageClass, Qualifiers, Type, bool), Locatable<String>> {
+    ) -> Result<(Option<StorageClass>, Qualifiers, Type, bool), Locatable<String>> {
         // TODO: initialization is a mess
         let mut keywords = HashSet::new();
         let mut storage_class = None;
@@ -474,12 +485,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Type::Int(signed.unwrap_or(true))
             }
         };
-        let sc = storage_class.unwrap_or(if ctype.is_function() {
-            StorageClass::Extern
-        } else {
-            StorageClass::Auto
-        });
-        Ok((sc, qualifiers, ctype, seen_compound))
+        Ok((storage_class, qualifiers, ctype, seen_compound))
     }
     /*
     rewritten grammar:
@@ -861,12 +867,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
                 Ok(declarator) => declarator,
             };
-            if sc != StorageClass::Auto {
+            if let Some(storage_class) = sc {
                 errs.push_back(Locatable {
                     location: self.last_location.as_ref().unwrap().clone(),
                     data: format!(
                         "cannot specify storage class '{}' for {}",
-                        sc,
+                        storage_class,
                         if let Some(ref decl) = declarator {
                             if let Some(ref name) = decl.id() {
                                 format!("parameter {}", name.data)
@@ -882,7 +888,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             if let Some(decl) = declarator {
                 let (id, mut ctype) = decl.parse_type(
                     param_type,
-                    sc,
+                    false,
                     &self
                         .last_location
                         .as_ref()
@@ -1542,7 +1548,7 @@ impl Declarator {
     fn parse_type(
         self,
         mut current: Type,
-        storage_class: StorageClass,
+        is_typedef: bool,
         location: &Location, // only used for abstract parameters
     ) -> Result<(Option<Locatable<String>>, Type), Locatable<String>> {
         use DeclaratorType::*;
@@ -1614,7 +1620,7 @@ impl Declarator {
             };
             declarator = decl.next.map(|x| *x);
         }
-        if current == Type::Void && storage_class != StorageClass::Typedef {
+        if current == Type::Void && !is_typedef {
             Err(Locatable {
                 data: "variables cannot have type 'void'".to_string(),
                 location: identifier.map_or_else(|| location.clone(), |l| l.location),

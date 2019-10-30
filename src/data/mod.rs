@@ -444,6 +444,13 @@ impl Display for Initializer {
 
 impl Display for StmtType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.pretty_print(f, 0)
+    }
+}
+
+impl StmtType {
+    fn pretty_print(&self, f: &mut fmt::Formatter, depth: usize) -> fmt::Result {
+        write!(f, "{}", "    ".repeat(depth))?;
         match self {
             StmtType::Expr(expr) => write!(f, "{};", expr),
             StmtType::Return(None) => write!(f, "return;"),
@@ -533,7 +540,8 @@ impl Display for StmtType {
                 write!(f, "}}")
             }
             StmtType::Switch(condition, body) => write!(f, "switch ({}) {}", condition, body.data),
-        }
+        }?;
+        writeln!(f)
     }
 }
 
@@ -551,7 +559,7 @@ impl Display for Declaration {
             Some(Initializer::FunctionBody(body)) => {
                 writeln!(f, " {{")?;
                 for stmt in body {
-                    writeln!(f, "{}", stmt.data)?;
+                    stmt.data.pretty_print(f, 1)?;
                 }
                 writeln!(f, "}}")
             }

@@ -242,8 +242,6 @@ impl<'a> Lexer<'a> {
     }
     /// Remove a multi-line C-style comment, i.e. until the next '*/'.
     ///
-    /// TODO: show an error if the file ends before the comment has been closed.
-    ///
     /// Before: chars{"hello this is a lot of text */ int main(){}"}
     /// After:  chars{" int main(){}"}
     fn consume_multi_comment(&mut self) -> SemanticResult<()> {

@@ -69,7 +69,7 @@ impl Type {
             Long(_) => Ok(LONG_SIZE.into()),
             Float => Ok(FLOAT_SIZE.into()),
             Double => Ok(DOUBLE_SIZE.into()),
-            Pointer(_, _) => Ok(PTR_SIZE.into()),
+            Pointer(_) => Ok(PTR_SIZE.into()),
             // now for the hard ones
             Array(t, ArrayType::Fixed(l)) => t.sizeof().and_then(|n| Ok(n * l)),
             Array(_, ArrayType::Unbounded) => Err("cannot take sizeof variable length array"),
@@ -106,7 +106,7 @@ impl Type {
             | Long(_)
             | Float
             | Double
-            | Pointer(_, _)
+            | Pointer(_)
             | Enum(_, _) => self.sizeof(),
             Array(t, _) => t.alignof(),
             // Clang uses the largest alignment of any element as the alignment of the whole
@@ -151,7 +151,7 @@ impl Type {
         match self {
             // Integers
             Bool => types::B1,
-            Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_, _) => {
+            Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_) | Enum(_, _) => {
                 let int_size = SIZE_T::from(CHAR_BIT)
                     * self
                         .sizeof()

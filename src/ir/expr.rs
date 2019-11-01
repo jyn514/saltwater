@@ -162,8 +162,9 @@ impl Compiler {
             ExprType::Ternary(condition, left, right) => {
                 self.ternary(*condition, *left, *right, builder)
             }
-            x => {
-                unimplemented!("{:?}", x);
+            ExprType::Sizeof(_) => unimplemented!("sizeof variable length arrays"),
+            ExprType::StaticRef(_) => {
+                unreachable!("static refs can only appear in top level declarations")
             }
         }
     }

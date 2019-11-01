@@ -323,4 +323,6 @@ fn linkage() {
     utils::assert_succeeds("extern int a[]; int main() {}");
     utils::assert_succeeds("extern int main(); extern int main() {}; extern int main();");
     utils::assert_succeeds("static int f() { return 1; } int main() {}");
+    utils::assert_succeeds("extern int a[]; int a[] = {0,1,2}; int main() { return a[0]; }");
+    utils::assert_succeeds("int a[] = {0,1,2}; extern int a[]; int main() { return a[0]; }");
 }

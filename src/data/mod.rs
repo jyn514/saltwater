@@ -582,7 +582,12 @@ impl PartialEq for Symbol {
         self.ctype == other.ctype
             && self.id == other.id
             && self.qualifiers == other.qualifiers
-            && self.storage_class == other.storage_class
+            && (self.storage_class == other.storage_class
+                || !self.ctype.is_function()
+                    && (self.storage_class == StorageClass::Auto
+                        && other.storage_class == StorageClass::Extern
+                        || self.storage_class == StorageClass::Extern
+                            && other.storage_class == StorageClass::Auto))
     }
 }
 

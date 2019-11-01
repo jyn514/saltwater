@@ -204,8 +204,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             return false;
         }
         match types[1] {
-            Type::Pointer(t, _) | Type::Array(t, _) => match &**t {
-                Type::Pointer(inner, _) => inner.is_char(),
+            Type::Pointer(t) | Type::Array(t, _) => match &**t {
+                Type::Pointer(inner) => inner.is_char(),
                 _ => false,
             },
             _ => false,
@@ -897,7 +897,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // int f(int a[]) is the same as int f(int *a)
                 // TODO: parse int f(int a[static 5])
                 if let Type::Array(to, _) = ctype {
-                    ctype = Type::Pointer(to, Qualifiers::NONE);
+                    ctype = Type::Pointer(to);
                 }
                 // I will probably regret this in the future
                 // default() for String is "",
@@ -1332,7 +1332,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ) {
         use Type::*;
         match ctype {
-            Array(inner, _) | Pointer(inner, _) => {
+            Array(inner, _) | Pointer(inner) => {
                 Self::update_forward_declarations(inner, new_type, ident)
             }
             Function(ftype) => {
@@ -1561,7 +1561,7 @@ impl Declarator {
                     identifier = Some(Locatable { data: id, location });
                     current
                 }
-                Pointer(quals) => Type::Pointer(Box::new(current), quals),
+                Pointer(_) => Type::Pointer(Box::new(current)),
                 Array(arr_type) => match current {
                     Type::Function(_) => {
                         let Locatable {
@@ -1771,32 +1771,23 @@ mod tests {
     }
     #[test]
     fn test_pointers() {
-        assert!(match_type(
-            parse("void *a;"),
-            Pointer(Box::new(Void), Default::default())
-        ));
+        assert!(match_type(parse("void *a;"), Pointer(Box::new(Void))));
         assert!(match_type(
             parse("float *const a;"),
-            Pointer(Box::new(Float), Qualifiers::CONST)
+            Pointer(Box::new(Float))
         ));
         // cdecl: declare a as const pointer to volatile pointer to double
         assert!(match_type(
             parse("double *volatile *const a;"),
-            Pointer(
-                Box::new(Pointer(Box::new(Double), Qualifiers::VOLATILE)),
-                Qualifiers::CONST
-            )
+            Pointer(Box::new(Pointer(Box::new(Double))),)
         ));
         assert!(match_type(
             parse("_Bool *volatile const a;"),
-            Pointer(Box::new(Bool), Qualifiers::CONST_VOLATILE)
+            Pointer(Box::new(Bool)),
         ));
         assert!(match_type(
             parse("char (*(*f));"),
-            Pointer(
-                Box::new(Pointer(Box::new(Char(true)), Qualifiers::NONE)),
-                Qualifiers::NONE
-            )
+            Pointer(Box::new(Pointer(Box::new(Char(true)))))
         ));
     }
     #[test]
@@ -1805,23 +1796,17 @@ mod tests {
         assert!(match_type(
             parse("char **foo[];"),
             Array(
-                Box::new(Pointer(
-                    Box::new(Pointer(Box::new(Char(true)), Default::default(),)),
-                    Default::default()
-                )),
+                Box::new(Pointer(Box::new(Pointer(Box::new(Char(true)))))),
                 ArrayType::Unbounded,
             )
         ));
         // cdecl: declare foo as pointer to pointer to array 10 of int
         assert!(match_type(
             parse("int (**foo)[];"),
-            Pointer(
-                Box::new(Pointer(
-                    Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),
-                    Default::default()
-                )),
-                Default::default()
-            )
+            Pointer(Box::new(Pointer(Box::new(Array(
+                Box::new(Int(true)),
+                ArrayType::Unbounded
+            )))),)
         ));
     }
     #[test]
@@ -1829,7 +1814,7 @@ mod tests {
         assert!(match_type(
             parse("void *f();"),
             Function(FunctionType {
-                return_type: Box::new(Pointer(Box::new(Type::Void), Default::default())),
+                return_type: Box::new(Pointer(Box::new(Type::Void))),
                 params: vec![],
                 varargs: false,
             })
@@ -1837,73 +1822,61 @@ mod tests {
         // cdecl: declare i as pointer to function returning int;
         assert!(match_type(
             parse("int (*i)();"),
-            Pointer(
-                Box::new(Function(FunctionType {
-                    return_type: Box::new(Int(true)),
-                    params: vec![],
-                    varargs: false,
-                })),
-                Qualifiers::NONE
-            )
+            Pointer(Box::new(Function(FunctionType {
+                return_type: Box::new(Int(true)),
+                params: vec![],
+                varargs: false,
+            })),)
         ));
         // cdecl: declare i as pointer to function (int, char, float) returning int
         assert!(match_type(
             parse("int (*i)(int, char, float);"),
-            Pointer(
-                Box::new(Function(FunctionType {
-                    return_type: Box::new(Int(true)),
-                    params: vec![
-                        Symbol {
-                            id: Default::default(),
-                            ctype: Int(true),
-                            qualifiers: Default::default(),
-                            init: true,
-                            storage_class: Default::default()
-                        },
-                        Symbol {
-                            id: Default::default(),
-                            ctype: Char(true),
-                            qualifiers: Default::default(),
-                            init: true,
-                            storage_class: Default::default()
-                        },
-                        Symbol {
-                            id: Default::default(),
-                            ctype: Float,
-                            qualifiers: Default::default(),
-                            init: true,
-                            storage_class: Default::default()
-                        }
-                    ],
-                    varargs: false,
-                })),
-                Qualifiers::NONE
-            )
+            Pointer(Box::new(Function(FunctionType {
+                return_type: Box::new(Int(true)),
+                params: vec![
+                    Symbol {
+                        id: Default::default(),
+                        ctype: Int(true),
+                        qualifiers: Default::default(),
+                        init: true,
+                        storage_class: Default::default()
+                    },
+                    Symbol {
+                        id: Default::default(),
+                        ctype: Char(true),
+                        qualifiers: Default::default(),
+                        init: true,
+                        storage_class: Default::default()
+                    },
+                    Symbol {
+                        id: Default::default(),
+                        ctype: Float,
+                        qualifiers: Default::default(),
+                        init: true,
+                        storage_class: Default::default()
+                    }
+                ],
+                varargs: false,
+            })),)
         ));
         // cdecl: declare i as pointer to function (pointer to function returning int) returning int
         assert!(match_type(
             parse("int (*i)(int (*f)());"),
-            Pointer(
-                Box::new(Function(FunctionType {
-                    return_type: Box::new(Int(true)),
-                    params: vec![Symbol {
-                        id: "f".to_string(),
-                        ctype: Pointer(
-                            Box::new(Function(FunctionType {
-                                return_type: Box::new(Int(true)),
-                                params: vec![],
-                                varargs: false
-                            })),
-                            Default::default()
-                        ),
-                        qualifiers: Default::default(),
-                        storage_class: Default::default(),
-                        init: true,
-                    }],
-                    varargs: false,
-                }),),
-                Default::default()
-            )
+            Pointer(Box::new(Function(FunctionType {
+                return_type: Box::new(Int(true)),
+                params: vec![Symbol {
+                    id: "f".to_string(),
+                    ctype: Pointer(Box::new(Function(FunctionType {
+                        return_type: Box::new(Int(true)),
+                        params: vec![],
+                        varargs: false
+                    })),),
+                    qualifiers: Default::default(),
+                    storage_class: Default::default(),
+                    init: true,
+                }],
+                varargs: false,
+            }),),)
         ));
         assert!(match_type(
             parse("int f(int, ...);"),
@@ -1925,74 +1898,56 @@ mod tests {
         // cdecl: declare bar as const pointer to array 10 of pointer to function (int) returning const pointer to char
         assert!(match_type(
             parse("char * const (*(* const bar)[])(int );"),
-            Pointer(
-                Box::new(Array(
-                    Box::new(Pointer(
-                        Box::new(Function(FunctionType {
-                            return_type: Box::new(Pointer(Box::new(Char(true)), Qualifiers::CONST)),
-                            params: vec![Symbol {
-                                ctype: Int(true),
-                                storage_class: Default::default(),
-                                id: String::new(),
-                                qualifiers: Qualifiers::NONE,
-                                init: true,
-                            }],
-                            varargs: false,
-                        })),
-                        Qualifiers::NONE
-                    )),
-                    ArrayType::Unbounded,
-                )),
-                Qualifiers::CONST
-            )
+            Pointer(Box::new(Array(
+                Box::new(Pointer(Box::new(Function(FunctionType {
+                    return_type: Box::new(Pointer(Box::new(Char(true)))),
+                    params: vec![Symbol {
+                        ctype: Int(true),
+                        storage_class: Default::default(),
+                        id: String::new(),
+                        qualifiers: Qualifiers::NONE,
+                        init: true,
+                    }],
+                    varargs: false,
+                })),)),
+                ArrayType::Unbounded,
+            )),)
         ));
         // cdecl: declare foo as pointer to function (void) returning pointer to array 3 of int
         assert!(match_type(
             parse("int (*(*foo)(void))[];"),
-            Pointer(
-                Box::new(Function(FunctionType {
-                    return_type: Box::new(Pointer(
-                        Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),
-                        Default::default()
-                    )),
-                    params: vec![Symbol {
-                        ctype: Void,
-                        storage_class: Default::default(),
-                        id: Default::default(),
-                        qualifiers: Default::default(),
-                        init: true,
-                    }],
-                    varargs: false,
-                })),
-                Default::default()
-            )
+            Pointer(Box::new(Function(FunctionType {
+                return_type: Box::new(Pointer(Box::new(Array(
+                    Box::new(Int(true)),
+                    ArrayType::Unbounded
+                )),)),
+                params: vec![Symbol {
+                    ctype: Void,
+                    storage_class: Default::default(),
+                    id: Default::default(),
+                    qualifiers: Default::default(),
+                    init: true,
+                }],
+                varargs: false,
+            })),)
         ));
         // cdecl: declare bar as volatile pointer to array 64 of const int
         assert!(match_type(
             parse("const int (* volatile bar)[];"),
-            Pointer(
-                Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),
-                Qualifiers::VOLATILE
-            )
+            Pointer(Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),)
         ));
         // cdecl: declare x as function returning pointer to array 5 of pointer to function returning char
         assert!(match_type(
             parse("char (*(*x())[])();"),
             Function(FunctionType {
-                return_type: Box::new(Pointer(
-                    Box::new(Array(
-                        Box::new(Pointer(
-                            Box::new(Function(FunctionType {
-                                return_type: Box::new(Char(true)),
-                                params: vec![],
-                                varargs: false,
-                            })),
-                            Default::default()
-                        )),
-                        ArrayType::Unbounded
-                    )),
-                    Default::default()
-                )),
+                return_type: Box::new(Pointer(Box::new(Array(
+                    Box::new(Pointer(Box::new(Function(FunctionType {
+                        return_type: Box::new(Char(true)),
+                        params: vec![],
+                        varargs: false,
+                    })),)),
+                    ArrayType::Unbounded
+                )),)),
                 params: vec![],
                 varargs: false,
             })
@@ -2007,18 +1962,12 @@ mod tests {
         assert!(parsed.len() == 4);
         assert!(match_type(
             Some(parsed.remove(0)),
-            Type::Pointer(Box::new(Type::Char(true)), Default::default())
+            Type::Pointer(Box::new(Type::Char(true))),
         ));
         assert!(match_type(Some(parsed.remove(0)), Type::Char(true)));
         assert!(match_type(
             Some(parsed.remove(0)),
-            Type::Pointer(
-                Box::new(Type::Pointer(
-                    Box::new(Type::Char(true)),
-                    Default::default()
-                )),
-                Default::default()
-            )
+            Type::Pointer(Box::new(Type::Pointer(Box::new(Type::Char(true)),)),)
         ));
         assert!(match_type(
             Some(parsed.remove(0)),
@@ -2038,15 +1987,12 @@ mod tests {
         assert!(parsed.len() == 4);
         assert!(match_type(
             Some(parsed.remove(0)),
-            Type::Pointer(Box::new(Type::Int(true)), Default::default())
+            Type::Pointer(Box::new(Type::Int(true)))
         ));
         assert!(match_type(Some(parsed.remove(0)), Type::Int(true)));
         assert!(match_type(
             Some(parsed.remove(0)),
-            Type::Pointer(
-                Box::new(Type::Pointer(Box::new(Type::Int(true)), Default::default())),
-                Default::default()
-            )
+            Type::Pointer(Box::new(Type::Pointer(Box::new(Type::Int(true)))))
         ));
         assert!(match_type(
             Some(parsed.remove(0)),

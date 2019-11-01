@@ -127,7 +127,7 @@ impl Compiler {
             ExprType::PostIncrement(lval, increase) => {
                 let lval = self.compile_expr(*lval, builder)?;
                 let loaded_ctype = match lval.ctype {
-                    Type::Pointer(t, _) => *t,
+                    Type::Pointer(t) => *t,
                     _ => lval.ctype,
                 };
                 let ir_type = loaded_ctype.as_ir_type();
@@ -493,7 +493,7 @@ impl Compiler {
             }
             Id::Local(stack_slot) => builder.ins().stack_addr(ptr_type, *stack_slot, 0),
         };
-        let ctype = Type::Pointer(Box::new(var.ctype), var.qualifiers);
+        let ctype = Type::Pointer(Box::new(var.ctype));
         Ok(Value {
             ir_type: ctype.as_ir_type(),
             ir_val,
@@ -552,7 +552,7 @@ impl Compiler {
             // need to deref explicitly to get an rval, the frontend didn't do it for us
             if is_id {
                 let ctype = match target.ctype {
-                    Type::Pointer(t, _) => *t,
+                    Type::Pointer(t) => *t,
                     _ => unreachable!("parser should only allow lvals to be assigned"),
                 };
                 let ir_type = ctype.as_ir_type();

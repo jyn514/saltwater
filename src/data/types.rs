@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{Qualifiers, Symbol};
+use super::Symbol;
 use crate::arch::SIZE_T;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -13,7 +13,7 @@ pub enum Type {
     Long(bool),
     Float,
     Double,
-    Pointer(Box<Type>, Qualifiers),
+    Pointer(Box<Type>), //, Qualifiers),
     Array(Box<Type>, ArrayType),
     Function(FunctionType),
     // name, members
@@ -133,21 +133,21 @@ impl Type {
     #[inline]
     pub fn is_pointer(&self) -> bool {
         match self {
-            Type::Pointer(_, _) => true,
+            Type::Pointer(_) => true,
             _ => false,
         }
     }
     #[inline]
     pub fn is_void_pointer(&self) -> bool {
         match self {
-            Type::Pointer(t, _) => **t == Type::Void,
+            Type::Pointer(t) => **t == Type::Void,
             _ => false,
         }
     }
     #[inline]
     pub fn is_char_pointer(&self) -> bool {
         match self {
-            Type::Pointer(t, _) => match **t {
+            Type::Pointer(t) => match **t {
                 Type::Char(_) => true,
                 _ => false,
             },
@@ -158,7 +158,7 @@ impl Type {
     /// used for pointer addition and subtraction, see section 6.5.6 of the C11 standard
     pub fn is_pointer_to_complete_object(&self) -> bool {
         match self {
-            Type::Pointer(ctype, _) => ctype.is_complete() && !ctype.is_function(),
+            Type::Pointer(ctype) => ctype.is_complete() && !ctype.is_function(),
             Type::Array(_, _) => true,
             _ => false,
         }
@@ -249,7 +249,7 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         }
         Bool => write!(f, "_Bool"),
         Float | Double | Void => write!(f, "{}", format!("{:?}", ctype).to_lowercase()),
-        Pointer(inner, _) | Array(inner, _) => print_pre(inner, f),
+        Pointer(inner) | Array(inner, _) => print_pre(inner, f),
         Function(ftype) => write!(f, "{}", ftype.return_type),
         Enum(Some(ident), _) => write!(f, "enum {}", ident),
         Enum(None, _) => write!(f, "<anonymous enum>"),
@@ -264,13 +264,13 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
 
 fn print_mid(ctype: &Type, name: Option<&str>, f: &mut Formatter) -> fmt::Result {
     match ctype {
-        Type::Pointer(to, quals) => {
+        Type::Pointer(to) => {
             print_mid(to, None, f)?;
             match &**to {
                 Type::Array(_, _) | Type::Function(_) => {
-                    write!(f, "(*{}{})", quals, name.unwrap_or_default())?
+                    write!(f, "(*{})", name.unwrap_or_default())?
                 }
-                _ => write!(f, " *{}{}", quals, name.unwrap_or_default())?,
+                _ => write!(f, " *{}", name.unwrap_or_default())?,
             }
         }
         Type::Array(to, _) => print_mid(to, name, f)?,
@@ -284,7 +284,7 @@ fn print_mid(ctype: &Type, name: Option<&str>, f: &mut Formatter) -> fmt::Result
 }
 fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
     match ctype {
-        Type::Pointer(to, _) => print_post(to, f),
+        Type::Pointer(to) => print_post(to, f),
         Type::Array(to, size) => {
             write!(f, "[")?;
             if let ArrayType::Fixed(size) = size {

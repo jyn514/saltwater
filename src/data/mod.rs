@@ -183,8 +183,7 @@ impl Qualifiers {
 }
 
 lazy_static! {
-    pub static ref INT_POINTER: Type =
-        { Type::Pointer(Box::new(Type::Int(true)), Qualifiers::NONE) };
+    pub static ref INT_POINTER: Type = { Type::Pointer(Box::new(Type::Int(true))) };
 }
 
 pub enum LengthError {

@@ -1,7 +1,7 @@
 use super::{Lexeme, Parser, TagEntry};
 use crate::arch::SIZE_T;
 use crate::data::prelude::*;
-use crate::data::{types::ArrayType, Keyword, Qualifiers, StorageClass::Typedef};
+use crate::data::{types::ArrayType, Keyword, StorageClass::Typedef};
 
 type ExprResult = Result<Expr, Locatable<String>>;
 
@@ -364,12 +364,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             &[&Token::Plus, &Token::Minus],
             |mut left, mut right, token| {
                 match (&left.ctype, &right.ctype) {
-                    (Type::Pointer(to, _), i)
+                    (Type::Pointer(to), i)
                     | (Type::Array(to, _), i) if i.is_integral() && to.is_complete() => {
                         let to = to.clone();
                         return Expr::pointer_arithmetic(*left, *right, &*to, token.location);
                     }
-                    (i, Type::Pointer(to, _))
+                    (i, Type::Pointer(to))
                         // `i - p` for pointer p is not valid
                     | (i, Type::Array(to, _)) if i.is_integral() && token.data == Token::Plus && to.is_complete() => {
                         let to = to.clone();
@@ -600,7 +600,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             constexpr: false,
                             lval: false,
                             location,
-                            ctype: Type::Pointer(Box::new(expr.ctype.clone()), Qualifiers::NONE),
+                            ctype: Type::Pointer(Box::new(expr.ctype.clone())),
                             expr: expr.expr,
                         }),
                         _ => {
@@ -615,7 +615,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             location,
                             expr: expr.expr,
                         }),
-                        Type::Pointer(t, _) => Ok(Expr {
+                        Type::Pointer(t) => Ok(Expr {
                             constexpr: expr.constexpr,
                             lval: !t.is_function(),
                             ctype: (**t).clone(),
@@ -713,8 +713,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let right = self.expr()?.rval();
                     self.expect(Token::RightBracket)?;
                     let (target_type, array, index) = match (&left.ctype, &right.ctype) {
-                        (Type::Pointer(target, _), _) => ((**target).clone(), left, right),
-                        (_, Type::Pointer(target, _)) => ((**target).clone(), right, left),
+                        (Type::Pointer(target), _) => ((**target).clone(), left, right),
+                        (_, Type::Pointer(target)) => ((**target).clone(), right, left),
                         (l, r) => err!(
                             format!("neither {} nor {} are pointers types", l, r),
                             location,
@@ -730,7 +730,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     self.expect(Token::RightParen)?;
                     // if fp is a function pointer, fp() desugars to (*fp)()
                     let expr = match expr.ctype {
-                        Type::Pointer(ref pointee, _) if pointee.is_function() => Expr {
+                        Type::Pointer(ref pointee) if pointee.is_function() => Expr {
                             lval: false,
                             location: expr.location.clone(),
                             constexpr: expr.constexpr,
@@ -798,7 +798,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         _ => unreachable!("bug in Parser::expect"),
                     };
                     let struct_type = match &expr.ctype {
-                        Type::Pointer(ctype, _) => match **ctype {
+                        Type::Pointer(ctype) => match **ctype {
                             Type::Union(_) | Type::Struct(_) => (**ctype).clone(),
                             _ => err!(
                                 "pointer does not point to a struct or union".into(),
@@ -1104,7 +1104,7 @@ impl Expr {
             ExprType::Id(sym) => !sym.qualifiers.c_const,
             // *p = 1;
             ExprType::Deref(_) => match &self.ctype {
-                Type::Pointer(_, quals) => !quals.c_const,
+                Type::Pointer(_) => true,
                 _ => panic!("only pointers can be dereferenced"),
             },
             _ => unimplemented!("what's an lval but not a pointer or id?"),
@@ -1119,13 +1119,13 @@ impl Expr {
             // a + 1 is the same as &a + 1
             Type::Array(to, _) => Expr {
                 lval: false,
-                ctype: Type::Pointer(to, Qualifiers::NONE),
+                ctype: Type::Pointer(to),
                 constexpr: false,
                 ..self
             },
             Type::Function(_) => Expr {
                 lval: false,
-                ctype: Type::Pointer(Box::new(self.ctype), Qualifiers::NONE),
+                ctype: Type::Pointer(Box::new(self.ctype)),
                 constexpr: false, // TODO: is this right?
                 ..self
             },
@@ -1680,9 +1680,6 @@ mod tests {
         assert_type("(float)4.2", Type::Float);
         assert_type("(double)4.2", Type::Double);
         assert!(parse_expr("(int*)4.2").is_err());
-        assert_type(
-            "(int*)(int)4.2",
-            Type::Pointer(Box::new(Type::Int(true)), Qualifiers::NONE),
-        );
+        assert_type("(int*)(int)4.2", Type::Pointer(Box::new(Type::Int(true))));
     }
 }

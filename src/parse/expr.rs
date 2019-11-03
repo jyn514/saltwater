@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::debug;
 
 use super::{Lexeme, Parser, TagEntry};
 use crate::arch::SIZE_T;

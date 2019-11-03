@@ -601,6 +601,9 @@ impl Compiler {
             Type::Function(ftype) => ftype,
             _ => unreachable!("parser should only allow calling functions"),
         };
+        if ftype.varargs && ftype.params.len() > 1 {
+            unimplemented!("variadic argument calls");
+        }
         let compiled_args: Vec<IrValue> = args
             .into_iter()
             .map(|arg| self.compile_expr(arg, builder).map(|val| val.ir_val))

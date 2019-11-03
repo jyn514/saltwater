@@ -170,35 +170,28 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let mut then = self.expr()?;
             self.expect(Token::Colon)?;
             let mut otherwise = self.conditional_expr()?;
-            // TODO: I feel like the type checking here is wrong
             if then.ctype.is_arithmetic() && otherwise.ctype.is_arithmetic() {
                 let (tmp1, tmp2) = Expr::binary_promote(then, otherwise)?;
                 then = tmp1;
                 otherwise = tmp2;
-            }
-            if then.ctype == otherwise.ctype {
-                Ok(Expr {
-                    ctype: then.ctype.clone(),
-                    // TODO: evaluate condition and only require the corresponding
-                    // expression to be constexpr
-                    constexpr: condition.constexpr && then.constexpr && otherwise.constexpr,
-                    lval: false,
-                    location,
-                    expr: ExprType::Ternary(
-                        Box::new(condition),
-                        Box::new(then),
-                        Box::new(otherwise),
-                    ),
-                })
-            } else {
-                Err(Locatable {
+            } else if !Type::pointer_promote(&mut then, &mut otherwise) {
+                return Err(Locatable {
                     data: format!(
                         "incompatible types in ternary expression: '{}' cannot be converted to '{}'",
                         then.ctype, otherwise.ctype
                     ),
                     location,
-                })
+                });
             }
+            Ok(Expr {
+                ctype: then.ctype.clone(),
+                // TODO: evaluate condition and only require the corresponding
+                // expression to be constexpr
+                constexpr: condition.constexpr && then.constexpr && otherwise.constexpr,
+                lval: false,
+                location,
+                expr: ExprType::Ternary(Box::new(condition), Box::new(then), Box::new(otherwise)),
+            })
         } else {
             Ok(condition)
         }
@@ -1085,11 +1078,14 @@ impl Token {
 /* stateless helper functions */
 impl Expr {
     fn is_null(&self) -> bool {
-        self.ctype.is_pointer()
-            && match self.expr {
-                ExprType::Literal(Token::Int(0)) => true,
+        if let ExprType::Literal(token) = &self.expr {
+            match token {
+                Token::Int(0) | Token::UnsignedInt(0) => true,
                 _ => false,
             }
+        } else {
+            false
+        }
     }
     /// See section 6.3.2.1 of the C Standard. In particular:
     /// "A modifiable lvalue is an lvalue that does not have array type,
@@ -1506,6 +1502,18 @@ impl Type {
             signed
         } else {
             unsigned
+        }
+    }
+    fn pointer_promote(left: &mut Expr, right: &mut Expr) -> bool {
+        if left.ctype.is_void_pointer() || left.ctype.is_char_pointer() || left.is_null() {
+            left.ctype = right.ctype.clone();
+            true
+        } else if right.ctype.is_void_pointer() || right.ctype.is_char_pointer() || right.is_null()
+        {
+            right.ctype = left.ctype.clone();
+            true
+        } else {
+            false
         }
     }
     /// Return whether self is a signed type.

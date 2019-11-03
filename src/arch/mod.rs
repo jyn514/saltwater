@@ -4,9 +4,9 @@ use std::convert::TryInto;
 use cranelift::codegen::{
     ir::{
         types::{self, Type as IrType},
-        AbiParam, Signature,
+        AbiParam, ArgumentPurpose, Signature,
     },
-    isa::CallConv,
+    isa::{CallConv, TargetIsa},
 };
 use target_lexicon::Triple;
 
@@ -181,8 +181,8 @@ impl Type {
 }
 
 impl FunctionType {
-    pub fn signature(&self) -> Signature {
-        let params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
+    pub fn signature(&self, isa: &dyn TargetIsa) -> Signature {
+        let mut params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
             // no arguments
             Vec::new()
         } else {
@@ -191,6 +191,17 @@ impl FunctionType {
                 .map(|param| AbiParam::new(param.ctype.as_ir_type()))
                 .collect()
         };
+        if self.varargs {
+            let al = isa
+                .register_info()
+                .parse_regunit("rax")
+                .expect("x86 should have an rax register");
+            params.push(AbiParam::special_reg(
+                types::I8,
+                ArgumentPurpose::Normal,
+                al,
+            ));
+        }
         let return_type = if !self.should_return() {
             vec![]
         } else {

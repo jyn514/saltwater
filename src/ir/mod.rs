@@ -59,7 +59,7 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> Sema
             (Type::Function(func_type), None) => {
                 compiler.declare_func(
                     decl.data.symbol.id,
-                    &func_type.signature(),
+                    &func_type.signature(compiler.module.isa()),
                     decl.data.symbol.storage_class,
                     false,
                 )?;
@@ -167,7 +167,7 @@ impl Compiler {
         if let Type::Function(ftype) = decl.symbol.ctype {
             self.declare_func(
                 decl.symbol.id,
-                &ftype.signature(),
+                &ftype.signature(self.module.isa()),
                 decl.symbol.storage_class,
                 false,
             )?;
@@ -277,7 +277,7 @@ impl Compiler {
         stmts: Vec<Stmt>,
         location: Location,
     ) -> SemanticResult<()> {
-        let signature = func_type.signature();
+        let signature = func_type.signature(self.module.isa());
         let func_id = self.declare_func(id.clone(), &signature, sc, true)?;
         // external name is meant to be a lookup in a symbol table,
         // but we just give it garbage values

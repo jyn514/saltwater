@@ -199,6 +199,7 @@ fn assign() {
 
 #[test]
 fn ternary() {
+    utils::init();
     utils::assert_compile_error(
         "
     int i, *p;

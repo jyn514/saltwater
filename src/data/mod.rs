@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
-use std::fmt::{self, Debug, Display, Formatter, Write};
+use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
 
 use crate::arch::SIZE_T;
@@ -372,23 +372,7 @@ impl Display for Expr {
             ExprType::Ternary(cond, left, right) => {
                 write!(f, "({}) ? ({}) : ({})", cond, left, right)
             }
-            ExprType::FuncCall(left, params) => {
-                let varargs = if let Type::Function(ftype) = &left.ctype {
-                    ftype.varargs
-                } else {
-                    unreachable!("parser should catch illegal function calls");
-                };
-                write!(
-                    f,
-                    "({})({})",
-                    left,
-                    print_func_call(params.as_slice(), varargs, |expr| {
-                        let mut s = String::new();
-                        write!(s, "{}", expr).unwrap();
-                        s
-                    })
-                )
-            }
+            ExprType::FuncCall(left, params) => write!(f, "({})({})", left, join(params)),
             ExprType::Cast(expr) => write!(f, "({})({})", self.ctype, expr),
             ExprType::Sizeof(ty) => write!(f, "sizeof({})", ty),
             ExprType::Member(compound, id) => write!(f, "({}).{}", compound, id),
@@ -401,20 +385,12 @@ impl Display for Expr {
     }
 }
 
-fn print_func_call<T, F: Fn(&T) -> String>(params: &[T], varargs: bool, print_func: F) -> String {
-    // https://stackoverflow.com/a/30325430
-    let mut comma_separated = String::new();
-    for param in params {
-        comma_separated.push_str(&print_func(param));
-        comma_separated.push_str(", ");
-    }
-    if varargs {
-        comma_separated.push_str("...");
-    } else if !params.is_empty() {
-        comma_separated.pop();
-        comma_separated.pop();
-    }
-    comma_separated
+fn join<T: std::string::ToString>(params: &[T]) -> String {
+    params
+        .iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 impl Display for Initializer {
@@ -423,11 +399,7 @@ impl Display for Initializer {
             Initializer::Scalar(expr) => write!(f, "{}", expr),
             Initializer::InitializerList(list) => {
                 write!(f, "{{ ")?;
-                write!(
-                    f,
-                    "{}",
-                    print_func_call(list, false, |init| { format!("{}", init) })
-                )?;
+                write!(f, "{}", join(list),)?;
                 write!(f, " }}")
             }
             Initializer::FunctionBody(body) => {

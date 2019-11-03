@@ -247,7 +247,8 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
             };
             write!(f, "{}{}", if *signed { "" } else { "unsigned " }, substr)
         }
-        Bool | Float | Double | Void => write!(f, "{}", format!("{:?}", ctype).to_lowercase()),
+        Bool => write!(f, "_Bool"),
+        Float | Double | Void => write!(f, "{}", format!("{:?}", ctype).to_lowercase()),
         Pointer(inner, _) | Array(inner, _) => print_pre(inner, f),
         Function(ftype) => write!(f, "{}", ftype.return_type),
         Enum(Some(ident), _) => write!(f, "enum {}", ident),

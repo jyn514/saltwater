@@ -222,6 +222,27 @@ fn ternary() {
         13,
     );
     utils::assert_code("int main() { return 5 < 7 ? 13 : 51; }", 13);
+    utils::assert_succeeds(
+        "int main() {}
+    int *f() {
+        int *p;
+        return 1 ? p : 0;
+    }",
+    );
+    utils::assert_succeeds(
+        "int main() {}
+    int *f() {
+        int *p;
+        return 1 ? p : (void*)0;
+    }",
+    );
+    utils::assert_succeeds(
+        "int main() {}
+    int *f() {
+        int *p;
+        return 1 ? p : (char*)0;
+    }",
+    );
 }
 
 #[test]

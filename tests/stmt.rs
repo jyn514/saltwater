@@ -148,7 +148,7 @@ int main() { return f(); }",
 fn pointer_cast() {
     utils::assert_succeeds(
         "int main() {
-    int *p;
+    int *p = 0;
     while (p);
     }",
     );

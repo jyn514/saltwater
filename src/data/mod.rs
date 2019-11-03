@@ -600,8 +600,10 @@ mod tests {
             "int",
             "int *",
             "int[1][2][3]",
-            "int *(*)(int)",
-            "int *(*)[1][2][3]",
+            "char *(*)(float)",
+            "short *(*)[1][2][3]",
+            "_Bool",
+            "struct s",
         ];
         for ty in types.iter() {
             assert_eq!(

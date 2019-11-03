@@ -1,6 +1,6 @@
 use cranelift::codegen::ir::{condcodes, types, MemFlags};
 use cranelift::prelude::{FunctionBuilder, InstBuilder, Type as IrType, Value as IrValue};
-use cranelift_module::{DataContext, FuncId};
+use cranelift_module::DataContext;
 
 use super::{Compiler, Id};
 use crate::data::prelude::*;
@@ -596,13 +596,28 @@ impl Compiler {
         args: Vec<Expr>,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        // TODO: should type checking go here or in parsing?
-        let ftype = match ctype {
+        use crate::data::{Qualifiers, StorageClass};
+        use cranelift::codegen::ir::AbiParam;
+        let mut ftype = match ctype {
             Type::Function(ftype) => ftype,
             _ => unreachable!("parser should only allow calling functions"),
         };
-        if ftype.varargs && ftype.params.len() > 1 {
-            unimplemented!("variadic argument calls");
+        let variadic = ftype.varargs && args.len() > 1;
+        if variadic {
+            // this is an utter hack
+            // https://github.com/CraneStation/cranelift/issues/212#issuecomment-549111736
+            for arg in &args[1..] {
+                if arg.ctype.is_floating() {
+                    unimplemented!("variadic floating arguments");
+                }
+                ftype.params.push(Symbol {
+                    ctype: arg.ctype.clone(),
+                    id: String::new(),
+                    init: true,
+                    qualifiers: Qualifiers::NONE,
+                    storage_class: StorageClass::Auto,
+                });
+            }
         }
         let compiled_args: Vec<IrValue> = args
             .into_iter()
@@ -610,12 +625,23 @@ impl Compiler {
             .collect::<SemanticResult<_>>()?;
         let call = match func {
             FuncCall::Named(func_name) => {
-                let func_id: FuncId = match self.scope.get(&func_name) {
+                let func_id = match self.scope.get(&func_name) {
                     Some(Id::Function(func_id)) => *func_id,
                     _ => panic!("parser should catch illegal function calls"),
                 };
                 let func_ref = self.module.declare_func_in_func(func_id, builder.func);
-                builder.ins().call(func_ref, compiled_args.as_slice())
+                let call = builder.ins().call(func_ref, compiled_args.as_slice());
+                // stolen from https://github.com/bjorn3/rustc_codegen_cranelift/blob/82fde5b62281fa51a/src/abi/mod.rs#L535
+                if variadic {
+                    let call_sig = builder.func.dfg.call_signature(call).unwrap();
+                    let abi_params = ftype
+                        .params
+                        .into_iter()
+                        .map(|param| AbiParam::new(param.ctype.as_ir_type()))
+                        .collect();
+                    builder.func.dfg.signatures[call_sig].params = abi_params;
+                }
+                call
             }
             FuncCall::Indirect(callee) => {
                 let sig = ftype.signature();

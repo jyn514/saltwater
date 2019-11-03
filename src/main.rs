@@ -3,6 +3,8 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process;
 
+extern crate env_logger;
+extern crate log;
 extern crate pico_args;
 extern crate rcc;
 use pico_args::Arguments;
@@ -71,6 +73,7 @@ impl Default for Opt {
 // TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
 // TODO: then we can move this into `main` and have main return `Result<(), CompileError>`
 fn real_main(buf: String, opt: Opt) -> Result<(), CompileError> {
+    env_logger::init();
     let product = compile(
         buf,
         opt.filename.to_string_lossy().into_owned(),

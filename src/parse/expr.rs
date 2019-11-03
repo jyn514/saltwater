@@ -1,3 +1,5 @@
+use log::{debug, info};
+
 use super::{Lexeme, Parser, TagEntry};
 use crate::arch::SIZE_T;
 use crate::data::prelude::*;

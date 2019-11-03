@@ -1,6 +1,7 @@
 use cranelift::codegen::ir::{condcodes, types, MemFlags};
 use cranelift::prelude::{FunctionBuilder, InstBuilder, Type as IrType, Value as IrValue};
 use cranelift_module::DataContext;
+use log::debug;
 
 use super::{Compiler, Id};
 use crate::data::prelude::*;
@@ -602,14 +603,15 @@ impl Compiler {
             Type::Function(ftype) => ftype,
             _ => unreachable!("parser should only allow calling functions"),
         };
-        let variadic = ftype.varargs && args.len() > 1;
+        let variadic = ftype.varargs && args.len() > ftype.params.len();
         if variadic {
             // this is an utter hack
             // https://github.com/CraneStation/cranelift/issues/212#issuecomment-549111736
-            for arg in &args[1..] {
+            for arg in &args[ftype.params.len()..] {
                 if arg.ctype.is_floating() {
                     unimplemented!("variadic floating arguments");
                 }
+                debug!("adding variadic arg with type {}", arg.ctype);
                 ftype.params.push(Symbol {
                     ctype: arg.ctype.clone(),
                     id: String::new(),

@@ -1,5 +1,3 @@
-use log::debug;
-
 use super::{Lexeme, Parser, TagEntry};
 use crate::arch::SIZE_T;
 use crate::data::prelude::*;
@@ -763,7 +761,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             location,
                         });
                     }
-                    debug!("{:?}", args);
                     let mut promoted_args = vec![];
                     for (i, arg) in args.into_iter().enumerate() {
                         promoted_args.push(match functype.params.get(i) {
@@ -771,7 +768,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             None => arg.default_promote()?,
                         });
                     }
-                    debug!("{:?}", promoted_args);
                     Expr {
                         location,
                         constexpr: false,

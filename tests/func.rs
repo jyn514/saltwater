@@ -36,6 +36,7 @@ int main() { return f(); }",
 }
 
 #[test]
+#[ignore] // waiting on https://github.com/jyn514/rcc/tree/infer_fp_params
 fn no_prototype() {
     utils::assert_succeeds(
         "

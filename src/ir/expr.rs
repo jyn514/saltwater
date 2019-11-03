@@ -598,18 +598,23 @@ impl Compiler {
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         use crate::data::{Qualifiers, StorageClass};
-        use cranelift::codegen::ir::AbiParam;
+        use cranelift::codegen::ir::{AbiParam, ArgumentPurpose};
+
         let mut ftype = match ctype {
             Type::Function(ftype) => ftype,
             _ => unreachable!("parser should only allow calling functions"),
         };
-        let variadic = ftype.varargs && args.len() > ftype.params.len();
-        if variadic {
+        let mut float_variadic = 0;
+        if ftype.varargs {
+            // needs to be done before we move the args by compiling them
+            if self.module.isa().name() != "x86" {
+                unimplemented!("variadic args for architectures other than x86");
+            }
             // this is an utter hack
             // https://github.com/CraneStation/cranelift/issues/212#issuecomment-549111736
             for arg in &args[ftype.params.len()..] {
                 if arg.ctype.is_floating() {
-                    unimplemented!("variadic floating arguments");
+                    float_variadic += 1;
                 }
                 debug!("adding variadic arg with type {}", arg.ctype);
                 ftype.params.push(Symbol {
@@ -621,10 +626,15 @@ impl Compiler {
                 });
             }
         }
-        let compiled_args: Vec<IrValue> = args
+        let mut compiled_args: Vec<IrValue> = args
             .into_iter()
             .map(|arg| self.compile_expr(arg, builder).map(|val| val.ir_val))
             .collect::<SemanticResult<_>>()?;
+        if ftype.varargs {
+            debug!("adding number of float args");
+            let float_ir = builder.ins().iconst(types::I8, float_variadic);
+            compiled_args.push(float_ir);
+        }
         let call = match func {
             FuncCall::Named(func_name) => {
                 let func_id = match self.scope.get(&func_name) {
@@ -634,19 +644,28 @@ impl Compiler {
                 let func_ref = self.module.declare_func_in_func(func_id, builder.func);
                 let call = builder.ins().call(func_ref, compiled_args.as_slice());
                 // stolen from https://github.com/bjorn3/rustc_codegen_cranelift/blob/82fde5b62281fa51a/src/abi/mod.rs#L535
-                if variadic {
+                if ftype.varargs {
                     let call_sig = builder.func.dfg.call_signature(call).unwrap();
+                    let al = self
+                        .module
+                        .isa()
+                        .register_info()
+                        .parse_regunit("rax")
+                        .expect("x86 should have an rax register");
+                    let float_arg = AbiParam::special_reg(types::I8, ArgumentPurpose::Normal, al);
+                    // NOTE: this is added both here and in signature() because we overwrite the previous params
                     let abi_params = ftype
                         .params
                         .into_iter()
                         .map(|param| AbiParam::new(param.ctype.as_ir_type()))
+                        .chain(std::iter::once(float_arg))
                         .collect();
                     builder.func.dfg.signatures[call_sig].params = abi_params;
                 }
                 call
             }
             FuncCall::Indirect(callee) => {
-                let sig = ftype.signature();
+                let sig = ftype.signature(self.module.isa());
                 let sigref = builder.import_signature(sig);
                 builder
                     .ins()

@@ -77,3 +77,8 @@ fn multiple_given_args() {
         "it is 2019\n\n",
     );
 }
+
+#[test]
+fn floats() {
+    printf_helper("%f < %f", &["1.0", "1.2"]);
+}

@@ -763,11 +763,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             location,
                         });
                     }
-                    let promoted_args: Vec<Expr> = args
-                        .into_iter()
-                        .zip(&functype.params)
-                        .map(|(arg, expected)| arg.rval().cast(&expected.ctype))
-                        .collect::<Result<_, Locatable<String>>>()?;
+                    debug!("{:?}", args);
+                    let mut promoted_args = vec![];
+                    for (i, arg) in args.into_iter().enumerate() {
+                        promoted_args.push(match functype.params.get(i) {
+                            Some(expected) => arg.rval().cast(&expected.ctype)?,
+                            None => arg.default_promote()?,
+                        });
+                    }
+                    debug!("{:?}", promoted_args);
                     Expr {
                         location,
                         constexpr: false,
@@ -1137,6 +1141,11 @@ impl Expr {
             _ => self,
         }
     }
+    fn default_promote(self) -> SemanticResult<Expr> {
+        let expr = self.rval();
+        let ctype = expr.ctype.clone().default_promote();
+        expr.cast(&ctype)
+    }
     // Perform an integer conversion, including all relevant casts.
     //
     // See `Type::integer_promote` for conversion rules.
@@ -1449,6 +1458,16 @@ impl Expr {
 /// Implicit conversions.
 /// These are handled here and no other part of the compiler deals with them directly.
 impl Type {
+    // Perform the 'default promotions' from 6.5.2.2.6
+    pub fn default_promote(self) -> Type {
+        if self.is_integral() {
+            self.integer_promote()
+        } else if self == Type::Float {
+            Type::Double
+        } else {
+            self
+        }
+    }
     pub fn integer_promote(self) -> Type {
         if self.rank() <= Type::Int(true).rank() {
             if Type::Int(true).can_represent(&self) {

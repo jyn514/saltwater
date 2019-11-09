@@ -183,6 +183,7 @@ fn typedef() {
     typedef void v;
 }",
     );
+    utils::assert_compiles_no_main("typedef struct __IO_FILE FILE;");
 }
 
 #[test]

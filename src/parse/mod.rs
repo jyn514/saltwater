@@ -136,13 +136,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.tag_scope.enter_scope();
     }
     fn leave_scope(&mut self) {
+        use crate::data::StorageClass;
         for object in self.scope.get_all_immediate().values() {
             match &object.ctype {
                 Type::Struct(StructType::Named(name, size, _, _))
                 | Type::Union(StructType::Named(name, size, _, _)) => {
-                    if *size == 0 && object.storage_class != crate::data::StorageClass::Extern {
+                    if *size == 0
+                        && object.storage_class != StorageClass::Extern
+                        && object.storage_class != StorageClass::Typedef
+                    {
                         self.pending.push_back(Err(Locatable {
-                            data: format!("forward declaration of {} is never completed", name),
+                            data: format!(
+                                "forward declaration of {} is never completed (used in {})",
+                                name, object.id
+                            ),
                             location: Default::default(),
                         }));
                     }

@@ -244,6 +244,12 @@ fn ternary() {
         return 1 ? p : (char*)0;
     }",
     );
+    utils::assert_compiles_no_main(
+        "int a[10], b[5];
+    int *f() {
+        return 1 ? a : b;
+    }",
+    );
 }
 
 #[test]

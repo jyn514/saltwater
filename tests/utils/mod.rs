@@ -58,7 +58,7 @@ pub fn assert_compiles(program: &str) {
 pub fn assert_compiles_no_main(fragment: &str) {
     let program = format!("int main() {{}}\n{}", fragment);
     assert!(
-        compile(program, true).is_err(),
+        compile(program, true).is_ok(),
         "{} failed to compile",
         fragment
     );

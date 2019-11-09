@@ -167,9 +167,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let condition = self.logical_or_expr()?;
         if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {
             let condition = condition.truthy()?;
-            let mut then = self.expr()?;
+            let mut then = self.expr()?.rval();
             self.expect(Token::Colon)?;
-            let mut otherwise = self.conditional_expr()?;
+            let mut otherwise = self.conditional_expr()?.rval();
             if then.ctype.is_arithmetic() && otherwise.ctype.is_arithmetic() {
                 let (tmp1, tmp2) = Expr::binary_promote(then, otherwise)?;
                 then = tmp1;
@@ -1522,7 +1522,9 @@ impl Type {
         }
     }
     fn pointer_promote(left: &mut Expr, right: &mut Expr) -> bool {
-        if left.ctype.is_void_pointer() || left.ctype.is_char_pointer() || left.is_null() {
+        if left.ctype == right.ctype {
+            true
+        } else if left.ctype.is_void_pointer() || left.ctype.is_char_pointer() || left.is_null() {
             left.ctype = right.ctype.clone();
             true
         } else if right.ctype.is_void_pointer() || right.ctype.is_char_pointer() || right.is_null()

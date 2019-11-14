@@ -428,9 +428,9 @@ fn strings() {
         "
 int puts(const char *s);
 int main() {
-    return puts(\"hi\");
+    return puts(\"hi\") >= 0;
 }",
-        3,
+        1,
     );
 }
 

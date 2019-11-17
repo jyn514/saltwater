@@ -546,8 +546,8 @@ impl Compiler {
             self.compile_expr(lval, builder)?,
             self.compile_expr(rval, builder)?,
         );
-        let ir_target = if token != Token::Equal {
-            let ir_target = target.ir_val;
+        let ir_target = target.ir_val;
+        if token != Token::Equal {
             // need to deref explicitly to get an rval, the frontend didn't do it for us
             if is_id {
                 let ctype = match target.ctype {
@@ -579,10 +579,7 @@ impl Compiler {
                     .expect("only valid assignment tokens should be passed to assignment"),
                 builder,
             )?;
-            ir_target
-        } else {
-            target.ir_val
-        };
+        }
         builder
             .ins()
             .store(MemFlags::new(), value.ir_val, ir_target, 0);

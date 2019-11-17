@@ -152,6 +152,12 @@ fn logical_exprs() {
         0,
     );
     utils::assert_code("int main() { return 2 && 0; }", 0);
+    utils::assert_code(
+        "int main(int argc, char **argv) {
+        return argc > 0 && argc < 2;
+    }",
+        1,
+    );
 }
 
 #[test]

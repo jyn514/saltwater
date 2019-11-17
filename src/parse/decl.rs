@@ -66,14 +66,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
-    #[inline(always)]
     pub fn declaration(&mut self) -> Result<VecDeque<Locatable<Declaration>>, Locatable<String>> {
-        self._impl_declaration(true)
-    }
-    pub fn _impl_declaration(
-        &mut self,
-        add_to_scope: bool,
-    ) -> Result<VecDeque<Locatable<Declaration>>, Locatable<String>> {
         let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers()?;
         if self.match_next(&Token::Semicolon).is_some() {
             if !seen_compound_type {
@@ -138,15 +131,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 self.next_token();
                 let init = Some(self.initializer(ctype)?);
                 symbol.init = true;
-                if add_to_scope {
-                    self.declare(&mut symbol, &id.location)?;
-                }
+                self.declare(&mut symbol, &id.location)?;
                 init
             }
             _ => {
-                if add_to_scope {
-                    self.declare(&mut symbol, &id.location)?;
-                }
+                self.declare(&mut symbol, &id.location)?;
                 None
             }
         };
@@ -171,9 +160,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         loop {
             let mut decl = self.init_declarator(sc, qualifiers, ctype.clone())?;
-            if add_to_scope {
-                self.declare(&mut decl.data.symbol, &decl.location)?;
-            }
+            self.declare(&mut decl.data.symbol, &decl.location)?;
             pending.push_back(decl);
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon)?;
@@ -719,20 +706,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         loop {
             if let Some(Token::RightBrace) = self.peek_token() {
                 break;
+            } else if let Some(token) = self.match_next(&Token::Semicolon) {
+                crate::utils::warn(
+                    "extraneous semicolon in struct declaration is not allowed by ISO C",
+                    &token.location,
+                );
+                continue;
             }
-            let decls = self._impl_declaration(false)?;
-            for decl in decls {
-                /* TODO: check that storage class isn't specified (probably requires rewriting declaration)
-                if decl.data.symbol.storage_class != StorageClass::Auto {
-                    err!(
-                        format!(
-                            "cannot specify storage class '{}' for struct member '{}'",
-                            decl.data.symbol.storage_class, decl.data.symbol.id
-                        ),
-                        decl.location
-                    );
-                }
-                */
+            let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
+            let mut last_location;
+            loop {
+                let decl = self.init_declarator(StorageClass::Auto, qualifiers, ctype.clone())?;
                 if decl.data.symbol.init {
                     err!(
                         format!("cannot initialize struct member '{}'", decl.data.symbol.id),
@@ -753,6 +737,23 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     _ => {}
                 }
                 members.push(decl.data.symbol);
+                last_location = decl.location;
+                if self.match_next(&Token::Comma).is_none() {
+                    self.expect(Token::Semicolon)?;
+                    break;
+                }
+            }
+            if let Some(class) = sc {
+                let member = members
+                    .last()
+                    .expect("should have seen at least one declaration");
+                err!(
+                    format!(
+                        "cannot specify storage class '{}' for struct member '{}'",
+                        class, member.id,
+                    ),
+                    last_location
+                );
             }
         }
         if members.is_empty() {

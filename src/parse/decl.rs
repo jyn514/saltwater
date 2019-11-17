@@ -377,6 +377,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut signed = None;
         let mut errors = vec![];
         let mut seen_compound = false;
+        let mut seen_typedef = false;
         if self.peek_token().is_none() {
             return Err(Locatable {
                 data: "expected declaration specifier, got <end-of-file>".into(),
@@ -405,8 +406,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
                 Token::Keyword(k) if k.is_decl_specifier() => (locatable.location, k),
                 Token::Id(id) => match self.scope.get(&id) {
-                    Some(typedef) if typedef.storage_class == StorageClass::Typedef => {
+                    Some(typedef) if typedef.storage_class == StorageClass::Typedef && !seen_typedef => {
                         ctype = Some(typedef.ctype.clone());
+                        seen_typedef = true;
                         continue;
                     }
                     _ => {
@@ -1376,6 +1378,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
  * the hashmap, which would be much simpler logic) is so we have a Location
  * to go with every error
  * INVARIANT: keyword has not been seen before (i.e. not a duplicate)
+ *
+ * TODO: refactor this to use a HashSet<Locatable<Token>>
  */
 fn declaration_specifier(
     keyword: Keyword,

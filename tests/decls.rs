@@ -184,6 +184,27 @@ fn typedef() {
 }",
     );
     utils::assert_compiles_no_main("typedef struct __IO_FILE FILE;");
+    utils::assert_succeeds("
+    typedef unsigned char UC;
+    union {
+            UC UC[1];
+    } data;
+    int main () {
+        return data.UC[0];
+    }");
+    utils::assert_compiles_no_main("long const long I; // should declare `l` as a long long");
+    utils::assert_compile_error("typedef long L;
+    int main() {
+            long long ll;  // should declare ll as a long long
+            L L ll2; // should be an error, declares `L` as a long and then there needs to be a comma between L and ll2
+    }");
+    utils::assert_compile_error("typedef int I;
+    I I; // should be an error, compare `int int;`");
+    utils::assert_succeeds("typedef int I;
+    int main() {
+        I I; // should declare a variable of type int with name 'I'
+        return I = 0;
+    }");
 }
 
 #[test]

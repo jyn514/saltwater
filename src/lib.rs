@@ -32,6 +32,7 @@ pub mod utils;
 pub mod arch;
 pub mod data;
 mod fold;
+pub mod intern;
 mod ir;
 mod lex;
 mod parse;

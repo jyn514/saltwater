@@ -23,6 +23,7 @@ use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule}
 
 use crate::arch::TARGET;
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
+use crate::intern;
 use crate::utils;
 
 type Module = CraneliftModule<FaerieBackend>;
@@ -52,7 +53,7 @@ struct Compiler {
 pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> SemanticResult<Module> {
     let name = program.first().map_or_else(
         || "<empty>".to_string(),
-        |decl| utils::resolve_and_clone(decl.location.file),
+        |decl| intern::resolve_and_clone(decl.location.file),
     );
     let mut compiler = Compiler::new(name, debug);
     for decl in program {

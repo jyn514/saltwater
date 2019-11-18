@@ -14,7 +14,7 @@ pub mod prelude {
         types::StructType, Declaration, Expr, ExprType, Locatable, Location, SemanticResult, Stmt,
         StmtType, Symbol, Token, Type,
     };
-    pub use crate::intern::InternType;
+    pub use crate::intern::InternedStr;
 }
 pub use lex::{Keyword, Locatable, Location, Token};
 pub use types::Type;

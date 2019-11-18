@@ -105,7 +105,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 
             // check for end of file
             if self.peek_token().is_none() {
-                self.leave_scope();
+                self.leave_scope(self.last_location.unwrap());
                 return self.pending.pop_front();
             }
             let mut decls = match self.declaration() {
@@ -135,7 +135,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.scope.enter_scope();
         self.tag_scope.enter_scope();
     }
-    fn leave_scope(&mut self) {
+    fn leave_scope(&mut self, location: Location) {
         use crate::data::StorageClass;
         for object in self.scope.get_all_immediate().values() {
             match &object.ctype {
@@ -150,7 +150,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                                 "forward declaration of {} is never completed (used in {})",
                                 name, object.id
                             ),
-                            location: Default::default(),
+                            location,
                         }));
                     }
                 }

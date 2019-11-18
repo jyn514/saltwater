@@ -406,7 +406,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
                 Token::Keyword(k) if k.is_decl_specifier() => (locatable.location, k),
                 Token::Id(id) => match self.scope.get(&id) {
-                    Some(typedef) if typedef.storage_class == StorageClass::Typedef && !seen_typedef => {
+                    Some(typedef)
+                        if typedef.storage_class == StorageClass::Typedef && !seen_typedef =>
+                    {
                         ctype = Some(typedef.ctype.clone());
                         seen_typedef = true;
                         continue;
@@ -1324,7 +1326,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ),
         };
         self.current_function = None;
-        self.leave_scope();
+        self.leave_scope(self.last_location.unwrap());
         Ok(body)
     }
     fn update_forward_declarations(

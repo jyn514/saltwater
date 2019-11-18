@@ -11,20 +11,20 @@ use crate::data::{prelude::*, Scope};
 use crate::utils::{error, warn};
 
 type Lexeme = Locatable<Result<Token, String>>;
-type TagScope = Scope<String, TagEntry>;
+type TagScope = Scope<InternedStr, TagEntry>;
 
 #[derive(Clone, Debug)]
 enum TagEntry {
     Struct(Vec<Symbol>),
     Union(Vec<Symbol>),
     // list of (name, value)s
-    Enum(Vec<(String, i64)>),
+    Enum(Vec<(InternedStr, i64)>),
 }
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// the variables that have been declared
-    scope: Scope<String, Symbol>,
+    scope: Scope<InternedStr, Symbol>,
     /// the compound types that have been declared (struct/union/enum)
     tag_scope: TagScope,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
@@ -55,7 +55,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
 /// while doing semantic analysis
 struct FunctionData {
     /// the name of the function
-    id: String,
+    id: InternedStr,
     /// where the function was declared
     location: Location,
     /// the return type of the function
@@ -344,6 +344,7 @@ mod tests {
     #[test]
     fn peek() {
         use crate::data::{Keyword, Token};
+        use crate::intern::InternedStr;
         let mut instance = parser("int a[(int)1];");
         assert_eq!(
             instance.next_token().unwrap().data,
@@ -351,7 +352,7 @@ mod tests {
         );
         assert_eq!(
             instance.next_token().unwrap().data,
-            Token::Id("a".to_string())
+            Token::Id(InternedStr::get_or_intern("a"))
         );
         assert_eq!(instance.peek_token(), Some(&Token::LeftBracket));
         assert_eq!(instance.peek_next_token(), Some(&Token::LeftParen));

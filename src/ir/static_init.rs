@@ -22,6 +22,7 @@ impl Compiler {
         init: Option<Initializer>,
         location: Location,
     ) -> SemanticResult<()> {
+        use crate::get_str;
         let err_closure = |err| Locatable {
             data: err,
             location,
@@ -42,7 +43,12 @@ impl Compiler {
         }
         let id = self
             .module
-            .declare_data(&symbol.id, linkage, !symbol.qualifiers.c_const, Some(align))
+            .declare_data(
+                get_str!(symbol.id),
+                linkage,
+                !symbol.qualifiers.c_const,
+                Some(align),
+            )
             .map_err(|err| Locatable {
                 data: format!("error storing static value: {}", err),
                 location,
@@ -113,7 +119,7 @@ impl Compiler {
                 ExprType::Member(struct_expr, member) => {
                     let member_offset = struct_expr
                         .ctype
-                        .member_offset(&member)
+                        .member_offset(member)
                         .expect("parser shouldn't allow Member for non-struct types");
                     if let ExprType::Id(symbol) = struct_expr.expr {
                         self.static_ref(symbol, member_offset.try_into().unwrap(), offset, ctx);
@@ -314,7 +320,7 @@ impl Token {
                     x, f
                 )),
             }),
-            Token::Str(string) => Ok(string.into_boxed_str().into()),
+            Token::Str(string) => Ok(string.resolve_and_clone().into_boxed_str().into()),
             Token::Char(c) => Ok(Box::new([c])),
             x => unimplemented!("storing static of type {:?}", x),
         }

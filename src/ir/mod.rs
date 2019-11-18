@@ -2,7 +2,7 @@ mod expr;
 mod static_init;
 mod stmt;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 
 use cranelift::codegen::{
@@ -23,7 +23,6 @@ use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule}
 
 use crate::arch::TARGET;
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
-use crate::intern;
 use crate::utils;
 
 type Module = CraneliftModule<FaerieBackend>;
@@ -36,24 +35,24 @@ enum Id {
 
 struct Compiler {
     module: Module,
-    scope: Scope<String, Id>,
+    scope: Scope<InternedStr, Id>,
     debug: bool,
     // if false, we last saw a switch
     last_saw_loop: bool,
-    str_index: usize,
+    strings: HashSet<InternedStr>,
     loops: Vec<(Ebb, Ebb)>,
     // switch, default, end
     // if default is empty once we get to the end of a switch body,
     // we didn't see a default case
     switches: Vec<(Switch, Option<Ebb>, Ebb)>,
-    labels: HashMap<String, Ebb>,
+    labels: HashMap<InternedStr, Ebb>,
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
 pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> SemanticResult<Module> {
     let name = program.first().map_or_else(
         || "<empty>".to_string(),
-        |decl| intern::resolve_and_clone(decl.location.file),
+        |decl| decl.location.file.resolve_and_clone(),
     );
     let mut compiler = Compiler::new(name, debug);
     for decl in program {
@@ -120,7 +119,7 @@ impl Compiler {
             labels: HashMap::new(),
             // the initial value doesn't really matter
             last_saw_loop: true,
-            str_index: 0,
+            strings: HashSet::new(),
             debug,
         }
     }
@@ -135,11 +134,12 @@ impl Compiler {
     // 2. and 4. should be a no-op.
     fn declare_func(
         &mut self,
-        id: String,
+        id: InternedStr,
         signature: &Signature,
         sc: StorageClass,
         is_definition: bool,
     ) -> SemanticResult<FuncId> {
+        use crate::get_str;
         if !is_definition {
             // case 2 and 4
             if let Some(Id::Function(func_id)) = self.scope.get(&id) {
@@ -154,7 +154,7 @@ impl Compiler {
         };
         let func_id = self
             .module
-            .declare_function(&id, linkage, &signature)
+            .declare_function(get_str!(id), linkage, &signature)
             .unwrap_or_else(|err| utils::fatal(err, 6));
         self.scope.insert(id, Id::Function(func_id));
         Ok(func_id)
@@ -273,7 +273,7 @@ impl Compiler {
     }
     fn compile_func(
         &mut self,
-        id: String,
+        id: InternedStr,
         func_type: FunctionType,
         sc: StorageClass,
         stmts: Vec<Stmt>,
@@ -298,7 +298,7 @@ impl Compiler {
         }
         self.compile_all(stmts, &mut builder)?;
         if !builder.is_filled() {
-            if id == "main" {
+            if id == InternedStr::get_or_intern("main") {
                 let ir_int = func_type.return_type.as_ir_type();
                 let zero = [builder.ins().iconst(ir_int, 0)];
                 builder.ins().return_(&zero);

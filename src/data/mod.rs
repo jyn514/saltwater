@@ -16,6 +16,7 @@ pub mod prelude {
     };
     pub use crate::intern::InternedStr;
 }
+use crate::intern::InternedStr;
 pub use lex::{Keyword, Locatable, Location, Token};
 pub use types::Type;
 
@@ -38,11 +39,11 @@ pub enum StmtType {
         Option<Box<Stmt>>,
     ),
     Switch(Expr, Box<Stmt>),
-    Label(String),
+    Label(InternedStr),
     Case(u64, Option<Box<Stmt>>),
     Default(Option<Box<Stmt>>),
     Expr(Expr),
-    Goto(String),
+    Goto(InternedStr),
     Continue,
     Break,
     Return(Option<Expr>),
@@ -99,7 +100,7 @@ pub enum ExprType {
     Id(Symbol),
     Literal(Token),
     FuncCall(Box<Expr>, Vec<Expr>),
-    Member(Box<Expr>, String),
+    Member(Box<Expr>, InternedStr),
     // post increment/decrement
     PostIncrement(Box<Expr>, bool),
     Cast(Box<Expr>),
@@ -147,7 +148,7 @@ pub enum StorageClass {
 /* structs */
 #[derive(Clone, Debug)]
 pub struct Symbol {
-    pub id: String,
+    pub id: InternedStr,
     pub ctype: Type,
     pub qualifiers: Qualifiers,
     pub storage_class: StorageClass,
@@ -520,7 +521,7 @@ impl StmtType {
 impl Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} {}", self.storage_class, self.qualifiers)?;
-        types::print_type(&self.ctype, Some(&self.id), f)
+        types::print_type(&self.ctype, Some(self.id), f)
     }
 }
 

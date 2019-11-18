@@ -17,7 +17,7 @@ pub(crate) struct Value {
 }
 
 enum FuncCall {
-    Named(String),
+    Named(InternedStr),
     Indirect(Value),
 }
 
@@ -116,7 +116,7 @@ impl Compiler {
                 let ctype = cstruct.ctype.clone();
                 let pointer = self.compile_expr(*cstruct, builder)?;
                 let offset = ctype
-                    .member_offset(&id)
+                    .member_offset(id)
                     .expect("only structs and unions can have members");
                 let ir_offset = builder.ins().iconst(Type::ptr_type(), offset as i64);
                 Ok(Value {
@@ -258,19 +258,19 @@ impl Compiler {
     }
     fn compile_string(
         &mut self,
-        string: String,
+        string: InternedStr,
         builder: &mut FunctionBuilder,
         location: Location,
     ) -> SemanticResult<IrValue> {
         use cranelift_module::Linkage;
-        let name = format!("str.{}", self.str_index);
-        self.str_index += 1;
+        let name = format!("str.{}", string.to_usize());
+        self.strings.insert(string);
         let str_id = match self.module.declare_data(&name, Linkage::Local, false, None) {
             Ok(id) => id,
             Err(err) => err!(format!("error declaring static string: {}", err), location),
         };
         let mut ctx = DataContext::new();
-        ctx.define(string.into_bytes().into_boxed_slice());
+        ctx.define(string.resolve_and_clone().into_boxed_str().into());
         self.module
             .define_data(str_id, &ctx)
             .map_err(|err| Locatable {
@@ -617,7 +617,7 @@ impl Compiler {
                 debug!("adding variadic arg with type {}", arg.ctype);
                 ftype.params.push(Symbol {
                     ctype: arg.ctype.clone(),
-                    id: String::new(),
+                    id: Default::default(),
                     init: true,
                     qualifiers: Qualifiers::NONE,
                     storage_class: StorageClass::Auto,

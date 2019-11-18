@@ -5,6 +5,7 @@ use std::convert::TryFrom;
 use std::str::Chars;
 
 use super::data::{Keyword, Locatable, Location, SemanticResult, Token};
+use super::intern::InternedStr;
 use super::utils::warn;
 
 /// A Lexer takes the source code and turns it into tokens with location information.
@@ -117,7 +118,7 @@ impl<'a> Lexer<'a> {
                 line: 1,
                 // not 1 because we increment column _before_ returning current char
                 column: 0,
-                file: crate::intern::get_or_intern(file),
+                file: InternedStr::get_or_intern(file),
             },
             chars,
             current: None,
@@ -575,7 +576,7 @@ impl<'a> Lexer<'a> {
             self.consume_whitespace();
         }
         literal.push('\0');
-        Ok(Token::Str(literal))
+        Ok(Token::Str(InternedStr::get_or_intern(literal)))
     }
     /// Parse an identifier or keyword, given the starting letter.
     ///
@@ -593,7 +594,7 @@ impl<'a> Lexer<'a> {
         }
         match KEYWORDS.get::<str>(&id) {
             Some(keyword) => Ok(Token::Keyword(*keyword)),
-            None => Ok(Token::Id(id)),
+            None => Ok(Token::Id(InternedStr::get_or_intern(id))),
         }
     }
 }
@@ -811,6 +812,7 @@ impl<'a> Iterator for Lexer<'a> {
 #[cfg(test)]
 mod tests {
     use super::{Lexer, Locatable, Location, Token};
+    use crate::intern::InternedStr;
 
     type LexType = Locatable<Result<Token, String>>;
 
@@ -849,8 +851,7 @@ mod tests {
     }
 
     fn match_str(lexed: Option<LexType>, expected: &str) -> bool {
-        let mut string = expected.to_string();
-        string.push('\0');
+        let string = InternedStr::get_or_intern(format!("{}\0", expected));
         match_data(lexed, |c| *c == Ok(Token::Str(string)))
     }
 
@@ -899,7 +900,7 @@ mod tests {
             Some(Locatable {
                 data: Ok(Token::Plus),
                 location: Location {
-                    file: crate::intern::get_or_intern("<stdin>"),
+                    file: InternedStr::get_or_intern("<stdin>"),
                     line: 1,
                     column: 1
                 }

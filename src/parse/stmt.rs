@@ -392,7 +392,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// goto_statement: GOTO identifier ';'
     fn goto_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::Goto)).unwrap();
-        let id = match self.expect(Token::Id(String::new()))?.data {
+        let id = match self.expect(Token::Id(Default::default()))?.data {
             Token::Id(id) => id,
             _ => unreachable!("expect should only return an Id if called with Token::Id"),
         };
@@ -412,6 +412,7 @@ fn not_executed_warning(description: &str, from: &str, to: &str, location: &Loca
 mod tests {
     use super::super::tests::*;
     use crate::data::{Locatable, Location, Stmt, StmtType};
+    use crate::intern::InternedStr;
     fn parse_stmt(stmt: &str) -> Result<Option<Stmt>, Locatable<String>> {
         parser(stmt).statement()
     }
@@ -428,7 +429,7 @@ mod tests {
             location: Location {
                 line: 1,
                 column: 1,
-                file: crate::intern::get_or_intern("<test-suite>"),
+                file: InternedStr::get_or_intern("<test-suite>"),
             },
         }));
         assert_eq!(dbg!(parsed), dbg!(expected))

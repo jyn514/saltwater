@@ -132,9 +132,9 @@ pub enum Token {
     Int(i64),
     UnsignedInt(u64),
     Float(f64),
-    Str(String),
+    Str(InternedStr),
     Char(u8),
-    Id(String),
+    Id(InternedStr),
 
     Keyword(Keyword),
 

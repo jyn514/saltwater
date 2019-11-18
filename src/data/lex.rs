@@ -1,4 +1,4 @@
-use crate::utils::InternType;
+use crate::intern::InternType;
 
 // holds where a piece of code came from
 // should almost always be immutable

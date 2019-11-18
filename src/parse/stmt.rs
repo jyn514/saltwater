@@ -428,7 +428,7 @@ mod tests {
             location: Location {
                 line: 1,
                 column: 1,
-                file: crate::utils::get_or_intern("<test-suite>"),
+                file: crate::intern::get_or_intern("<test-suite>"),
             },
         }));
         assert_eq!(dbg!(parsed), dbg!(expected))

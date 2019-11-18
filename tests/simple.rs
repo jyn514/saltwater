@@ -5,7 +5,7 @@ use utils::compile_and_run as run;
 #[test]
 fn no_op() {
     assert!(dbg!(
-        run("int main(void) { return 0; }".to_string(), &[])
+        run("int main(void) { return 0; }", &[])
             .expect("compilation should succeed")
             .status
     )
@@ -15,7 +15,7 @@ fn no_op() {
 #[test]
 fn exit_status() {
     assert!(
-        run("int main(void) { return 1; }".to_string(), &[])
+        run("int main(void) { return 1; }", &[])
             .expect("compilation should succeed")
             .status
             .code()
@@ -25,7 +25,7 @@ fn exit_status() {
 
 #[test]
 fn empty_decl_does_not_stop_parsing() {
-    assert!(run("int; int main(void) { return 0; }".to_string(), &[])
+    assert!(run("int; int main(void) { return 0; }", &[])
         .expect("compilation should succeed")
         .status
         .success());

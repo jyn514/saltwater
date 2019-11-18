@@ -9,7 +9,7 @@ fn return_type() {
     );
     utils::assert_compile_error("int f() {}");
     assert_eq!(
-        utils::compile_and_run("int main(void) { return 1.1; }".to_string(), &[])
+        utils::compile_and_run("int main(void) { return 1.1; }", &[])
             .unwrap()
             .status
             .code(),

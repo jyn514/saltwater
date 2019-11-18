@@ -165,7 +165,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         match self.tokens.next() {
             Some(x) => match x.data {
                 Ok(token) => {
-                    self.last_location = Some(x.location.clone());
+                    self.last_location = Some(x.location);
                     Some(Locatable {
                         location: x.location,
                         data: token,
@@ -243,7 +243,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(t) => t,
             None => {
                 let err = Err(Locatable {
-                    location: self.next_location().clone(),
+                    location: *self.next_location(),
                     data: format!("expected '{}', got '<end-of-file>'", next),
                 });
                 self.panic();
@@ -255,7 +255,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         } else {
             let err = Err(Locatable {
                 data: format!("expected '{}', got '{}'", next, token),
-                location: self.next_location().clone(),
+                location: *self.next_location(),
             });
             self.panic();
             err

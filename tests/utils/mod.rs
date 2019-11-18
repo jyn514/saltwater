@@ -77,7 +77,7 @@ pub fn assert_compile_error(program: &str) {
 
 pub fn assert_output(program: &str, output: &str) {
     assert!(
-        match compile_and_run(program.into(), &[]) {
+        match compile_and_run(program, &[]) {
             Err(_) => false,
             Ok(actual) => actual.stdout == output.as_bytes(),
         },

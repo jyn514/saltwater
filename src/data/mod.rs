@@ -200,7 +200,7 @@ impl Expr {
         if !self.ctype.is_integral() {
             return Err(Locatable {
                 data: LengthError::NonIntegral.into(),
-                location: self.location.clone(),
+                location: self.location,
             });
         }
         let literal = self.constexpr()?.map_err(|location| Locatable {

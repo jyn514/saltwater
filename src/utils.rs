@@ -23,7 +23,7 @@ pub fn get_or_intern<T: AsRef<str> + Into<String>>(val: T) -> InternType {
         .get_or_intern(val)
 }
 
-pub fn resolve_and_clone<'a>(val: InternType) -> String {
+pub fn resolve_and_clone(val: InternType) -> String {
     let lock = STRINGS
         .read()
         .expect("failed to lock String cache for reading, another thread must have panicked");

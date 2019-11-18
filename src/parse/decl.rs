@@ -324,7 +324,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .declarator(false)?
             .expect("declarator should never return None when called with allow_abstract: false");
         let (id, ctype) =
-            decl.parse_type(ctype.clone(), false, &self.last_location.as_ref().unwrap())?;
+            decl.parse_type(ctype, false, &self.last_location.as_ref().unwrap())?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
 
         // optionally, parse an initializer
@@ -608,9 +608,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         let ident = ident.map(|loc| loc.data);
         let ctype = if kind == Keyword::Enum {
-            self.enumerators(ident.clone(), location)
+            self.enumerators(ident, location)
         } else {
-            self.struct_declaration_list(ident.clone(), kind == Keyword::Struct, &location)
+            self.struct_declaration_list(ident, kind == Keyword::Struct, &location)
         }?;
         self.expect(Token::RightBrace)?;
         Ok(ctype)

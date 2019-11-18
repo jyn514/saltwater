@@ -1505,9 +1505,9 @@ impl Type {
         // same sign
         if signs.0 == signs.1 {
             return if left.rank() >= right.rank() {
-                left.clone()
+                left
             } else {
-                right.clone()
+                right
             };
         };
         let (signed, unsigned) = if signs.0 {

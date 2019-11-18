@@ -131,7 +131,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 decl if decl.is_decl_specifier() => {
                     let decls = self.declaration()?;
                     let location = match decls.front() {
-                        Some(decl) => decl.location.clone(),
+                        Some(decl) => decl.location,
                         None => return Ok(None),
                     };
                     Ok(Some(Stmt {
@@ -171,7 +171,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if is_typedef {
                     let decls = self.declaration()?;
                     let location = match decls.front() {
-                        Some(decl) => decl.location.clone(),
+                        Some(decl) => decl.location,
                         None => return Ok(None),
                     };
                     Ok(Some(Stmt {
@@ -257,7 +257,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 StmtType::Expr(condition)
             }
             (None, Some(body)) => {
-                let location = condition.location.clone();
+                let location = condition.location;
                 StmtType::If(condition.logical_not(location)?, Box::new(body), None)
             }
             (Some(body), maybe_else) => {
@@ -372,7 +372,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             },
             None => {
                 return Err(Locatable {
-                    location: self.last_location.as_ref().unwrap().clone(),
+                    location: *self.last_location.as_ref().unwrap(),
                     data: "expected expression or ';', got <end-of-file>".to_string(),
                 })
             }

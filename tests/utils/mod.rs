@@ -16,13 +16,13 @@ pub fn init() {
     env_logger::builder().is_test(true).init();
 }
 
-pub fn compile_and_run(program: String, args: &[&str]) -> Result<Output, CompileError> {
+pub fn compile_and_run(program: &str, args: &[&str]) -> Result<Output, CompileError> {
     let output = compile(program, false)?;
     info!("running file {:?}", output);
     run(&output, args).map_err(CompileError::IO)
 }
 
-pub fn compile(program: String, no_link: bool) -> Result<tempfile::TempPath, CompileError> {
+pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, CompileError> {
     let module = rcc::compile(
         program,
         "<integration-test>".to_string(),
@@ -49,7 +49,7 @@ pub fn run(program: &Path, args: &[&str]) -> Result<Output, Error> {
 
 pub fn assert_compiles(program: &str) {
     assert!(
-        compile(program.to_string(), true).is_err(),
+        compile(program, true).is_err(),
         "{} failed to compile",
         program
     );
@@ -58,7 +58,7 @@ pub fn assert_compiles(program: &str) {
 pub fn assert_compiles_no_main(fragment: &str) {
     let program = format!("int main() {{}}\n{}", fragment);
     assert!(
-        compile(program, true).is_ok(),
+        compile(&program, true).is_ok(),
         "{} failed to compile",
         fragment
     );
@@ -66,7 +66,7 @@ pub fn assert_compiles_no_main(fragment: &str) {
 
 pub fn assert_compile_error(program: &str) {
     assert!(
-        match compile(program.to_string(), true) {
+        match compile(program, true) {
             Err(CompileError::Semantic(_)) => true,
             _ => false,
         },
@@ -89,7 +89,7 @@ pub fn assert_output(program: &str, output: &str) {
 
 pub fn assert_succeeds(program: &str) {
     assert!(
-        match compile_and_run(program.to_string(), &[]) {
+        match compile_and_run(program, &[]) {
             Err(_) => false,
             Ok(output) => output.status.success(),
         },
@@ -100,7 +100,7 @@ pub fn assert_succeeds(program: &str) {
 
 pub fn assert_code(program: &str, code: i32) {
     assert!(
-        match compile_and_run(program.to_string(), &[]) {
+        match compile_and_run(program, &[]) {
             Err(_) => false,
             Ok(output) => match output.status.code() {
                 Some(actual) => actual == code,

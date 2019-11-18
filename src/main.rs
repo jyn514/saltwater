@@ -72,7 +72,7 @@ impl Default for Opt {
 
 // TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
 // TODO: then we can move this into `main` and have main return `Result<(), CompileError>`
-fn real_main(buf: String, opt: Opt) -> Result<(), CompileError> {
+fn real_main(buf: &str, opt: Opt) -> Result<(), CompileError> {
     env_logger::init();
     let product = compile(
         buf,
@@ -130,7 +130,7 @@ fn main() {
     // What's happening here is the function has type `fn(...) -> !`,
     // but when it's called, that's coerced to `!`,
     // so the closure has type `fn(...) -> i32`
-    real_main(buf, opt).unwrap_or_else(|err| err_exit(err));
+    real_main(&buf, opt).unwrap_or_else(|err| err_exit(err));
 }
 
 fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {

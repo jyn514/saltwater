@@ -111,13 +111,13 @@ lazy_static! {
 
 impl<'a> Lexer<'a> {
     /// Creates a Lexer from a filename and the contents of a file
-    pub fn new(filename: String, chars: Chars<'a>, debug: bool) -> Lexer<'a> {
+    pub fn new(file: String, chars: Chars<'a>, debug: bool) -> Lexer<'a> {
         Lexer {
             location: Location {
                 line: 1,
                 // not 1 because we increment column _before_ returning current char
                 column: 0,
-                file: filename,
+                file,
             },
             chars,
             current: None,

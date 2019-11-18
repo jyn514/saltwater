@@ -56,7 +56,7 @@ impl From<Locatable<String>> for CompileError {
 }
 
 pub fn compile(
-    buf: String,
+    buf: &str,
     filename: String,
     debug_lex: bool,
     debug_ast: bool,

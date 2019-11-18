@@ -1,11 +1,13 @@
+use crate::utils::InternType;
+
 // holds where a piece of code came from
 // should almost always be immutable
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Location {
     // if there's a 4 GB input file, we have bigger problems
     pub line: u32,
     pub column: u32,
-    pub file: String,
+    pub file: InternType,
 }
 
 #[derive(Clone, Debug)]

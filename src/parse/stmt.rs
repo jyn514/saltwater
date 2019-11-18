@@ -52,7 +52,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(Token::LeftBrace) => {
                 self.enter_scope();
                 let stmts = self.compound_statement();
-                self.leave_scope();
+                let location = match &stmts {
+                    Ok(Some(stmt)) => stmt.location,
+                    Err(err) => err.location,
+                    Ok(None) => self.last_location.unwrap(),
+                };
+                self.leave_scope(location);
                 stmts
             }
             Some(Token::Keyword(k)) => match k {
@@ -378,7 +383,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .transpose()?;
         let iter_expr = self.expr_opt(Token::RightParen)?;
         let body = self.statement()?.map(Box::new);
-        self.leave_scope();
+        self.leave_scope(self.last_location.unwrap());
         Ok(Stmt {
             data: StmtType::For(decl, controlling_expr, iter_expr, body),
             location: start.location,
@@ -423,7 +428,7 @@ mod tests {
             location: Location {
                 line: 1,
                 column: 1,
-                file: "<test-suite>".into(),
+                file: crate::utils::get_or_intern("<test-suite>"),
             },
         }));
         assert_eq!(dbg!(parsed), dbg!(expected))

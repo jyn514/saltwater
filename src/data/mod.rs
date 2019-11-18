@@ -14,6 +14,7 @@ pub mod prelude {
         types::StructType, Declaration, Expr, ExprType, Locatable, Location, SemanticResult, Stmt,
         StmtType, Symbol, Token, Type,
     };
+    pub use crate::utils::InternType;
 }
 pub use lex::{Keyword, Locatable, Location, Token};
 pub use types::Type;
@@ -215,13 +216,13 @@ impl Expr {
             x => unreachable!("should have been caught already: {:?}", x),
         }
     }
-    pub fn zero() -> Expr {
+    pub fn zero(location: Location) -> Expr {
         Expr {
             ctype: Type::Int(true),
             constexpr: true,
             expr: ExprType::Literal(Token::Int(0)),
             lval: false,
-            location: Default::default(),
+            location,
         }
     }
 }
@@ -581,7 +582,7 @@ mod tests {
                 &format!(
                     "{}",
                     crate::Parser::new(
-                        crate::Lexer::new("<integration-test>".into(), ty.chars(), false),
+                        crate::Lexer::new("<integration-test>", ty.chars(), false),
                         false
                     )
                     .type_name()

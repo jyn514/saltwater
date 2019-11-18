@@ -60,7 +60,7 @@ fn literals() {
 fn ints() {
     env_logger::builder().is_test(true).init();
     printf_helper(r"exit_success: %d\n", &["5"]);
-    printf_helper(r"exit_success: %ld\n", &["5000000l"]);
+    //printf_helper(r"exit_success: %ld\n", &["5000000l"]);
     printf_helper(r"exit_success: %c\n", &["'a'"]);
 }
 

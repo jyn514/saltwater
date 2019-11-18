@@ -1,17 +1,45 @@
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::RwLock;
 
 use ansi_term::{ANSIString, Colour};
+use string_interner::{StringInterner, Sym};
 
 use crate::data::Location;
 
+pub type InternType = Sym;
+
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
+lazy_static! {
+    pub static ref STRINGS: RwLock<StringInterner<InternType>> =
+        RwLock::new(StringInterner::default());
+}
+
+pub fn get_or_intern<T: AsRef<str> + Into<String>>(val: T) -> InternType {
+    STRINGS
+        .write()
+        .expect("failed to lock String cache for writing, another thread must have panicked")
+        .get_or_intern(val)
+}
+
+pub fn resolve_and_clone<'a>(val: InternType) -> String {
+    let lock = STRINGS
+        .read()
+        .expect("failed to lock String cache for reading, another thread must have panicked");
+    lock.resolve(val)
+        .expect("tried to get value of non-interned string")
+        .to_string()
+}
 
 fn pretty_print(prefix: ANSIString, msg: &str, location: &Location) {
     println!(
         "{}:{}:{}: {}: {}",
-        location.file, location.line, location.column, prefix, msg
+        STRINGS.read().unwrap().resolve(location.file).unwrap(),
+        location.line,
+        location.column,
+        prefix,
+        msg
     );
 }
 

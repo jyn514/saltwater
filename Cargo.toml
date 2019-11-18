@@ -21,6 +21,8 @@ log = "0.4"
 target-lexicon = "0.9"
 tempfile = "3"
 pico-args = "0.3"
+# not my favorite library but allows sharing strings with Faerie
+string-interner = "0.7"
 
 [profile.release]
 lto = true

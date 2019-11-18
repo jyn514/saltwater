@@ -913,7 +913,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
     // parse a struct member
     // used for both s.a and s->a
-    fn struct_member(&mut self, expr: Expr, id: String, location: Location) -> ExprResult {
+    fn struct_member(&mut self, expr: Expr, id: InternedStr, location: Location) -> ExprResult {
         match &expr.ctype {
             Type::Struct(StructType::Anonymous(members))
             | Type::Union(StructType::Anonymous(members)) => {
@@ -1433,7 +1433,7 @@ impl Expr {
             ExprType::Literal(Token::Float(value)),
         )
     }
-    fn string_literal(value: String, location: Location) -> Expr {
+    fn string_literal(value: InternedStr, location: Location) -> Expr {
         Expr::literal(
             Type::for_string_literal(value.len() as SIZE_T),
             location,
@@ -1586,6 +1586,7 @@ impl Type {
 #[cfg(test)]
 mod tests {
     use crate::data::*;
+    use crate::intern::InternedStr;
     use crate::parse::expr::ExprResult;
     use crate::parse::tests::*;
     use crate::{Lexer, Parser};
@@ -1629,7 +1630,7 @@ mod tests {
         assert_eq!(
             parsed,
             Ok(Expr::string_literal(
-                "hi there\0".to_string(),
+                InternedStr::get_or_intern("hi there\0"),
                 get_location(&parsed)
             ))
         );
@@ -1638,7 +1639,7 @@ mod tests {
         assert_eq!(parsed, Ok(Expr::int_literal(1, get_location(&parsed))));
         let x = Symbol {
             ctype: Type::Int(true),
-            id: "x".to_string(),
+            id: InternedStr::get_or_intern("x"),
             qualifiers: Default::default(),
             storage_class: Default::default(),
             init: false,
@@ -1668,7 +1669,7 @@ mod tests {
     #[test]
     fn test_funcall() {
         let f = Symbol {
-            id: "f".to_string(),
+            id: InternedStr::get_or_intern("f"),
             init: false,
             qualifiers: Default::default(),
             storage_class: Default::default(),

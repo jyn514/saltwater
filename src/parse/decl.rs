@@ -213,7 +213,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn parse_typedef(
         &mut self,
-        first_id: Locatable<String>,
+        first_id: Locatable<InternedStr>,
         first_ctype: Type,
         first_qualifiers: Qualifiers,
     ) -> SemanticResult<()> {
@@ -238,7 +238,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn declare_typedef(
         &mut self,
-        id: Locatable<String>,
+        id: Locatable<InternedStr>,
         ctype: Type,
         qualifiers: Qualifiers,
     ) -> SemanticResult<()> {
@@ -268,7 +268,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
     }
     fn declare(&mut self, decl: &mut Symbol, location: &Location) -> Result<(), Locatable<String>> {
-        if decl.id == "main" {
+        if decl.id == InternedStr::get_or_intern("main") {
             if let Type::Function(ftype) = &decl.ctype {
                 if !Self::is_main_func_signature(ftype) {
                     return Err(Locatable {
@@ -508,13 +508,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn struct_type(
         members: Vec<Symbol>,
         is_struct: bool,
-    ) -> Result<(u64, u64, HashMap<String, u64>), &'static str> {
+    ) -> Result<(u64, u64, HashMap<InternedStr, u64>), &'static str> {
         if is_struct {
             let size = arch::struct_size(&members)?;
             let align = arch::struct_align(&members)?;
             let mut offsets = HashMap::new();
             for member in &members {
-                let offset = member.ctype.struct_offset(&members, &member.id);
+                let offset = member.ctype.struct_offset(&members, member.id);
                 offsets.insert(member.id.clone(), offset);
             }
             Ok((size, align, offsets))
@@ -533,7 +533,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         kind: Keyword,
         location: Location,
     ) -> Result<Type, Locatable<String>> {
-        let ident = match self.match_next(&Token::Id(String::new())) {
+        let ident = match self.match_next(&Token::Id(Default::default())) {
             Some(Locatable {
                 data: Token::Id(data),
                 location,
@@ -618,11 +618,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     enumerator_list: enumerator (',' enumerator)* ;
     enumerator: identifier ('=' constant_expr)? ;
     */
-    fn enumerators(&mut self, ident: Option<String>, location: Location) -> SemanticResult<Type> {
+    fn enumerators(
+        &mut self,
+        ident: Option<InternedStr>,
+        location: Location,
+    ) -> SemanticResult<Type> {
         let mut current = 0;
         let mut members = vec![];
         loop {
-            let member = self.expect(Token::Id(String::new()))?;
+            let member = self.expect(Token::Id(Default::default()))?;
             let name = match member.data {
                 Token::Id(id) => id,
                 _ => unreachable!("expect is broken"),
@@ -709,7 +713,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     */
     fn struct_declaration_list(
         &mut self,
-        ident: Option<String>,
+        ident: Option<InternedStr>,
         c_struct: bool,
         location: &Location,
     ) -> SemanticResult<Type> {
@@ -791,7 +795,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                                 Self::update_forward_declarations(
                                     &mut member.ctype,
                                     (size, align, &offset),
-                                    &id,
+                                    id,
                                 )
                             }
                         }
@@ -802,7 +806,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Self::update_forward_declarations(
                         &mut variable.ctype,
                         (size, align, &offset),
-                        &id,
+                        id,
                     );
                 }
                 Ok(constructor(StructType::Named(id, size, align, offset)))
@@ -907,7 +911,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location: *self.next_location(),
                     data: Default::default(),
                 });
-                if data != "" && params.iter().any(|p| p.data.id == data) {
+                if data != Default::default() && params.iter().any(|p| p.data.id == data) {
                     errs.push_back(Locatable {
                         location,
                         data: format!(
@@ -1266,7 +1270,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn function_body(
         &mut self,
-        id: String,
+        id: InternedStr,
         ftype: FunctionType,
         location: Location,
     ) -> Result<Vec<Stmt>, Locatable<String>> {
@@ -1288,7 +1292,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.enter_scope();
         let len = ftype.params.len();
         for (i, param) in ftype.params.into_iter().enumerate() {
-            if param.id == "" {
+            if param.id == Default::default() {
                 if param.ctype == Type::Void {
                     assert_eq!(len, 1);
                     break;
@@ -1327,8 +1331,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn update_forward_declarations(
         ctype: &mut Type,
-        new_type: (u64, u64, &HashMap<String, u64>),
-        ident: &str,
+        new_type: (u64, u64, &HashMap<InternedStr, u64>),
+        ident: InternedStr,
     ) {
         use Type::*;
         match ctype {
@@ -1343,7 +1347,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Union(StructType::Named(name, size @ 0, align @ 0, offset))
             | Struct(StructType::Named(name, size @ 0, align @ 0, offset))
-                if name == ident =>
+                if *name == ident =>
             {
                 *size = new_type.0;
                 *align = new_type.1;
@@ -1534,7 +1538,7 @@ impl TryFrom<Keyword> for Type {
 }
 
 impl Declarator {
-    fn id(&self) -> Option<Locatable<String>> {
+    fn id(&self) -> Option<Locatable<InternedStr>> {
         match &self.current {
             DeclaratorType::Id(id, location) => Some(Locatable {
                 data: id.clone(),
@@ -1552,7 +1556,7 @@ impl Declarator {
         mut current: Type,
         is_typedef: bool,
         location: &Location, // only used for abstract parameters
-    ) -> Result<(Option<Locatable<String>>, Type), Locatable<String>> {
+    ) -> Result<(Option<Locatable<InternedStr>>, Type), Locatable<String>> {
         use DeclaratorType::*;
         // TODO(July 2019): make this one call when rust 1.36 comes out
         let mut declarator = Some(self);
@@ -1571,7 +1575,7 @@ impl Declarator {
                             location,
                         } = identifier.unwrap_or_else(|| Locatable {
                             location: *location,
-                            data: "a".to_string(),
+                            data: InternedStr::get_or_intern("a"),
                         });
                         return Err(Locatable {
                             data: format!(
@@ -1597,7 +1601,7 @@ impl Declarator {
                             location,
                         } = identifier.unwrap_or_else(|| Locatable {
                             location: *location,
-                            data: "f".to_string(),
+                            data: InternedStr::get_or_intern("f"),
                         });
                         let (typename, help) = if func {
                             ("function", format!("(*{}())()", name))
@@ -1673,7 +1677,7 @@ impl Type {
 
 #[derive(Clone, Debug)]
 enum DeclaratorType {
-    Id(String, Location),
+    Id(InternedStr, Location),
     Pointer(Qualifiers),
     Array(ArrayType),
     Function(FunctionDeclarator),
@@ -1699,6 +1703,7 @@ mod tests {
         Declaration, Initializer, Locatable, Qualifiers, Symbol,
         Type::{self, *},
     };
+    use crate::intern::InternedStr;
     use crate::parse::tests::{match_all, match_data, parse, parse_all, ParseType};
     use std::boxed::Box;
 
@@ -1867,7 +1872,7 @@ mod tests {
             Pointer(Box::new(Function(FunctionType {
                 return_type: Box::new(Int(true)),
                 params: vec![Symbol {
-                    id: "f".to_string(),
+                    id: InternedStr::get_or_intern("f"),
                     ctype: Pointer(Box::new(Function(FunctionType {
                         return_type: Box::new(Int(true)),
                         params: vec![],
@@ -1906,7 +1911,7 @@ mod tests {
                     params: vec![Symbol {
                         ctype: Int(true),
                         storage_class: Default::default(),
-                        id: String::new(),
+                        id: Default::default(),
                         qualifiers: Qualifiers::NONE,
                         init: true,
                     }],

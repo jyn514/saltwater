@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use super::Symbol;
 use crate::arch::SIZE_T;
+use crate::intern::InternedStr;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
@@ -21,7 +22,7 @@ pub enum Type {
     Union(StructType),
     Struct(StructType),
     // enums should always have members, since tentative definitions are not allowed
-    Enum(Option<String>, Vec<(String, i64)>),
+    Enum(Option<InternedStr>, Vec<(InternedStr, i64)>),
     Bitfield(Vec<BitfieldType>),
     VaList,
 }
@@ -44,7 +45,7 @@ pub enum Type {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StructType {
     // name, size, alignment, offsets
-    Named(String, u64, u64, HashMap<String, u64>),
+    Named(InternedStr, u64, u64, HashMap<InternedStr, u64>),
     Anonymous(Vec<Symbol>),
 }
 
@@ -73,7 +74,7 @@ pub struct FunctionType {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BitfieldType {
     pub offset: i32,
-    pub name: Option<String>,
+    pub name: Option<InternedStr>,
     pub ctype: Type,
 }
 
@@ -185,10 +186,10 @@ impl Type {
             _ => false,
         }
     }
-    pub fn member_offset(&self, member: &str) -> Result<u64, ()> {
+    pub fn member_offset(&self, member: InternedStr) -> Result<u64, ()> {
         match self {
             Type::Struct(StructType::Anonymous(members)) => Ok(self.struct_offset(members, member)),
-            Type::Struct(StructType::Named(_, _, _, offsets)) => Ok(*offsets.get(member).unwrap()),
+            Type::Struct(StructType::Named(_, _, _, offsets)) => Ok(*offsets.get(&member).unwrap()),
             Type::Union(_) => Ok(0),
             _ => Err(()),
         }
@@ -230,7 +231,7 @@ impl std::fmt::Display for Type {
 
 use std::fmt::{self, Formatter};
 
-pub fn print_type(ctype: &Type, name: Option<&str>, f: &mut Formatter) -> fmt::Result {
+pub fn print_type(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt::Result {
     print_pre(ctype, f)?;
     print_mid(ctype, name, f)?;
     print_post(ctype, f)
@@ -262,7 +263,7 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
     }
 }
 
-fn print_mid(ctype: &Type, name: Option<&str>, f: &mut Formatter) -> fmt::Result {
+fn print_mid(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt::Result {
     match ctype {
         Type::Pointer(to) => {
             print_mid(to, None, f)?;
@@ -298,9 +299,9 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
             let mut comma_seperated = "(".to_string();
             for param in &func_type.params {
                 comma_seperated.push_str(&param.ctype.to_string());
-                if !param.id.is_empty() {
+                if param.id != Default::default() {
                     comma_seperated.push(' ');
-                    comma_seperated.push_str(&param.id);
+                    comma_seperated.push_str(&param.id.to_string());
                 }
                 comma_seperated.push_str(", ");
             }

@@ -11,12 +11,10 @@ use cranelift::codegen::{
 use target_lexicon::Triple;
 
 use crate::data::{
-    types::{
-        ArrayType, FunctionType, StructType,
-        Type::{self, *},
-    },
-    Symbol,
+    prelude::*,
+    types::{ArrayType, FunctionType},
 };
+use Type::*;
 
 // NOTE: this is required by the standard to always be one
 const CHAR_SIZE: u16 = 1;
@@ -126,7 +124,7 @@ impl Type {
     pub fn ptr_type() -> IrType {
         IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
     }
-    pub fn struct_offset(&self, members: &[Symbol], member: &str) -> u64 {
+    pub fn struct_offset(&self, members: &[Symbol], member: InternedStr) -> u64 {
         let mut current_offset = 0;
         for formal in members {
             if formal.id == member {
@@ -290,7 +288,7 @@ mod tests {
         assert_eq!(rem, 0);
         struct_for_types(types)
     }
-    fn symbol_for_type(ctype: Type, id: String) -> Symbol {
+    fn symbol_for_type(ctype: Type, id: InternedStr) -> Symbol {
         Symbol {
             id,
             ctype,
@@ -303,7 +301,10 @@ mod tests {
         let members = {
             let mut v = vec![];
             for (i, ctype) in types.into_iter().enumerate() {
-                v.push(symbol_for_type(ctype, i.to_string()));
+                v.push(symbol_for_type(
+                    ctype,
+                    InternedStr::get_or_intern(i.to_string()),
+                ));
             }
             v
         };
@@ -316,7 +317,7 @@ mod tests {
         } else {
             unreachable!()
         };
-        let member = &members[member_index].id;
+        let member = members[member_index].id;
         assert_eq!(struct_type.struct_offset(members, member), offset);
     }
     #[test]

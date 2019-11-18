@@ -24,7 +24,7 @@ impl Compiler {
     ) -> SemanticResult<()> {
         let err_closure = |err| Locatable {
             data: err,
-            location: location.clone(),
+            location,
         };
         let linkage = symbol.storage_class.try_into().map_err(err_closure)?;
         let align = symbol
@@ -45,7 +45,7 @@ impl Compiler {
             .declare_data(&symbol.id, linkage, !symbol.qualifiers.c_const, Some(align))
             .map_err(|err| Locatable {
                 data: format!("error storing static value: {}", err),
-                location: location.clone(),
+                location,
             })?;
 
         self.scope.insert(symbol.id, Id::Global(id));
@@ -71,7 +71,7 @@ impl Compiler {
             }
             let size_t = symbol.ctype.sizeof().map_err(|err| Locatable {
                 data: err.into(),
-                location: location.clone(),
+                location,
             })?;
             let size = size_t
                 .try_into()
@@ -175,7 +175,7 @@ impl Compiler {
                                 initializers.len()
                             ),
                             // TODO: this location points to the declarator, not the initializer
-                            location: location.clone(),
+                            location: *location,
                         })
                     } else {
                         self.init_array(ctx, buf, offset, initializers, ty, location)
@@ -211,14 +211,14 @@ impl Compiler {
         if let Type::Array(_, ArrayType::Unbounded) = inner_type {
             err!(
                 "nested array must declare the size of each inner array".into(),
-                location.clone()
+                *location
             );
         }
         let inner_size: usize = inner_type
             .sizeof()
             .map_err(|err| Locatable {
                 data: err.into(),
-                location: location.clone(),
+                location: *location,
             })?
             .try_into()
             .expect("cannot initialize array larger than address space of host");

@@ -241,7 +241,7 @@ impl Compiler {
             .collect::<Result<_, Locatable<String>>>()?;
         for (param, ir_val) in params.into_iter().zip(ir_vals) {
             let u64_size = match param.ctype.sizeof() {
-                Err(data) => err!(data.into(), location.clone()),
+                Err(data) => err!(data.into(), *location),
                 Ok(size) => size,
             };
             let u32_size = match u32::try_from(u64_size) {
@@ -250,7 +250,7 @@ impl Compiler {
                         "size {} is too large for stack (can only handle 32-bit values)",
                         u64_size
                     ),
-                    location.clone()
+                    *location
                 ),
                 Ok(size) => size,
             };

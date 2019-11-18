@@ -109,7 +109,7 @@ impl Expr {
             ExprType::Sizeof(ctype) => {
                 let sizeof = ctype.sizeof().map_err(|data| Locatable {
                     data: data.into(),
-                    location: location.clone(),
+                    location,
                 })?;
                 ExprType::Literal(Token::UnsignedInt(sizeof))
             }
@@ -325,7 +325,7 @@ impl Expr {
         let literal = match (&left.expr, &right.expr) {
             (ExprType::Literal(left_token), ExprType::Literal(right_token)) => {
                 match fold_func(left_token, right_token, &left.ctype) {
-                    Err(data) => err!(data, location.clone()),
+                    Err(data) => err!(data, *location),
                     Ok(token) => token.map(ExprType::Literal),
                 }
             }
@@ -413,14 +413,11 @@ fn shift_right(
     if let ExprType::Literal(token) = right.expr {
         let shift = match token.non_negative_int() {
             Ok(u) => u,
-            Err(_) => err!(
-                "cannot shift left by a negative amount".into(),
-                location.clone()
-            ),
+            Err(_) => err!("cannot shift left by a negative amount".into(), *location),
         };
         let sizeof = ctype.sizeof().map_err(|err| Locatable {
             data: err.into(),
-            location: location.clone(),
+            location: *location,
         })?;
         // Rust panics if the shift is greater than the size of the type
         if shift >= sizeof {
@@ -463,15 +460,12 @@ fn shift_left(
     if let ExprType::Literal(token) = right.expr {
         let shift = match token.non_negative_int() {
             Ok(u) => u,
-            Err(_) => err!(
-                "cannot shift left by a negative amount".into(),
-                location.clone()
-            ),
+            Err(_) => err!("cannot shift left by a negative amount".into(), *location),
         };
         if left.ctype.is_signed() {
             let size = match left.ctype.sizeof() {
                 Ok(s) => s,
-                Err(err) => err!(err.into(), location.clone()),
+                Err(err) => err!(err.into(), *location),
             };
             let max_shift = u64::from(CHAR_BIT) * size;
             if shift >= max_shift {
@@ -480,7 +474,7 @@ fn shift_left(
                         "cannot shift left by {} or more bits for type '{}' (got {})",
                         max_shift, ctype, shift
                     ),
-                    location.clone(),
+                    *location,
                 );
             }
         }
@@ -490,7 +484,7 @@ fn shift_left(
                 if overflow {
                     err!(
                         "overflow in shift left during constant folding".into(),
-                        location.clone()
+                        *location
                     );
                 }
                 ExprType::Literal(Token::Int(result))

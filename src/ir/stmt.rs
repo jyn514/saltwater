@@ -213,7 +213,7 @@ impl Compiler {
         if let Some(post_loop) = post_loop {
             let post_loop = Stmt {
                 data: StmtType::Expr(post_loop),
-                location: location.clone(),
+                location,
             };
             if let Some(Stmt {
                 data: StmtType::Compound(stmts),

@@ -252,7 +252,7 @@ impl<'a> Lexer<'a> {
             }
         }
         Err(Locatable {
-            location: self.location.clone(),
+            location: self.location,
             data: "unterminated /* comment".to_string(),
         })
     }
@@ -639,7 +639,7 @@ impl<'a> Iterator for Lexer<'a> {
         let c = c.and_then(|c| {
             // this clone is unavoidable, we need to keep self.location
             // but we also need each token to have a location
-            let location = self.location.clone();
+            let location = self.location;
             // this giant switch is most of the logic
             let data = match c {
                 '+' => Ok(match self.peek() {

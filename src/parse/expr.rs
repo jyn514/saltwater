@@ -725,7 +725,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let expr = match expr.ctype {
                         Type::Pointer(ref pointee) if pointee.is_function() => Expr {
                             lval: false,
-                            location: expr.location.clone(),
+                            location: expr.location,
                             constexpr: expr.constexpr,
                             ctype: (**pointee).clone(),
                             expr: ExprType::Deref(Box::new(expr)),
@@ -807,7 +807,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     };
                     let expr = Expr {
                         constexpr: false,
-                        location: location.clone(),
+                        location,
                         ctype: struct_type,
                         lval: true,
                         expr: ExprType::Deref(Box::new(expr)),
@@ -893,7 +893,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
                 other => {
                     let err = Err(Locatable {
-                        location: location.clone(),
+                        location,
                         data: format!("expected '(' or literal, got '{}'", other),
                     });
                     self.unput(Some(Locatable {
@@ -905,7 +905,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         } else {
             Err(Locatable {
-                location: self.next_location().clone(),
+                location: *self.next_location(),
                 data: "expected '(' or literal, got <end-of-file>".to_string(),
             })
         }
@@ -1131,7 +1131,7 @@ impl Expr {
                 ctype: self.ctype.clone(),
                 lval: false,
                 constexpr: false,
-                location: self.location.clone(),
+                location: self.location,
                 expr: ExprType::Deref(Box::new(self)),
             },
             _ => self,
@@ -1181,7 +1181,7 @@ impl Expr {
             Ok(Expr {
                 constexpr: self.constexpr,
                 lval: false,
-                location: self.location.clone(),
+                location: self.location,
                 ctype: Type::Bool,
                 expr: ExprType::Compare(Box::new(self), Box::new(zero), Token::NotEqual),
             })
@@ -1207,7 +1207,7 @@ impl Expr {
             || self.ctype.is_pointer() && ctype.is_char_pointer()
         {
             Ok(Expr {
-                location: self.location.clone(),
+                location: self.location,
                 constexpr: self.constexpr,
                 expr: ExprType::Cast(Box::new(self)),
                 lval: false,
@@ -1245,30 +1245,30 @@ impl Expr {
     ) -> ExprResult {
         let offset = Expr {
             lval: false,
-            location: index.location.clone(),
+            location: index.location,
             constexpr: index.constexpr,
             expr: ExprType::Cast(Box::new(index)),
             ctype: base.ctype.clone(),
         }
         .rval();
         let size = pointee.sizeof().map_err(|_| Locatable {
-            location: location.clone(),
+            location,
             data: format!(
                 "cannot perform pointer arithmetic when size of pointed type '{}' is unknown",
                 pointee
             ),
         })?;
-        let size_literal = Expr::unsigned_int_literal(size, offset.location.clone());
+        let size_literal = Expr::unsigned_int_literal(size, offset.location);
         let size_cast = Expr {
             lval: false,
-            location: offset.location.clone(),
+            location: offset.location,
             ctype: offset.ctype.clone(),
             constexpr: true,
             expr: ExprType::Cast(Box::new(size_literal)),
         };
         let offset = Expr {
             lval: false,
-            location: offset.location.clone(),
+            location: offset.location,
             ctype: offset.ctype.clone(),
             constexpr: offset.constexpr,
             expr: ExprType::Mul(Box::new(size_cast), Box::new(offset)),
@@ -1302,8 +1302,8 @@ impl Expr {
                 constexpr: true,
                 lval: false,
                 ctype: expr.ctype.clone(),
-                location: location.clone(),
-                expr: ExprType::Cast(Box::new(Expr::int_literal(1, location.clone()))),
+                location,
+                expr: ExprType::Cast(Box::new(Expr::int_literal(1, location))),
             };
             Ok(Expr {
                 ctype: expr.ctype.clone(),
@@ -1595,8 +1595,8 @@ mod tests {
     }
     fn get_location(expr: &ExprResult) -> Location {
         match expr {
-            Err(ref err) => err.location.clone(),
-            Ok(ref l) => l.location.clone(),
+            Err(ref err) => err.location,
+            Ok(ref l) => l.location,
         }
     }
     fn test_literal<C: std::string::ToString, T>(token: C, parse_literal: T) -> bool

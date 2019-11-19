@@ -466,7 +466,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             && match next_token {
                 Some(Token::Keyword(k)) => k.is_decl_specifier(),
                 Some(Token::Id(id)) => {
-                    let id = id.clone();
+                    let id = *id;
                     match self.scope.get(&id) {
                         Some(symbol) => symbol.storage_class == Typedef,
                         _ => false,
@@ -871,7 +871,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             if let Some(e) = enumerator {
                                 return Ok(Expr {
                                     constexpr: true,
-                                    ctype: Type::Enum(ident.clone(), members.clone()),
+                                    ctype: Type::Enum(*ident, members.clone()),
                                     location,
                                     lval: false,
                                     expr: ExprType::Literal(Token::Int(e)),

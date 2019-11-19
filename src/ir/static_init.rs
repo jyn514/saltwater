@@ -285,9 +285,9 @@ impl Token {
 
         match self {
             Token::Int(i) => Ok(match ir_type {
-                types::I8 => bytes!(cast!(i, i64, i8, &ctype, &location), big_endian),
-                types::I16 => bytes!(cast!(i, i64, i16, &ctype, &location), big_endian),
-                types::I32 => bytes!(cast!(i, i64, i32, &ctype, &location), big_endian),
+                types::I8 => bytes!(cast!(i, i64, i8, &ctype, *location), big_endian),
+                types::I16 => bytes!(cast!(i, i64, i16, &ctype, *location), big_endian),
+                types::I32 => bytes!(cast!(i, i64, i32, &ctype, *location), big_endian),
                 types::I64 => bytes!(i, big_endian),
                 x => unreachable!(format!(
                     "ir_type {} for integer {} is not of integer type",
@@ -295,9 +295,9 @@ impl Token {
                 )),
             }),
             Token::UnsignedInt(i) => Ok(match ir_type {
-                types::I8 => bytes!(cast!(i, u64, u8, &ctype, &location), big_endian),
-                types::I16 => bytes!(cast!(i, u64, u16, &ctype, &location), big_endian),
-                types::I32 => bytes!(cast!(i, u64, u32, &ctype, &location), big_endian),
+                types::I8 => bytes!(cast!(i, u64, u8, &ctype, *location), big_endian),
+                types::I16 => bytes!(cast!(i, u64, u16, &ctype, *location), big_endian),
+                types::I32 => bytes!(cast!(i, u64, u32, &ctype, *location), big_endian),
                 types::I64 => bytes!(i, big_endian),
                 x => unreachable!(format!(
                     "ir_type {} for integer {} is not of integer type",
@@ -309,7 +309,7 @@ impl Token {
                     let cast = f as f32;
                     if (f64::from(cast) - f).abs() >= std::f64::EPSILON {
                         warn(&format!("conversion from double to float loses precision ({} is different from {} by more than DBL_EPSILON ({}))",
-                        f64::from(cast), f, std::f64::EPSILON), &location);
+                        f64::from(cast), f, std::f64::EPSILON), *location);
                     }
                     let float_as_int = cast.to_bits();
                     bytes!(float_as_int, big_endian)

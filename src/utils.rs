@@ -9,7 +9,7 @@ use crate::intern::STRINGS;
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
 
-fn pretty_print(prefix: ANSIString, msg: &str, location: &Location) {
+fn pretty_print(prefix: ANSIString, msg: &str, location: Location) {
     println!(
         "{}:{}:{}: {}: {}",
         STRINGS.read().unwrap().resolve(location.file.0).unwrap(),
@@ -20,11 +20,11 @@ fn pretty_print(prefix: ANSIString, msg: &str, location: &Location) {
     );
 }
 
-pub fn warn(msg: &str, location: &Location) {
+pub fn warn(msg: &str, location: Location) {
     WARNINGS.fetch_add(1, Ordering::Relaxed);
     pretty_print(Colour::Yellow.bold().paint("warning"), msg, location);
 }
-pub fn error(msg: &str, location: &Location) {
+pub fn error(msg: &str, location: Location) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
     pretty_print(Colour::Red.bold().paint("error"), msg, location);
 }
@@ -66,6 +66,26 @@ macro_rules! map {
          $( map.insert($key, $val); )*
          map
     }}
+}
+
+/// A simple macro to create a VecDeque from a list of initial elements.
+///
+/// Very similar to `vec![]` from the standard library.
+/// Example:
+/// ```rust
+/// let queue = vec_deque![1, 2, 3];
+/// ```
+///
+/// Trailing commas are allowed.
+macro_rules! vec_deque {
+    ($elem:expr; $n:expr) => ({
+        use std::collections::VecDeque;
+        VecDeque::from(vec![$elem; $n])
+    });
+    ($($x: expr),*) => (
+        VecDeque::from(vec![$($x),*])
+    );
+    ($($x:expr,)*) => ($crate::vec_deque![$($x),*])
 }
 
 /// Check if an expression matches a pattern.

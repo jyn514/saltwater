@@ -27,7 +27,7 @@ use super::utils::warn;
 ///                        "int main(void) { char *hello = \"hi\"; }".chars(),
 ///                         false);
 /// for token in lexer {
-///     assert!(token.data.is_ok());
+///     assert!(token.is_ok());
 /// }
 /// ```
 #[derive(Debug)]
@@ -279,7 +279,7 @@ impl<'a> Lexer<'a> {
         let radix = if start == '0' {
             match self.next_char() {
                 Some('b') => {
-                    crate::utils::warn("binary number literals are an extension", &self.location);
+                    crate::utils::warn("binary number literals are an extension", self.location);
                     2
                 }
                 Some('x') => 16,
@@ -489,7 +489,7 @@ impl<'a> Lexer<'a> {
                         _ => {
                             warn(
                                 &format!("unknown character escape '\\{}'", c),
-                                &self.location,
+                                self.location,
                             );
                             c
                         }
@@ -602,7 +602,7 @@ impl<'a> Lexer<'a> {
 impl<'a> Iterator for Lexer<'a> {
     // option: whether the stream is exhausted
     // result: whether the next lexeme is an error
-    type Item = Locatable<Result<Token, String>>;
+    type Item = Result<Locatable<Token>, Locatable<String>>;
 
     /// Return the next token in the stream.
     ///
@@ -626,10 +626,7 @@ impl<'a> Iterator for Lexer<'a> {
                     // discard '*' so /*/ doesn't look like a complete comment
                     self.next_char();
                     if let Err(err) = self.consume_multi_comment() {
-                        return Some(Locatable {
-                            data: Err(err.data),
-                            location: err.location,
-                        });
+                        return Some(Err(err));
                     }
                     self.consume_whitespace();
                     self.next_char()
@@ -643,7 +640,7 @@ impl<'a> Iterator for Lexer<'a> {
             let location = self.location;
             // this giant switch is most of the logic
             let data = match c {
-                '+' => Ok(match self.peek() {
+                '+' => match self.peek() {
                     Some('=') => {
                         self.next_char();
                         Token::PlusEqual
@@ -653,66 +650,68 @@ impl<'a> Iterator for Lexer<'a> {
                         Token::PlusPlus
                     }
                     _ => Token::Plus,
-                }),
+                },
                 '-' => match self.peek() {
                     Some('=') => {
                         self.next_char();
-                        Ok(Token::MinusEqual)
+                        Token::MinusEqual
                     }
                     Some('-') => {
                         self.next_char();
-                        Ok(Token::MinusMinus)
+                        Token::MinusMinus
                     }
                     Some('>') => {
                         self.next_char();
-                        Ok(Token::StructDeref)
+                        Token::StructDeref
                     }
                     c => {
                         self.unput(c);
-                        Ok(Token::Minus)
+                        Token::Minus
                     }
                 },
                 '*' => match self.peek() {
                     Some('=') => {
                         self.next_char();
-                        Ok(Token::StarEqual)
+                        Token::StarEqual
                     }
-                    _ => Ok(Token::Star),
+                    _ => Token::Star,
                 },
                 '/' => match self.next_char() {
-                    Some('=') => Ok(Token::DivideEqual),
+                    Some('=') => Token::DivideEqual,
                     c => {
                         self.unput(c);
-                        Ok(Token::Divide)
+                        Token::Divide
                     }
                 },
-                '%' => Ok(match self.peek() {
+                '%' => match self.peek() {
                     Some('=') => {
                         self.next_char();
                         Token::ModEqual
                     }
                     _ => Token::Mod,
-                }),
-                '^' => Ok(if self.match_next('=') {
-                    Token::XorEqual
-                } else {
-                    Token::Xor
-                }),
-                '=' => Ok(match self.peek() {
+                },
+                '^' => {
+                    if self.match_next('=') {
+                        Token::XorEqual
+                    } else {
+                        Token::Xor
+                    }
+                }
+                '=' => match self.peek() {
                     Some('=') => {
                         self.next_char();
                         Token::EqualEqual
                     }
                     _ => Token::Equal,
-                }),
-                '!' => Ok(match self.peek() {
+                },
+                '!' => match self.peek() {
                     Some('=') => {
                         self.next_char();
                         Token::NotEqual
                     }
                     _ => Token::LogicalNot,
-                }),
-                '>' => Ok(match self.peek() {
+                },
+                '>' => match self.peek() {
                     Some('=') => {
                         self.next_char();
                         Token::GreaterEqual
@@ -726,8 +725,8 @@ impl<'a> Iterator for Lexer<'a> {
                         }
                     }
                     _ => Token::Greater,
-                }),
-                '<' => Ok(match self.peek() {
+                },
+                '<' => match self.peek() {
                     Some('=') => {
                         self.next_char();
                         Token::LessEqual
@@ -741,8 +740,8 @@ impl<'a> Iterator for Lexer<'a> {
                         }
                     }
                     _ => Token::Less,
-                }),
-                '&' => Ok(match self.peek() {
+                },
+                '&' => match self.peek() {
                     Some('&') => {
                         self.next_char();
                         Token::LogicalAnd
@@ -752,8 +751,8 @@ impl<'a> Iterator for Lexer<'a> {
                         Token::AndEqual
                     }
                     _ => Token::Ampersand,
-                }),
-                '|' => Ok(match self.peek() {
+                },
+                '|' => match self.peek() {
                     Some('|') => {
                         self.next_char();
                         Token::LogicalOr
@@ -763,44 +762,69 @@ impl<'a> Iterator for Lexer<'a> {
                         Token::OrEqual
                     }
                     _ => Token::BitwiseOr,
-                }),
-                '{' => Ok(Token::LeftBrace),
-                '}' => Ok(Token::RightBrace),
-                '(' => Ok(Token::LeftParen),
-                ')' => Ok(Token::RightParen),
-                '[' => Ok(Token::LeftBracket),
-                ']' => Ok(Token::RightBracket),
-                '~' => Ok(Token::BinaryNot),
-                ':' => Ok(Token::Colon),
-                ';' => Ok(Token::Semicolon),
-                ',' => Ok(Token::Comma),
+                },
+                '{' => Token::LeftBrace,
+                '}' => Token::RightBrace,
+                '(' => Token::LeftParen,
+                ')' => Token::RightParen,
+                '[' => Token::LeftBracket,
+                ']' => Token::RightBracket,
+                '~' => Token::BinaryNot,
+                ':' => Token::Colon,
+                ';' => Token::Semicolon,
+                ',' => Token::Comma,
                 '.' => match self.peek() {
-                    Some(c) if c.is_ascii_digit() => self.parse_float(0, 10).map(Token::Float),
+                    Some(c) if c.is_ascii_digit() => match self.parse_float(0, 10) {
+                        Ok(f) => Token::Float(f),
+                        Err(err) => {
+                            return Some(Err(Locatable {
+                                data: err,
+                                location,
+                            }))
+                        }
+                    },
                     Some('.') => {
                         self.next_char();
                         if self.peek() == Some('.') {
                             self.next_char();
-                            Ok(Token::Ellipsis)
+                            Token::Ellipsis
                         } else {
                             // backtrack two steps
                             self.current = Some('.');
                             self.lookahead = Some('.');
-                            Ok(Token::Dot)
+                            Token::Dot
                         }
                     }
-                    _ => Ok(Token::Dot),
+                    _ => Token::Dot,
                 },
-                '?' => Ok(Token::Question),
-                '0'..='9' => self.parse_num(c),
-                'a'..='z' | 'A'..='Z' | '_' => self.parse_id(c),
-                '\'' => self.parse_char(),
+                '?' => Token::Question,
+                '0'..='9' => match self.parse_num(c) {
+                    Ok(num) => num,
+                    Err(err) => return Some(Err(Locatable::new(err, location))),
+                },
+                'a'..='z' | 'A'..='Z' | '_' => match self.parse_id(c) {
+                    Ok(id) => id,
+                    Err(err) => return Some(Err(Locatable::new(err, location))),
+                },
+                '\'' => match self.parse_char() {
+                    Ok(id) => id,
+                    Err(err) => return Some(Err(Locatable::new(err, location))),
+                },
                 '"' => {
                     self.unput(Some('"'));
-                    self.parse_string()
+                    match self.parse_string() {
+                        Ok(id) => id,
+                        Err(err) => return Some(Err(Locatable::new(err, location))),
+                    }
                 }
-                x => Err(format!("unknown token {:?}", x)),
+                x => {
+                    return Some(Err(Locatable {
+                        data: format!("unknown token {:?}", x),
+                        location,
+                    }))
+                }
             };
-            Some(Self::Item { data, location })
+            Some(Ok(Locatable { data, location }))
         });
         if self.debug {
             println!("lexeme: {:?}", c);
@@ -814,7 +838,7 @@ mod tests {
     use super::{Lexer, Locatable, Location, Token};
     use crate::intern::InternedStr;
 
-    type LexType = Locatable<Result<Token, String>>;
+    type LexType = Result<Locatable<Token>, Locatable<String>>;
 
     fn lex(input: &str) -> Option<LexType> {
         let mut lexed = lex_all(input);
@@ -832,41 +856,42 @@ mod tests {
 
     fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
     where
-        T: FnOnce(&Result<Token, String>) -> bool,
+        T: FnOnce(Result<&Token, &str>) -> bool,
     {
         match_data_ref(&lexed, closure)
     }
     fn match_data_ref<T>(lexed: &Option<LexType>, closure: T) -> bool
     where
-        T: FnOnce(&Result<Token, String>) -> bool,
+        T: FnOnce(Result<&Token, &str>) -> bool,
     {
         match lexed {
-            Some(result) => closure(&result.data),
+            Some(Ok(result)) => closure(Ok(&result.data)),
+            Some(Err(result)) => closure(Err(&result.data)),
             None => false,
         }
     }
 
     fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
-        match_data(lexed, |c| *c == Ok(Token::Char(expected)))
+        match_data(lexed, |c| c == Ok(&Token::Char(expected)))
     }
 
     fn match_str(lexed: Option<LexType>, expected: &str) -> bool {
         let string = InternedStr::get_or_intern(format!("{}\0", expected));
-        match_data(lexed, |c| *c == Ok(Token::Str(string)))
+        match_data(lexed, |c| c == Ok(&Token::Str(string)))
     }
 
     fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
         lexed
             .iter()
             .zip(expected)
-            .all(|(actual, expected)| match &actual.data {
-                Ok(token) => token == expected,
+            .all(|(actual, expected)| match actual {
+                Ok(token) => token.data == *expected,
                 _ => false,
             })
     }
     fn assert_int(s: &str, expected: i64) {
         assert!(
-            match_data(lex(s), |lexed| *lexed == Ok(Token::Int(expected))),
+            match_data(lex(s), |lexed| lexed == Ok(&Token::Int(expected))),
             "{} != {}",
             s,
             expected
@@ -875,7 +900,7 @@ mod tests {
     fn assert_float(s: &str, expected: f64) {
         let lexed = lex(s);
         assert!(
-            match_data_ref(&lexed, |lexed| *lexed == Ok(Token::Float(expected))),
+            match_data_ref(&lexed, |lexed| lexed == Ok(&Token::Float(expected))),
             "({}) {:?} != {}",
             s,
             lexed,
@@ -885,7 +910,7 @@ mod tests {
     fn assert_err(s: &str) {
         let lexed = lex_all(s);
         assert!(
-            lexed.iter().any(|e| e.data.is_err()),
+            lexed.iter().any(|e| e.is_err()),
             "{:?} is not an error (from {})",
             &lexed,
             s
@@ -897,14 +922,14 @@ mod tests {
         let parse = lex("+");
         assert_eq!(
             parse,
-            Some(Locatable {
-                data: Ok(Token::Plus),
+            Some(Ok(Locatable {
+                data: Token::Plus,
                 location: Location {
                     file: InternedStr::get_or_intern("<stdin>"),
                     line: 1,
                     column: 1
                 }
-            })
+            }))
         )
     }
 
@@ -926,7 +951,7 @@ mod tests {
     #[test]
     fn test_overflow() {
         assert!(match lex("10000000000000000000000") {
-            Some(lexed) => lexed.data.is_err(),
+            Some(lexed) => lexed.is_err(),
             None => false,
         })
     }
@@ -958,8 +983,8 @@ mod tests {
             &lex_all("-1e10"),
             &[Token::Minus, Token::Float(10_000_000_000.0)]
         ));
-        assert!(match_data(lex("9223372036854775807u"), |lexed| *lexed
-            == Ok(Token::UnsignedInt(9_223_372_036_854_775_807u64))));
+        assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
+            == Ok(&Token::UnsignedInt(9_223_372_036_854_775_807u64))));
         assert_float("0x.ep0", 0.875);
         assert_float("0x.ep-0l", 0.875);
         assert_float("0xe.p-4f", 0.875);
@@ -1003,7 +1028,7 @@ mod tests {
             3
         );
         let bad_comment = lex("/* unterminated comments are an error ");
-        assert!(bad_comment.is_some() && bad_comment.unwrap().data.is_err());
+        assert!(bad_comment.is_some() && bad_comment.unwrap().is_err());
         // check for stack overflow
         assert_eq!(lex(&"//".repeat(10_000)), None);
         assert_eq!(lex(&"/* */".repeat(10_000)), None);
@@ -1044,6 +1069,6 @@ mod tests {
             }"
         )
         .into_iter()
-        .all(|x| x.data.is_ok()))
+        .all(|x| x.is_ok()))
     }
 }

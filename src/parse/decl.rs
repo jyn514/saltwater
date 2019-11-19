@@ -33,16 +33,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
         if sc != None {
             return Err(Locatable {
-                // TODO
-                location: *self.last_location.as_ref().unwrap(),
+                location: self.last_location,
                 data: "type cannot have a storage class".to_string(),
             });
         }
         let ctype = match self.declarator(true)? {
             None => ctype,
             Some(decl) => {
-                let (id, ctype) =
-                    decl.parse_type(ctype, false, &self.last_location.as_ref().unwrap())?;
+                let (id, ctype) = decl.parse_type(ctype, false, &self.last_location)?;
                 if let Some(Locatable {
                     location,
                     data: name,
@@ -58,7 +56,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         };
         Ok(Locatable {
-            location: *self.last_location.as_ref().unwrap(),
+            location: self.last_location,
             data: (ctype, qualifiers),
         })
     }
@@ -94,7 +92,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let (id, first_type) = declarator.parse_type(
             ctype.clone(),
             sc == Some(StorageClass::Typedef),
-            self.last_location.as_ref().unwrap(),
+            &self.last_location,
         )?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
         let sc = match sc {
@@ -155,7 +153,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if symbol.ctype.is_function() && qualifiers != Qualifiers::NONE {
             warn(
                 &format!("{} has no effect on function return type", qualifiers),
-                &id.location,
+                id.location,
             );
             qualifiers = Qualifiers::NONE;
         }
@@ -283,7 +281,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if decl.storage_class == StorageClass::Extern && !decl.ctype.is_function() && decl.init {
             crate::utils::warn(
                 "this is a definition, not a declaration, the 'extern' keyword has no effect",
-                &location,
+                *location,
             );
             decl.storage_class = StorageClass::Auto;
         }
@@ -323,7 +321,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let decl = self
             .declarator(false)?
             .expect("declarator should never return None when called with allow_abstract: false");
-        let (id, ctype) = decl.parse_type(ctype, false, &self.last_location.as_ref().unwrap())?;
+        let (id, ctype) = decl.parse_type(ctype, false, &self.last_location)?;
         let id = id.expect("declarator should return id when called with allow_abstract: false");
 
         // optionally, parse an initializer
@@ -380,7 +378,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if self.peek_token().is_none() {
             return Err(Locatable {
                 data: "expected declaration specifier, got <end-of-file>".into(),
-                location: *self.last_location.as_ref().unwrap(),
+                location: self.last_location,
             });
         }
         // unsigned const int
@@ -445,7 +443,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 {
                     warn(
                         &format!("duplicate declaration specifier '{}'", keyword),
-                        &location,
+                        location,
                     );
                 // what is `short short` supposed to be?
                 } else if keyword != Keyword::Long {
@@ -758,7 +756,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         }
         if members.is_empty() {
-            err!("cannot have empty struct".into(), *self.next_location());
+            err!("cannot have empty struct".into(), self.next_location());
         }
         let constructor = if c_struct { Type::Struct } else { Type::Union };
         if let Some(id) = ident {
@@ -873,7 +871,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             };
             if let Some(storage_class) = sc {
                 errs.push_back(Locatable {
-                    location: *self.last_location.as_ref().unwrap(),
+                    location: self.last_location,
                     data: format!(
                         "cannot specify storage class '{}' for {}",
                         storage_class,
@@ -890,14 +888,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             }
             if let Some(decl) = declarator {
-                let (id, mut ctype) = decl.parse_type(
-                    param_type,
-                    false,
-                    &self
-                        .last_location
-                        .as_ref()
-                        .expect("If we see a token, there should be at least one stored location"),
-                )?;
+                let (id, mut ctype) = decl.parse_type(param_type, false, &self.last_location)?;
                 // int f(int a[]) is the same as int f(int *a)
                 // TODO: parse int f(int a[static 5])
                 if let Type::Array(to, _) = ctype {
@@ -908,7 +899,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // which can never be passed in by the lexer
                 // this also makes checking if the parameter is abstract or not easy to check
                 let Locatable { location, data } = id.unwrap_or(Locatable {
-                    location: *self.next_location(),
+                    location: self.next_location(),
                     data: Default::default(),
                 });
                 if data != Default::default() && params.iter().any(|p| p.data.id == data) {
@@ -934,13 +925,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if param_type == Type::Void && !params.is_empty() {
                     errs.push_back(Locatable {
                         data: "void must be the first and only parameter if specified".into(),
-                        location: *self.next_location(),
+                        location: self.next_location(),
                     });
                     continue;
                 }
                 // abstract param
                 params.push(Locatable {
-                    location: *self.next_location(),
+                    location: self.next_location(),
                     data: Symbol {
                         id: Default::default(),
                         ctype: param_type,
@@ -1098,14 +1089,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(x) => {
                 let err = Err(Locatable {
                     data: format!("expected variable name or '(', got '{}'", x),
-                    location: *self.next_location(),
+                    location: self.next_location(),
                 });
                 self.panic();
                 return err;
             }
             None => {
                 return Err(Locatable {
-                    location: *self.next_location(),
+                    location: self.next_location(),
                     data: "expected variable name or '(', got <end-of-of-file>".to_string(),
                 })
             }
@@ -1160,20 +1151,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     ]) {
                         if keyword == Keyword::Const {
                             if qualifiers.c_const {
-                                warn("duplicate 'const' declaration specifier", &location);
+                                warn("duplicate 'const' declaration specifier", location);
                             } else {
                                 qualifiers.c_const = true;
                             }
                         } else if keyword == Keyword::Volatile {
                             if qualifiers.volatile {
-                                warn("duplicate 'volatile' declaration specifier", &location);
+                                warn("duplicate 'volatile' declaration specifier", location);
                             } else {
                                 qualifiers.volatile = true;
                             }
                         } else {
                             warn(
                                 &format!("qualifier '{}' has not yet been implemented", keyword),
-                                &location,
+                                location,
                             );
                         }
                     }
@@ -1216,7 +1207,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 StructType::Named(name, _, _, _) => match self.tag_scope.get(name) {
                     None => err!(
                         "cannot assign to variable with incomplete type".into(),
-                        *self.last_location.as_ref().unwrap()
+                        self.last_location,
                     ),
                     Some(TagEntry::Union(members)) => members,
                     _ => unreachable!(),
@@ -1236,7 +1227,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     .type_at(&self.tag_scope, elements.len())
                     .map_err(|err| Locatable {
                         data: err,
-                        location: *self.next_location(),
+                        location: self.next_location(),
                     })?;
                 elements.push(self.initializer(&elem_type)?);
                 if self.match_next(&Token::RightBrace).is_some() {
@@ -1326,7 +1317,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ),
         };
         self.current_function = None;
-        self.leave_scope(self.last_location.unwrap());
+        self.leave_scope(self.last_location);
         Ok(body)
     }
     fn update_forward_declarations(

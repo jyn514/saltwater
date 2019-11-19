@@ -10,7 +10,7 @@ use std::mem;
 use crate::data::{prelude::*, Scope};
 use crate::utils::{error, warn};
 
-type Lexeme = Locatable<Result<Token, String>>;
+type Lexeme = Result<Locatable<Token>, Locatable<String>>;
 type TagScope = Scope<InternedStr, TagEntry>;
 
 #[derive(Clone, Debug)]
@@ -34,9 +34,9 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// this is useful because errors are FIFO
     pending: VecDeque<Result<Locatable<Declaration>, Locatable<String>>>,
     /// in case we get to the end of the file and want to show an error
-    /// TODO: are we sure this should be optional?
-    last_location: Option<Location>,
-    /// the last token we saw from the Lexer
+    last_location: Location,
+    /// the last token we saw from the Lexer. None if we haven't looked ahead.
+    /// Should only be used in this module.
     current: Option<Locatable<Token>>,
     /// TODO: are we sure we need 2 tokens of lookahead?
     /// this was put here for declarations, so we know the difference between
@@ -66,18 +66,40 @@ impl<I> Parser<I>
 where
     I: Iterator<Item = Lexeme>,
 {
-    pub fn new(iter: I, debug: bool) -> Self {
-        Parser {
+    /// If the input is not empty,
+    ///     If there is at least one token that is not an error, returns a parser.
+    ///     Otherwise, returns a list of the errors.
+    /// Otherwise, returns None.
+    pub fn new(mut iter: I, debug: bool) -> Result<Self, VecDeque<Locatable<String>>> {
+        let mut pending = VecDeque::new();
+        let first = loop {
+            match iter.next() {
+                Some(Ok(token)) => break token,
+                Some(Err(err)) => pending.push_back(err),
+                None if pending.is_empty() => {
+                    pending.push_back(Locatable::new(
+                        "cannot have empty program".to_string(),
+                        Default::default(),
+                    ));
+                    return Err(pending);
+                }
+                None => return Err(pending),
+            }
+        };
+        if !pending.is_empty() {
+            return Err(pending);
+        }
+        Ok(Parser {
             scope: Scope::new(),
             tag_scope: Scope::new(),
             tokens: iter,
             pending: Default::default(),
-            last_location: None,
-            current: None,
+            last_location: first.location,
+            current: Some(first),
             next: None,
             current_function: None,
             debug,
-        }
+        })
     }
 }
 
@@ -100,16 +122,12 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.pending.pop_front().or_else(|| {
             while let Some(locatable) = self.match_next(&Token::Semicolon) {
-                warn("extraneous semicolon at top level", &locatable.location);
+                warn("extraneous semicolon at top level", locatable.location);
             }
 
             // check for end of file
             if self.peek_token().is_none() {
-                self.leave_scope(self.last_location.unwrap_or(Location {
-                    line: 1,
-                    column: 1,
-                    file: Default::default(),
-                }));
+                self.leave_scope(self.last_location);
                 return self.pending.pop_front();
             }
             let mut decls = match self.declaration() {
@@ -166,22 +184,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     // don't use this, use next_token instead
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
-        match self.tokens.next() {
-            Some(x) => match x.data {
-                Ok(token) => {
-                    self.last_location = Some(x.location);
-                    Some(Locatable {
-                        location: x.location,
-                        data: token,
-                    })
+        loop {
+            match self.tokens.next() {
+                Some(Ok(token)) => {
+                    self.last_location = token.location;
+                    break Some(token);
                 }
-                Err(err) => {
-                    error(&err, &x.location);
-                    self.last_location = Some(x.location);
-                    self.__impl_next_token()
+                Some(Err(err)) => {
+                    self.last_location = err.location;
+                    error(&err.data, err.location);
                 }
-            },
-            None => None,
+                None => break None,
+            }
         }
     }
     fn next_token(&mut self) -> Option<Locatable<Token>> {
@@ -194,7 +208,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn peek_token(&mut self) -> Option<&Token> {
         if self.current.is_none() {
-            self.current = mem::replace(&mut self.next, None).or_else(|| self.next_token());
+            self.current = self.next.take().or_else(|| self.next_token());
         }
         self.current.as_ref().map(|x| &x.data)
     }
@@ -208,13 +222,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         self.next.as_ref().map(|x| &x.data)
     }
-    fn next_location(&mut self) -> &Location {
-        if self.peek_token().is_some() {
-            &self.current.as_ref().unwrap().location
+    fn next_location(&mut self) -> Location {
+        if let Some(token) = &self.current {
+            token.location
         } else {
             self.last_location
-                .as_ref()
-                .expect("can't call next_location on an empty file")
         }
     }
     fn match_next(&mut self, next: &Token) -> Option<Locatable<Token>> {
@@ -247,7 +259,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(t) => t,
             None => {
                 let err = Err(Locatable {
-                    location: *self.next_location(),
+                    location: self.last_location, // TODO: we don't actually want this, we want the end of the file
                     data: format!("expected '{}', got '<end-of-file>'", next),
                 });
                 self.panic();
@@ -259,7 +271,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         } else {
             let err = Err(Locatable {
                 data: format!("expected '{}', got '{}'", next, token),
-                location: *self.next_location(),
+                location: self.next_location(),
             });
             self.panic();
             err
@@ -343,7 +355,7 @@ mod tests {
     #[inline]
     pub(crate) fn parser(input: &str) -> Parser<Lexer> {
         let lex = Lexer::new("<test suite>".to_string(), input.chars(), false);
-        Parser::new(lex, false)
+        Parser::new(lex, false).unwrap()
     }
     #[test]
     fn peek() {

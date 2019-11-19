@@ -243,7 +243,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         qualifiers: Qualifiers,
     ) -> SemanticResult<()> {
         let typedef = Symbol {
-            id: id.data.clone(),
+            id: id.data,
             ctype: ctype.clone(),
             qualifiers,
             storage_class: StorageClass::Typedef,
@@ -652,14 +652,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     }
                 };
             }
-            members.push((name.clone(), current));
+            members.push((name, current));
             // TODO: this is such a hack
             let tmp_symbol = Symbol {
-                id: name.clone(),
+                id: name,
                 qualifiers: Qualifiers::CONST,
                 storage_class: StorageClass::Register,
                 init: true,
-                ctype: Type::Enum(None, vec![(name.clone(), current)]),
+                ctype: Type::Enum(None, vec![(name, current)]),
             };
             self.scope.insert(name, tmp_symbol);
             // allow trailing commas
@@ -689,7 +689,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     self.scope.insert(
                         id.clone(),
                         Symbol {
-                            id: id.clone(),
+                            id: *id,
                             init: true,
                             storage_class: StorageClass::Register,
                             qualifiers: Qualifiers::NONE,
@@ -1541,7 +1541,7 @@ impl Declarator {
     fn id(&self) -> Option<Locatable<InternedStr>> {
         match &self.current {
             DeclaratorType::Id(id, location) => Some(Locatable {
-                data: id.clone(),
+                data: *id,
                 location: *location,
             }),
             _ => match &self.next {

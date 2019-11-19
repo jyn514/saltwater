@@ -346,7 +346,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 location: paren.location,
             })),
             Some(Token::Id(id)) => {
-                let id = id.clone();
+                let id = *id;
                 match self.scope.get(&id) {
                     Some(symbol) if symbol.storage_class == StorageClass::Typedef => {
                         Some(Box::new(Stmt {

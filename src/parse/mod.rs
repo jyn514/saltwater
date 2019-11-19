@@ -105,7 +105,11 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 
             // check for end of file
             if self.peek_token().is_none() {
-                self.leave_scope(self.last_location.unwrap());
+                self.leave_scope(self.last_location.unwrap_or(Location {
+                    line: 1,
+                    column: 1,
+                    file: Default::default(),
+                }));
                 return self.pending.pop_front();
             }
             let mut decls = match self.declaration() {

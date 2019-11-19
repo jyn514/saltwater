@@ -8,6 +8,7 @@ pub struct InternedStr(pub Sym);
 
 lazy_static! {
     pub static ref STRINGS: RwLock<StringInterner<Sym>> = RwLock::new(StringInterner::default());
+    static ref EMPTY_STRING: InternedStr = InternedStr::get_or_intern("");
 }
 
 #[macro_export]
@@ -55,7 +56,7 @@ impl fmt::Display for InternedStr {
 
 impl Default for InternedStr {
     fn default() -> Self {
-        Self::get_or_intern("")
+        *EMPTY_STRING
     }
 }
 

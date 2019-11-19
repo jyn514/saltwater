@@ -29,6 +29,9 @@ impl InternedStr {
     pub fn len(self) -> usize {
         get_str!(self).len()
     }
+    pub fn is_empty(self) -> bool {
+        self == Default::default()
+    }
     pub fn resolve_and_clone(self) -> String {
         get_str!(self).to_string()
     }

@@ -210,6 +210,16 @@ impl Token {
     }
 }
 
+impl Default for Location {
+    fn default() -> Self {
+        Self {
+            line: 1,
+            column: 1,
+            file: Default::default(),
+        }
+    }
+}
+
 impl std::fmt::Display for Keyword {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {

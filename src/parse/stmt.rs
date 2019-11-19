@@ -55,7 +55,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let location = match &stmts {
                     Ok(Some(stmt)) => stmt.location,
                     Err(err) => err.location,
-                    Ok(None) => self.last_location.unwrap(),
+                    Ok(None) => self.last_location,
                 };
                 self.leave_scope(location);
                 stmts
@@ -252,7 +252,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     "missing both if body and else body",
                     "if (expr) {}",
                     "expr;",
-                    &condition.location,
+                    condition.location,
                 );
                 StmtType::Expr(condition)
             }
@@ -283,7 +283,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 "empty switch body is never executed",
                 "switch (expr) {}",
                 "expr;",
-                &expr.location,
+                expr.location,
             );
             StmtType::Expr(expr)
         };
@@ -324,7 +324,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 "empty body for do-while statement",
                 "do {} while (expr)",
                 "while (expr) {}",
-                &start.location,
+                start.location,
             );
             StmtType::While(condition, None)
         };
@@ -372,7 +372,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             },
             None => {
                 return Err(Locatable {
-                    location: *self.last_location.as_ref().unwrap(),
+                    location: self.last_location,
                     data: "expected expression or ';', got <end-of-file>".to_string(),
                 })
             }
@@ -383,7 +383,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .transpose()?;
         let iter_expr = self.expr_opt(Token::RightParen)?;
         let body = self.statement()?.map(Box::new);
-        self.leave_scope(self.last_location.unwrap());
+        self.leave_scope(self.last_location);
         Ok(Stmt {
             data: StmtType::For(decl, controlling_expr, iter_expr, body),
             location: start.location,
@@ -404,7 +404,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
 }
 
-fn not_executed_warning(description: &str, from: &str, to: &str, location: &Location) {
+fn not_executed_warning(description: &str, from: &str, to: &str, location: Location) {
     warn(&format!("{} will be rewritten internally. help: to silence this warning, rewrite it yourself: `{}` => `{}`", description, from, to), location);
 }
 

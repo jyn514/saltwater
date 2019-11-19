@@ -30,3 +30,14 @@ fn empty_decl_does_not_stop_parsing() {
         .status
         .success());
 }
+
+#[test]
+fn empty_program_is_err() {
+    utils::assert_compile_error("");
+}
+
+#[test]
+fn only_bad_tokens_are_error() {
+    utils::assert_compile_error("`");
+    utils::assert_compile_error("`int main(){}");
+}

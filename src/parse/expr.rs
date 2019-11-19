@@ -905,7 +905,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         } else {
             Err(Locatable {
-                location: *self.next_location(),
+                location: self.next_location(),
                 data: "expected '(' or literal, got <end-of-file>".to_string(),
             })
         }

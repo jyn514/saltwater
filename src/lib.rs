@@ -5,6 +5,7 @@
 #![warn(deprecated_in_future)]
 #![deny(unsafe_code)]
 
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
@@ -39,7 +40,7 @@ mod parse;
 
 #[derive(Debug)]
 pub enum CompileError {
-    Semantic(Locatable<String>),
+    Semantic(VecDeque<Locatable<String>>),
     Platform(Error),
     IO(io::Error),
 }
@@ -52,7 +53,13 @@ impl From<io::Error> for CompileError {
 
 impl From<Locatable<String>> for CompileError {
     fn from(err: Locatable<String>) -> CompileError {
-        CompileError::Semantic(err)
+        CompileError::Semantic(vec_deque![err])
+    }
+}
+
+impl From<VecDeque<Locatable<String>>> for CompileError {
+    fn from(errs: VecDeque<Locatable<String>>) -> Self {
+        CompileError::Semantic(errs)
     }
 }
 
@@ -64,13 +71,11 @@ pub fn compile(
     debug_ir: bool,
 ) -> Result<Product, CompileError> {
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
-    let parser = Parser::new(lexer, debug_ast);
-    let hir = parser
-        .collect::<SemanticResult<Vec<Locatable<Declaration>>>>()
-        .map_err(CompileError::Semantic)?;
+    let parser = Parser::new(lexer, debug_ast)?;
+    let hir = parser.collect::<SemanticResult<Vec<Locatable<Declaration>>>>()?;
 
     ir::compile(hir, debug_ir)
-        .map_err(CompileError::Semantic)
+        .map_err(CompileError::from)
         .map(Module::<FaerieBackend>::finish)
 }
 

@@ -586,6 +586,7 @@ mod tests {
                         crate::Lexer::new("<integration-test>", ty.chars(), false),
                         false
                     )
+                    .unwrap()
                     .type_name()
                     .unwrap()
                     .data

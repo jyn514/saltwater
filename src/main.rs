@@ -160,8 +160,10 @@ fn parse_args() -> Result<Opt, pico_args::Error> {
 fn err_exit(err: CompileError) -> ! {
     use CompileError::*;
     match err {
-        Semantic(err) => {
-            utils::error(&err.data, &err.location);
+        Semantic(errs) => {
+            for err in errs {
+                utils::error(&err.data, err.location);
+            }
             let (num_warnings, num_errors) = (utils::get_warnings(), utils::get_errors());
             print_issues(num_warnings, num_errors);
             process::exit(2);

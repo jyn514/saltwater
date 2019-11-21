@@ -29,7 +29,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// where specifier_qualifier_list: (type_specifier | type_qualifier)+
     ///
     /// Used for casts and `sizeof` builtin.
-    pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, Locatable<String>> {
+    pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, CompileError> {
         let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
         if sc != None {
             return Err(Locatable {
@@ -66,7 +66,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
-    pub fn declaration(&mut self) -> Result<VecDeque<Locatable<Declaration>>, Locatable<String>> {
+    pub fn declaration(&mut self) -> Result<VecDeque<Locatable<Declaration>>, CompileError> {
         let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers()?;
         if self.match_next(&Token::Semicolon).is_some() {
             if !seen_compound_type {
@@ -252,7 +252,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(())
         }
     }
-    fn declare(&mut self, decl: &mut Symbol, location: &Location) -> Result<(), Locatable<String>> {
+    fn declare(&mut self, decl: &mut Symbol, location: &Location) -> Result<(), CompileError> {
         if decl.id == InternedStr::get_or_intern("main") {
             if let Type::Function(ftype) = &decl.ctype {
                 if !Self::is_main_func_signature(ftype) {
@@ -302,9 +302,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         sc: StorageClass,
         qualifiers: Qualifiers,
         ctype: Type,
-    ) -> Result<Locatable<Declaration>, Locatable<String>> {
+    ) -> Result<Locatable<Declaration>, CompileError> {
         // parse declarator
-        // declarator: Result<Symbol, Locatable<String>>
+        // declarator: Result<Symbol, CompileError>
         let decl = self
             .declarator(false)?
             .expect("declarator should never return None when called with allow_abstract: false");
@@ -352,7 +352,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn declaration_specifiers(
         &mut self,
-    ) -> Result<(Option<StorageClass>, Qualifiers, Type, bool), Locatable<String>> {
+    ) -> Result<(Option<StorageClass>, Qualifiers, Type, bool), CompileError> {
         // TODO: initialization is a mess
         let mut keywords = HashSet::new();
         let mut storage_class = None;
@@ -517,7 +517,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         kind: Keyword,
         location: Location,
-    ) -> Result<Type, Locatable<String>> {
+    ) -> Result<Type, CompileError> {
         let ident = match self.match_next(&Token::Id(Default::default())) {
             Some(Locatable {
                 data: Token::Id(data),
@@ -846,7 +846,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      ;
      *
      */
-    fn parameter_type_list(&mut self) -> Result<DeclaratorType, Locatable<String>> {
+    fn parameter_type_list(&mut self) -> Result<DeclaratorType, CompileError> {
         self.expect(Token::LeftParen)
             .expect("parameter_type_list should only be called with '(' as the next token");
         let mut params = vec![];
@@ -982,7 +982,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn postfix_type(
         &mut self,
         mut prefix: Option<Declarator>,
-    ) -> Result<Option<Declarator>, Locatable<String>> {
+    ) -> Result<Option<Declarator>, CompileError> {
         // postfix
         while let Some(data) = self.peek_token() {
             prefix = match data {
@@ -1060,7 +1060,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn direct_declarator(
         &mut self,
         allow_abstract: bool,
-    ) -> Result<Option<Declarator>, Locatable<String>> {
+    ) -> Result<Option<Declarator>, CompileError> {
         // we'll pass this to postfix_type in just a second
         // if None, we didn't find an ID
         // should only happen if allow_abstract is true
@@ -1142,10 +1142,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      ;
      *
      */
-    fn declarator(
-        &mut self,
-        allow_abstract: bool,
-    ) -> Result<Option<Declarator>, Locatable<String>> {
+    fn declarator(&mut self, allow_abstract: bool) -> Result<Option<Declarator>, CompileError> {
         if let Some(data) = self.peek_token() {
             match data {
                 Token::Star => {
@@ -1212,7 +1209,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// Rewritten as
     /// initializer: assignment_expr
     ///     | '{' initializer (',' initializer)* '}'
-    fn initializer(&mut self, ctype: &Type) -> Result<Initializer, Locatable<String>> {
+    fn initializer(&mut self, ctype: &Type) -> Result<Initializer, CompileError> {
         if let Type::Union(struct_type) = ctype {
             let members = match struct_type {
                 StructType::Anonymous(members) => members,
@@ -1276,7 +1273,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         id: InternedStr,
         ftype: FunctionType,
         location: Location,
-    ) -> Result<Vec<Stmt>, Locatable<String>> {
+    ) -> Result<Vec<Stmt>, CompileError> {
         // if it's a function, set up state so we know the return type
         // TODO: rework all of this so semantic analysis is done _after_ parsing
         // TODO: that will remove a lot of clones and also make the logic much simpler
@@ -1392,7 +1389,7 @@ fn declaration_specifier(
     qualifiers: &mut Qualifiers,
     ctype: &mut Option<Type>,
     signed: &mut Option<bool>,
-    errors: &mut Vec<Locatable<String>>,
+    errors: &mut Vec<CompileError>,
     location: Location,
 ) {
     // we use `if` instead of `qualifiers.x = keyword == y` because
@@ -1559,7 +1556,7 @@ impl Declarator {
         mut current: Type,
         is_typedef: bool,
         location: &Location, // only used for abstract parameters
-    ) -> Result<(Option<Locatable<InternedStr>>, Type), Locatable<String>> {
+    ) -> Result<(Option<Locatable<InternedStr>>, Type), CompileError> {
         use DeclaratorType::*;
         let (mut declarator, mut identifier) = (Some(self), None);
         while let Some(decl) = declarator {

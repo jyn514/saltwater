@@ -10,15 +10,15 @@ pub mod lex;
 pub mod types;
 pub mod prelude {
     pub use super::{
-        error::CompileError, error::SemanticResult, types::StructType, Declaration, Expr, ExprType,
-        Locatable, Location, Stmt, StmtType, Symbol, Token, Type,
+        error::CompileError, error::SemanticResult, lex::Locatable, lex::Location, lex::Token,
+        types::StructType, types::Type, Declaration, Expr, ExprType, Stmt, StmtType, Symbol,
     };
     pub use crate::intern::InternedStr;
 }
 use crate::intern::InternedStr;
 use error::SemanticResult;
-pub use lex::{Keyword, Locatable, Location, Token};
-pub use types::Type;
+use lex::{Keyword, Locatable, Location, Token};
+use types::Type;
 
 pub type Stmt = Locatable<StmtType>;
 

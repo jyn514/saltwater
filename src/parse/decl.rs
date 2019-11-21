@@ -6,9 +6,10 @@ use std::mem;
 use super::{FunctionData, Lexeme, Parser, TagEntry, TagScope};
 use crate::arch;
 use crate::data::{
+    lex::Keyword,
     prelude::*,
     types::{ArrayType, FunctionType},
-    Initializer, Keyword, Qualifiers, StorageClass,
+    Initializer, Qualifiers, StorageClass,
 };
 use crate::utils::warn;
 
@@ -1697,13 +1698,14 @@ struct Declarator {
 #[cfg(test)]
 mod tests {
     use crate::data::{
+        prelude::*,
         types::{ArrayType, FunctionType},
-        Declaration, Initializer, Locatable, Qualifiers, Symbol,
-        Type::{self, *},
+        Declaration, Initializer, Qualifiers, Symbol,
     };
     use crate::intern::InternedStr;
     use crate::parse::tests::{match_all, match_data, parse, parse_all, ParseType};
     use std::boxed::Box;
+    use Type::*;
 
     fn match_type(lexed: Option<ParseType>, given_type: Type) -> bool {
         match_data(lexed, |data| data.symbol.ctype == given_type)

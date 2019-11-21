@@ -369,7 +369,7 @@ mod tests {
     }
     #[test]
     fn peek() {
-        use crate::data::{Keyword, Token};
+        use crate::data::lex::{Keyword, Token};
         use crate::intern::InternedStr;
         let mut instance = parser("int a[(int)1];");
         assert_eq!(

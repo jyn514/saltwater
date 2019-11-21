@@ -251,8 +251,8 @@ where
 mod tests {
     use super::*;
     use crate::data::{
-        types::{ArrayType, StructType},
-        Qualifiers, StorageClass, Symbol, Type,
+        types::{ArrayType, StructType, Type},
+        Qualifiers, StorageClass, Symbol,
     };
 
     fn type_for_size(size: u16) -> Type {

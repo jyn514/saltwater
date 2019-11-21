@@ -1,7 +1,7 @@
 use super::{Lexeme, Parser, TagEntry};
 use crate::arch::SIZE_T;
 use crate::data::prelude::*;
-use crate::data::{types::ArrayType, Keyword, StorageClass::Typedef};
+use crate::data::{lex::Keyword, types::ArrayType, StorageClass::Typedef};
 
 type ExprResult = Result<Expr, CompileError>;
 
@@ -1558,7 +1558,7 @@ impl Type {
     ///
     /// Examples:
     /// ```
-    /// use rcc::data::Type::*;
+    /// use rcc::data::types::Type::*;
     /// assert!(Long(true).rank() > Int(true).rank());
     /// assert!(Int(false).rank() > Short(false).rank());
     /// assert!(Short(true).rank() > Char(true).rank());
@@ -1585,7 +1585,7 @@ impl Type {
 
 #[cfg(test)]
 mod tests {
-    use crate::data::*;
+    use crate::data::{prelude::*, types, Scope, StorageClass};
     use crate::intern::InternedStr;
     use crate::parse::expr::ExprResult;
     use crate::parse::tests::*;

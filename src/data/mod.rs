@@ -5,14 +5,15 @@ use std::hash::Hash;
 
 use crate::arch::SIZE_T;
 
-pub type SemanticResult<T> = Result<T, Locatable<String>>;
+pub type CompileError = Locatable<String>;
+pub type SemanticResult<T> = Result<T, CompileError>;
 
 pub mod lex;
 pub mod types;
 pub mod prelude {
     pub use super::{
-        types::StructType, Declaration, Expr, ExprType, Locatable, Location, SemanticResult, Stmt,
-        StmtType, Symbol, Token, Type,
+        types::StructType, CompileError, Declaration, Expr, ExprType, Locatable, Location,
+        SemanticResult, Stmt, StmtType, Symbol, Token, Type,
     };
     pub use crate::intern::InternedStr;
 }

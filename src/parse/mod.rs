@@ -10,7 +10,7 @@ use std::mem;
 use crate::data::{prelude::*, Scope};
 use crate::utils::warn;
 
-type Lexeme = Result<Locatable<Token>, Locatable<String>>;
+type Lexeme = Result<Locatable<Token>, CompileError>;
 type TagScope = Scope<InternedStr, TagEntry>;
 
 #[derive(Clone, Debug)]
@@ -39,7 +39,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     tokens: I,
     /// VecDeque supports pop_front with reasonable efficiency
     /// this is useful because errors are FIFO
-    pending: VecDeque<Result<Locatable<Declaration>, Locatable<String>>>,
+    pending: VecDeque<Result<Locatable<Declaration>, CompileError>>,
     /// in case we get to the end of the file and want to show an error
     last_location: Location,
     /// the last token we saw from the Lexer. None if we haven't looked ahead.
@@ -77,7 +77,7 @@ where
     ///     If there is at least one token that is not an error, returns a parser.
     ///     Otherwise, returns a list of the errors.
     /// Otherwise, returns None.
-    pub fn new(mut iter: I, debug: bool) -> Result<Self, VecDeque<Locatable<String>>> {
+    pub fn new(mut iter: I, debug: bool) -> Result<Self, VecDeque<CompileError>> {
         let mut pending = VecDeque::new();
         let first = loop {
             match iter.next() {
@@ -111,7 +111,7 @@ where
 }
 
 impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
-    type Item = Result<Locatable<Declaration>, Locatable<String>>;
+    type Item = Result<Locatable<Declaration>, CompileError>;
     /// translation_unit
     /// : external_declaration
     /// | translation_unit external_declaration
@@ -159,7 +159,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* utility functions */
-    #[inline(always)]
+    #[inline]
     fn enter_scope(&mut self) {
         self.scope.enter_scope();
         self.tag_scope.enter_scope();
@@ -261,7 +261,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             };
         }
     }
-    fn expect(&mut self, next: Token) -> Result<Locatable<Token>, Locatable<String>> {
+    fn expect(&mut self, next: Token) -> Result<Locatable<Token>, CompileError> {
         let token = match self.peek_token() {
             Some(t) => t,
             None => {
@@ -291,7 +291,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let tmp = mem::replace(&mut self.current, item);
         mem::replace(&mut self.next, tmp);
     }
-    fn lex_error(&mut self, err: Locatable<String>) {
+    fn lex_error(&mut self, err: CompileError) {
         self.pending.push_back(Err(err));
     }
 }
@@ -319,10 +319,10 @@ impl Token {
 #[cfg(test)]
 mod tests {
     use super::Parser;
-    use crate::data::{Declaration, Locatable};
+    use crate::data::prelude::*;
     use crate::lex::Lexer;
 
-    pub(crate) type ParseType = Result<Locatable<Declaration>, Locatable<String>>;
+    pub(crate) type ParseType = Result<Locatable<Declaration>, CompileError>;
     pub(crate) fn parse(input: &str) -> Option<ParseType> {
         let mut all = parse_all(input);
         match all.len() {

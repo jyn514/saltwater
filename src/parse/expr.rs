@@ -3,7 +3,7 @@ use crate::arch::SIZE_T;
 use crate::data::prelude::*;
 use crate::data::{types::ArrayType, Keyword, StorageClass::Typedef};
 
-type ExprResult = Result<Expr, Locatable<String>>;
+type ExprResult = Result<Expr, CompileError>;
 
 macro_rules! struct_member_helper {
     ($members: expr, $expr: expr, $id: expr, $location: expr) => {
@@ -26,7 +26,7 @@ macro_rules! struct_member_helper {
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// expr_opt: expr ';' | ';'
-    pub fn expr_opt(&mut self, token: Token) -> Result<Option<Expr>, Locatable<String>> {
+    pub fn expr_opt(&mut self, token: Token) -> Result<Option<Expr>, CompileError> {
         if self.match_next(&token).is_some() {
             Ok(None)
         } else {
@@ -832,7 +832,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// : /* empty */
     /// | assignment_expr (',' assignment_expr)*
     /// ;
-    fn argument_expr_list_opt(&mut self) -> Result<Vec<Expr>, Locatable<String>> {
+    fn argument_expr_list_opt(&mut self) -> Result<Vec<Expr>, CompileError> {
         if self.peek_token() == Some(&Token::RightParen) {
             return Ok(vec![]);
         }
@@ -1145,7 +1145,7 @@ impl Expr {
     // Perform an integer conversion, including all relevant casts.
     //
     // See `Type::integer_promote` for conversion rules.
-    fn integer_promote(self) -> Result<Expr, Locatable<String>> {
+    fn integer_promote(self) -> Result<Expr, CompileError> {
         let expr = self.rval();
         let ctype = expr.ctype.clone().integer_promote();
         expr.cast(&ctype)
@@ -1153,7 +1153,7 @@ impl Expr {
     // Perform a binary conversion, including all relevant casts.
     //
     // See `Type::binary_promote` for conversion rules.
-    fn binary_promote(left: Expr, right: Expr) -> Result<(Expr, Expr), Locatable<String>> {
+    fn binary_promote(left: Expr, right: Expr) -> Result<(Expr, Expr), CompileError> {
         let (left, right) = (left.rval(), right.rval());
         let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
         Ok((left.cast(&ctype)?, right.cast(&ctype)?))
@@ -1163,7 +1163,7 @@ impl Expr {
     // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
     //
     // if (expr)
-    pub fn truthy(mut self) -> Result<Expr, Locatable<String>> {
+    pub fn truthy(mut self) -> Result<Expr, CompileError> {
         self = self.rval();
         if self.ctype == Type::Bool {
             return Ok(self);
@@ -1187,7 +1187,7 @@ impl Expr {
             })
         }
     }
-    pub fn logical_not(self, location: Location) -> Result<Expr, Locatable<String>> {
+    pub fn logical_not(self, location: Location) -> Result<Expr, CompileError> {
         Ok(Expr {
             location,
             ctype: Type::Bool,

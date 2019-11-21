@@ -24,7 +24,7 @@ use failure::Error;
 
 pub type Product = <FaerieBackend as Backend>::Product;
 
-pub use data::{Declaration, Locatable, SemanticResult};
+pub use data::prelude::*;
 pub use lex::Lexer;
 pub use parse::Parser;
 

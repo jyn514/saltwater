@@ -202,7 +202,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         first_id: Locatable<InternedStr>,
         first_ctype: Type,
         first_qualifiers: Qualifiers,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         self.declare_typedef(first_id, first_ctype.clone(), first_qualifiers)?;
         if self.match_next(&Token::Semicolon).is_some() {
             return Ok(());
@@ -227,7 +227,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         id: Locatable<InternedStr>,
         ctype: Type,
         qualifiers: Qualifiers,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         let typedef = Symbol {
             id: id.data,
             ctype: ctype.clone(),
@@ -608,7 +608,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         ident: Option<InternedStr>,
         location: Location,
-    ) -> SemanticResult<Type> {
+    ) -> CompileResult<Type> {
         let mut current = 0;
         let mut members = vec![];
         loop {
@@ -696,7 +696,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ident: Option<InternedStr>,
         c_struct: bool,
         location: &Location,
-    ) -> SemanticResult<Type> {
+    ) -> CompileResult<Type> {
         let mut members = vec![];
         loop {
             if let Some(Token::RightBrace) = self.peek_token() {
@@ -777,7 +777,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         | declarator ':' constant_expr
         ;
     */
-    fn struct_declarator_list(&mut self, members: &mut Vec<Symbol>) -> SemanticResult<()> {
+    fn struct_declarator_list(&mut self, members: &mut Vec<Symbol>) -> CompileResult<()> {
         let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
         if let Some(token) = self.match_next(&Token::Semicolon) {
             crate::utils::warn("declaration does not declare anything", token.location);

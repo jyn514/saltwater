@@ -10,13 +10,13 @@ pub mod lex;
 pub mod types;
 pub mod prelude {
     pub use super::{
-        error::CompileError, error::SemanticResult, lex::Locatable, lex::Location, lex::Token,
+        error::CompileError, error::CompileResult, lex::Locatable, lex::Location, lex::Token,
         types::StructType, types::Type, Declaration, Expr, ExprType, Stmt, StmtType, Symbol,
     };
     pub use crate::intern::InternedStr;
 }
 use crate::intern::InternedStr;
-use error::SemanticResult;
+use error::CompileResult;
 use lex::{Keyword, Locatable, Location, Token};
 use types::Type;
 
@@ -196,7 +196,7 @@ pub enum LengthError {
 }
 
 impl Expr {
-    pub fn const_int(self) -> SemanticResult<SIZE_T> {
+    pub fn const_int(self) -> CompileResult<SIZE_T> {
         use std::convert::TryInto;
         if !self.ctype.is_integral() {
             return Err(Locatable {

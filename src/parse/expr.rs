@@ -955,7 +955,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ctype: Type,
     ) -> ExprResult
     where
-        E: Fn(Box<Expr>, Box<Expr>) -> SemanticResult<ExprType>,
+        E: Fn(Box<Expr>, Box<Expr>) -> CompileResult<ExprType>,
         G: Fn(&mut Self) -> ExprResult,
     {
         self.left_associative_binary_op(next_grammar_func, &[token], move |left, right, token| {
@@ -1137,7 +1137,7 @@ impl Expr {
             _ => self,
         }
     }
-    fn default_promote(self) -> SemanticResult<Expr> {
+    fn default_promote(self) -> CompileResult<Expr> {
         let expr = self.rval();
         let ctype = expr.ctype.clone().default_promote();
         expr.cast(&ctype)

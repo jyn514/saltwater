@@ -10,7 +10,7 @@ impl Compiler {
         &mut self,
         stmts: Vec<Stmt>,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         for stmt in stmts {
             self.compile_stmt(stmt, builder)?;
         }
@@ -20,7 +20,7 @@ impl Compiler {
         &mut self,
         stmt: Stmt,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         if builder.is_filled() && !stmt.data.is_jump_target() {
             return Err(Locatable {
                 data: "unreachable statement".into(),
@@ -96,7 +96,7 @@ impl Compiler {
         body: Stmt,
         otherwise: Option<Box<Stmt>>,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         // If condtion is zero:
         //      If else_block exists, jump to else_block + compile_all
         //      Otherwise, jump to end_block
@@ -162,7 +162,7 @@ impl Compiler {
         maybe_condition: Option<Expr>,
         maybe_body: Option<Stmt>,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         let (loop_body, end_body, old_saw_loop) = self.enter_loop(builder);
 
         // for loops can loop forever: `for (;;) {}`
@@ -185,7 +185,7 @@ impl Compiler {
         body: Stmt,
         condition: Expr,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         let (loop_body, end_body, old_saw_loop) = self.enter_loop(builder);
 
         self.compile_stmt(body, builder)?;
@@ -205,7 +205,7 @@ impl Compiler {
         body: Option<Box<Stmt>>,
         location: Location,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         if let Some(init) = init {
             self.compile_stmt(*init, builder)?;
         }
@@ -237,7 +237,7 @@ impl Compiler {
         condition: Expr,
         body: Stmt,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         let cond_val = self.compile_expr(condition, builder)?;
         // works around https://github.com/CraneStation/cranelift/issues/1057
         // instead of switching to back to the current block to emit the Switch,
@@ -274,7 +274,7 @@ impl Compiler {
         stmt: Option<Box<Stmt>>,
         location: Location,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         let (switch, _, _) = match self.switches.last_mut() {
             Some(x) => x,
             None => {
@@ -304,7 +304,7 @@ impl Compiler {
         inner: Option<Box<Stmt>>,
         location: Location,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         let (_, default, _) = match self.switches.last_mut() {
             Some(x) => x,
             None => {
@@ -341,7 +341,7 @@ impl Compiler {
         is_break: bool,
         location: Location,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         if self.last_saw_loop {
             // break from loop
             if let Some((loop_start, loop_end)) = self.loops.last() {

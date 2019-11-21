@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::str::Chars;
 
-use super::data::{Keyword, Locatable, Location, SemanticResult, Token};
+use super::data::{lex::*, prelude::*};
 use super::intern::InternedStr;
 use super::utils::warn;
 

@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ansi_term::{ANSIString, Colour};
 
-use crate::data::Location;
+use crate::data::lex::Location;
 use crate::intern::STRINGS;
 
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);

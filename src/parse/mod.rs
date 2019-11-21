@@ -23,10 +23,17 @@ enum TagEntry {
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
-    /// the variables that have been declared
+    /// C actually has 4 different scopes:
+    /// - label names
+    /// - tags
+    /// - members
+    /// - ordinary identifiers
+    ///
+    /// This holds the scope for ordinary identifiers: variables and typedefs
     scope: Scope<InternedStr, Symbol>,
     /// the compound types that have been declared (struct/union/enum)
     tag_scope: TagScope,
+
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,

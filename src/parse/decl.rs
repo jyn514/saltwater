@@ -709,7 +709,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             } else if let Some(token) = self.match_next(&Token::Semicolon) {
                 crate::utils::warn(
                     "extraneous semicolon in struct declaration is not allowed by ISO C",
-                    &token.location,
+                    token.location,
                 );
                 continue;
             }
@@ -1550,9 +1550,7 @@ impl Declarator {
         location: &Location, // only used for abstract parameters
     ) -> Result<(Option<Locatable<InternedStr>>, Type), Locatable<String>> {
         use DeclaratorType::*;
-        // TODO(July 2019): make this one call when rust 1.36 comes out
-        let mut declarator = Some(self);
-        let mut identifier = None;
+        let (mut declarator, mut identifier) = (Some(self), None);
         while let Some(decl) = declarator {
             current = match decl.current {
                 Id(id, location) => {

@@ -245,7 +245,7 @@ impl<'a> Lexer<'a> {
     ///
     /// Before: chars{"hello this is a lot of text */ int main(){}"}
     /// After:  chars{" int main(){}"}
-    fn consume_multi_comment(&mut self) -> SemanticResult<()> {
+    fn consume_multi_comment(&mut self) -> CompileResult<()> {
         while let Some(c) = self.next_char() {
             if c == '*' && self.peek() == Some('/') {
                 self.next_char();

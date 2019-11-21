@@ -7,7 +7,7 @@ use super::{Compiler, Id};
 use crate::data::prelude::*;
 use crate::data::{lex::Token, Expr, ExprType};
 
-type IrResult = SemanticResult<Value>;
+type IrResult = CompileResult<Value>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Value {
@@ -261,7 +261,7 @@ impl Compiler {
         string: InternedStr,
         builder: &mut FunctionBuilder,
         location: Location,
-    ) -> SemanticResult<IrValue> {
+    ) -> CompileResult<IrValue> {
         use cranelift_module::Linkage;
         let name = format!("str.{}", string.to_usize());
         self.strings.insert(string);
@@ -624,7 +624,7 @@ impl Compiler {
         let mut compiled_args: Vec<IrValue> = args
             .into_iter()
             .map(|arg| self.compile_expr(arg, builder).map(|val| val.ir_val))
-            .collect::<SemanticResult<_>>()?;
+            .collect::<CompileResult<_>>()?;
         if ftype.varargs {
             debug!("adding number of float args");
             let float_ir = builder.ins().iconst(types::I8, float_variadic);

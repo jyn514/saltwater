@@ -49,7 +49,7 @@ struct Compiler {
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
-pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> SemanticResult<Module> {
+pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> CompileResult<Module> {
     let name = program.first().map_or_else(
         || "<empty>".to_string(),
         |decl| decl.location.file.resolve_and_clone(),
@@ -138,7 +138,7 @@ impl Compiler {
         signature: &Signature,
         sc: StorageClass,
         is_definition: bool,
-    ) -> SemanticResult<FuncId> {
+    ) -> CompileResult<FuncId> {
         use crate::get_str;
         if !is_definition {
             // case 2 and 4
@@ -165,7 +165,7 @@ impl Compiler {
         decl: Declaration,
         location: Location,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         if let Type::Function(ftype) = decl.symbol.ctype {
             self.declare_func(
                 decl.symbol.id,
@@ -209,7 +209,7 @@ impl Compiler {
         init: Initializer,
         stack_slot: StackSlot,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         match init {
             Initializer::Scalar(expr) => {
                 let val = self.compile_expr(*expr, builder)?;
@@ -231,7 +231,7 @@ impl Compiler {
         func_start: Ebb,
         location: &Location,
         builder: &mut FunctionBuilder,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         // Cranelift requires that all EBB params are declared up front
         let ir_vals: Vec<_> = params
             .iter()
@@ -278,7 +278,7 @@ impl Compiler {
         sc: StorageClass,
         stmts: Vec<Stmt>,
         location: Location,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         let signature = func_type.signature(self.module.isa());
         let func_id = self.declare_func(id.clone(), &signature, sc, true)?;
         // external name is meant to be a lookup in a symbol table,

@@ -21,7 +21,7 @@ impl Compiler {
         mut symbol: Symbol,
         init: Option<Initializer>,
         location: Location,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         use crate::get_str;
         let err_closure = |err| Locatable {
             data: err,
@@ -105,7 +105,7 @@ impl Compiler {
         buf: &mut [u8],
         offset: u32,
         expr: Expr,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         let expr = expr.const_fold()?;
         // static address-of
         match expr.expr {
@@ -166,7 +166,7 @@ impl Compiler {
         initializer: Initializer,
         ctype: &Type,
         location: &Location,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         match initializer {
             Initializer::InitializerList(mut initializers) => match ctype {
                 Type::Array(ty, ArrayType::Unbounded) => {
@@ -213,7 +213,7 @@ impl Compiler {
         initializers: Vec<Initializer>,
         inner_type: &Type,
         location: &Location,
-    ) -> SemanticResult<()> {
+    ) -> CompileResult<()> {
         if let Type::Array(_, ArrayType::Unbounded) = inner_type {
             err!(
                 "nested array must declare the size of each inner array".into(),
@@ -276,7 +276,7 @@ macro_rules! bytes {
 }
 
 impl Token {
-    fn into_bytes(self, ctype: &Type, location: &Location) -> SemanticResult<Box<[u8]>> {
+    fn into_bytes(self, ctype: &Type, location: &Location) -> CompileResult<Box<[u8]>> {
         let ir_type = ctype.as_ir_type();
         let big_endian = TARGET
             .endianness()

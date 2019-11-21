@@ -72,7 +72,7 @@ pub fn compile(
 ) -> Result<Product, CompileError> {
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
     let parser = Parser::new(lexer, debug_ast)?;
-    let hir = parser.collect::<SemanticResult<Vec<Locatable<Declaration>>>>()?;
+    let hir = parser.collect::<CompileResult<Vec<Locatable<Declaration>>>>()?;
 
     ir::compile(hir, debug_ir)
         .map_err(CompileError::from)

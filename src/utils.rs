@@ -7,9 +7,8 @@ use crate::data::Location;
 use crate::intern::STRINGS;
 
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
-static ERRORS: AtomicUsize = AtomicUsize::new(0);
 
-fn pretty_print(prefix: ANSIString, msg: &str, location: Location) {
+pub fn pretty_print(prefix: ANSIString, msg: &str, location: Location) {
     println!(
         "{}:{}:{}: {}: {}",
         STRINGS.read().unwrap().resolve(location.file.0).unwrap(),
@@ -24,10 +23,6 @@ pub fn warn(msg: &str, location: Location) {
     WARNINGS.fetch_add(1, Ordering::Relaxed);
     pretty_print(Colour::Yellow.bold().paint("warning"), msg, location);
 }
-pub fn error(msg: &str, location: Location) {
-    ERRORS.fetch_add(1, Ordering::Relaxed);
-    pretty_print(Colour::Red.bold().paint("error"), msg, location);
-}
 pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
     eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
     process::exit(code);
@@ -35,10 +30,6 @@ pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
 
 pub fn get_warnings() -> usize {
     WARNINGS.load(Ordering::SeqCst)
-}
-
-pub fn get_errors() -> usize {
-    ERRORS.load(Ordering::SeqCst)
 }
 
 /// ensure that a condition is true at compile time

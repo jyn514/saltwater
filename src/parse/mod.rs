@@ -8,7 +8,7 @@ use std::iter::Iterator;
 use std::mem;
 
 use crate::data::{prelude::*, Scope};
-use crate::utils::{error, warn};
+use crate::utils::warn;
 
 type Lexeme = Result<Locatable<Token>, Locatable<String>>;
 type TagScope = Scope<InternedStr, TagEntry>;
@@ -199,7 +199,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
                 Some(Err(err)) => {
                     self.last_location = err.location;
-                    error(&err.data, err.location);
+                    self.lex_error(err);
                 }
                 None => break None,
             }
@@ -290,6 +290,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn unput(&mut self, item: Option<Locatable<Token>>) {
         let tmp = mem::replace(&mut self.current, item);
         mem::replace(&mut self.next, tmp);
+    }
+    fn lex_error(&mut self, err: Locatable<String>) {
+        self.pending.push_back(Err(err));
     }
 }
 

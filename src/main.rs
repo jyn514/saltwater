@@ -2,16 +2,21 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
+extern crate ansi_term;
 extern crate env_logger;
 extern crate log;
 extern crate pico_args;
 extern crate rcc;
+
+use ansi_term::Colour;
 use pico_args::Arguments;
-use rcc::{assemble, compile, link, utils, CompileError};
+use rcc::{assemble, compile, data::Location, link, utils, CompileError};
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
 
+static ERRORS: AtomicUsize = AtomicUsize::new(0);
 const HELP: &str = "rcc 0.1.0
 Joshua Nelson <jyn514@gmail.com>
 A C compiler written in Rust, with a focus on good error messages.
@@ -162,9 +167,9 @@ fn err_exit(err: CompileError) -> ! {
     match err {
         Semantic(errs) => {
             for err in errs {
-                utils::error(&err.data, err.location);
+                error(&err.data, err.location);
             }
-            let (num_warnings, num_errors) = (utils::get_warnings(), utils::get_errors());
+            let (num_warnings, num_errors) = (utils::get_warnings(), get_errors());
             print_issues(num_warnings, num_errors);
             process::exit(2);
         }
@@ -185,4 +190,14 @@ fn print_issues(warnings: usize, errors: usize) {
         (_, _) => format!("{} {} and {} {}", warnings, warn_msg, errors, err_msg),
     };
     eprintln!("{} generated", msg);
+}
+
+fn error(msg: &str, location: Location) {
+    ERRORS.fetch_add(1, Ordering::Relaxed);
+    utils::pretty_print(Colour::Red.bold().paint("error"), msg, location);
+}
+
+#[inline]
+fn get_errors() -> usize {
+    ERRORS.load(Ordering::SeqCst)
 }

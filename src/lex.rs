@@ -252,10 +252,10 @@ impl<'a> Lexer<'a> {
                 return Ok(());
             }
         }
-        Err(Locatable {
+        Err(CompileError::Lex(Locatable {
             location: self.location,
             data: "unterminated /* comment".to_string(),
-        })
+        }))
     }
     /// Parse a number literal, given the starting character and whether floats are allowed.
     ///
@@ -602,7 +602,7 @@ impl<'a> Lexer<'a> {
 impl<'a> Iterator for Lexer<'a> {
     // option: whether the stream is exhausted
     // result: whether the next lexeme is an error
-    type Item = Result<Locatable<Token>, Locatable<String>>;
+    type Item = CompileResult<Locatable<Token>>;
 
     /// Return the next token in the stream.
     ///
@@ -829,16 +829,16 @@ impl<'a> Iterator for Lexer<'a> {
         if self.debug {
             println!("lexeme: {:?}", c);
         }
-        c
+        c.map(|result| result.map_err(CompileError::Lex))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Lexer, Locatable, Location, Token};
+    use super::{CompileError, CompileResult, Lexer, Locatable, Location, Token};
     use crate::intern::InternedStr;
 
-    type LexType = Result<Locatable<Token>, Locatable<String>>;
+    type LexType = CompileResult<Locatable<Token>>;
 
     fn lex(input: &str) -> Option<LexType> {
         let mut lexed = lex_all(input);
@@ -866,8 +866,8 @@ mod tests {
     {
         match lexed {
             Some(Ok(result)) => closure(Ok(&result.data)),
-            Some(Err(result)) => closure(Err(&result.data)),
-            None => false,
+            Some(Err(CompileError::Lex(result))) => closure(Err(&result.data)),
+            _ => false,
         }
     }
 

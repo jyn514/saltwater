@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use std::io::Error;
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -10,19 +9,19 @@ extern crate rcc;
 extern crate tempfile;
 
 use log::info;
-use rcc::CompileError;
+use rcc::Error;
 
 pub fn init() {
     env_logger::builder().is_test(true).init();
 }
 
-pub fn compile_and_run(program: &str, args: &[&str]) -> Result<Output, CompileError> {
+pub fn compile_and_run(program: &str, args: &[&str]) -> Result<Output, Error> {
     let output = compile(program, false)?;
     info!("running file {:?}", output);
-    run(&output, args).map_err(CompileError::IO)
+    run(&output, args).map_err(Error::IO)
 }
 
-pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, CompileError> {
+pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, Error> {
     let module = rcc::compile(
         program,
         "<integration-test>".to_string(),
@@ -43,7 +42,7 @@ pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, Compi
     Ok(output)
 }
 
-pub fn run(program: &Path, args: &[&str]) -> Result<Output, Error> {
+pub fn run(program: &Path, args: &[&str]) -> Result<Output, std::io::Error> {
     Command::new(program).args(args).output()
 }
 
@@ -67,7 +66,7 @@ pub fn assert_compiles_no_main(fragment: &str) {
 pub fn assert_compile_error(program: &str) {
     assert!(
         match compile(program, true) {
-            Err(CompileError::Semantic(_)) => true,
+            Err(Error::Source(_)) => true,
             _ => false,
         },
         "{} should fail to compile",

@@ -20,10 +20,10 @@ extern crate failure;
 
 use cranelift_faerie::FaerieBackend;
 use cranelift_module::{Backend, Module};
-use failure::Error;
 
 pub type Product = <FaerieBackend as Backend>::Product;
 
+use data::prelude::CompileError;
 pub use data::prelude::*;
 pub use lex::Lexer;
 pub use parse::Parser;
@@ -39,27 +39,27 @@ mod lex;
 mod parse;
 
 #[derive(Debug)]
-pub enum CompileError {
-    Semantic(VecDeque<Locatable<String>>),
-    Platform(Error),
+pub enum Error {
+    Source(VecDeque<CompileError>),
+    Platform(failure::Error),
     IO(io::Error),
 }
 
-impl From<io::Error> for CompileError {
-    fn from(err: io::Error) -> CompileError {
-        CompileError::IO(err)
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Error {
+        Error::IO(err)
     }
 }
 
-impl From<Locatable<String>> for CompileError {
-    fn from(err: Locatable<String>) -> CompileError {
-        CompileError::Semantic(vec_deque![err])
+impl From<CompileError> for Error {
+    fn from(err: CompileError) -> Error {
+        Error::Source(vec_deque![err])
     }
 }
 
-impl From<VecDeque<Locatable<String>>> for CompileError {
-    fn from(errs: VecDeque<Locatable<String>>) -> Self {
-        CompileError::Semantic(errs)
+impl From<VecDeque<CompileError>> for Error {
+    fn from(errs: VecDeque<CompileError>) -> Self {
+        Error::Source(errs)
     }
 }
 
@@ -69,18 +69,18 @@ pub fn compile(
     debug_lex: bool,
     debug_ast: bool,
     debug_ir: bool,
-) -> Result<Product, CompileError> {
+) -> Result<Product, Error> {
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
     let parser = Parser::new(lexer, debug_ast)?;
     let hir = parser.collect::<CompileResult<Vec<Locatable<Declaration>>>>()?;
 
     ir::compile(hir, debug_ir)
-        .map_err(CompileError::from)
+        .map_err(Error::from)
         .map(Module::<FaerieBackend>::finish)
 }
 
-pub fn assemble(product: Product, output: &Path) -> Result<(), CompileError> {
-    let bytes = product.emit().map_err(CompileError::Platform)?;
+pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {
+    let bytes = product.emit().map_err(Error::Platform)?;
     File::create(output)?
         .write_all(&bytes)
         .map_err(io::Error::into)

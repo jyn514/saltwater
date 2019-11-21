@@ -16,7 +16,7 @@ pub mod prelude {
     pub use crate::intern::InternedStr;
 }
 use crate::intern::InternedStr;
-use error::CompileResult;
+use error::{CompileError, CompileResult};
 use lex::{Keyword, Locatable, Location, Token};
 use types::Type;
 
@@ -199,10 +199,7 @@ impl Expr {
     pub fn const_int(self) -> CompileResult<SIZE_T> {
         use std::convert::TryInto;
         if !self.ctype.is_integral() {
-            return Err(Locatable {
-                data: LengthError::NonIntegral.into(),
-                location: self.location,
-            });
+            err!(LengthError::NonIntegral.into(), self.location,);
         }
         let literal = self.constexpr()?.map_err(|location| Locatable {
             data: LengthError::Dynamic.into(),
@@ -210,9 +207,11 @@ impl Expr {
         })?;
         match literal.data.0 {
             Token::UnsignedInt(u) => Ok(u),
-            Token::Int(x) => x.try_into().map_err(|_| Locatable {
-                data: LengthError::Negative.into(),
-                location: literal.location,
+            Token::Int(x) => x.try_into().map_err(|_| {
+                CompileError::Semantic(Locatable::new(
+                    LengthError::Negative.into(),
+                    literal.location,
+                ))
             }),
             x => unreachable!("should have been caught already: {:?}", x),
         }

@@ -54,7 +54,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let stmts = self.compound_statement();
                 let location = match &stmts {
                     Ok(Some(stmt)) => stmt.location,
-                    Err(err) => err.location,
+                    Err(err) => err.location(),
                     Ok(None) => self.last_location,
                 };
                 self.leave_scope(location);
@@ -70,12 +70,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         ExprType::Literal(Token::Int(i)) => i as u64,
                         ExprType::Literal(Token::UnsignedInt(u)) => u,
                         ExprType::Literal(Token::Char(c)) => u64::from(c),
-                        _ => {
-                            return Err(Locatable {
-                                data: "case expression is not an integer constant".into(),
-                                location: expr.location,
-                            })
-                        }
+                        _ => err!(
+                            "case expression is not an integer constant".into(),
+                            expr.location,
+                        ),
                     };
                     let inner = self.statement()?.map(Box::new);
                     Ok(Some(Stmt {
@@ -203,18 +201,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let ret_type = &current.return_type;
         let stmt = match (expr, *ret_type != Type::Void) {
             (None, false) => StmtType::Return(None),
-            (None, true) => {
-                return Err(Locatable {
-                    data: format!("function '{}' does not return a value", current.id),
-                    location: ret_token.location,
-                })
-            }
-            (Some(expr), false) => {
-                return Err(Locatable {
-                    data: format!("void function '{}' should not return a value", current.id),
-                    location: expr.location,
-                })
-            }
+            (None, true) => err!(
+                format!("function '{}' does not return a value", current.id),
+                ret_token.location,
+            ),
+            (Some(expr), false) => err!(
+                format!("void function '{}' should not return a value", current.id),
+                expr.location,
+            ),
             (Some(expr), true) => {
                 let expr = expr.rval();
                 if expr.ctype != *ret_type {
@@ -370,12 +364,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 })),
                 None => None,
             },
-            None => {
-                return Err(Locatable {
-                    location: self.last_location,
-                    data: "expected expression or ';', got <end-of-file>".to_string(),
-                })
-            }
+            None => err!(
+                "expected expression or ';', got <end-of-file>".to_string(),
+                self.last_location,
+            ),
         };
         let controlling_expr = self
             .expr_opt(Token::Semicolon)?

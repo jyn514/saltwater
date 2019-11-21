@@ -84,10 +84,10 @@ where
                 Some(Ok(token)) => break token,
                 Some(Err(err)) => pending.push_back(err),
                 None if pending.is_empty() => {
-                    pending.push_back(Locatable::new(
+                    pending.push_back(CompileError::Semantic(Locatable::new(
                         "cannot have empty program".to_string(),
                         Default::default(),
-                    ));
+                    )));
                     return Err(pending);
                 }
                 None => return Err(pending),
@@ -174,13 +174,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         && object.storage_class != StorageClass::Extern
                         && object.storage_class != StorageClass::Typedef
                     {
-                        self.pending.push_back(Err(Locatable {
-                            data: format!(
-                                "forward declaration of {} is never completed (used in {})",
-                                name, object.id
-                            ),
-                            location,
-                        }));
+                        self.pending
+                            .push_back(Err(CompileError::Semantic(Locatable {
+                                data: format!(
+                                    "forward declaration of {} is never completed (used in {})",
+                                    name, object.id
+                                ),
+                                location,
+                            })));
                     }
                 }
                 _ => {}
@@ -198,7 +199,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     break Some(token);
                 }
                 Some(Err(err)) => {
-                    self.last_location = err.location;
+                    self.last_location = err.location();
                     self.lex_error(err);
                 }
                 None => break None,
@@ -265,10 +266,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let token = match self.peek_token() {
             Some(t) => t,
             None => {
-                let err = Err(Locatable {
+                let err = Err(CompileError::Syntax(Locatable {
                     location: self.last_location, // TODO: we don't actually want this, we want the end of the file
                     data: format!("expected '{}', got '<end-of-file>'", next),
-                });
+                }));
                 self.panic();
                 return err;
             }
@@ -276,10 +277,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if token.same_kind(&next) {
             Ok(self.next_token().unwrap())
         } else {
-            let err = Err(Locatable {
+            let err = Err(CompileError::Syntax(Locatable {
                 data: format!("expected '{}', got '{}'", next, token),
                 location: self.next_location(),
-            });
+            }));
             self.panic();
             err
         }
@@ -328,13 +329,13 @@ mod tests {
         match all.len() {
             0 => None,
             1 => Some(all.remove(0)),
-            n => Some(Err(Locatable {
+            n => Some(Err(CompileError::Semantic(Locatable {
                 location: match all.remove(1) {
                     Ok(x) => x.location,
-                    Err(x) => x.location,
+                    Err(x) => x.location(),
                 },
                 data: format!("Expected exactly one statement, got {}", n),
-            })),
+            }))),
         }
     }
     #[inline]

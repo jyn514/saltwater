@@ -178,19 +178,19 @@ impl Compiler {
         let u64_size = match decl.symbol.ctype.sizeof() {
             Ok(size) => size,
             Err(err) => {
-                return Err(Locatable {
+                return Err(CompileError::Semantic(Locatable {
                     data: err.into(),
                     location,
-                })
+                }))
             }
         };
         let kind = StackSlotKind::ExplicitSlot;
         let size = match u32::try_from(u64_size) {
             Ok(size) => size,
-            Err(_) => return Err(Locatable {
+            Err(_) => return Err(CompileError::Semantic(Locatable {
                 data: "cannot store items on the stack that are more than 4 GB, it will overflow the stack".into(),
                 location,
-            })
+            }))
         };
         let data = StackSlotData {
             kind,

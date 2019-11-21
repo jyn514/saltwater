@@ -22,10 +22,10 @@ impl Compiler {
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         if builder.is_filled() && !stmt.data.is_jump_target() {
-            return Err(Locatable {
+            return Err(CompileError::Semantic(Locatable {
                 data: "unreachable statement".into(),
                 location: stmt.location,
-            });
+            }));
         }
         match stmt.data {
             StmtType::Compound(stmts) => self.compile_all(stmts, builder),
@@ -68,10 +68,10 @@ impl Compiler {
                 Self::jump_to_block(new_block, builder);
                 builder.switch_to_block(new_block);
                 if let Some(previous) = self.labels.insert(name, new_block) {
-                    Err(Locatable {
+                    Err(CompileError::Semantic(Locatable {
                         data: format!("redeclaration of label {}", previous),
                         location: stmt.location,
-                    })
+                    }))
                 } else {
                     Ok(())
                 }
@@ -81,10 +81,10 @@ impl Compiler {
                     Self::jump_to_block(*ebb, builder);
                     Ok(())
                 }
-                None => Err(Locatable {
+                None => Err(CompileError::Semantic(Locatable {
                     data: format!("use of undeclared label {}", name),
                     location: stmt.location,
-                }),
+                })),
             },
             StmtType::Case(constexpr, inner) => self.case(constexpr, inner, stmt.location, builder),
             StmtType::Default(inner) => self.default(inner, stmt.location, builder),
@@ -278,10 +278,10 @@ impl Compiler {
         let (switch, _, _) = match self.switches.last_mut() {
             Some(x) => x,
             None => {
-                return Err(Locatable {
+                return Err(CompileError::Semantic(Locatable {
                     data: "case outside of switch statement".into(),
                     location,
-                })
+                }))
             }
         };
         if builder.is_pristine() {
@@ -308,17 +308,17 @@ impl Compiler {
         let (_, default, _) = match self.switches.last_mut() {
             Some(x) => x,
             None => {
-                return Err(Locatable {
+                return Err(CompileError::Semantic(Locatable {
                     data: "default case outside of switch statement".into(),
                     location,
-                })
+                }))
             }
         };
         if default.is_some() {
-            Err(Locatable {
+            Err(CompileError::Semantic(Locatable {
                 data: "cannot have multiple default cases in a switch statement".into(),
                 location,
-            })
+            }))
         } else {
             let default_ebb = if builder.is_pristine() {
                 builder.cursor().current_ebb().unwrap()

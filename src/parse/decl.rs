@@ -33,10 +33,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, CompileError> {
         let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
         if sc != None {
-            return Err(Locatable {
+            return Err(CompileError::Semantic(Locatable {
                 location: self.last_location,
                 data: "type cannot have a storage class".to_string(),
-            });
+            }));
         }
         let ctype = match self.declarator(true)? {
             None => ctype,
@@ -47,10 +47,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     data: name,
                 }) = id
                 {
-                    return Err(Locatable {
+                    return Err(CompileError::Semantic(Locatable {
                         location,
                         data: format!("abstract types cannot have an identifier (got '{}')", name),
-                    });
+                    }));
                 } else {
                     ctype
                 }
@@ -120,13 +120,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 )?))
             }
             (Type::Function(_), Some(Token::Equal)) => {
-                return Err(Locatable {
+                return Err(CompileError::Semantic(Locatable {
                     data: format!(
                         "can only initialize function '{}' with function body",
                         symbol.id,
                     ),
                     location: id.location,
-                });
+                }));
             }
             (ctype, Some(Token::Equal)) => {
                 self.next_token();
@@ -257,10 +257,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if decl.id == InternedStr::get_or_intern("main") {
             if let Type::Function(ftype) = &decl.ctype {
                 if !Self::is_main_func_signature(ftype) {
-                    return Err(Locatable {
-                        data: "illegal signature for main function (expected 'int main(void)' or 'int main(int, char **)'".into(),
-                        location: *location,
-                    });
+                    err!(
+                        "illegal signature for main function (expected 'int main(void)' or 'int main(int, char **)'".into(),
+                        *location,
+                    );
                 }
             }
         }
@@ -276,22 +276,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if let Some(existing) = self.scope.get_immediate(&decl.id) {
             if existing == decl {
                 if decl.init && existing.init {
-                    Err(Locatable {
+                    Err(CompileError::Semantic(Locatable {
                         location: *location,
                         data: format!("redefinition of '{}'", decl.id),
-                    })
+                    }))
                 } else {
                     self.scope.insert(decl.id.clone(), decl.clone());
                     Ok(())
                 }
             } else {
-                Err(Locatable {
+                Err(CompileError::Semantic(Locatable {
                     data: format!(
                         "redeclaration of '{}' with different type or qualifiers (originally {}, now {})",
                         existing.id, existing, decl
                     ),
                     location: *location,
-                })
+                }))
             }
         } else {
             self.scope.insert(decl.id.clone(), decl.clone());
@@ -364,10 +364,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut seen_compound = false;
         let mut seen_typedef = false;
         if self.peek_token().is_none() {
-            return Err(Locatable {
+            return Err(CompileError::Syntax(Locatable {
                 data: "expected declaration specifier, got <end-of-file>".into(),
                 location: self.last_location,
-            });
+            }));
         }
         // unsigned const int
         while let Some(locatable) = self.next_token() {
@@ -444,10 +444,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         while errors.len() > 1 {
             let current = errors.pop().unwrap();
-            self.pending.push_front(Err(current));
+            self.pending
+                .push_front(Err(CompileError::Semantic(current)));
         }
         if !errors.is_empty() {
-            return Err(errors.pop().unwrap());
+            return Err(CompileError::Semantic(errors.pop().unwrap()));
         }
         let ctype = match ctype {
             Some(Type::Char(ref mut s))
@@ -795,13 +796,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             match decl.data.symbol.ctype {
                 Type::Struct(StructType::Named(_, 0, _, _))
                 | Type::Union(StructType::Named(_, 0, _, _)) => {
-                    return Err(Locatable {
+                    return Err(CompileError::Semantic(Locatable {
                         data: format!(
                             "cannot use type '{}' before it has been defined",
                             decl.data.symbol.ctype
                         ),
                         location: decl.location,
-                    });
+                    }));
                 }
                 _ => {}
             }
@@ -861,10 +862,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         loop {
             if let Some(locatable) = self.match_next(&Token::Ellipsis) {
                 if params.is_empty() {
-                    errs.push_back(Locatable {
+                    errs.push_back(CompileError::Semantic(Locatable {
                         location: locatable.location,
                         data: "ISO C requires a parameter before '...'".to_string(),
-                    });
+                    }));
                 }
                 // TODO: have a better error message for `int f(int, ..., int);`
                 self.expect(Token::RightParen)?;
@@ -883,7 +884,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Ok(declarator) => declarator,
             };
             if let Some(storage_class) = sc {
-                errs.push_back(Locatable {
+                errs.push_back(CompileError::Semantic(Locatable {
                     location: self.last_location,
                     data: format!(
                         "cannot specify storage class '{}' for {}",
@@ -898,7 +899,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             "<parse-error>".to_string()
                         }
                     ),
-                });
+                }));
             }
             if let Some(decl) = declarator {
                 let (id, mut ctype) = decl.parse_type(param_type, false, &self.last_location)?;
@@ -916,13 +917,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     data: Default::default(),
                 });
                 if data != Default::default() && params.iter().any(|p| p.data.id == data) {
-                    errs.push_back(Locatable {
+                    errs.push_back(CompileError::Semantic(Locatable {
                         location,
                         data: format!(
                             "duplicate parameter name '{}' in function declaration",
                             data,
                         ),
-                    });
+                    }));
                 }
                 params.push(Locatable {
                     location,
@@ -936,10 +937,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             } else {
                 if param_type == Type::Void && !params.is_empty() {
-                    errs.push_back(Locatable {
+                    errs.push_back(CompileError::Semantic(Locatable {
                         data: "void must be the first and only parameter if specified".into(),
                         location: self.next_location(),
-                    });
+                    }));
                     continue;
                 }
                 // abstract param
@@ -1100,18 +1101,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             _ if allow_abstract => None,
             Some(x) => {
-                let err = Err(Locatable {
+                let err = Err(CompileError::Syntax(Locatable {
                     data: format!("expected variable name or '(', got '{}'", x),
                     location: self.next_location(),
-                });
+                }));
                 self.panic();
                 return err;
             }
             None => {
-                return Err(Locatable {
+                return Err(CompileError::Syntax(Locatable {
                     location: self.next_location(),
                     data: "expected variable name or '(', got <end-of-of-file>".to_string(),
-                })
+                }))
             }
         };
         self.postfix_type(decl)
@@ -1281,13 +1282,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if self.current_function.is_some() {
             // TODO: allow function _declarations_ at local scope
             // e.g. int main() { int f(); return f(); }
-            return Err(Locatable {
+            return Err(CompileError::Semantic(Locatable {
                 location,
                 data: format!(
                     "functions cannot be nested. hint: try declaring {} as `static` at file scope",
                     id
                 ),
-            });
+            }));
         }
         // add parameters to scope
         self.enter_scope();
@@ -1390,7 +1391,7 @@ fn declaration_specifier(
     qualifiers: &mut Qualifiers,
     ctype: &mut Option<Type>,
     signed: &mut Option<bool>,
-    errors: &mut Vec<CompileError>,
+    errors: &mut Vec<Locatable<String>>,
     location: Location,
 ) {
     // we use `if` instead of `qualifiers.x = keyword == y` because
@@ -1576,14 +1577,14 @@ impl Declarator {
                             location: *location,
                             data: InternedStr::get_or_intern("a"),
                         });
-                        return Err(Locatable {
+                        return Err(CompileError::Semantic(Locatable {
                             data: format!(
                                 "array cannot contain function type '{}'. \
                                  help: try array of pointer to function: (*{}[])()",
                                 current, name
                             ),
                             location,
-                        });
+                        }));
                     }
                     _ => Type::Array(Box::new(current), arr_type),
                 },
@@ -1607,14 +1608,14 @@ impl Declarator {
                         } else {
                             ("array", format!("*{}()", name))
                         };
-                        return Err(Locatable {
+                        return Err(CompileError::Semantic(Locatable {
                             data: format!(
                                 "functions cannot return {} type '{}'. \
                                  help: try returning a pointer instead: {}",
                                 typename, current, help,
                             ),
                             location,
-                        });
+                        }));
                     }
                     _ => Type::Function(FunctionType {
                         return_type: Box::new(current),
@@ -1626,10 +1627,10 @@ impl Declarator {
             declarator = decl.next.map(|x| *x);
         }
         if current == Type::Void && !is_typedef {
-            Err(Locatable {
+            Err(CompileError::Semantic(Locatable {
                 data: "variables cannot have type 'void'".to_string(),
                 location: identifier.map_or_else(|| *location, |l| l.location),
-            })
+            }))
         } else {
             Ok((identifier, current))
         }

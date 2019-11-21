@@ -8,7 +8,7 @@ use crate::intern::STRINGS;
 
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 
-pub fn pretty_print(prefix: ANSIString, msg: &str, location: Location) {
+pub fn pretty_print<T: std::fmt::Display>(prefix: ANSIString, msg: T, location: Location) {
     println!(
         "{}:{}:{}: {}: {}",
         STRINGS.read().unwrap().resolve(location.file.0).unwrap(),
@@ -98,10 +98,10 @@ macro_rules! matches {
 /// returns a 'Result<Locatable<T>>'
 macro_rules! err {
     ($message: expr, $location: expr$(,)?) => {
-        return Err(Locatable {
+        return Err(CompileError::Semantic(Locatable {
             data: $message,
             location: $location,
-        });
+        }));
     };
 }
 

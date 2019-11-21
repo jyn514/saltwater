@@ -94,9 +94,11 @@ impl Compiler {
                     .map_err(|err| err_closure(err.to_string()))? as usize,
             );
         };
-        self.module.define_data(id, &ctx).map_err(|err| Locatable {
-            data: format!("error defining static variable: {}", err),
-            location,
+        self.module.define_data(id, &ctx).map_err(|err| {
+            CompileError::Semantic(Locatable {
+                data: format!("error defining static variable: {}", err),
+                location,
+            })
         })
     }
     fn init_expr(
@@ -174,7 +176,7 @@ impl Compiler {
                 }
                 Type::Array(ty, ArrayType::Fixed(size)) => {
                     if initializers.len() as u64 > *size {
-                        Err(Locatable {
+                        Err(CompileError::Semantic(Locatable {
                             data: format!(
                                 "too many elements for array (expected {}, got {})",
                                 size,
@@ -182,7 +184,7 @@ impl Compiler {
                             ),
                             // TODO: this location points to the declarator, not the initializer
                             location: *location,
-                        })
+                        }))
                     } else {
                         self.init_array(ctx, buf, offset, initializers, ty, location)
                     }

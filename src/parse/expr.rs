@@ -16,10 +16,10 @@ macro_rules! struct_member_helper {
                 expr: ExprType::Member(Box::new($expr), $id),
             })
         } else {
-            Err(Locatable {
+            Err(CompileError::Semantic(Locatable {
                 data: format!("no member named '{}' in '{}'", $id, $expr.ctype),
                 location: $location,
-            })
+            }))
         }
     };
 }
@@ -88,10 +88,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if expr.constexpr {
             Ok(expr)
         } else {
-            Err(Locatable {
-                data: "not a constant expression".to_string(),
-                location: expr.location,
-            })
+            err!("not a constant expression".to_string(), expr.location,)
         }
     }
 
@@ -123,10 +120,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let assign_op = self.next_token().unwrap();
             let mut rval = self.assignment_expr()?.rval();
             if !lval.lval {
-                Err(Locatable {
+                Err(CompileError::Semantic(Locatable {
                     data: "expression is not assignable".to_string(),
                     location: assign_op.location,
-                })
+                }))
             } else {
                 if rval.ctype != lval.ctype {
                     rval = rval.cast(&lval.ctype)?;
@@ -175,13 +172,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 then = tmp1;
                 otherwise = tmp2;
             } else if !Type::pointer_promote(&mut then, &mut otherwise) {
-                return Err(Locatable {
-                    data: format!(
+                err!(
+                    format!(
                         "incompatible types in ternary expression: '{}' cannot be converted to '{}'",
                         then.ctype, otherwise.ctype
                     ),
                     location,
-                });
+                );
             }
             Ok(Expr {
                 ctype: then.ctype.clone(),
@@ -380,16 +377,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     // not sure what type to use here, C11 standard doesn't mention it
                     (left.ctype.clone(), true)
                 } else {
-                    return Err(Locatable {
-                        data: format!(
+                    err!(
+                        format!(
                             "invalid operators for '{}' (expected either arithmetic types or pointer operation, got '{} {} {}'",
                             token.data,
                             left.ctype,
                             token.data,
                             right.ctype
                         ),
-                        location: token.location
-                    });
+                        token.location
+                    );
                 };
                 Ok(Expr {
                     ctype,
@@ -420,21 +417,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if token.data == Token::Mod
                     && !(left.ctype.is_integral() && right.ctype.is_integral())
                 {
-                    return Err(Locatable {
-                        data: format!(
+                    err!(
+                        format!(
                             "expected integers for both operators of %, got '{}' and '{}'",
                             left.ctype, right.ctype
                         ),
-                        location: token.location,
-                    });
+                        token.location,
+                    );
                 } else if !(left.ctype.is_arithmetic() && right.ctype.is_arithmetic()) {
-                    return Err(Locatable {
-                        data: format!(
+                    err!(
+                        format!(
                             "expected float or integer types for both operands of {}, got '{}' and '{}'",
                             token.data, left.ctype, right.ctype
                         ),
-                        location: token.location,
-                    });
+                        token.location,
+                    );
                 }
                 let (left, right) = Expr::binary_promote(*left, *right)?;
                 Ok(Expr {
@@ -494,24 +491,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             }
             if !ctype.is_scalar() {
-                return Err(Locatable {
-                    data: format!("cannot cast to non-scalar type '{}'", ctype),
+                err!(
+                    format!("cannot cast to non-scalar type '{}'", ctype),
                     location,
-                });
+                );
             } else if expr.ctype.is_floating() && ctype.is_pointer()
                 || expr.ctype.is_pointer() && ctype.is_floating()
             {
-                return Err(Locatable {
-                    data: format!("cannot cast pointer to float or vice versa. hint: if you really want to do this, use '({})(int)' instead",
+                err!(
+                    format!("cannot cast pointer to float or vice versa. hint: if you really want to do this, use '({})(int)' instead",
                     ctype),
                     location,
-                });
+                );
             } else if expr.ctype.is_struct() {
                 // not implemented: galaga (https://github.com/jyn514/rcc/issues/98)
-                return Err(Locatable {
-                    data: "cannot cast a struct to any type".into(),
-                    location,
-                });
+                err!("cannot cast a struct to any type".into(), location,);
             }
             Ok(Expr {
                 lval: false,
@@ -675,10 +669,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             })
                         }
                     }
-                    Token::LogicalNot => expr.logical_not(location),
+                    Token::LogicalNot => return expr.logical_not(location),
                     x => unreachable!("didn't expect '{}' to be an unary operand", x),
                 }
-            }
+            }.map_err(CompileError::Semantic),
             _ => self.postfix_expr(),
         }
     }
@@ -735,13 +729,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let functype = match expr.ctype {
                         Type::Function(ref functype) => functype,
                         _ => {
-                            return Err(Locatable {
-                                data: format!(
-                                    "called object of type '{}' is not a function",
-                                    expr.ctype
-                                ),
+                            err!(
+                                format!("called object of type '{}' is not a function", expr.ctype),
                                 location,
-                            })
+                            );
                         }
                     };
                     let mut expected = functype.params.len();
@@ -751,15 +742,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     if !functype.params.is_empty()
                         && (args.len() < expected || args.len() > expected && !functype.varargs)
                     {
-                        return Err(Locatable {
-                            data: format!(
+                        err!(
+                            format!(
                                 "too {} arguments to function call: expected {}, have {}",
                                 if args.len() > expected { "many" } else { "few" },
                                 expected,
                                 args.len(),
                             ),
                             location,
-                        });
+                        );
                     }
                     let mut promoted_args = vec![];
                     for (i, arg) in args.into_iter().enumerate() {
@@ -855,10 +846,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if let Some(Locatable { location, data }) = self.next_token() {
             match data {
                 Id(name) => match self.scope.get(&name) {
-                    None => Err(Locatable {
+                    None => Err(CompileError::Semantic(Locatable {
                         location,
                         data: format!("use of undeclared identifier '{}'", name),
-                    }),
+                    })),
                     Some(symbol) => {
                         if let Type::Enum(ident, members) = &symbol.ctype {
                             let enumerator = members.iter().find_map(|(member, value)| {
@@ -892,10 +883,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Ok(expr)
                 }
                 other => {
-                    let err = Err(Locatable {
+                    let err = Err(CompileError::Syntax(Locatable {
                         location,
                         data: format!("expected '(' or literal, got '{}'", other),
-                    });
+                    }));
                     self.unput(Some(Locatable {
                         location,
                         data: other,
@@ -904,10 +895,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
             }
         } else {
-            Err(Locatable {
+            Err(CompileError::Syntax(Locatable {
                 location: self.next_location(),
                 data: "expected '(' or literal, got <end-of-file>".to_string(),
-            })
+            }))
         }
     }
 
@@ -924,16 +915,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Some(TagEntry::Union(members)) | Some(TagEntry::Struct(members)) => {
                     struct_member_helper!(members, expr, id, location)
                 }
-                None => Err(Locatable::new(
+                None => Err(CompileError::Semantic(Locatable::new(
                     format!("{} has not yet been defined", expr.ctype),
                     location,
-                )),
+                ))),
                 _ => unreachable!("parser should ensure types in scope are valid"),
             },
-            _ => Err(Locatable {
+            _ => Err(CompileError::Semantic(Locatable {
                 data: format!("expected struct or union, got type '{}'", expr.ctype),
                 location,
-            }),
+            })),
         }
     }
 
@@ -967,13 +958,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 None
             };
             if let Some(ctype) = non_scalar {
-                return Err(Locatable {
+                return Err(CompileError::Semantic(Locatable {
                     data: format!(
                         "expected scalar type (number or pointer) for both operands of '{}', got '{}'",
                         token.data, ctype
                     ),
                     location: token.location,
-                });
+                }));
             }
             Ok(Expr {
                 lval: false,
@@ -1013,13 +1004,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 None
             };
             if let Some(ctype) = non_scalar {
-                return Err(Locatable {
+                return Err(CompileError::Semantic(Locatable {
                     data: format!(
                         "expected integer on both sides of '{}', got '{}'",
                         token.data, ctype
                     ),
                     location: token.location,
-                });
+                }));
             }
             let (expr, next) = Expr::binary_promote(*expr, *next)?;
             expr_func(expr, next, token)
@@ -1169,13 +1160,13 @@ impl Expr {
             return Ok(self);
         }
         if !self.ctype.is_scalar() {
-            Err(Locatable {
+            Err(CompileError::Semantic(Locatable {
                 location: self.location,
                 data: format!(
                     "expression of type '{}' cannot be converted to bool",
                     self.ctype
                 ),
-            })
+            }))
         } else {
             let zero = Expr::zero(self.location).cast(&self.ctype).unwrap();
             Ok(Expr {
@@ -1222,7 +1213,7 @@ impl Expr {
             Ok(self)
         // TODO: allow implicit casts of const pointers
         } else {
-            Err(Locatable {
+            Err(CompileError::Semantic(Locatable {
                 location: self.location,
                 data: format!(
                     "cannot implicitly convert '{}' to '{}'{}",
@@ -1234,7 +1225,7 @@ impl Expr {
                         String::new()
                     }
                 ),
-            })
+            }))
         }
     }
     fn pointer_arithmetic(
@@ -1283,18 +1274,18 @@ impl Expr {
     }
     fn increment_op(prefix: bool, increment: bool, expr: Expr, location: Location) -> ExprResult {
         if !expr.is_modifiable_lval() {
-            return Err(Locatable {
+            return Err(CompileError::Semantic(Locatable {
                 location: expr.location,
                 data: "expression is not assignable".to_string(),
-            });
+            }));
         } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
-            return Err(Locatable {
+            return Err(CompileError::Semantic(Locatable {
                 location: expr.location,
                 data: format!(
                     "cannot increment or decrement value of type '{}'",
                     expr.ctype
                 ),
-            });
+            }));
         }
         // ++i is syntactic sugar for i+=1
         if prefix {
@@ -1367,7 +1358,7 @@ impl Expr {
                         || (left_expr.is_null() && right_expr.ctype.is_pointer())
                         || (left_expr.ctype.is_pointer() && right_expr.is_null()))))
             {
-                return Err(Locatable {
+                return Err(CompileError::Semantic(Locatable {
                     data: format!(
                         "invalid types for '{}' (expected arithmetic types or compatible pointers, got {} {} {}",
                         token.data,
@@ -1376,7 +1367,7 @@ impl Expr {
                         right_expr.ctype
                     ),
                     location: token.location,
-                });
+                }));
             }
             left = Box::new(left_expr);
             right = Box::new(right_expr);
@@ -1596,7 +1587,7 @@ mod tests {
     }
     fn get_location(expr: &ExprResult) -> Location {
         match expr {
-            Err(ref err) => err.location,
+            Err(ref err) => err.location(),
             Ok(ref l) => l.location,
         }
     }

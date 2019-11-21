@@ -143,10 +143,7 @@ impl Expr {
             ExprType::Deref(expr) => {
                 let folded = expr.const_fold()?;
                 if let ExprType::Literal(Token::Int(0)) = folded.expr {
-                    return Err(Locatable {
-                        data: "cannot dereference NULL pointer".into(),
-                        location: folded.location,
-                    });
+                    err!("cannot dereference NULL pointer".into(), folded.location);
                 }
                 ExprType::Deref(Box::new(folded))
             }
@@ -180,10 +177,7 @@ impl Expr {
             ExprType::Div(left, right) => {
                 let right = right.const_fold()?;
                 if right.is_zero() {
-                    return Err(Locatable {
-                        data: "cannot divide by zero".into(),
-                        location,
-                    });
+                    err!("cannot divide by zero".into(), location,);
                 }
                 left.literal_bin_op(right, &location, fold_scalar_bin_op!(/), ExprType::Div)?
             }
@@ -191,10 +185,7 @@ impl Expr {
             ExprType::Mod(left, right) => {
                 let right = right.const_fold()?;
                 if right.is_zero() {
-                    return Err(Locatable {
-                        data: "cannot take remainder of division by zero".into(),
-                        location,
-                    });
+                    err!("cannot take remainder of division by zero".into(), location,);
                 }
                 left.literal_bin_op(right, &location, fold_int_bin_op!(%), ExprType::Mod)?
             }

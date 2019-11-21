@@ -12,7 +12,7 @@ extern crate rcc;
 
 use ansi_term::Colour;
 use pico_args::Arguments;
-use rcc::{assemble, compile, data::lex::Location, link, utils, CompileError};
+use rcc::{assemble, compile, data::lex::Location, link, utils, Error};
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
 
@@ -76,8 +76,8 @@ impl Default for Opt {
 }
 
 // TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
-// TODO: then we can move this into `main` and have main return `Result<(), CompileError>`
-fn real_main(buf: &str, opt: Opt) -> Result<(), CompileError> {
+// TODO: then we can move this into `main` and have main return `Result<(), Error>`
+fn real_main(buf: &str, opt: Opt) -> Result<(), Error> {
     env_logger::init();
     let product = compile(
         buf,
@@ -162,12 +162,12 @@ fn parse_args() -> Result<Opt, pico_args::Error> {
     })
 }
 
-fn err_exit(err: CompileError) -> ! {
-    use CompileError::*;
+fn err_exit(err: Error) -> ! {
+    use Error::*;
     match err {
-        Semantic(errs) => {
+        Source(errs) => {
             for err in errs {
-                error(&err.data, err.location);
+                error(&err, err.location());
             }
             let (num_warnings, num_errors) = (utils::get_warnings(), get_errors());
             print_issues(num_warnings, num_errors);
@@ -192,7 +192,7 @@ fn print_issues(warnings: usize, errors: usize) {
     eprintln!("{} generated", msg);
 }
 
-fn error(msg: &str, location: Location) {
+fn error<T: std::fmt::Display>(msg: T, location: Location) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
     utils::pretty_print(Colour::Red.bold().paint("error"), msg, location);
 }

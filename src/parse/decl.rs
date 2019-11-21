@@ -594,7 +594,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let ctype = if kind == Keyword::Enum {
             self.enumerators(ident, location)
         } else {
-            self.struct_declaration_list(ident, kind == Keyword::Struct, &location)
+            self.struct_declaration(ident, kind == Keyword::Struct, &location)
         }?;
         self.expect(Token::RightBrace)?;
         Ok(ctype)
@@ -689,14 +689,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     /* rewritten grammar:
     struct_declaration: (type_specifier | type_qualifier)+ struct_declarator_list ';' ;
-    struct_declarator_list: struct_declarator (',' struct_declarator)* ;
-    struct_declarator
-        : declarator
-        | ':' constant_expr
-        | declarator ':' constant_expr
-        ;
     */
-    fn struct_declaration_list(
+    fn struct_declaration(
         &mut self,
         ident: Option<InternedStr>,
         c_struct: bool,
@@ -712,48 +706,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     token.location,
                 );
                 continue;
-            }
-            let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
-            let mut last_location;
-            loop {
-                let decl = self.init_declarator(StorageClass::Auto, qualifiers, ctype.clone())?;
-                if decl.data.symbol.init {
-                    err!(
-                        format!("cannot initialize struct member '{}'", decl.data.symbol.id),
-                        decl.location
-                    );
-                }
-                match decl.data.symbol.ctype {
-                    Type::Struct(StructType::Named(_, 0, _, _))
-                    | Type::Union(StructType::Named(_, 0, _, _)) => {
-                        return Err(Locatable {
-                            data: format!(
-                                "cannot use type '{}' before it has been defined",
-                                decl.data.symbol.ctype
-                            ),
-                            location: decl.location,
-                        });
-                    }
-                    _ => {}
-                }
-                members.push(decl.data.symbol);
-                last_location = decl.location;
-                if self.match_next(&Token::Comma).is_none() {
-                    self.expect(Token::Semicolon)?;
-                    break;
-                }
-            }
-            if let Some(class) = sc {
-                let member = members
-                    .last()
-                    .expect("should have seen at least one declaration");
-                err!(
-                    format!(
-                        "cannot specify storage class '{}' for struct member '{}'",
-                        class, member.id,
-                    ),
-                    last_location
-                );
+            } else {
+                self.struct_declarator_list(&mut members)?;
             }
         }
         if members.is_empty() {
@@ -813,6 +767,63 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         } else {
             Ok(constructor(StructType::Anonymous(members)))
         }
+    }
+    /*
+    struct_declarator_list: struct_declarator (',' struct_declarator)* ;
+    struct_declarator
+        : declarator
+        | ':' constant_expr  // bitfield, not supported
+        | declarator ':' constant_expr
+        ;
+    */
+    fn struct_declarator_list(&mut self, members: &mut Vec<Symbol>) -> SemanticResult<()> {
+        let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
+        if let Some(token) = self.match_next(&Token::Semicolon) {
+            crate::utils::warn("declaration does not declare anything", token.location);
+            return Ok(());
+        }
+        let mut last_location;
+        loop {
+            let decl = self.init_declarator(StorageClass::Auto, qualifiers, ctype.clone())?;
+            if decl.data.symbol.init {
+                err!(
+                    format!("cannot initialize struct member '{}'", decl.data.symbol.id),
+                    decl.location
+                );
+            }
+            match decl.data.symbol.ctype {
+                Type::Struct(StructType::Named(_, 0, _, _))
+                | Type::Union(StructType::Named(_, 0, _, _)) => {
+                    return Err(Locatable {
+                        data: format!(
+                            "cannot use type '{}' before it has been defined",
+                            decl.data.symbol.ctype
+                        ),
+                        location: decl.location,
+                    });
+                }
+                _ => {}
+            }
+            members.push(decl.data.symbol);
+            last_location = decl.location;
+            if self.match_next(&Token::Comma).is_none() {
+                self.expect(Token::Semicolon)?;
+                break;
+            }
+        }
+        if let Some(class) = sc {
+            let member = members
+                .last()
+                .expect("should have seen at least one declaration");
+            err!(
+                format!(
+                    "cannot specify storage class '{}' for struct member '{}'",
+                    class, member.id,
+                ),
+                last_location
+            );
+        }
+        Ok(())
     }
     /*
      * function parameters

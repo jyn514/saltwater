@@ -4,10 +4,10 @@ use crate::data::{Keyword, StorageClass};
 use crate::utils::warn;
 use std::iter::Iterator;
 
-type StmtResult = Result<Stmt, Locatable<String>>;
+type StmtResult = Result<Stmt, CompileError>;
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
-    pub fn compound_statement(&mut self) -> Result<Option<Stmt>, Locatable<String>> {
+    pub fn compound_statement(&mut self) -> Result<Option<Stmt>, CompileError> {
         let start = self
             .expect(Token::LeftBrace)
             .expect("compound_statement should be called with '{' as the next token");
@@ -47,7 +47,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// Result: whether there was an error in the program source
     /// Option: empty semicolons still count as a statement (so case labels can work)
-    pub fn statement(&mut self) -> Result<Option<Stmt>, Locatable<String>> {
+    pub fn statement(&mut self) -> Result<Option<Stmt>, CompileError> {
         match self.peek_token() {
             Some(Token::LeftBrace) => {
                 self.enter_scope();
@@ -185,7 +185,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             _ => self.expression_statement(),
         }
     }
-    fn expression_statement(&mut self) -> Result<Option<Stmt>, Locatable<String>> {
+    fn expression_statement(&mut self) -> Result<Option<Stmt>, CompileError> {
         let expr = self.expr()?;
         let end = self.expect(Token::Semicolon)?;
         Ok(Some(Stmt {
@@ -411,9 +411,9 @@ fn not_executed_warning(description: &str, from: &str, to: &str, location: Locat
 #[cfg(test)]
 mod tests {
     use super::super::tests::*;
-    use crate::data::{Locatable, Location, Stmt, StmtType};
+    use crate::data::prelude::*;
     use crate::intern::InternedStr;
-    fn parse_stmt(stmt: &str) -> Result<Option<Stmt>, Locatable<String>> {
+    fn parse_stmt(stmt: &str) -> Result<Option<Stmt>, CompileError> {
         parser(stmt).statement()
     }
     #[test]

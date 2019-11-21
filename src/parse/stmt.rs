@@ -1,6 +1,6 @@
 use super::{Lexeme, Parser};
 use crate::data::prelude::*;
-use crate::data::{Keyword, StorageClass};
+use crate::data::{lex::Keyword, StorageClass};
 use crate::utils::warn;
 use std::iter::Iterator;
 

@@ -5,7 +5,7 @@ use log::debug;
 
 use super::{Compiler, Id};
 use crate::data::prelude::*;
-use crate::data::{Expr, ExprType, Token};
+use crate::data::{lex::Token, Expr, ExprType};
 
 type IrResult = SemanticResult<Value>;
 

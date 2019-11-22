@@ -252,10 +252,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     /* error handling functions */
     fn semantic_err<S: Into<String>>(&mut self, msg: S, location: Location) {
-        self.pending.push_back(Err(CompileError::Semantic(Locatable {
-            location,
-            data: msg.into(),
-        })));
+        self.pending
+            .push_back(Err(CompileError::Semantic(Locatable {
+                location,
+                data: msg.into(),
+            })));
     }
     /*
      * If we're in an invalid state, try to recover.

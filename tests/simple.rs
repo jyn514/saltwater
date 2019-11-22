@@ -41,3 +41,18 @@ fn only_bad_tokens_are_error() {
     utils::assert_compile_error("`");
     utils::assert_compile_error("`int main(){}");
 }
+
+#[test]
+fn multiple_errors() {
+    use rcc::Error;
+    match rcc::compile(
+        "int f(int) { return; }",
+        "<integration-test>".to_string(),
+        false,
+        false,
+        false,
+    ) {
+        Err(Error::Source(errs)) => assert!(errs.len() == 2),
+        _ => panic!("program should have an error"),
+    }
+}

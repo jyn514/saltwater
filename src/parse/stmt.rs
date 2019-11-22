@@ -70,10 +70,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         ExprType::Literal(Token::Int(i)) => i as u64,
                         ExprType::Literal(Token::UnsignedInt(u)) => u,
                         ExprType::Literal(Token::Char(c)) => u64::from(c),
-                        _ => semantic_err!(
-                            "case expression is not an integer constant".into(),
-                            expr.location,
-                        ),
+                        _ => {
+                            self.semantic_err(
+                                "case expression is not an integer constant",
+                                expr.location,
+                            );
+                            0
+                        }
                     };
                     let inner = self.statement()?.map(Box::new);
                     Ok(Some(Stmt {
@@ -196,19 +199,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let expr = self.expr_opt(Token::Semicolon)?;
         let current = self
             .current_function
-            .as_mut()
+            .as_ref()
             .expect("should have current_function set when parsing statements");
         let ret_type = &current.return_type;
         let stmt = match (expr, *ret_type != Type::Void) {
             (None, false) => StmtType::Return(None),
-            (None, true) => semantic_err!(
-                format!("function '{}' does not return a value", current.id),
-                ret_token.location,
-            ),
-            (Some(expr), false) => semantic_err!(
-                format!("void function '{}' should not return a value", current.id),
-                expr.location,
-            ),
+            (None, true) => {
+                let err = format!("function '{}' does not return a value", current.id);
+                self.semantic_err(err, ret_token.location);
+                // TODO: will this break codegen?
+                StmtType::Return(None)
+            }
+            (Some(expr), false) => {
+                let err = format!("void function '{}' should not return a value", current.id);
+                self.semantic_err(err, expr.location);
+                StmtType::Return(None)
+            }
             (Some(expr), true) => {
                 let expr = expr.rval();
                 if expr.ctype != *ret_type {
@@ -364,7 +370,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 })),
                 None => None,
             },
-            None => semantic_err!(
+            None => syntax_err!(
                 "expected expression or ';', got <end-of-file>".to_string(),
                 self.last_location,
             ),

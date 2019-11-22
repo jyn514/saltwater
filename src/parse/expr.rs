@@ -67,7 +67,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             &[&Token::Comma],
             |left, right, token| {
                 let right = right.rval();
-                *left = Expr {
+                Ok(Expr {
                     ctype: right.ctype.clone(),
                     // TODO: this is technically right but will almost certainly be buggy
                     // If we use constexpr to check if we can optimize things out,
@@ -78,8 +78,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     lval: false,
                     expr: ExprType::Comma(Box::new(*left), Box::new(right)),
                     location: token.location,
-                };
-                Ok(())
+                })
             },
         )
     }
@@ -89,7 +88,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     pub fn constant_expr(&mut self) -> ExprResult {
         let expr = self.conditional_expr()?;
         if !expr.constexpr {
-            self.semantic_err("not a constant expression".to_string(), expr.location,)
+            self.semantic_err("not a constant expression".to_string(), expr.location)
         }
         Ok(expr)
     }
@@ -354,18 +353,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.left_associative_binary_op(
             Self::multiplicative_expr,
             &[&Token::Plus, &Token::Minus],
-            |left: &mut _, mut right, token| {
+            |mut left, mut right, token| {
                 match (&left.ctype, &right.ctype) {
                     (Type::Pointer(to), i)
                     | (Type::Array(to, _), i) if i.is_integral() && to.is_complete() => {
                         let to = to.clone();
-                        *left = Expr::pointer_arithmetic(*left, *right, &*to, token.location)?;
+                        return Expr::pointer_arithmetic(*left, *right, &*to, token.location);
                     }
                     (i, Type::Pointer(to))
                         // `i - p` for pointer p is not valid
                     | (i, Type::Array(to, _)) if i.is_integral() && token.data == Token::Plus && to.is_complete() => {
                         let to = to.clone();
-                        *left = Expr::pointer_arithmetic(*right, *left, &*to, token.location)?;
+                        return Expr::pointer_arithmetic(*right, *left, &*to, token.location);
                     }
                     _ => {}
                 };
@@ -390,7 +389,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         token.location
                     ));
                 };
-                *left = Expr {
+                Ok(Expr {
                     ctype,
                     lval,
                     location: token.location,
@@ -400,8 +399,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     } else {
                         ExprType::Sub
                     })(Box::new(*left), right),
-                };
-                Ok(())
+                })
             },
         )
     }
@@ -420,24 +418,24 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if token.data == Token::Mod
                     && !(left.ctype.is_integral() && right.ctype.is_integral())
                 {
-                    self.semantic_err(
+                    return Err(Locatable::new(
                         format!(
                             "expected integers for both operators of %, got '{}' and '{}'",
                             left.ctype, right.ctype
                         ),
                         token.location,
-                    );
+                    ));
                 } else if !(left.ctype.is_arithmetic() && right.ctype.is_arithmetic()) {
-                    self.semantic_err(
+                    return Err(Locatable::new(
                         format!(
                             "expected float or integer types for both operands of {}, got '{}' and '{}'",
                             token.data, left.ctype, right.ctype
                         ),
                         token.location,
-                    );
+                    ));
                 }
                 let (p_left, right) = Expr::binary_promote(*left, *right)?;
-                *left = Expr {
+                Ok(Expr {
                     ctype: p_left.ctype.clone(),
                     location: token.location,
                     constexpr: p_left.constexpr && right.constexpr,
@@ -450,8 +448,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             panic!("left_associative_binary_op should only return tokens given to it")
                         }
                     },
-                };
-                Ok(())
+                })
             },
         )
     }
@@ -509,7 +506,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 );
             } else if expr.ctype.is_struct() {
                 // not implemented: galaga (https://github.com/jyn514/rcc/issues/98)
-                self.semantic_err("cannot cast a struct to any type", location,);
+                self.semantic_err("cannot cast a struct to any type", location);
             }
             Ok(Expr {
                 lval: false,
@@ -726,13 +723,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     self.expect(Token::RightParen)?;
                     // if fp is a function pointer, fp() desugars to (*fp)()
                     match expr.ctype {
-                        Type::Pointer(ref pointee) if pointee.is_function() => expr = Expr {
-                            lval: false,
-                            location: expr.location,
-                            constexpr: expr.constexpr,
-                            ctype: (**pointee).clone(),
-                            expr: ExprType::Deref(Box::new(expr)),
-                        },
+                        Type::Pointer(ref pointee) if pointee.is_function() => {
+                            expr = Expr {
+                                lval: false,
+                                location: expr.location,
+                                constexpr: expr.constexpr,
+                                ctype: (**pointee).clone(),
+                                expr: ExprType::Deref(Box::new(expr)),
+                            }
+                        }
                         _ => (),
                     };
                     let functype = match expr.ctype {
@@ -799,7 +798,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             _ => {
                                 self.semantic_err(
                                     "pointer does not point to a struct or union",
-                                    location
+                                    location,
                                 );
                                 continue;
                             }
@@ -807,7 +806,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         _ => {
                             self.semantic_err(
                                 "cannot use '->' operator on type that is not a pointer",
-                                location
+                                location,
                             );
                             continue;
                         }
@@ -982,14 +981,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location: token.location,
                 });
             }
-            *left = Expr {
+            Ok(Expr {
                 lval: false,
                 constexpr: left.constexpr && right.constexpr,
                 location: token.location,
                 ctype: ctype.clone(),
                 expr: expr_func(Box::new(left.rval()), Box::new(right.rval()))?,
-            };
-            Ok(())
+            })
         })
     }
 
@@ -1030,8 +1028,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             }
             let (promoted_expr, next) = Expr::binary_promote(*expr, *next)?;
-            *expr = expr_func(promoted_expr, next, token)?;
-            Ok(())
+            expr_func(promoted_expr, next, token)
         })
     }
 
@@ -1052,14 +1049,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         mut expr_func: E,
     ) -> ExprResult
     where
-        E: FnMut(&mut Expr, Box<Expr>, Locatable<Token>) -> Result<(), SemanticError>,
+        E: FnMut(Box<Expr>, Box<Expr>, Locatable<Token>) -> Result<Expr, SemanticError>,
         G: Fn(&mut Self) -> ExprResult,
     {
         let mut expr = next_grammar_func(self)?;
         while let Some(locatable) = self.match_any(tokens) {
             let next = next_grammar_func(self)?;
-            if let Err(err) = expr_func(&mut expr, Box::new(next), locatable) {
-                self.semantic_err(err.data, err.location);
+            // TODO: this clone is very bad and should be changed
+            match expr_func(Box::new(expr.clone()), Box::new(next), locatable) {
+                Ok(combined) => expr = combined,
+                Err(err) => self.semantic_err(err.data, err.location),
             }
         }
         Ok(expr)
@@ -1359,10 +1358,10 @@ impl Expr {
     }
     // helper function since == and > have almost identical logic
     fn relational_expr(
-        left: &mut Expr,
+        mut left: Box<Expr>,
         mut right: Box<Expr>,
         token: Locatable<Token>,
-    ) -> Result<(), SemanticError> {
+    ) -> Result<Expr, SemanticError> {
         if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
             let tmp = Expr::binary_promote(*left, *right)?;
             *left = tmp.0;
@@ -1393,14 +1392,13 @@ impl Expr {
             right = Box::new(right_expr);
         }
         assert!(!left.lval && !right.lval);
-        *left = Expr {
+        Ok(Expr {
             constexpr: left.constexpr && right.constexpr,
             lval: false,
             location: token.location,
             ctype: Type::Bool,
-            expr: ExprType::Compare(Box::new(*left), right, token.data),
-        };
-        Ok(())
+            expr: ExprType::Compare(left, right, token.data),
+        })
     }
     fn id(symbol: &Symbol, location: Location) -> Self {
         Self {
@@ -1604,7 +1602,14 @@ mod tests {
     use crate::{Lexer, Parser};
     fn parse_expr(input: &str) -> ExprResult {
         // because we're a child module of parse, we can skip straight to `expr()`
-        parser(input).expr()
+        let mut p = parser(input);
+        let exp = p.expr();
+        if let Some(Err(err)) = p.pending.pop_front() {
+            Err(err)
+        } else {
+            exp
+        }
+        //parser(input).expr()
     }
     fn get_location(expr: &ExprResult) -> Location {
         match expr {

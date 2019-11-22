@@ -533,7 +533,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 None => {
                     self.semantic_err(
                         format!("bare {} as type specifier is not allowed", kind),
-                        location
+                        location,
                     );
                     return Ok(match kind {
                         Keyword::Struct => Type::Struct(StructType::Anonymous(vec![])),
@@ -550,8 +550,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         if kind != Keyword::Struct {
                             self.semantic_err(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", ident, kind), location);
                         }
-                        let (size, align, offsets) = Self::struct_type(members, true)
-                            .map_err(|err| Locatable {
+                        let (size, align, offsets) =
+                            Self::struct_type(members, true).map_err(|err| Locatable {
                                 data: err.into(),
                                 location,
                             })?;
@@ -562,8 +562,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         if kind != Keyword::Union {
                             self.semantic_err(format!("use of '{}' with type tag '{}' that does not match previous union declaration", ident, kind), location);
                         }
-                        let (size, align, offsets) = Self::struct_type(members, false)
-                            .map_err(|err| Locatable {
+                        let (size, align, offsets) =
+                            Self::struct_type(members, false).map_err(|err| Locatable {
                                 data: err.into(),
                                 location,
                             })?;
@@ -596,7 +596,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // see section 6.7.2.3 of the C11 standard
                 self.semantic_err(
                     format!("cannot have forward reference to enum type '{}'", ident),
-                    location
+                    location,
                 );
                 Ok(Type::Enum(Some(ident), vec![]))
             };
@@ -642,7 +642,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         Err(_) => {
                             self.semantic_err(
                                 "values between INT_MAX and UINT_MAX are not supported for enums",
-                                location
+                                location,
                             );
                             std::i64::MAX
                         }
@@ -751,7 +751,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         if c_struct { "struct" } else { "union" },
                         id
                     ),
-                    *location
+                    *location,
                 );
             }
             let (size, align, offset) =
@@ -774,11 +774,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
             }
             for variable in self.scope.get_all_immediate().values_mut() {
-                Self::update_forward_declarations(
-                    &mut variable.ctype,
-                    (size, align, &offset),
-                    id,
-                );
+                Self::update_forward_declarations(&mut variable.ctype, (size, align, &offset), id);
             }
             Ok(constructor(StructType::Named(id, size, align, offset)))
         } else {
@@ -805,7 +801,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             if decl.data.symbol.init {
                 self.semantic_err(
                     format!("cannot initialize struct member '{}'", decl.data.symbol.id),
-                    decl.location
+                    decl.location,
                 );
             }
             match decl.data.symbol.ctype {
@@ -837,7 +833,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     "cannot specify storage class '{}' for struct member '{}'",
                     class, member.id,
                 ),
-                last_location
+                last_location,
             );
         }
         Ok(())

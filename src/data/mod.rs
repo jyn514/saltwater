@@ -199,7 +199,7 @@ impl Expr {
     pub fn const_int(self) -> CompileResult<SIZE_T> {
         use std::convert::TryInto;
         if !self.ctype.is_integral() {
-            err!(LengthError::NonIntegral.into(), self.location,);
+            semantic_err!(LengthError::NonIntegral.into(), self.location,);
         }
         let literal = self.constexpr()?.map_err(|location| Locatable {
             data: LengthError::Dynamic.into(),

@@ -88,7 +88,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if expr.constexpr {
             Ok(expr)
         } else {
-            err!("not a constant expression".to_string(), expr.location,)
+            semantic_err!("not a constant expression".to_string(), expr.location,)
         }
     }
 
@@ -172,7 +172,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 then = tmp1;
                 otherwise = tmp2;
             } else if !Type::pointer_promote(&mut then, &mut otherwise) {
-                err!(
+                semantic_err!(
                     format!(
                         "incompatible types in ternary expression: '{}' cannot be converted to '{}'",
                         then.ctype, otherwise.ctype
@@ -377,7 +377,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     // not sure what type to use here, C11 standard doesn't mention it
                     (left.ctype.clone(), true)
                 } else {
-                    err!(
+                    semantic_err!(
                         format!(
                             "invalid operators for '{}' (expected either arithmetic types or pointer operation, got '{} {} {}'",
                             token.data,
@@ -417,7 +417,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if token.data == Token::Mod
                     && !(left.ctype.is_integral() && right.ctype.is_integral())
                 {
-                    err!(
+                    semantic_err!(
                         format!(
                             "expected integers for both operators of %, got '{}' and '{}'",
                             left.ctype, right.ctype
@@ -425,7 +425,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         token.location,
                     );
                 } else if !(left.ctype.is_arithmetic() && right.ctype.is_arithmetic()) {
-                    err!(
+                    semantic_err!(
                         format!(
                             "expected float or integer types for both operands of {}, got '{}' and '{}'",
                             token.data, left.ctype, right.ctype
@@ -491,21 +491,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             }
             if !ctype.is_scalar() {
-                err!(
+                semantic_err!(
                     format!("cannot cast to non-scalar type '{}'", ctype),
                     location,
                 );
             } else if expr.ctype.is_floating() && ctype.is_pointer()
                 || expr.ctype.is_pointer() && ctype.is_floating()
             {
-                err!(
+                semantic_err!(
                     format!("cannot cast pointer to float or vice versa. hint: if you really want to do this, use '({})(int)' instead",
                     ctype),
                     location,
                 );
             } else if expr.ctype.is_struct() {
                 // not implemented: galaga (https://github.com/jyn514/rcc/issues/98)
-                err!("cannot cast a struct to any type".into(), location,);
+                semantic_err!("cannot cast a struct to any type".into(), location,);
             }
             Ok(Expr {
                 lval: false,
@@ -591,7 +591,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             expr: expr.expr,
                         }),
                         _ => {
-                            err!("cannot take address of a value".into(), location);
+                            semantic_err!("cannot take address of a value".into(), location);
                         }
                     },
                     Token::Star => match &expr.ctype {
@@ -702,7 +702,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let (target_type, array, index) = match (&left.ctype, &right.ctype) {
                         (Type::Pointer(target), _) => ((**target).clone(), left, right),
                         (_, Type::Pointer(target)) => ((**target).clone(), right, left),
-                        (l, r) => err!(
+                        (l, r) => semantic_err!(
                             format!("neither {} nor {} are pointers types", l, r),
                             location,
                         ),
@@ -729,7 +729,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let functype = match expr.ctype {
                         Type::Function(ref functype) => functype,
                         _ => {
-                            err!(
+                            semantic_err!(
                                 format!("called object of type '{}' is not a function", expr.ctype),
                                 location,
                             );
@@ -742,7 +742,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     if !functype.params.is_empty()
                         && (args.len() < expected || args.len() > expected && !functype.varargs)
                     {
-                        err!(
+                        semantic_err!(
                             format!(
                                 "too {} arguments to function call: expected {}, have {}",
                                 if args.len() > expected { "many" } else { "few" },
@@ -786,12 +786,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let struct_type = match &expr.ctype {
                         Type::Pointer(ctype) => match **ctype {
                             Type::Union(_) | Type::Struct(_) => (**ctype).clone(),
-                            _ => err!(
+                            _ => semantic_err!(
                                 "pointer does not point to a struct or union".into(),
                                 location
                             ),
                         },
-                        _ => err!(
+                        _ => semantic_err!(
                             "cannot use '->' operator on type that is not a pointer".into(),
                             location
                         ),

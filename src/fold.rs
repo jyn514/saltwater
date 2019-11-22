@@ -143,7 +143,7 @@ impl Expr {
             ExprType::Deref(expr) => {
                 let folded = expr.const_fold()?;
                 if let ExprType::Literal(Token::Int(0)) = folded.expr {
-                    err!("cannot dereference NULL pointer".into(), folded.location);
+                    semantic_err!("cannot dereference NULL pointer".into(), folded.location);
                 }
                 ExprType::Deref(Box::new(folded))
             }
@@ -177,7 +177,7 @@ impl Expr {
             ExprType::Div(left, right) => {
                 let right = right.const_fold()?;
                 if right.is_zero() {
-                    err!("cannot divide by zero".into(), location,);
+                    semantic_err!("cannot divide by zero".into(), location,);
                 }
                 left.literal_bin_op(right, &location, fold_scalar_bin_op!(/), ExprType::Div)?
             }
@@ -185,7 +185,7 @@ impl Expr {
             ExprType::Mod(left, right) => {
                 let right = right.const_fold()?;
                 if right.is_zero() {
-                    err!("cannot take remainder of division by zero".into(), location,);
+                    semantic_err!("cannot take remainder of division by zero".into(), location,);
                 }
                 left.literal_bin_op(right, &location, fold_int_bin_op!(%), ExprType::Mod)?
             }
@@ -316,7 +316,7 @@ impl Expr {
         let literal = match (&left.expr, &right.expr) {
             (ExprType::Literal(left_token), ExprType::Literal(right_token)) => {
                 match fold_func(left_token, right_token, &left.ctype) {
-                    Err(data) => err!(data, *location),
+                    Err(data) => semantic_err!(data, *location),
                     Ok(token) => token.map(ExprType::Literal),
                 }
             }
@@ -404,7 +404,7 @@ fn shift_right(
     if let ExprType::Literal(token) = right.expr {
         let shift = match token.non_negative_int() {
             Ok(u) => u,
-            Err(_) => err!("cannot shift left by a negative amount".into(), *location),
+            Err(_) => semantic_err!("cannot shift left by a negative amount".into(), *location),
         };
         let sizeof = ctype.sizeof().map_err(|err| Locatable {
             data: err.into(),
@@ -451,16 +451,16 @@ fn shift_left(
     if let ExprType::Literal(token) = right.expr {
         let shift = match token.non_negative_int() {
             Ok(u) => u,
-            Err(_) => err!("cannot shift left by a negative amount".into(), *location),
+            Err(_) => semantic_err!("cannot shift left by a negative amount".into(), *location),
         };
         if left.ctype.is_signed() {
             let size = match left.ctype.sizeof() {
                 Ok(s) => s,
-                Err(err) => err!(err.into(), *location),
+                Err(err) => semantic_err!(err.into(), *location),
             };
             let max_shift = u64::from(CHAR_BIT) * size;
             if shift >= max_shift {
-                err!(
+                semantic_err!(
                     format!(
                         "cannot shift left by {} or more bits for type '{}' (got {})",
                         max_shift, ctype, shift
@@ -473,7 +473,7 @@ fn shift_left(
             ExprType::Literal(Token::Int(i)) => {
                 let (result, overflow) = i.overflowing_shl(shift as u32);
                 if overflow {
-                    err!(
+                    semantic_err!(
                         "overflow in shift left during constant folding".into(),
                         *location
                     );

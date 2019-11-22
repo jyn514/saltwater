@@ -267,7 +267,7 @@ impl Compiler {
         self.strings.insert(string);
         let str_id = match self.module.declare_data(&name, Linkage::Local, false, None) {
             Ok(id) => id,
-            Err(err) => err!(format!("error declaring static string: {}", err), location),
+            Err(err) => semantic_err!(format!("error declaring static string: {}", err), location),
         };
         let mut ctx = DataContext::new();
         ctx.define(string.resolve_and_clone().into_boxed_str().into());

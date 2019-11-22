@@ -72,7 +72,16 @@ pub fn compile(
 ) -> Result<Product, Error> {
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
     let parser = Parser::new(lexer, debug_ast)?;
-    let hir = parser.collect::<CompileResult<Vec<Locatable<Declaration>>>>()?;
+    let (mut hir, mut all_errs) = (vec![], vec_deque![]);
+    for result in parser {
+        match result {
+            Err(err) => all_errs.push_back(err),
+            Ok(decl) => hir.push(decl),
+        }
+    }
+    if !all_errs.is_empty() {
+        return Err(Error::Source(all_errs));
+    }
 
     ir::compile(hir, debug_ir)
         .map_err(Error::from)

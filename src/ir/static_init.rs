@@ -126,19 +126,19 @@ impl Compiler {
                     if let ExprType::Id(symbol) = struct_expr.expr {
                         self.static_ref(symbol, member_offset.try_into().unwrap(), offset, ctx);
                     } else {
-                        err!(
+                        semantic_err!(
                             "expression is not a compile time constant".into(),
                             struct_expr.location
                         );
                     }
                 }
-                _ => err!("cannot take the address of an rvalue".into(), expr.location),
+                _ => semantic_err!("cannot take the address of an rvalue".into(), expr.location),
             },
             ExprType::Literal(token) => {
                 let bytes = token.into_bytes(&expr.ctype, &expr.location)?;
                 buf.copy_from_slice(&bytes);
             }
-            _ => err!(
+            _ => semantic_err!(
                 "expression is not a compile time constant".into(),
                 expr.location
             ),
@@ -217,7 +217,7 @@ impl Compiler {
         location: &Location,
     ) -> CompileResult<()> {
         if let Type::Array(_, ArrayType::Unbounded) = inner_type {
-            err!(
+            semantic_err!(
                 "nested array must declare the size of each inner array".into(),
                 *location
             );

@@ -352,7 +352,7 @@ impl Compiler {
                 }
                 Ok(())
             } else {
-                err!(
+                semantic_err!(
                     format!(
                         "'{}' statement not in loop or switch statement",
                         if is_break { "break" } else { "continue" }
@@ -361,7 +361,7 @@ impl Compiler {
                 );
             }
         } else if !is_break {
-            err!("'continue' not in loop".into(), location);
+            semantic_err!("'continue' not in loop".into(), location);
         } else {
             // break from switch
             let (_, _, end_block) = self

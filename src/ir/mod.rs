@@ -242,11 +242,11 @@ impl Compiler {
             .collect::<Result<_, Locatable<String>>>()?;
         for (param, ir_val) in params.into_iter().zip(ir_vals) {
             let u64_size = match param.ctype.sizeof() {
-                Err(data) => err!(data.into(), *location),
+                Err(data) => semantic_err!(data.into(), *location),
                 Ok(size) => size,
             };
             let u32_size = match u32::try_from(u64_size) {
-                Err(_) => err!(
+                Err(_) => semantic_err!(
                     format!(
                         "size {} is too large for stack (can only handle 32-bit values)",
                         u64_size
@@ -303,7 +303,7 @@ impl Compiler {
                 let zero = [builder.ins().iconst(ir_int, 0)];
                 builder.ins().return_(&zero);
             } else if should_ret {
-                err!(
+                semantic_err!(
                     format!(
                         "expected a return statement before end of function '{}' returning {}",
                         id, func_type.return_type

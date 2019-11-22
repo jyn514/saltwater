@@ -70,7 +70,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         ExprType::Literal(Token::Int(i)) => i as u64,
                         ExprType::Literal(Token::UnsignedInt(u)) => u,
                         ExprType::Literal(Token::Char(c)) => u64::from(c),
-                        _ => err!(
+                        _ => semantic_err!(
                             "case expression is not an integer constant".into(),
                             expr.location,
                         ),
@@ -201,11 +201,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let ret_type = &current.return_type;
         let stmt = match (expr, *ret_type != Type::Void) {
             (None, false) => StmtType::Return(None),
-            (None, true) => err!(
+            (None, true) => semantic_err!(
                 format!("function '{}' does not return a value", current.id),
                 ret_token.location,
             ),
-            (Some(expr), false) => err!(
+            (Some(expr), false) => semantic_err!(
                 format!("void function '{}' should not return a value", current.id),
                 expr.location,
             ),
@@ -364,7 +364,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 })),
                 None => None,
             },
-            None => err!(
+            None => semantic_err!(
                 "expected expression or ';', got <end-of-file>".to_string(),
                 self.last_location,
             ),

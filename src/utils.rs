@@ -105,6 +105,15 @@ macro_rules! semantic_err {
     };
 }
 
+macro_rules! syntax_err {
+    ($message: expr, $location: expr$(,)?) => {
+        return Err(CompileError::Syntax(Locatable {
+            data: $message,
+            location: $location,
+        }));
+    };
+}
+
 /// Check that many expressions match a pattern
 /// TODO: only works for 1, 2, or 3 arguments
 #[allow(unused_macros)]

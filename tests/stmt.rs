@@ -324,7 +324,8 @@ fn goto() {
 
 #[test]
 fn syntax_errors() {
-    utils::assert_num_errs(
+    use rcc::Error;
+    let errs = utils::compile(
         "
     // 1. Is scope kept even in the presence of syntax errors?
     //    If not, `return i;` will give a semantic error
@@ -336,6 +337,14 @@ fn syntax_errors() {
         }
         return i;
     }",
-        2,
-    );
+        true,
+    )
+    .unwrap_err();
+    let errs = match errs {
+        Error::Source(errs) => errs,
+        _ => panic!("unexpected error compiling program"),
+    };
+    assert!(errs.len() == 2);
+    assert!(errs[0].is_semantic_err());
+    assert!(errs[1].is_syntax_err());
 }

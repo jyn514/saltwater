@@ -141,7 +141,12 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
             }
             let mut decls = match self.declaration() {
                 Ok(decls) => decls,
-                Err(err) => return Some(Err(err)),
+                Err(err) if self.pending.is_empty() => return Some(Err(err)),
+                // output errors in program order
+                Err(err) => {
+                    self.pending.push_back(Err(err));
+                    return self.pending.pop_front();
+                }
             };
             let next = match decls.pop_front() {
                 Some(decl) => decl,

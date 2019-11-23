@@ -19,8 +19,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Ok(None) => {}
                 // prevent infinite loops if there's a syntax error at EOF
                 Err(err) if self.peek_token() != None => {
-                    println!("saw statement error: {}", err);
-                    println!("next token is {:?}", self.peek_token());
                     if pending_err.is_none() {
                         pending_err = Some(err);
                     } else {

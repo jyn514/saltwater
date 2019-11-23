@@ -264,9 +264,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn panic(&mut self) {
         loop {
-            match self.peek_token() {
+            match self.next_token().map(|t| t.data) {
                 None | Some(Token::Semicolon) | Some(Token::RightBrace) => break,
-                _ => self.next_token(),
+                _ => continue,
             };
         }
     }

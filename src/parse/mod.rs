@@ -258,6 +258,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 data: msg.into(),
             })));
     }
+    fn default_err_handler(&mut self) -> impl '_ + FnMut(Locatable<String>) {
+        move |err| self.semantic_err(err.data, err.location)
+    }
     /*
      * If we're in an invalid state, try to recover.
      * Consume tokens until the end of a statement - either ';' or '}'

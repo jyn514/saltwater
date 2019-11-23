@@ -1323,20 +1323,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         });
 
         // function body
-        let body = match self.compound_statement()? {
-            Some(Stmt {
+        let body = match self.compound_statement() {
+            Ok(Some(Stmt {
                 data: StmtType::Compound(stmts),
                 ..
-            }) => stmts,
-            None => vec![],
-            x => unreachable!(
+            })) => Ok(stmts),
+            Ok(None) => Ok(vec![]),
+            Ok(x) => unreachable!(
                 "expected compound_statement to return compound statement, got '{:#?}' instead",
                 x
             ),
+            Err(e) => Err(e),
         };
         self.current_function = None;
         self.leave_scope(self.last_location);
-        Ok(body)
+        body
     }
     fn update_forward_declarations(
         ctype: &mut Type,

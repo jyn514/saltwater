@@ -12,13 +12,29 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .expect(Token::LeftBrace)
             .expect("compound_statement should be called with '{' as the next token");
         let mut stmts = vec![];
+        let mut pending_err = None;
         while self.peek_token() != Some(&Token::RightBrace) {
-            if let Some(x) = self.statement()? {
-                stmts.push(x);
+            match self.statement() {
+                Ok(Some(stmt)) => stmts.push(stmt),
+                Ok(None) => {}
+                // prevent infinite loops if there's a syntax error at EOF
+                Err(err) if self.peek_token() != None => {
+                    println!("saw statement error: {}", err);
+                    println!("next token is {:?}", self.peek_token());
+                    if pending_err.is_none() {
+                        pending_err = Some(err);
+                    } else {
+                        self.pending.push_back(Err(err));
+                    }
+                }
+                Err(err) => return Err(err),
             }
         }
         if self.expect(Token::RightBrace).is_err() {
             panic!("peek should always be the same as next");
+        }
+        if let Some(err) = pending_err {
+            return Err(err);
         }
         Ok(if stmts.is_empty() {
             None

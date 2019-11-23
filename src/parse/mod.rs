@@ -268,9 +268,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * Consume tokens until the end of a statement - either ';' or '}'
      */
     fn panic(&mut self) {
-        loop {
-            match self.next_token().map(|t| t.data) {
-                None | Some(Token::Semicolon) | Some(Token::RightBrace) => break,
+        while let Some(token) = self.next_token() {
+            match token.data {
+                Token::Semicolon => break,
+                Token::RightBrace => {
+                    break;
+                }
                 _ => continue,
             };
         }

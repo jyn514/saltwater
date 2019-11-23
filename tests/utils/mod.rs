@@ -111,3 +111,10 @@ pub fn assert_code(program: &str, code: i32) {
         code
     );
 }
+
+pub fn assert_num_errs<S: AsRef<str>>(program: S, n: usize) {
+    match compile(program.as_ref(), true) {
+        Err(Error::Source(errs)) => assert!(errs.len() == n),
+        _ => panic!("program should have an error"),
+    }
+}

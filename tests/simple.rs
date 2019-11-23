@@ -44,20 +44,6 @@ fn only_bad_tokens_are_error() {
 
 #[test]
 fn multiple_errors() {
-    assert_num_errs("int f(int) { return; }", 2);
-    assert_num_errs("int int enum e;", 2);
-}
-
-fn assert_num_errs<S: AsRef<str>>(program: S, n: usize) {
-    use rcc::Error;
-    match rcc::compile(
-        program.as_ref(),
-        "<integration-test>".to_string(),
-        false,
-        false,
-        false,
-    ) {
-        Err(Error::Source(errs)) => assert!(errs.len() == n),
-        _ => panic!("program should have an error"),
-    }
+    utils::assert_num_errs("int f(int) { return; }", 2);
+    utils::assert_num_errs("int int enum e;", 2);
 }

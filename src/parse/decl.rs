@@ -30,30 +30,28 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// where specifier_qualifier_list: (type_specifier | type_qualifier)+
     ///
     /// Used for casts and `sizeof` builtin.
-    pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, CompileError> {
+    pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, SyntaxError> {
         let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
         if sc != None {
-            return Err(CompileError::Semantic(Locatable {
-                location: self.last_location,
-                data: "type cannot have a storage class".to_string(),
-            }));
+            self.semantic_err("type cannot have a storage class", self.last_location);
         }
         let ctype = match self.declarator(true)? {
             None => ctype,
             Some(decl) => {
-                let (id, ctype) = decl.parse_type(ctype, false, &self.last_location)?;
+                let (id, ctype) = decl
+                    .parse_type(ctype, false, &self.last_location)
+                    .into_inner(self.multiple_err_handler());
                 if let Some(Locatable {
                     location,
                     data: name,
                 }) = id
                 {
-                    return Err(CompileError::Semantic(Locatable {
+                    self.semantic_err(
+                        format!("abstract types cannot have an identifier (got '{}')", name),
                         location,
-                        data: format!("abstract types cannot have an identifier (got '{}')", name),
-                    }));
-                } else {
-                    ctype
+                    );
                 }
+                ctype
             }
         };
         Ok(Locatable {
@@ -67,7 +65,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
-    pub fn declaration(&mut self) -> Result<VecDeque<Locatable<Declaration>>, CompileError> {
+    pub fn declaration(&mut self) -> Result<VecDeque<Locatable<Declaration>>, SyntaxError> {
         let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers()?;
         if self.match_next(&Token::Semicolon).is_some() {
             if !seen_compound_type {
@@ -83,11 +81,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let declarator = self
             .declarator(false)?
             .expect("declarator should return id when called with allow_abstract: false");
-        let (id, first_type) = declarator.parse_type(
-            ctype.clone(),
-            sc == Some(StorageClass::Typedef),
-            &self.last_location,
-        )?;
+        let (id, first_type) = declarator
+            .parse_type(
+                ctype.clone(),
+                sc == Some(StorageClass::Typedef),
+                &self.last_location,
+            )
+            .into_inner(self.multiple_err_handler());
         let id = id.expect("declarator should return id when called with allow_abstract: false");
         let sc = match sc {
             Some(sc) => sc,
@@ -112,7 +112,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             (Type::Function(ftype), Some(Token::LeftBrace)) => {
                 symbol.init = true;
                 let ftype = ftype.clone();
-                self.declare(&mut symbol, &id.location)?;
+                self.declare(&mut symbol, &id.location);
                 Some(Initializer::FunctionBody(self.function_body(
                     symbol.id.clone(),
                     ftype,
@@ -120,9 +120,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 )?))
             }
             (Type::Function(_), Some(Token::Equal)) => {
-                return Err(CompileError::Semantic(Locatable {
+                return Err(SyntaxError(Locatable {
                     data: format!(
-                        "can only initialize function '{}' with function body",
+                        "expected '{{', got '=' while parsing function body for {}",
                         symbol.id,
                     ),
                     location: id.location,
@@ -132,11 +132,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 self.next_token();
                 let init = Some(self.initializer(ctype)?);
                 symbol.init = true;
-                self.declare(&mut symbol, &id.location)?;
+                self.declare(&mut symbol, &id.location);
                 init
             }
             _ => {
-                self.declare(&mut symbol, &id.location)?;
+                self.declare(&mut symbol, &id.location);
                 None
             }
         };
@@ -161,7 +161,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         loop {
             let mut decl = self.init_declarator(sc, qualifiers, ctype.clone())?;
-            self.declare(&mut decl.data.symbol, &decl.location)?;
+            self.declare(&mut decl.data.symbol, &decl.location);
             pending.push_back(decl);
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon)?;
@@ -202,8 +202,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         first_id: Locatable<InternedStr>,
         first_ctype: Type,
         first_qualifiers: Qualifiers,
-    ) -> CompileResult<()> {
-        self.declare_typedef(first_id, first_ctype.clone(), first_qualifiers)?;
+    ) -> Result<(), SyntaxError> {
+        self.declare_typedef(first_id, first_ctype.clone(), first_qualifiers);
         if self.match_next(&Token::Semicolon).is_some() {
             return Ok(());
         }
@@ -213,21 +213,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 .declarator(false)?
                 .expect("declarator should return Some when called with allow_abstract: false");
             let location = decl.id().unwrap().location;
-            let (id, ctype) = decl.parse_type(first_ctype.clone(), true, &location)?;
+            let (id, ctype) = decl
+                .parse_type(first_ctype.clone(), true, &location)
+                .into_inner(self.multiple_err_handler());
             let id = id.unwrap();
-            self.declare_typedef(id, ctype, first_qualifiers)?;
+            self.declare_typedef(id, ctype, first_qualifiers);
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon)?;
                 return Ok(());
             }
         }
     }
-    fn declare_typedef(
-        &mut self,
-        id: Locatable<InternedStr>,
-        ctype: Type,
-        qualifiers: Qualifiers,
-    ) -> CompileResult<()> {
+    fn declare_typedef(&mut self, id: Locatable<InternedStr>, ctype: Type, qualifiers: Qualifiers) {
         let typedef = Symbol {
             id: id.data,
             ctype: ctype.clone(),
@@ -239,7 +236,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let message = if existing_def.storage_class == StorageClass::Typedef {
                 // special case redefining the same type
                 if existing_def.ctype == ctype {
-                    return Ok(());
+                    return;
                 }
                 format!(
                     "typedef '{}' for '{}' cannot be redefined as different type '{}'",
@@ -250,9 +247,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             };
             self.semantic_err(message, id.location);
         }
-        Ok(())
     }
-    fn declare(&mut self, decl: &mut Symbol, location: &Location) -> Result<(), CompileError> {
+    fn declare(&mut self, decl: &mut Symbol, location: &Location) {
         if decl.id == InternedStr::get_or_intern("main") {
             if let Type::Function(ftype) = &decl.ctype {
                 if !Self::is_main_func_signature(ftype) {
@@ -275,26 +271,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if let Some(existing) = self.scope.get_immediate(&decl.id) {
             if existing == decl {
                 if decl.init && existing.init {
-                    Err(CompileError::Semantic(Locatable {
-                        location: *location,
-                        data: format!("redefinition of '{}'", decl.id),
-                    }))
-                } else {
-                    self.scope.insert(decl.id.clone(), decl.clone());
-                    Ok(())
+                    self.semantic_err(format!("redefinition of '{}'", decl.id), *location);
                 }
             } else {
-                Err(CompileError::Semantic(Locatable {
-                    data: format!(
-                        "redeclaration of '{}' with different type or qualifiers (originally {}, now {})",
-                        existing.id, existing, decl
-                    ),
-                    location: *location,
-                }))
+                let err = format!(
+                    "redeclaration of '{}' with different type or qualifiers (originally {}, now {})",
+                    existing.id, existing, decl
+                );
+                self.semantic_err(err, *location);
             }
+            self.scope.insert(decl.id.clone(), decl.clone());
         } else {
             self.scope.insert(decl.id.clone(), decl.clone());
-            Ok(())
         }
     }
     fn init_declarator(
@@ -302,13 +290,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         sc: StorageClass,
         qualifiers: Qualifiers,
         ctype: Type,
-    ) -> Result<Locatable<Declaration>, CompileError> {
+    ) -> Result<Locatable<Declaration>, SyntaxError> {
         // parse declarator
-        // declarator: Result<Symbol, CompileError>
+        // declarator: Result<Symbol, SyntaxError>
         let decl = self
             .declarator(false)?
             .expect("declarator should never return None when called with allow_abstract: false");
-        let (id, ctype) = decl.parse_type(ctype, false, &self.last_location)?;
+        let (id, ctype) = decl
+            .parse_type(ctype, false, &self.last_location)
+            .into_inner(self.multiple_err_handler());
         let id = id.expect("declarator should return id when called with allow_abstract: false");
 
         // optionally, parse an initializer
@@ -352,7 +342,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn declaration_specifiers(
         &mut self,
-    ) -> Result<(Option<StorageClass>, Qualifiers, Type, bool), CompileError> {
+    ) -> Result<(Option<StorageClass>, Qualifiers, Type, bool), SyntaxError> {
         // TODO: initialization is a mess
         let mut keywords = HashSet::new();
         let mut storage_class = None;
@@ -362,13 +352,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut seen_compound = false;
         let mut seen_typedef = false;
         if self.peek_token().is_none() {
-            return Err(CompileError::Syntax(
-                Locatable {
-                    data: "expected declaration specifier, got <end-of-file>".into(),
-                    location: self.last_location,
-                }
-                .into(),
-            ));
+            return Err(SyntaxError(Locatable {
+                data: "expected declaration specifier, got <end-of-file>".into(),
+                location: self.last_location,
+            }));
         }
         // unsigned const int
         while let Some(locatable) = self.next_token() {
@@ -511,7 +498,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         kind: Keyword,
         location: Location,
-    ) -> Result<Type, CompileError> {
+    ) -> Result<Type, SyntaxError> {
         let ident = match self.match_next(&Token::Id(Default::default())) {
             Some(Locatable {
                 data: Token::Id(data),
@@ -614,7 +601,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         ident: Option<InternedStr>,
         location: Location,
-    ) -> CompileResult<Type> {
+    ) -> Result<Type, SyntaxError> {
         let mut current = 0;
         let mut members = vec![];
         loop {
@@ -624,25 +611,29 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 _ => unreachable!("expect is broken"),
             };
             if self.match_next(&Token::Equal).is_some() {
-                current = match self
-                    .constant_expr()?
-                    .constexpr()?
-                    .map(|l| (l.data.0, l.location))
-                {
-                    Ok((Token::Int(i), _)) => i,
-                    Ok((Token::UnsignedInt(u), location)) => match i64::try_from(u) {
+                let constant = self.constant_expr()?.constexpr().unwrap_or_else(|err| {
+                    let location = err.location();
+                    self.pending.push_back(Err(err));
+                    Locatable::new((Token::Int(-1), Type::Int(true)), location)
+                });
+                match constant.data.0 {
+                    Token::Int(i) => i,
+                    Token::UnsignedInt(u) => match i64::try_from(u) {
                         Ok(i) => i,
                         Err(_) => {
                             self.semantic_err(
                                 "values between INT_MAX and UINT_MAX are not supported for enums",
-                                location,
+                                constant.location,
                             );
                             std::i64::MAX
                         }
                     },
-                    Ok((Token::Char(c), _)) => i64::from(c),
-                    Ok((_, location)) | Err(location) => {
-                        self.semantic_err("expression is not an integer constant", location);
+                    Token::Char(c) => i64::from(c),
+                    _ => {
+                        self.semantic_err(
+                            "expression is not an integer constant",
+                            constant.location,
+                        );
                         0
                     }
                 };
@@ -705,7 +696,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ident: Option<InternedStr>,
         c_struct: bool,
         location: &Location,
-    ) -> CompileResult<Type> {
+    ) -> Result<Type, SyntaxError> {
         let mut members = vec![];
         loop {
             if let Some(Token::RightBrace) = self.peek_token() {
@@ -782,7 +773,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         | declarator ':' constant_expr
         ;
     */
-    fn struct_declarator_list(&mut self, members: &mut Vec<Symbol>) -> CompileResult<()> {
+    fn struct_declarator_list(&mut self, members: &mut Vec<Symbol>) -> Result<(), SyntaxError> {
         let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
         if let Some(token) = self.match_next(&Token::Semicolon) {
             crate::utils::warn("declaration does not declare anything", token.location);
@@ -800,13 +791,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             match decl.data.symbol.ctype {
                 Type::Struct(StructType::Named(_, 0, _, _))
                 | Type::Union(StructType::Named(_, 0, _, _)) => {
-                    return Err(CompileError::Semantic(Locatable {
-                        data: format!(
+                    self.semantic_err(
+                        format!(
                             "cannot use type '{}' before it has been defined",
                             decl.data.symbol.ctype
                         ),
-                        location: decl.location,
-                    }));
+                        decl.location,
+                    );
                 }
                 _ => {}
             }
@@ -852,11 +843,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      ;
      *
      */
-    fn parameter_type_list(&mut self) -> Result<DeclaratorType, CompileError> {
+    fn parameter_type_list(&mut self) -> Result<DeclaratorType, SyntaxError> {
         self.expect(Token::LeftParen)
             .expect("parameter_type_list should only be called with '(' as the next token");
         let mut params = vec![];
-        let mut errs = VecDeque::new();
         if self.match_next(&Token::RightParen).is_some() {
             return Ok(DeclaratorType::Function(FunctionDeclarator {
                 params,
@@ -866,10 +856,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         loop {
             if let Some(locatable) = self.match_next(&Token::Ellipsis) {
                 if params.is_empty() {
-                    errs.push_back(CompileError::Semantic(Locatable {
-                        location: locatable.location,
-                        data: "ISO C requires a parameter before '...'".to_string(),
-                    }));
+                    self.semantic_err(
+                        "ISO C requires a parameter before '...'".to_string(),
+                        locatable.location,
+                    );
                 }
                 // TODO: have a better error message for `int f(int, ..., int);`
                 self.expect(Token::RightParen)?;
@@ -880,17 +870,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             let (sc, quals, param_type, _) = self.declaration_specifiers()?;
             // true: allow abstract_declarators
-            let declarator = match self.declarator(true) {
-                Err(x) => {
-                    errs.push_back(x);
-                    continue;
-                }
-                Ok(declarator) => declarator,
-            };
+            let declarator = self.declarator(true)?;
             if let Some(storage_class) = sc {
-                errs.push_back(CompileError::Semantic(Locatable {
-                    location: self.last_location,
-                    data: format!(
+                self.semantic_err(
+                    format!(
                         "cannot specify storage class '{}' for {}",
                         storage_class,
                         if let Some(ref decl) = declarator {
@@ -903,10 +886,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             "<parse-error>".to_string()
                         }
                     ),
-                }));
+                    self.last_location,
+                );
             }
             if let Some(decl) = declarator {
-                let (id, mut ctype) = decl.parse_type(param_type, false, &self.last_location)?;
+                let (id, mut ctype) = decl
+                    .parse_type(param_type, false, &self.last_location)
+                    .into_inner(self.multiple_err_handler());
                 // int f(int a[]) is the same as int f(int *a)
                 // TODO: parse int f(int a[static 5])
                 if let Type::Array(to, _) = ctype {
@@ -921,13 +907,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     data: Default::default(),
                 });
                 if data != Default::default() && params.iter().any(|p| p.data.id == data) {
-                    errs.push_back(CompileError::Semantic(Locatable {
-                        location,
-                        data: format!(
+                    self.semantic_err(
+                        format!(
                             "duplicate parameter name '{}' in function declaration",
                             data,
                         ),
-                    }));
+                        location,
+                    );
                 }
                 params.push(Locatable {
                     location,
@@ -941,10 +927,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 });
             } else {
                 if param_type == Type::Void && !params.is_empty() {
-                    errs.push_back(CompileError::Semantic(Locatable {
-                        data: "void must be the first and only parameter if specified".into(),
-                        location: self.next_location(),
-                    }));
+                    let loc = self.next_location();
+                    self.semantic_err(
+                        "void must be the first and only parameter if specified",
+                        loc,
+                    );
                     continue;
                 }
                 // abstract param
@@ -961,15 +948,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::RightParen)?;
-                let err = errs.pop_front();
-                self.pending.extend(errs.into_iter().map(Err));
-                return match err {
-                    Some(err) => Err(err),
-                    None => Ok(DeclaratorType::Function(FunctionDeclarator {
-                        params,
-                        varargs: false,
-                    })),
-                };
+                return Ok(DeclaratorType::Function(FunctionDeclarator {
+                    params,
+                    varargs: false,
+                }));
             }
         }
     }
@@ -988,7 +970,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn postfix_type(
         &mut self,
         mut prefix: Option<Declarator>,
-    ) -> Result<Option<Declarator>, CompileError> {
+    ) -> Result<Option<Declarator>, SyntaxError> {
         // postfix
         while let Some(data) = self.peek_token() {
             prefix = match data {
@@ -1005,7 +987,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         self.expect(Token::RightBracket)?;
                         // TODO: allow any integer type
                         // also TODO: look up the rules for this in the C standard
-                        let length = expr.const_int()?;
+                        let length = expr.const_int().unwrap_or_else(|err| {
+                            self.pending.push_back(Err(err));
+                            1
+                        });
                         Some(Declarator {
                             current: DeclaratorType::Array(ArrayType::Fixed(length)),
                             next: prefix.map(Box::new),
@@ -1066,7 +1051,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn direct_declarator(
         &mut self,
         allow_abstract: bool,
-    ) -> Result<Option<Declarator>, CompileError> {
+    ) -> Result<Option<Declarator>, SyntaxError> {
         // we'll pass this to postfix_type in just a second
         // if None, we didn't find an ID
         // should only happen if allow_abstract is true
@@ -1105,24 +1090,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             _ if allow_abstract => None,
             Some(x) => {
-                let err = Err(CompileError::Syntax(
-                    Locatable {
-                        data: format!("expected variable name or '(', got '{}'", x),
-                        location: self.next_location(),
-                    }
-                    .into(),
-                ));
+                let err = Err(Locatable {
+                    data: format!("expected variable name or '(', got '{}'", x),
+                    location: self.next_location(),
+                }
+                .into());
                 self.panic();
                 return err;
             }
             None => {
-                return Err(CompileError::Syntax(
-                    Locatable {
-                        location: self.next_location(),
-                        data: "expected variable name or '(', got <end-of-of-file>".to_string(),
-                    }
-                    .into(),
-                ))
+                return Err(Locatable {
+                    location: self.next_location(),
+                    data: "expected variable name or '(', got <end-of-of-file>".to_string(),
+                }
+                .into());
             }
         };
         self.postfix_type(decl)
@@ -1154,7 +1135,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      ;
      *
      */
-    fn declarator(&mut self, allow_abstract: bool) -> Result<Option<Declarator>, CompileError> {
+    fn declarator(&mut self, allow_abstract: bool) -> Result<Option<Declarator>, SyntaxError> {
         if let Some(data) = self.peek_token() {
             match data {
                 Token::Star => {
@@ -1221,7 +1202,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// Rewritten as
     /// initializer: assignment_expr
     ///     | '{' initializer (',' initializer)* '}'
-    fn initializer(&mut self, ctype: &Type) -> Result<Initializer, CompileError> {
+    fn initializer(&mut self, ctype: &Type) -> Result<Initializer, SyntaxError> {
         if let Type::Union(struct_type) = ctype {
             let members = match struct_type {
                 StructType::Anonymous(members) => members,
@@ -1291,7 +1272,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         id: InternedStr,
         ftype: FunctionType,
         location: Location,
-    ) -> Result<Vec<Stmt>, CompileError> {
+    ) -> Result<Vec<Stmt>, SyntaxError> {
         // if it's a function, set up state so we know the return type
         // TODO: rework all of this so semantic analysis is done _after_ parsing
         // TODO: that will remove a lot of clones and also make the logic much simpler
@@ -1562,15 +1543,20 @@ impl Declarator {
             },
         }
     }
-    // `current` should be only a base type, i.e. something returned by type_specifiers
+    /// `current` should be only a base type, i.e. something returned by type_specifiers
+    ///
+    /// Explanation of the return type:
+    /// `Option<Locatable<InternedStr>>`: the name of the declarator. May not exist for abstract parameters.
+    /// `RecoverableResult<...>`: see documentation for why this exists
     fn parse_type(
         self,
         mut current: Type,
         is_typedef: bool,
         location: &Location, // only used for abstract parameters
-    ) -> Result<(Option<Locatable<InternedStr>>, Type), CompileError> {
+    ) -> RecoverableResult<(Option<Locatable<InternedStr>>, Type), Vec<SemanticError>> {
         use DeclaratorType::*;
         let (mut declarator, mut identifier) = (Some(self), None);
+        let mut pending_errs = vec![];
         while let Some(decl) = declarator {
             current = match decl.current {
                 Id(id, location) => {
@@ -1587,14 +1573,15 @@ impl Declarator {
                             location: *location,
                             data: InternedStr::get_or_intern("a"),
                         });
-                        return Err(CompileError::Semantic(Locatable {
-                            data: format!(
+                        pending_errs.push(Locatable::new(
+                            format!(
                                 "array cannot contain function type '{}'. \
                                  help: try array of pointer to function: (*{}[])()",
                                 current, name
                             ),
                             location,
-                        }));
+                        ));
+                        Type::Array(Box::new(current), arr_type)
                     }
                     _ => Type::Array(Box::new(current), arr_type),
                 },
@@ -1618,14 +1605,19 @@ impl Declarator {
                         } else {
                             ("array", format!("*{}()", name))
                         };
-                        return Err(CompileError::Semantic(Locatable {
+                        pending_errs.push(Locatable {
                             data: format!(
                                 "functions cannot return {} type '{}'. \
                                  help: try returning a pointer instead: {}",
                                 typename, current, help,
                             ),
                             location,
-                        }));
+                        });
+                        Type::Function(FunctionType {
+                            return_type: Box::new(current),
+                            params: func_decl.params.into_iter().map(|x| x.data).collect(),
+                            varargs: func_decl.varargs,
+                        })
                     }
                     _ => Type::Function(FunctionType {
                         return_type: Box::new(current),
@@ -1637,12 +1629,15 @@ impl Declarator {
             declarator = decl.next.map(|x| *x);
         }
         if current == Type::Void && !is_typedef {
-            Err(CompileError::Semantic(Locatable {
+            pending_errs.push(Locatable {
                 data: "variables cannot have type 'void'".to_string(),
                 location: identifier.map_or_else(|| *location, |l| l.location),
-            }))
-        } else {
+            });
+        }
+        if pending_errs.is_empty() {
             Ok((identifier, current))
+        } else {
+            Err((pending_errs, (identifier, current)))
         }
     }
 }

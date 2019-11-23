@@ -3,12 +3,10 @@ use crate::arch::SIZE_T;
 use crate::data::prelude::*;
 use crate::data::{lex::Keyword, types::ArrayType, StorageClass::Typedef};
 
-type ExprResult = Result<Expr, CompileError>;
-type SemanticError = Locatable<String>;
-type RecoverableResult<T = Expr, E = CompileError> = Result<T, (E, T)>;
+type SyntaxResult = Result<Expr, SyntaxError>;
 
 macro_rules! struct_member_helper {
-    ($members: expr, $expr: expr, $id: expr, $location: expr) => {
+    ($self: expr, $members: expr, $expr: expr, $id: expr, $location: expr) => {
         if let Some(member) = $members.iter().find(|member| member.id == $id) {
             Ok(Expr {
                 ctype: member.ctype.clone(),
@@ -18,17 +16,18 @@ macro_rules! struct_member_helper {
                 expr: ExprType::Member(Box::new($expr), $id),
             })
         } else {
-            Err(CompileError::Semantic(Locatable {
-                data: format!("no member named '{}' in '{}'", $id, $expr.ctype),
-                location: $location,
-            }))
+            $self.semantic_err(
+                format!("no member named '{}' in '{}'", $id, $expr.ctype),
+                $location,
+            );
+            Ok($expr)
         }
     };
 }
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// expr_opt: expr ';' | ';'
-    pub fn expr_opt(&mut self, token: Token) -> Result<Option<Expr>, CompileError> {
+    pub fn expr_opt(&mut self, token: Token) -> Result<Option<Expr>, SyntaxError> {
         if self.match_next(&token).is_some() {
             Ok(None)
         } else {
@@ -61,7 +60,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     //
     // Comma operator: evalutate the first expression (usually for its side effects)
     // and return the second
-    pub fn expr(&mut self) -> ExprResult {
+    pub fn expr(&mut self) -> SyntaxResult {
         self.left_associative_binary_op(
             Self::assignment_expr,
             &[&Token::Comma],
@@ -85,7 +84,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
     /// Parses an expression and ensures that it can be evaluated at compile time.
     // constant_expr: conditional_expr;
-    pub fn constant_expr(&mut self) -> ExprResult {
+    pub fn constant_expr(&mut self) -> SyntaxResult {
         let expr = self.conditional_expr()?;
         if !expr.constexpr {
             self.semantic_err("not a constant expression".to_string(), expr.location)
@@ -112,7 +111,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// This is public so that we can parse expressions that can't have commas
     /// (usually initializers)
-    pub fn assignment_expr(&mut self) -> ExprResult {
+    pub fn assignment_expr(&mut self) -> SyntaxResult {
         let lval = self.conditional_expr()?;
         if self
             .peek_token()
@@ -121,10 +120,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let assign_op = self.next_token().unwrap();
             let mut rval = self.assignment_expr()?.rval();
             if !lval.lval {
-                Err(CompileError::Semantic(Locatable {
-                    data: "expression is not assignable".to_string(),
-                    location: assign_op.location,
-                }))
+                self.semantic_err(
+                    "expression is not assignable".to_string(),
+                    assign_op.location,
+                );
+                Ok(lval)
             } else {
                 if rval.ctype != lval.ctype {
                     rval = rval
@@ -163,10 +163,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf for formal requirements.
     /// It does not specify what happens if this is not the case.
     /// Clang and GCC give a warning; we are more strict and emit an error.
-    fn conditional_expr(&mut self) -> ExprResult {
+    fn conditional_expr(&mut self) -> SyntaxResult {
         let condition = self.logical_or_expr()?;
         if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {
-            let condition = condition.truthy()?;
+            let condition = condition.truthy().into_inner(self.compile_err_handler());
             let mut then = self.expr()?.rval();
             self.expect(Token::Colon)?;
             let mut otherwise = self.conditional_expr()?.rval();
@@ -211,7 +211,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// A logical or ('||') evaluates the left-hand side. If the left is falsy, it evaluates and
     /// returns the right-hand side as a boolean.
     /// Both the left and right hand sides must be scalar types.
-    fn logical_or_expr(&mut self) -> ExprResult {
+    fn logical_or_expr(&mut self) -> SyntaxResult {
         self.scalar_left_associative_binary_op(
             Self::logical_and_expr,
             |a, b| {
@@ -237,7 +237,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// A logical and ('&&') evaluates the left-hand side. If the left is truthy, it evaluates
     /// and returns the right-hand side as a boolean.
     /// Both the left and right hand sides must be scalar types.
-    fn logical_and_expr(&mut self) -> ExprResult {
+    fn logical_and_expr(&mut self) -> SyntaxResult {
         self.scalar_left_associative_binary_op(
             Self::inclusive_or_expr,
             |a, b| {
@@ -257,7 +257,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// ;
     ///
     /// Rewritten similarly.
-    fn inclusive_or_expr(&mut self) -> ExprResult {
+    fn inclusive_or_expr(&mut self) -> SyntaxResult {
         self.integral_left_associative_binary_op(
             Self::exclusive_or_expr,
             &[&Token::BitwiseOr],
@@ -269,7 +269,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// : and_expr
     /// | exclusive_or_expr '^' and_expr
     /// ;
-    fn exclusive_or_expr(&mut self) -> ExprResult {
+    fn exclusive_or_expr(&mut self) -> SyntaxResult {
         self.integral_left_associative_binary_op(
             Self::and_expr,
             &[&Token::Xor],
@@ -281,7 +281,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// : equality_expr
     /// | and_expr '&' equality_expr
     /// ;
-    fn and_expr(&mut self) -> ExprResult {
+    fn and_expr(&mut self) -> SyntaxResult {
         self.integral_left_associative_binary_op(
             Self::equality_expr,
             &[&Token::Ampersand],
@@ -294,7 +294,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | equality_expr EQ_OP relational_expr
     /// | equality_expr NE_OP relational_expr
     /// ;
-    fn equality_expr(&mut self) -> ExprResult {
+    fn equality_expr(&mut self) -> SyntaxResult {
         self.left_associative_binary_op(
             Self::relational_expr,
             &[&Token::EqualEqual, &Token::NotEqual],
@@ -309,7 +309,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | relational_expr LE_OP shift_expr
     /// | relational_expr GE_OP shift_expr
     /// ;
-    fn relational_expr(&mut self) -> ExprResult {
+    fn relational_expr(&mut self) -> SyntaxResult {
         self.left_associative_binary_op(
             Self::shift_expr,
             &[
@@ -327,7 +327,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | shift_expr LEFT_OP additive_expr
     /// | shift_expr RIGHT_OP additive_expr
     /// ;
-    fn shift_expr(&mut self) -> ExprResult {
+    fn shift_expr(&mut self) -> SyntaxResult {
         self.integral_left_associative_binary_op(
             Self::additive_expr,
             &[&Token::ShiftLeft, &Token::ShiftRight],
@@ -352,7 +352,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | additive_expr '+' multiplicative_expr
     /// | additive_expr '-' multiplicative_expr
     /// ;
-    fn additive_expr(&mut self) -> ExprResult {
+    fn additive_expr(&mut self) -> SyntaxResult {
         self.left_associative_binary_op(
             Self::multiplicative_expr,
             &[&Token::Plus, &Token::Minus],
@@ -413,7 +413,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | multiplicative_expr '/' cast_expr
     /// | multiplicative_expr '%' cast_expr
     /// ;
-    fn multiplicative_expr(&mut self) -> ExprResult {
+    fn multiplicative_expr(&mut self) -> SyntaxResult {
         self.left_associative_binary_op(
             Self::cast_expr,
             &[&Token::Star, &Token::Divide, &Token::Mod],
@@ -460,7 +460,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// : unary_expr
     /// | '(' type_name ')' cast_expr
     /// ;
-    fn cast_expr(&mut self) -> ExprResult {
+    fn cast_expr(&mut self) -> SyntaxResult {
         let seen_param = self.peek_token() == Some(&Token::LeftParen);
         let next_token = self.peek_next_token();
         let is_cast = seen_param
@@ -531,17 +531,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | SIZEOF unary_expr
     /// | SIZEOF '(' type_name ')'
     /// ;
-    fn unary_expr(&mut self) -> ExprResult {
+    fn unary_expr(&mut self) -> SyntaxResult {
         match self.peek_token() {
             Some(Token::PlusPlus) => {
                 let Locatable { location, .. } = self.next_token().unwrap();
                 let expr = self.unary_expr()?;
-                Ok(Expr::increment_op(true, true, expr, location).into_inner(self.default_err_handler()))
+                Ok(Expr::increment_op(true, true, expr, location)
+                    .into_inner(self.default_err_handler()))
             }
             Some(Token::MinusMinus) => {
                 let Locatable { location, .. } = self.next_token().unwrap();
                 let expr = self.unary_expr()?;
-                Ok(Expr::increment_op(true, false, expr, location).into_inner(self.default_err_handler()))
+                Ok(Expr::increment_op(true, false, expr, location)
+                    .into_inner(self.default_err_handler()))
             }
             Some(Token::Keyword(Keyword::Sizeof)) => {
                 self.next_token();
@@ -596,7 +598,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         }),
                         _ => {
                             self.semantic_err("cannot take address of a value", location);
-                            return Ok(expr);
+                            Ok(expr)
                         }
                     },
                     Token::Star => match &expr.ctype {
@@ -616,23 +618,29 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             // https://github.com/jyn514/rcc/issues/90
                             expr: ExprType::Noop(Box::new(expr.rval())),
                         }),
-                        _ => Err(Locatable {
-                            data: format!(
-                                "cannot dereference expression of non-pointer type '{}'",
-                                expr.ctype
-                            ),
-                            location,
-                        }),
+                        _ => {
+                            self.semantic_err(
+                                format!(
+                                    "cannot dereference expression of non-pointer type '{}'",
+                                    expr.ctype
+                                ),
+                                location,
+                            );
+                            Ok(expr)
+                        }
                     },
                     Token::Plus => {
                         if !expr.ctype.is_arithmetic() {
-                            Err(Locatable {
-                                data: format!("cannot use unary plus on expression of non-arithmetic type '{}'",
+                            self.semantic_err(
+                                format!("cannot use unary plus on expression of non-arithmetic type '{}'",
                                 expr.ctype),
                                 location,
-                            })
+                            );
+                            Ok(expr)
                         } else {
-                            let expr = expr.integer_promote().into_inner(self.default_err_handler());
+                            let expr = expr
+                                .integer_promote()
+                                .into_inner(self.default_err_handler());
                             Ok(Expr {
                                 lval: false,
                                 location,
@@ -642,12 +650,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     }
                     Token::Minus => {
                         if !expr.ctype.is_arithmetic() {
-                            Err(Locatable {
-                                data: format!("cannot use unary minus on expression of non-arithmetic type '{}'", expr.ctype),
+                            self.semantic_err(
+                                format!("cannot use unary minus on expression of non-arithmetic type '{}'", expr.ctype),
                                 location,
-                            })
+                            );
+                            Ok(expr)
                         } else {
-                            let expr = expr.integer_promote().into_inner(self.default_err_handler());
+                            let expr = expr
+                                .integer_promote()
+                                .into_inner(self.default_err_handler());
                             Ok(Expr {
                                 lval: false,
                                 ctype: expr.ctype.clone(),
@@ -659,12 +670,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     }
                     Token::BinaryNot => {
                         if !expr.ctype.is_integral() {
-                            Err(Locatable {
-                                data: format!("cannot use unary negation on expression of non-integer type '{}'", expr.ctype),
+                            self.semantic_err(
+                                format!("cannot use unary negation on expression of non-integer type '{}'", expr.ctype),
                                 location,
-                            })
+                            );
+                            Ok(expr)
                         } else {
-                            let expr = expr.integer_promote()
+                            let expr = expr
+                                .integer_promote()
                                 .into_inner(|err| self.semantic_err(err.data, err.location));
                             Ok(Expr {
                                 lval: false,
@@ -675,10 +688,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             })
                         }
                     }
-                    Token::LogicalNot => return expr.logical_not(location),
+                    Token::LogicalNot => Ok(expr.logical_not(location)),
                     x => unreachable!("didn't expect '{}' to be an unary operand", x),
                 }
-            }.map_err(CompileError::Semantic),
+            }
             _ => self.postfix_expr(),
         }
     }
@@ -692,7 +705,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | postfix_expr INC_OP
     /// | postfix_expr DEC_OP
     /// ;
-    fn postfix_expr(&mut self) -> CompileResult<Expr> {
+    fn postfix_expr(&mut self) -> SyntaxResult {
         let mut expr = self.primary_expr()?;
         while let Some(Locatable {
             location,
@@ -847,7 +860,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// : /* empty */
     /// | assignment_expr (',' assignment_expr)*
     /// ;
-    fn argument_expr_list_opt(&mut self) -> Result<Vec<Expr>, CompileError> {
+    fn argument_expr_list_opt(&mut self) -> Result<Vec<Expr>, SyntaxError> {
         if self.peek_token() == Some(&Token::RightParen) {
             return Ok(vec![]);
         }
@@ -865,7 +878,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | STRING_LITERAL
     /// | '(' expr ')'
     /// ;
-    fn primary_expr(&mut self) -> Result<Expr, CompileError> {
+    fn primary_expr(&mut self) -> SyntaxResult {
         use Token::*;
         if let Some(Locatable { location, data }) = self.next_token() {
             match data {
@@ -910,13 +923,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Ok(expr)
                 }
                 other => {
-                    let err = Err(CompileError::Syntax(
-                        Locatable {
-                            location,
-                            data: format!("expected '(' or literal, got '{}'", other),
-                        }
-                        .into(),
-                    ));
+                    let err = Err(Locatable {
+                        location,
+                        data: format!("expected '(' or literal, got '{}'", other),
+                    }
+                    .into());
                     self.unput(Some(Locatable {
                         location,
                         data: other,
@@ -925,39 +936,40 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
             }
         } else {
-            Err(CompileError::Syntax(
-                Locatable {
-                    location: self.next_location(),
-                    data: "expected '(' or literal, got <end-of-file>".to_string(),
-                }
-                .into(),
-            ))
+            Err(Locatable {
+                location: self.next_location(),
+                data: "expected '(' or literal, got <end-of-file>".to_string(),
+            }
+            .into())
         }
     }
 
     // parse a struct member
     // used for both s.a and s->a
-    fn struct_member(&mut self, expr: Expr, id: InternedStr, location: Location) -> ExprResult {
+    fn struct_member(&mut self, expr: Expr, id: InternedStr, location: Location) -> SyntaxResult {
         match &expr.ctype {
             Type::Struct(StructType::Anonymous(members))
             | Type::Union(StructType::Anonymous(members)) => {
-                struct_member_helper!(members, expr, id, location)
+                struct_member_helper!(self, members, expr, id, location)
             }
             Type::Struct(StructType::Named(name, _, _, _))
             | Type::Union(StructType::Named(name, _, _, _)) => match self.tag_scope.get(name) {
                 Some(TagEntry::Union(members)) | Some(TagEntry::Struct(members)) => {
-                    struct_member_helper!(members, expr, id, location)
+                    struct_member_helper!(self, members, expr, id, location)
                 }
-                None => Err(CompileError::Semantic(Locatable::new(
-                    format!("{} has not yet been defined", expr.ctype),
-                    location,
-                ))),
+                None => {
+                    self.semantic_err(format!("{} has not yet been defined", expr.ctype), location);
+                    Ok(expr)
+                }
                 _ => unreachable!("parser should ensure types in scope are valid"),
             },
-            _ => Err(CompileError::Semantic(Locatable {
-                data: format!("expected struct or union, got type '{}'", expr.ctype),
-                location,
-            })),
+            _ => {
+                self.semantic_err(
+                    format!("expected struct or union, got type '{}'", expr.ctype),
+                    location,
+                );
+                Ok(expr)
+            }
         }
     }
 
@@ -977,10 +989,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         expr_func: E,
         token: &Token,
         ctype: Type,
-    ) -> ExprResult
+    ) -> SyntaxResult
     where
         E: Fn(Box<Expr>, Box<Expr>) -> Result<ExprType, (SemanticError, Expr)>,
-        G: Fn(&mut Self) -> ExprResult,
+        G: Fn(&mut Self) -> SyntaxResult,
     {
         self.left_associative_binary_op(next_grammar_func, &[token], move |left, right, token| {
             let non_scalar = if !left.ctype.is_scalar() {
@@ -1023,10 +1035,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         next_grammar_func: G,
         tokens: &[&Token],
         expr_func: E,
-    ) -> ExprResult
+    ) -> SyntaxResult
     where
         E: Fn(Expr, Expr, Locatable<Token>) -> RecoverableResult<Expr, Locatable<String>>,
-        G: Fn(&mut Self) -> ExprResult,
+        G: Fn(&mut Self) -> SyntaxResult,
     {
         self.left_associative_binary_op(next_grammar_func, tokens, |expr, next, token| {
             let non_scalar = if !expr.ctype.is_integral() {
@@ -1068,10 +1080,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         next_grammar_func: G,
         tokens: &[&Token],
         mut expr_func: E,
-    ) -> ExprResult
+    ) -> SyntaxResult
     where
         E: FnMut(Box<Expr>, Box<Expr>, Locatable<Token>) -> RecoverableResult<Expr, SemanticError>,
-        G: Fn(&mut Self) -> ExprResult,
+        G: Fn(&mut Self) -> SyntaxResult,
     {
         let mut expr = next_grammar_func(self)?;
         while let Some(locatable) = self.match_any(tokens) {
@@ -1201,19 +1213,22 @@ impl Expr {
     // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
     //
     // if (expr)
-    pub fn truthy(mut self) -> Result<Expr, CompileError> {
+    pub fn truthy(mut self) -> RecoverableResult<Expr, CompileError> {
         self = self.rval();
         if self.ctype == Type::Bool {
             return Ok(self);
         }
         if !self.ctype.is_scalar() {
-            Err(CompileError::Semantic(Locatable {
-                location: self.location,
-                data: format!(
-                    "expression of type '{}' cannot be converted to bool",
-                    self.ctype
-                ),
-            }))
+            Err((
+                CompileError::Semantic(Locatable {
+                    location: self.location,
+                    data: format!(
+                        "expression of type '{}' cannot be converted to bool",
+                        self.ctype
+                    ),
+                }),
+                self,
+            ))
         } else {
             let zero = Expr::zero(self.location).cast(&self.ctype).unwrap();
             Ok(Expr {
@@ -1225,14 +1240,14 @@ impl Expr {
             })
         }
     }
-    pub fn logical_not(self, location: Location) -> Result<Expr, CompileError> {
-        Ok(Expr {
+    pub fn logical_not(self, location: Location) -> Expr {
+        Expr {
             location,
             ctype: Type::Bool,
             constexpr: self.constexpr,
             lval: false,
             expr: ExprType::LogicalNot(Box::new(self)),
-        })
+        }
     }
     // Simple assignment rules, section 6.5.16.1 of the C standard
     // the funky return type is so we don't consume the original expression in case of an error
@@ -1654,22 +1669,21 @@ impl Type {
 mod tests {
     use crate::data::{prelude::*, types, Scope, StorageClass};
     use crate::intern::InternedStr;
-    use crate::parse::expr::ExprResult;
     use crate::parse::tests::*;
-    fn parse_expr(input: &str) -> ExprResult {
+    fn parse_expr(input: &str) -> CompileResult<Expr> {
         // because we're a child module of parse, we can skip straight to `expr()`
         let mut p = parser(input);
         let exp = p.expr();
         if let Some(Err(err)) = p.pending.pop_front() {
             Err(err)
         } else {
-            exp
+            exp.map_err(SyntaxError::into)
         }
     }
-    fn get_location(expr: &ExprResult) -> Location {
-        match expr {
-            Err(ref err) => err.location(),
-            Ok(ref l) => l.location,
+    fn get_location(r: &CompileResult<Expr>) -> Location {
+        match r {
+            Ok(expr) => expr.location,
+            Err(err) => err.location(),
         }
     }
     fn test_literal<C: std::string::ToString, T>(token: C, parse_literal: T) -> bool
@@ -1679,7 +1693,7 @@ mod tests {
         let parsed = parse_expr(&token.to_string());
         parsed == Ok(parse_literal(token, get_location(&parsed)))
     }
-    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[&Symbol]) -> ExprResult {
+    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[&Symbol]) -> CompileResult<Expr> {
         let mut parser = parser(input);
         let mut scope = Scope::new();
         for var in variables {
@@ -1690,7 +1704,7 @@ mod tests {
         if let Some(Err(err)) = parser.pending.pop_front() {
             Err(err)
         } else {
-            exp
+            exp.map_err(SyntaxError::into)
         }
     }
     fn assert_type(input: &str, ctype: Type) {
@@ -1721,11 +1735,7 @@ mod tests {
             storage_class: Default::default(),
             init: false,
         };
-        let mut scope = Scope::new();
-        scope.insert(x.id.clone(), x.clone());
-        let mut scope_parser = parser("x");
-        scope_parser.scope = scope;
-        let parsed = scope_parser.expr();
+        let parsed = parse_expr_with_scope("x", &[&x]);
         assert_eq!(
             parsed,
             Ok(Expr {

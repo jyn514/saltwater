@@ -10,7 +10,9 @@ pub mod lex;
 pub mod types;
 pub mod prelude {
     pub use super::{
-        error::{CompileError, CompileResult, Recoverable},
+        error::{
+            CompileError, CompileResult, Recoverable, RecoverableResult, SemanticError, SyntaxError,
+        },
         lex::{Locatable, Location, Token},
         types::{StructType, Type},
         Declaration, Expr, ExprType, Stmt, StmtType, Symbol,
@@ -18,7 +20,7 @@ pub mod prelude {
     pub use crate::intern::InternedStr;
 }
 use crate::intern::InternedStr;
-use error::{CompileError, CompileResult};
+use error::CompileError;
 use lex::{Keyword, Locatable, Location, Token};
 use types::Type;
 
@@ -198,15 +200,12 @@ pub enum LengthError {
 }
 
 impl Expr {
-    pub fn const_int(self) -> CompileResult<SIZE_T> {
+    pub fn const_int(self) -> error::CompileResult<SIZE_T> {
         use std::convert::TryInto;
         if !self.ctype.is_integral() {
             semantic_err!(LengthError::NonIntegral.into(), self.location,);
         }
-        let literal = self.constexpr()?.map_err(|location| Locatable {
-            data: LengthError::Dynamic.into(),
-            location,
-        })?;
+        let literal = self.constexpr()?;
         match literal.data.0 {
             Token::UnsignedInt(u) => Ok(u),
             Token::Int(x) => x.try_into().map_err(|_| {

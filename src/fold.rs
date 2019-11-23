@@ -83,16 +83,17 @@ impl Expr {
     }
     // first result: whether the expression itself is erroneous
     // second result: whether the expression was constexpr
-    pub fn constexpr(self) -> CompileResult<Result<Locatable<(Token, Type)>, Location>> {
+    pub fn constexpr(self) -> CompileResult<Locatable<(Token, Type)>> {
         let folded = self.const_fold()?;
-        let constexpr = match folded.expr {
+        match folded.expr {
             ExprType::Literal(token) => Ok(Locatable {
                 data: (token, folded.ctype),
                 location: folded.location,
             }),
-            _ => Err(folded.location),
-        };
-        Ok(constexpr)
+            _expr => {
+                Err(Locatable::new("not a constant expression".into(), folded.location).into())
+            }
+        }
     }
     pub fn const_fold(self) -> CompileResult<Expr> {
         let location = self.location;

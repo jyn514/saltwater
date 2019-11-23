@@ -284,7 +284,6 @@ impl<K: Hash + Eq, V> Scope<K, V> {
         self.0.len()
     }
     pub fn is_global(&self) -> bool {
-        debug_assert!(!self.0.is_empty());
         self.0.len() == 1
     }
     pub fn _remove(&mut self, key: &K) -> Option<V> {

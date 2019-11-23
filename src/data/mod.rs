@@ -10,8 +10,10 @@ pub mod lex;
 pub mod types;
 pub mod prelude {
     pub use super::{
-        error::CompileError, error::CompileResult, lex::Locatable, lex::Location, lex::Token,
-        types::StructType, types::Type, Declaration, Expr, ExprType, Stmt, StmtType, Symbol,
+        error::{CompileError, CompileResult, Recoverable},
+        lex::{Locatable, Location, Token},
+        types::{StructType, Type},
+        Declaration, Expr, ExprType, Stmt, StmtType, Symbol,
     };
     pub use crate::intern::InternedStr;
 }

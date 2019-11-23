@@ -29,3 +29,23 @@ impl CompileError {
         }
     }
 }
+
+pub trait Recoverable {
+    type Ok;
+    type Error;
+    fn into_inner<F: FnMut(Self::Error)>(self, error_handler: F) -> Self::Ok;
+}
+
+impl<T, E> Recoverable for Result<T, (E, T)> {
+    type Ok = T;
+    type Error = E;
+    fn into_inner<F: FnMut(E)>(self, mut error_handler: F) -> T {
+        match self {
+            Ok(inner) => inner,
+            Err((err, inner)) => {
+                error_handler(err);
+                inner
+            }
+        }
+    }
+}

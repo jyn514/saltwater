@@ -616,7 +616,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     self.pending.push_back(Err(err));
                     Locatable::new((Token::Int(-1), Type::Int(true)), location)
                 });
-                match constant.data.0 {
+                current = match constant.data.0 {
                     Token::Int(i) => i,
                     Token::UnsignedInt(u) => match i64::try_from(u) {
                         Ok(i) => i,

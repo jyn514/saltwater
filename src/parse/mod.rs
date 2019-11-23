@@ -371,6 +371,19 @@ mod tests {
             }))),
         }
     }
+    pub(crate) fn assert_errs_decls(input: &str, errs: usize, decls: usize) {
+        let parser = parser(input);
+        let (err_iter, decl_iter): (Vec<_>, Vec<_>) = parser.partition(Result::is_err);
+        assert!(
+            (err_iter.len(), decl_iter.len()) == (errs, decls),
+            "({} errs, {} decls) != ({}, {}) when parsing {}",
+            err_iter.len(),
+            decl_iter.len(),
+            errs,
+            decls,
+            input
+        );
+    }
     #[inline]
     pub(crate) fn parse_all(input: &str) -> Vec<ParseType> {
         parser(input).collect()
@@ -427,13 +440,10 @@ mod tests {
     #[test]
     fn multiple_declaration() {
         let mut decls = parse_all("int a; int a;");
-        assert_eq!(decls.len(), 2);
+        assert_eq!(decls.len(), 2, "{:?}", decls);
         assert!(decls.pop().unwrap().is_ok());
         assert!(decls.pop().unwrap().is_ok());
-        let mut decls = parse_all("int a; char *a[];");
-        assert_eq!(decls.len(), 2);
-        assert!(decls.pop().unwrap().is_err());
-        assert!(decls.pop().unwrap().is_ok());
+        assert_errs_decls("int a; char *a[];", 1, 2);
     }
     #[test]
     fn semicolons() {

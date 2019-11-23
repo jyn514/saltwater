@@ -28,6 +28,24 @@ impl CompileError {
             CompileError::Semantic(err) => err.location,
         }
     }
+    pub fn is_lex_err(&self) -> bool {
+        match self {
+            CompileError::Lex(_) => true,
+            _ => false,
+        }
+    }
+    pub fn is_syntax_err(&self) -> bool {
+        match self {
+            CompileError::Syntax(_) => true,
+            _ => false,
+        }
+    }
+    pub fn is_semantic_err(&self) -> bool {
+        match self {
+            CompileError::Semantic(_) => true,
+            _ => false,
+        }
+    }
 }
 
 pub trait Recoverable {

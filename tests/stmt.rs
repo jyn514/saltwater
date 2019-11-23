@@ -321,3 +321,21 @@ fn goto() {
     }",
     );
 }
+
+#[test]
+fn syntax_errors() {
+    utils::assert_num_errs(
+        "
+    // 1. Is scope kept even in the presence of syntax errors?
+    //    If not, `return i;` will give a semantic error
+    // 2. Are both syntax and semantic errors returned?
+    int main() {
+        int i;
+        {
+            a
+        }
+        return i;
+    }",
+        2,
+    );
+}

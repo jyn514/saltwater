@@ -910,10 +910,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Ok(expr)
                 }
                 other => {
-                    let err = Err(CompileError::Syntax(Locatable {
-                        location,
-                        data: format!("expected '(' or literal, got '{}'", other),
-                    }));
+                    let err = Err(CompileError::Syntax(
+                        Locatable {
+                            location,
+                            data: format!("expected '(' or literal, got '{}'", other),
+                        }
+                        .into(),
+                    ));
                     self.unput(Some(Locatable {
                         location,
                         data: other,
@@ -922,10 +925,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
             }
         } else {
-            Err(CompileError::Syntax(Locatable {
-                location: self.next_location(),
-                data: "expected '(' or literal, got <end-of-file>".to_string(),
-            }))
+            Err(CompileError::Syntax(
+                Locatable {
+                    location: self.next_location(),
+                    data: "expected '(' or literal, got <end-of-file>".to_string(),
+                }
+                .into(),
+            ))
         }
     }
 

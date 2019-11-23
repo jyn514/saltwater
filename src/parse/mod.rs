@@ -287,10 +287,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let token = match self.peek_token() {
             Some(t) => t,
             None => {
-                let err = Err(CompileError::Syntax(Locatable {
-                    location: self.last_location, // TODO: we don't actually want this, we want the end of the file
-                    data: format!("expected '{}', got '<end-of-file>'", next),
-                }));
+                let err = Err(CompileError::Syntax(
+                    Locatable {
+                        location: self.last_location, // TODO: we don't actually want this, we want the end of the file
+                        data: format!("expected '{}', got '<end-of-file>'", next),
+                    }
+                    .into(),
+                ));
                 self.panic();
                 return err;
             }
@@ -298,10 +301,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if token.same_kind(&next) {
             Ok(self.next_token().unwrap())
         } else {
-            let err = Err(CompileError::Syntax(Locatable {
-                data: format!("expected '{}', got '{}'", next, token),
-                location: self.next_location(),
-            }));
+            let err = Err(CompileError::Syntax(
+                Locatable {
+                    data: format!("expected '{}', got '{}'", next, token),
+                    location: self.next_location(),
+                }
+                .into(),
+            ));
             self.panic();
             err
         }

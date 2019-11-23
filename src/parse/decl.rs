@@ -362,10 +362,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut seen_compound = false;
         let mut seen_typedef = false;
         if self.peek_token().is_none() {
-            return Err(CompileError::Syntax(Locatable {
-                data: "expected declaration specifier, got <end-of-file>".into(),
-                location: self.last_location,
-            }));
+            return Err(CompileError::Syntax(
+                Locatable {
+                    data: "expected declaration specifier, got <end-of-file>".into(),
+                    location: self.last_location,
+                }
+                .into(),
+            ));
         }
         // unsigned const int
         while let Some(locatable) = self.next_token() {
@@ -1102,18 +1105,24 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             _ if allow_abstract => None,
             Some(x) => {
-                let err = Err(CompileError::Syntax(Locatable {
-                    data: format!("expected variable name or '(', got '{}'", x),
-                    location: self.next_location(),
-                }));
+                let err = Err(CompileError::Syntax(
+                    Locatable {
+                        data: format!("expected variable name or '(', got '{}'", x),
+                        location: self.next_location(),
+                    }
+                    .into(),
+                ));
                 self.panic();
                 return err;
             }
             None => {
-                return Err(CompileError::Syntax(Locatable {
-                    location: self.next_location(),
-                    data: "expected variable name or '(', got <end-of-of-file>".to_string(),
-                }))
+                return Err(CompileError::Syntax(
+                    Locatable {
+                        location: self.next_location(),
+                        data: "expected variable name or '(', got <end-of-of-file>".to_string(),
+                    }
+                    .into(),
+                ))
             }
         };
         self.postfix_type(decl)

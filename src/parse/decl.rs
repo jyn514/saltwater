@@ -359,7 +359,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut qualifiers = Qualifiers::NONE;
         let mut ctype = None;
         let mut signed = None;
-        let mut errors = vec![];
         let mut seen_compound = false;
         let mut seen_typedef = false;
         if self.peek_token().is_none() {
@@ -375,13 +374,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 | Token::Keyword(kind @ Keyword::Union)
                 | Token::Keyword(kind @ Keyword::Enum) => {
                     if let Some(ctype) = &ctype {
-                        errors.push(Locatable {
-                            data: format!(
+                        self.semantic_err(
+                            format!(
                                 "cannot combine '{}' specifier with previous '{}' type specifier",
                                 locatable.data, ctype
                             ),
-                            location: locatable.location,
-                        });
+                            locatable.location,
+                        );
                     } else {
                         ctype = Some(self.compound_specifier(kind, locatable.location)?);
                         seen_compound = true;
@@ -411,13 +410,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
             };
             if keywords.insert(keyword) {
-                declaration_specifier(
+                self.declaration_specifier(
                     keyword,
                     &mut storage_class,
                     &mut qualifiers,
                     &mut ctype,
                     &mut signed,
-                    &mut errors,
                     location,
                 );
             } else {
@@ -434,20 +432,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     );
                 // what is `short short` supposed to be?
                 } else if keyword != Keyword::Long {
-                    errors.push(Locatable {
-                        data: format!("duplicate basic type '{}' in declarator", keyword),
+                    self.semantic_err(
+                        format!("duplicate basic type '{}' in declarator", keyword),
                         location,
-                    });
+                    );
                 }
             }
-        }
-        while errors.len() > 1 {
-            let current = errors.pop().unwrap();
-            self.pending
-                .push_front(Err(CompileError::Semantic(current)));
-        }
-        if !errors.is_empty() {
-            return Err(CompileError::Semantic(errors.pop().unwrap()));
         }
         let ctype = match ctype {
             Some(Type::Char(ref mut s))
@@ -1296,13 +1286,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if self.current_function.is_some() {
             // TODO: allow function _declarations_ at local scope
             // e.g. int main() { int f(); return f(); }
-            return Err(CompileError::Semantic(Locatable {
-                location,
-                data: format!(
+            self.semantic_err(
+                format!(
                     "functions cannot be nested. hint: try declaring {} as `static` at file scope",
                     id
                 ),
-            }));
+                location,
+            );
         }
         // add parameters to scope
         self.enter_scope();
@@ -1389,129 +1379,122 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Bitfield(_) => unimplemented!("updating bitfield after typedef"),
         }
     }
-}
-
-#[inline]
-/* the reason this is such a mess (instead of just putting everything into
- * the hashmap, which would be much simpler logic) is so we have a Location
- * to go with every error
- * INVARIANT: keyword has not been seen before (i.e. not a duplicate)
- *
- * TODO: refactor this to use a HashSet<Locatable<Token>>
- */
-fn declaration_specifier(
-    keyword: Keyword,
-    storage_class: &mut Option<StorageClass>,
-    qualifiers: &mut Qualifiers,
-    ctype: &mut Option<Type>,
-    signed: &mut Option<bool>,
-    errors: &mut Vec<Locatable<String>>,
-    location: Location,
-) {
-    // we use `if` instead of `qualifiers.x = keyword == y` because
-    // we don't want to reset it if it's already true
-    if keyword == Keyword::Const {
-        qualifiers.c_const = true;
-    } else if keyword == Keyword::Volatile {
-        qualifiers.volatile = true;
-    } else if keyword == Keyword::Signed || keyword == Keyword::Unsigned {
-        if *ctype == Some(Type::Float) || *ctype == Some(Type::Double) {
-            errors.push(Locatable {
-                data: format!(
-                    "invalid modifier '{}' for '{}'",
-                    keyword,
-                    ctype.as_ref().unwrap()
-                ),
-                location,
-            });
-        }
-        if *signed == None {
-            *signed = Some(keyword == Keyword::Signed);
-        } else {
-            errors.push(Locatable {
-                data: "types cannot be both signed and unsigned".to_string(),
-                location,
-            });
-        }
-    } else if let Ok(sc) = StorageClass::try_from(keyword) {
-        if *storage_class == None {
-            *storage_class = Some(sc);
-        } else {
-            errors.push(Locatable {
-                data: format!(
-                    "multiple storage classes in declaration \
-                     ('{}' and '{}')",
-                    storage_class.unwrap(),
-                    sc
-                ),
-                location,
-            });
-        }
-    } else if keyword == Keyword::VaList {
-        if let Some(ctype) = ctype {
-            errors.push(Locatable {
-                data: format!(
-                    "cannot combine '{}' with type '{}' in declaration",
-                    keyword, ctype
-                ),
-                location,
-            });
-        } else {
-            *ctype = Some(Type::VaList);
-        }
-    } else if keyword == Keyword::Float || keyword == Keyword::Double {
-        if *signed != None {
-            let s = if signed.unwrap() {
-                "signed"
+    #[inline]
+    /* the reason this is such a mess (instead of just putting everything into
+     * the hashmap, which would be much simpler logic) is so we have a Location
+     * to go with every error
+     * INVARIANT: keyword has not been seen before (i.e. not a duplicate)
+     *
+     * TODO: refactor this to use a HashSet<Locatable<Token>>
+     */
+    fn declaration_specifier(
+        &mut self,
+        keyword: Keyword,
+        storage_class: &mut Option<StorageClass>,
+        qualifiers: &mut Qualifiers,
+        ctype: &mut Option<Type>,
+        signed: &mut Option<bool>,
+        location: Location,
+    ) {
+        // we use `if` instead of `qualifiers.x = keyword == y` because
+        // we don't want to reset it if it's already true
+        if keyword == Keyword::Const {
+            qualifiers.c_const = true;
+        } else if keyword == Keyword::Volatile {
+            qualifiers.volatile = true;
+        } else if keyword == Keyword::Signed || keyword == Keyword::Unsigned {
+            if *ctype == Some(Type::Float) || *ctype == Some(Type::Double) {
+                self.semantic_err(
+                    format!(
+                        "invalid modifier '{}' for '{}'",
+                        keyword,
+                        ctype.as_ref().unwrap()
+                    ),
+                    location,
+                );
+            }
+            if *signed == None {
+                *signed = Some(keyword == Keyword::Signed);
             } else {
-                "unsigned"
-            };
-            errors.push(Locatable {
-                data: format!("invalid modifier '{}' for '{}'", s, keyword),
-                location,
-            });
+                self.semantic_err("types cannot be both signed and unsigned", location);
+            }
+        } else if let Ok(sc) = StorageClass::try_from(keyword) {
+            if *storage_class == None {
+                *storage_class = Some(sc);
+            } else {
+                self.semantic_err(
+                    format!(
+                        "multiple storage classes in declaration \
+                         ('{}' and '{}')",
+                        storage_class.unwrap(),
+                        sc
+                    ),
+                    location,
+                );
+            }
+        } else if keyword == Keyword::VaList {
+            if let Some(ctype) = ctype {
+                self.semantic_err(
+                    format!(
+                        "cannot combine '{}' with type '{}' in declaration",
+                        keyword, ctype
+                    ),
+                    location,
+                );
+            } else {
+                *ctype = Some(Type::VaList);
+            }
+        } else if keyword == Keyword::Float || keyword == Keyword::Double {
+            if *signed != None {
+                let s = if signed.unwrap() {
+                    "signed"
+                } else {
+                    "unsigned"
+                };
+                self.semantic_err(
+                    format!("invalid modifier '{}' for '{}'", s, keyword),
+                    location,
+                );
+            } else {
+                match ctype {
+                    None => {}
+                    Some(Type::Long(_)) if keyword == Keyword::Double => {}
+                    Some(x) => self.semantic_err(
+                        format!("cannot combine '{}' with '{}'", keyword, x),
+                        location,
+                    ),
+                }
+                *ctype = Some(Type::try_from(keyword).unwrap());
+            }
+        } else if keyword == Keyword::Void {
+            match ctype {
+                Some(x) => {
+                    self.semantic_err(format!("cannot combine 'void' with '{}'", x), location)
+                }
+                None => *ctype = Some(Type::Void),
+            }
+        // if we get this far, keyword is an int type (char - long)
+        } else if keyword == Keyword::Int {
+            match ctype {
+                Some(Type::Char(_)) | Some(Type::Short(_)) | Some(Type::Long(_))
+                | Some(Type::Int(_)) => {}
+                Some(x) => {
+                    self.semantic_err(format!("cannot combine 'int' with '{}'", x), location)
+                }
+                None => *ctype = Some(Type::Int(true)),
+            }
         } else {
             match ctype {
-                None => {}
-                Some(Type::Long(_)) if keyword == Keyword::Double => {}
-                Some(x) => errors.push(Locatable {
-                    data: format!("cannot combine '{}' with '{}'", keyword, x),
-                    location,
-                }),
-            }
-            *ctype = Some(Type::try_from(keyword).unwrap());
-        }
-    } else if keyword == Keyword::Void {
-        match ctype {
-            Some(x) => errors.push(Locatable {
-                data: format!("cannot combine 'void' with '{}'", x),
-                location,
-            }),
-            None => *ctype = Some(Type::Void),
-        }
-    // if we get this far, keyword is an int type (char - long)
-    } else if keyword == Keyword::Int {
-        match ctype {
-            Some(Type::Char(_)) | Some(Type::Short(_)) | Some(Type::Long(_))
-            | Some(Type::Int(_)) => {}
-            Some(x) => errors.push(Locatable {
-                data: format!("cannot combine 'int' with '{}'", x),
-                location,
-            }),
-            None => *ctype = Some(Type::Int(true)),
-        }
-    } else {
-        match ctype {
-            None => {
-                *ctype =
-                    Some(Type::try_from(keyword).unwrap_or_else(|_| {
+                None => {
+                    *ctype = Some(Type::try_from(keyword).unwrap_or_else(|_| {
                         panic!("unrecognized declaration specifier {}", keyword)
                     }))
+                }
+                Some(x) => self.semantic_err(
+                    format!("cannot combine '{}' modifier with type '{}'", keyword, x),
+                    location,
+                ),
             }
-            Some(x) => errors.push(Locatable {
-                data: format!("cannot combine '{}' modifier with type '{}'", keyword, x),
-                location,
-            }),
         }
     }
 }

@@ -107,13 +107,11 @@ macro_rules! semantic_err {
 
 macro_rules! syntax_err {
     ($message: expr, $location: expr$(,)?) => {
-        return Err(CompileError::Syntax(
-            Locatable {
-                data: $message,
-                location: $location,
-            }
-            .into(),
-        ));
+        return Err(Locatable {
+            data: $message,
+            location: $location,
+        }
+        .into());
     };
 }
 

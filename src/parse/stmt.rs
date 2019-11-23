@@ -4,10 +4,10 @@ use crate::data::{lex::Keyword, StorageClass};
 use crate::utils::warn;
 use std::iter::Iterator;
 
-type StmtResult = Result<Stmt, CompileError>;
+type StmtResult = Result<Stmt, SyntaxError>;
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
-    pub fn compound_statement(&mut self) -> Result<Option<Stmt>, CompileError> {
+    pub fn compound_statement(&mut self) -> Result<Option<Stmt>, SyntaxError> {
         let start = self
             .expect(Token::LeftBrace)
             .expect("compound_statement should be called with '{' as the next token");
@@ -22,7 +22,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     if pending_err.is_none() {
                         pending_err = Some(err);
                     } else {
-                        self.pending.push_back(Err(err));
+                        self.pending.push_back(Err(err.into()));
                     }
                 }
                 Err(err) => return Err(err),
@@ -59,15 +59,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// Result: whether there was an error in the program source
     /// Option: empty semicolons still count as a statement (so case labels can work)
-    pub fn statement(&mut self) -> Result<Option<Stmt>, CompileError> {
+    pub fn statement(&mut self) -> Result<Option<Stmt>, SyntaxError> {
         match self.peek_token() {
             Some(Token::LeftBrace) => {
                 self.enter_scope();
                 let stmts = self.compound_statement();
                 let location = match &stmts {
                     Ok(Some(stmt)) => stmt.location,
-                    Err(err) => err.location(),
                     Ok(None) => self.last_location,
+                    Err(err) => err.0.location,
                 };
                 self.leave_scope(location);
                 stmts
@@ -198,7 +198,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             _ => self.expression_statement(),
         }
     }
-    fn expression_statement(&mut self) -> Result<Option<Stmt>, CompileError> {
+    fn expression_statement(&mut self) -> Result<Option<Stmt>, SyntaxError> {
         let expr = self.expr()?;
         let end = self.expect(Token::Semicolon)?;
         Ok(Some(Stmt {
@@ -272,7 +272,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             (None, Some(body)) => {
                 let location = condition.location;
-                StmtType::If(condition.logical_not(location)?, Box::new(body), None)
+                StmtType::If(condition.logical_not(location), Box::new(body), None)
             }
             (Some(body), maybe_else) => {
                 StmtType::If(condition, Box::new(body), maybe_else.map(Box::new))
@@ -310,7 +310,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn while_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::While))?;
         self.expect(Token::LeftParen)?;
-        let condition = self.expr()?.truthy()?;
+        let condition = self.expr()?.truthy().into_inner(self.compile_err_handler());
         self.expect(Token::RightParen)?;
         let body = self.statement()?;
         Ok(Stmt {
@@ -328,7 +328,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let body = self.statement()?;
         self.expect(Token::Keyword(Keyword::While))?;
         self.expect(Token::LeftParen)?;
-        let condition = self.expr()?.truthy()?;
+        let condition = self.expr()?.truthy().into_inner(self.compile_err_handler());
         self.expect(Token::RightParen)?;
         self.expect(Token::Semicolon)?;
         let stmt = if let Some(body) = body {
@@ -391,8 +391,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
         let controlling_expr = self
             .expr_opt(Token::Semicolon)?
-            .map(Expr::truthy)
-            .transpose()?;
+            .map(|expr| Expr::truthy(expr).into_inner(self.compile_err_handler()));
         let iter_expr = self.expr_opt(Token::RightParen)?;
         let body = self.statement()?.map(Box::new);
         self.leave_scope(self.last_location);
@@ -426,7 +425,13 @@ mod tests {
     use crate::data::prelude::*;
     use crate::intern::InternedStr;
     fn parse_stmt(stmt: &str) -> Result<Option<Stmt>, CompileError> {
-        parser(stmt).statement()
+        let mut p = parser(stmt);
+        let exp = p.statement();
+        if let Some(Err(err)) = p.pending.pop_front() {
+            Err(err)
+        } else {
+            exp.map_err(SyntaxError::into)
+        }
     }
     #[test]
     // NOTE: this seems to be one of the few tests that checks that the location

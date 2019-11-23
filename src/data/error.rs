@@ -1,6 +1,10 @@
 use thiserror::Error;
 
-use super::{Locatable, Location};
+use super::{Expr, Locatable, Location};
+
+pub type RecoverableResult<T = Expr, E = CompileError> = Result<T, (E, T)>;
+pub type CompileResult<T> = Result<T, CompileError>;
+pub type SemanticError = Locatable<String>;
 
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum CompileError {
@@ -14,9 +18,7 @@ pub enum CompileError {
 
 #[derive(Debug, PartialEq, Eq, Error)]
 #[error("{}", .0.data)]
-pub struct SyntaxError(Locatable<String>);
-
-pub type CompileResult<T> = Result<T, CompileError>;
+pub struct SyntaxError(pub Locatable<String>);
 
 impl From<Locatable<String>> for CompileError {
     fn from(err: Locatable<String>) -> Self {

@@ -216,7 +216,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             (Some(expr), true) => {
                 let expr = expr.rval();
                 if expr.ctype != *ret_type {
-                    StmtType::Return(Some(Expr::cast(expr, ret_type)?))
+                    StmtType::Return(Some(
+                        Expr::cast(expr, ret_type).into_inner(self.default_err_handler()),
+                    ))
                 } else {
                     StmtType::Return(Some(expr))
                 }

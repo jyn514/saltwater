@@ -141,10 +141,10 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
             }
             let mut decls = match self.declaration() {
                 Ok(decls) => decls,
-                Err(err) if self.pending.is_empty() => return Some(Err(err)),
+                Err(err) if self.pending.is_empty() => return Some(Err(err.into())),
                 // output errors in program order
                 Err(err) => {
-                    self.pending.push_back(Err(err));
+                    self.pending.push_back(Err(err.into()));
                     return self.pending.pop_front();
                 }
             };
@@ -268,6 +268,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn default_err_handler(&mut self) -> impl '_ + FnMut(Locatable<String>) {
         move |err| self.semantic_err(err.data, err.location)
     }
+    fn compile_err_handler(&mut self) -> impl '_ + FnMut(CompileError) {
+        move |err| self.pending.push_back(Err(err))
+    }
+    fn multiple_err_handler(&mut self) -> impl '_ + FnMut(Vec<Locatable<String>>) {
+        move |errs| {
+            for err in errs {
+                self.semantic_err(err.data, err.location);
+            }
+        }
+    }
     /*
      * If we're in an invalid state, try to recover.
      * Consume tokens until the end of a statement - either ';' or '}'
@@ -283,17 +293,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             };
         }
     }
-    fn expect(&mut self, next: Token) -> Result<Locatable<Token>, CompileError> {
+    fn expect(&mut self, next: Token) -> Result<Locatable<Token>, SyntaxError> {
         let token = match self.peek_token() {
             Some(t) => t,
             None => {
-                let err = Err(CompileError::Syntax(
-                    Locatable {
-                        location: self.last_location, // TODO: we don't actually want this, we want the end of the file
-                        data: format!("expected '{}', got '<end-of-file>'", next),
-                    }
-                    .into(),
-                ));
+                let err = Err(Locatable {
+                    location: self.last_location, // TODO: we don't actually want this, we want the end of the file
+                    data: format!("expected '{}', got '<end-of-file>'", next),
+                }
+                .into());
                 self.panic();
                 return err;
             }
@@ -301,13 +309,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if token.same_kind(&next) {
             Ok(self.next_token().unwrap())
         } else {
-            let err = Err(CompileError::Syntax(
-                Locatable {
-                    data: format!("expected '{}', got '{}'", next, token),
-                    location: self.next_location(),
-                }
-                .into(),
-            ));
+            let err = Err(Locatable {
+                data: format!("expected '{}', got '{}'", next, token),
+                location: self.next_location(),
+            }
+            .into());
             self.panic();
             err
         }

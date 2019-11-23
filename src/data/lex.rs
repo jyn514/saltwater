@@ -10,7 +10,7 @@ pub struct Location {
     pub file: InternedStr,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Locatable<T> {
     pub data: T,
     pub location: Location,

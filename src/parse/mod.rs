@@ -134,7 +134,9 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 
             // check for end of file
             if self.peek_token().is_none() {
-                self.leave_scope(self.last_location);
+                if self.scope.is_global() {
+                    self.leave_scope(self.last_location);
+                }
                 return self.pending.pop_front();
             }
             let mut decls = match self.declaration() {

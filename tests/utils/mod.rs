@@ -29,10 +29,14 @@ pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, Error
         false,
         false,
     )?;
-    let output = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+    let output = tempfile::NamedTempFile::new()
+        .expect("cannot create tempfile")
+        .into_temp_path();
     info!("output is {:?}", output);
     if !no_link {
-        let tmp_file = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+        let tmp_file = tempfile::NamedTempFile::new()
+            .expect("cannot create tempfile")
+            .into_temp_path();
         info!("tmp_file is {:?}", tmp_file);
         rcc::assemble(module, &tmp_file)?;
         rcc::link(&tmp_file, &output)?;

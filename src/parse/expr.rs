@@ -925,7 +925,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 other => {
                     let err = Err(Locatable {
                         location,
-                        data: format!("expected '(' or literal, got '{}'", other),
+                        data: format!("expected '(' or literal in expression, got '{}'", other),
                     }
                     .into());
                     self.unput(Some(Locatable {
@@ -938,7 +938,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         } else {
             Err(Locatable {
                 location: self.next_location(),
-                data: "expected '(' or literal, got <end-of-file>".to_string(),
+                data: "expected '(' or literal in expression, got <end-of-file>".to_string(),
             }
             .into())
         }

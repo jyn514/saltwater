@@ -344,7 +344,8 @@ fn syntax_errors() {
         Error::Source(errs) => errs,
         _ => panic!("unexpected error compiling program"),
     };
-    assert!(errs.len() == 2);
+    assert!(errs.len() >= 2);
     assert!(errs[0].is_semantic_err());
     assert!(errs[1].is_syntax_err());
+    utils::assert_compile_error("int main() { ]");
 }

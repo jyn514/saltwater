@@ -1217,7 +1217,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     _ => unreachable!(),
                 },
             };
-            let first_ctype = members.first().unwrap().ctype.clone();
+            let first_ctype = members
+                .first()
+                .map(|m| m.ctype.clone())
+                .unwrap_or(Type::Int(true));
             return self.initializer(&first_ctype);
         }
         // initializer_list

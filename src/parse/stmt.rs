@@ -1,7 +1,7 @@
 use super::{Lexeme, Parser};
 use crate::data::prelude::*;
 use crate::data::{lex::Keyword, StorageClass};
-use crate::utils::warn;
+use crate::utils::{compose, warn};
 use std::iter::Iterator;
 
 type StmtResult = Result<Stmt, SyntaxError>;
@@ -12,26 +12,35 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .expect(Token::LeftBrace)
             .expect("compound_statement should be called with '{' as the next token");
         let mut stmts = vec![];
-        let mut pending_err = None;
+        let mut pending_errs = vec![];
         while self.peek_token() != Some(&Token::RightBrace) {
             match self.statement() {
                 Ok(Some(stmt)) => stmts.push(stmt),
                 Ok(None) => {}
-                // prevent infinite loops if there's a syntax error at EOF
-                Err(err) if self.peek_token() != None => {
-                    if pending_err.is_none() {
-                        pending_err = Some(err);
-                    } else {
-                        self.pending.push_back(Err(err.into()));
+                Err(err) => {
+                    self.panic();
+                    pending_errs.push(err);
+                    // prevent infinite loops if there's a syntax error at EOF
+                    if self.peek_token().is_none() {
+                        break;
                     }
                 }
-                Err(err) => return Err(err),
             }
         }
         if self.expect(Token::RightBrace).is_err() {
-            panic!("peek should always be the same as next");
+            assert!(self.peek_token().is_none()); // from the 'break' above
+            let actual_err = Locatable::new(
+                "unclosed '{' delimeter at end of file".into(),
+                self.last_location,
+            );
+            pending_errs.push(actual_err.into());
         }
-        if let Some(err) = pending_err {
+        if let Some(err) = pending_errs.pop() {
+            self.pending.extend(
+                pending_errs
+                    .into_iter()
+                    .map(compose(Err, SyntaxError::into)),
+            );
             return Err(err);
         }
         Ok(if stmts.is_empty() {

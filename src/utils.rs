@@ -32,6 +32,14 @@ pub fn get_warnings() -> usize {
     WARNINGS.load(Ordering::SeqCst)
 }
 
+pub fn compose<'a, A, B, C, G, F>(f: F, g: G) -> impl Fn(A) -> C + 'a
+where
+    F: 'a + Fn(B) -> C,
+    G: 'a + Fn(A) -> B,
+{
+    move |x| f(g(x))
+}
+
 /// ensure that a condition is true at compile time
 /// thanks to https://nikolaivazquez.com/posts/programming/rust-static-assertions/
 macro_rules! const_assert {
@@ -73,9 +81,10 @@ macro_rules! vec_deque {
         use std::collections::VecDeque;
         VecDeque::from(vec![$elem; $n])
     });
-    ($($x: expr),*) => (
+    ($($x: expr),*) => ({
+        use std::collections::VecDeque;
         VecDeque::from(vec![$($x),*])
-    );
+    });
     ($($x:expr,)*) => ($crate::vec_deque![$($x),*])
 }
 

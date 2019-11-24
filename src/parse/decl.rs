@@ -799,9 +799,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         decl.location,
                     );
                 }
-                _ => {}
+                _ => members.push(decl.data.symbol),
             }
-            members.push(decl.data.symbol);
             last_location = decl.location;
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon)?;

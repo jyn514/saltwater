@@ -370,3 +370,8 @@ fn linkage() {
     utils::assert_succeeds("extern int a[]; int a[] = {0,1,2}; int main() { return a[0]; }");
     utils::assert_succeeds("int a[] = {0,1,2}; extern int a[]; int main() { return a[0]; }");
 }
+
+#[test]
+fn syntax() {
+    utils::assert_compile_error("union int w=");
+}

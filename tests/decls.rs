@@ -375,3 +375,16 @@ fn linkage() {
 fn syntax() {
     utils::assert_compile_error("union int w=");
 }
+
+#[test]
+fn string() {
+    // make sure multiple string literals work fine
+    utils::assert_output(
+        "int puts(char*);
+        int main() {
+            puts(\"hi\");
+            puts(\"hi\");
+        }",
+        "hi\nhi\n",
+    );
+}

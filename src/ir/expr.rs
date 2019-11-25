@@ -264,19 +264,20 @@ impl Compiler {
     ) -> CompileResult<IrValue> {
         use cranelift_module::Linkage;
         let name = format!("str.{}", string.to_usize());
-        self.strings.insert(string);
         let str_id = match self.module.declare_data(&name, Linkage::Local, false, None) {
             Ok(id) => id,
             Err(err) => semantic_err!(format!("error declaring static string: {}", err), location),
         };
-        let mut ctx = DataContext::new();
-        ctx.define(string.resolve_and_clone().into_boxed_str().into());
-        self.module
-            .define_data(str_id, &ctx)
-            .map_err(|err| Locatable {
-                data: format!("error defining static string: {}", err),
-                location,
-            })?;
+        if self.strings.insert(string, str_id).is_none() {
+            let mut ctx = DataContext::new();
+            ctx.define(string.resolve_and_clone().into_boxed_str().into());
+            self.module
+                .define_data(str_id, &ctx)
+                .map_err(|err| Locatable {
+                    data: format!("error defining static string: {}", err),
+                    location,
+                })?;
+        }
         let addr = self.module.declare_data_in_func(str_id, builder.func);
         Ok(builder.ins().global_value(Type::ptr_type(), addr))
     }

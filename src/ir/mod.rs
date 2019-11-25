@@ -2,7 +2,7 @@ mod expr;
 mod static_init;
 mod stmt;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 
 use cranelift::codegen::{
@@ -39,7 +39,7 @@ struct Compiler {
     debug: bool,
     // if false, we last saw a switch
     last_saw_loop: bool,
-    strings: HashSet<InternedStr>,
+    strings: HashMap<InternedStr, DataId>,
     loops: Vec<(Ebb, Ebb)>,
     // switch, default, end
     // if default is empty once we get to the end of a switch body,
@@ -119,7 +119,7 @@ impl Compiler {
             labels: HashMap::new(),
             // the initial value doesn't really matter
             last_saw_loop: true,
-            strings: HashSet::new(),
+            strings: Default::default(),
             debug,
         }
     }

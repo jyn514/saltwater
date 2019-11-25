@@ -263,9 +263,6 @@ impl<'a> Lexer<'a> {
     /// `({digits}\.{digits}|{digits}|\.{digits})([eE]-?{digits})?`
     /// where {digits} is the regex `([0-9]*|0x[0-9a-f]+)`
     ///
-    /// NOTE: A-F is not allowed for hex digits and a-f _is_ allowed for the
-    /// fractional part of the number.
-    /// NOTE: Floats are not allowed for exponents.
     /// TODO: return an error enum instead of Strings
     ///
     /// I spent way too much time on this.
@@ -275,6 +272,8 @@ impl<'a> Lexer<'a> {
             '0' <= start && start <= '9',
             "main loop should only pass [-.0-9] as start to parse_num"
         );
+        let mut buf = String::new();
+        buf.push(start);
         // check for radix other than 10 - but if we see '.', use 10
         let radix = if start == '0' {
             match self.next_char() {
@@ -282,9 +281,12 @@ impl<'a> Lexer<'a> {
                     crate::utils::warn("binary number literals are an extension", self.location);
                     2
                 }
-                Some('x') => 16,
+                Some('x') => {
+                    buf.push('x');
+                    16
+                }
                 // float: 0.431
-                Some('.') => return self.parse_float(0, 10).map(Token::Float),
+                Some('.') => return self.parse_float(10, buf).map(Token::Float),
                 // octal: 0755 => 493
                 c => {
                     self.unput(c);
@@ -297,7 +299,7 @@ impl<'a> Lexer<'a> {
         let start = start as u64 - '0' as u64;
 
         // the first {digits} in the regex
-        let digits = match self.parse_int(start, radix)? {
+        let digits = match self.parse_int(start, radix, &mut buf)? {
             Some(int) => int,
             None => {
                 if radix == 8 || radix == 10 || self.peek() == Some('.') {
@@ -311,11 +313,13 @@ impl<'a> Lexer<'a> {
             }
         };
         if self.match_next('.') {
-            return self.parse_float(digits, radix).map(Token::Float);
+            return self.parse_float(radix, buf).map(Token::Float);
         }
-        if let Some(float) = self.parse_exponent(digits, 0.0, radix)? {
+        if let Some('e') | Some('E') | Some('p') | Some('P') = self.peek() {
+            buf.push_str(".0"); // hexf doesn't like floats without a decimal point
+            let float = self.parse_exponent(radix == 16, buf);
             self.consume_float_suffix();
-            return Ok(Token::Float(float));
+            return float.map(Token::Float);
         }
         let token = Ok(if self.match_next('u') || self.match_next('U') {
             let unsigned = u64::try_from(digits)
@@ -335,32 +339,23 @@ impl<'a> Lexer<'a> {
         token
     }
     // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, start: u64, radix: u32) -> Result<f64, String> {
-        let radix_f = f64::from(radix);
-        let (mut fraction, mut current_base): (f64, f64) = (0.0, 1.0 / radix_f);
+    fn parse_float(&mut self, radix: u32, mut buf: String) -> Result<f64, String> {
+        buf.push('.');
         // parse fraction: second {digits} in regex
         while let Some(c) = self.peek() {
-            if c.is_digit(radix) && current_base != 0.0 {
+            if c.is_digit(radix) {
                 self.next_char();
-                // this unwrap is safe because we already checked it was a digit
-                fraction += f64::from(c.to_digit(radix).unwrap()) * current_base;
-                current_base /= radix_f;
+                buf.push(c);
             } else {
                 break;
             }
         }
-        let result = match self.parse_exponent(start, fraction, radix)? {
-            Some(power) => power,
-            None => start as f64 + fraction,
-        };
+        // in case of an empty mantissa, hexf doesn't like having the exponent right after the .
+        // if the mantissa isn't empty, .12 is the same as .120
+        //buf.push('0');
+        let float = self.parse_exponent(radix == 16, buf);
         self.consume_float_suffix();
-        if result.is_infinite() {
-            Err(String::from(
-                "overflow error while parsing floating literal",
-            ))
-        } else {
-            Ok(result)
-        }
+        float
     }
     fn consume_float_suffix(&mut self) {
         // Ignored for compatibility reasons
@@ -369,45 +364,58 @@ impl<'a> Lexer<'a> {
         }
     }
     // should only be called at the end of a number. mostly error handling
-    fn parse_exponent(
-        &mut self,
-        base: u64,
-        mantissa: f64,
-        radix: u32,
-    ) -> Result<Option<f64>, String> {
-        if radix == 16 {
-            if !self.match_next('p') && !self.match_next('P') {
-                return Ok(None);
+    fn parse_exponent(&mut self, hex: bool, mut buf: String) -> Result<f64, String> {
+        use std::error::Error;
+        let is_digit =
+            |c: Option<char>| c.map_or(false, |c| c.is_digit(10) || c == '+' || c == '-');
+        if hex {
+            if self.match_next('p') || self.match_next('P') {
+                if !is_digit(self.peek()) {
+                    return Err(String::from("exponent for floating literal has no digits"));
+                }
+                buf.push('p');
+                buf.push(self.next_char().unwrap());
             }
-        } else if !self.match_next('e') && !self.match_next('E') {
-            return Ok(None);
+        } else if self.match_next('e') || self.match_next('E') {
+            if !is_digit(self.peek()) {
+                return Err(String::from("exponent for floating literal has no digits"));
+            }
+            buf.push('e');
+            buf.push(self.next_char().unwrap());
         }
-        let seen_neg = !self.match_next('+') && self.match_next('-');
-        let unsigned_exp = match self.peek() {
-            Some(c) if c.is_ascii_digit() => {
-                self.parse_int(0, 10)?.expect("peek should be accurate")
+        while let Some(c) = self.peek() {
+            if !c.is_digit(10) {
+                break;
             }
-            _ => return Err(String::from("exponent for floating literal has no digits")),
-        };
-        let exp = match i32::try_from(unsigned_exp) {
-            Ok(i) if seen_neg => -i,
-            Ok(i) => i,
-            Err(_) => return Err("exponent is larger than i32 max".into()),
-        };
-        // TODO: will this lose precision?
-        let existing = base as f64 + mantissa;
-        let exp_radix = if radix == 16 { 2 } else { 10 };
-        let actual = f64::from(exp_radix).powi(exp) * existing;
-        if actual.is_infinite() {
-            Err("overflow parsing floating literal".into())
-        } else if actual == 0.0 && (base != 0 || mantissa != 0.0) {
+            buf.push(c);
+            self.next_char();
+        }
+        let float = if hex {
+            hexf::parse_hexf64(&buf, false).map_err(|err| err.description().into())
+        } else {
+            buf.parse()
+                .map_err(|err: std::num::ParseFloatError| err.to_string())
+        }?;
+        if float.is_infinite() {
+            return Err("overflow parsing floating literal".into());
+        }
+        let should_be_zero = buf.chars().all(|c| match c {
+            '.' | '+' | '-' | 'e' | 'p' | '0' => true,
+            _ => false,
+        });
+        if float == 0.0 && !should_be_zero {
             Err("underflow parsing floating literal".into())
         } else {
-            Ok(Some(actual))
+            Ok(float)
         }
     }
     // returns None if there are no digits at the current position
-    fn parse_int(&mut self, mut acc: u64, radix: u32) -> Result<Option<u64>, String> {
+    fn parse_int(
+        &mut self,
+        mut acc: u64,
+        radix: u32,
+        buf: &mut String,
+    ) -> Result<Option<u64>, String> {
         let parse_digit = |c: char| match c.to_digit(16) {
             None => Ok(None),
             Some(digit) if digit < radix => Ok(Some(digit)),
@@ -448,6 +456,7 @@ impl<'a> Lexer<'a> {
                     break;
                 }
             };
+            buf.push(c);
             let maybe_digits = acc
                 .checked_mul(radix.into())
                 .and_then(|a| a.checked_add(digit.into()));
@@ -774,7 +783,7 @@ impl<'a> Iterator for Lexer<'a> {
                 ';' => Token::Semicolon,
                 ',' => Token::Comma,
                 '.' => match self.peek() {
-                    Some(c) if c.is_ascii_digit() => match self.parse_float(0, 10) {
+                    Some(c) if c.is_ascii_digit() => match self.parse_float(10, String::new()) {
                         Ok(f) => Token::Float(f),
                         Err(err) => {
                             return Some(Err(Locatable {
@@ -989,6 +998,15 @@ mod tests {
         assert_float("0x.ep-0l", 0.875);
         assert_float("0xe.p-4f", 0.875);
         assert_float("0xep-4f", 0.875);
+        // DBL_MAX is actually 1.79769313486231570814527423731704357e+308L
+        // TODO: change this whenever https://github.com/rust-lang/rust/issues/31407 is closed
+        assert_float(
+            "1.797693134862315708e+308L",
+            1.797_693_134_862_315_730_8e+308,
+        );
+        assert_float("9.88131291682e-324L", 9.881_312_916_82e-324);
+        // DBL_MIN is actually 2.22507385850720138309023271733240406e-308L
+        assert_float("2.225073858507201383e-308L", 2.225_073_858_507_201_4e-308);
     }
 
     #[test]

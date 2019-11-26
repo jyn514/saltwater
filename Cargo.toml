@@ -26,6 +26,9 @@ pico-args = "0.3"
 # not my favorite library but allows sharing strings with Faerie
 string-interner = "0.7"
 
+[dev-dependencies]
+walkdir = "2"
+
 [profile.release]
 lto = true
 

@@ -78,6 +78,30 @@ pub fn assert_compile_error(program: &str) {
     );
 }
 
+pub fn assert_crash(program: &str) {
+    let output = compile(program, false).expect("could not compile program");
+    log::debug!("running compiled program at {:?}", output);
+    let path: &Path = output.as_ref();
+    let mut handle = Command::new(path)
+        .spawn()
+        .expect("could not start compiled program");
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        assert!(handle
+            .wait()
+            .expect("call to libc::wait should succeed")
+            .signal()
+            .is_some());
+    }
+    #[cfg(not(unix))]
+    {
+        use log::warn;
+        warn!("testing for segfaults is not supported on non-unix platforms, this just checks the return code is non-zero");
+        assert!(!handle.status().success());
+    }
+}
+
 pub fn assert_output(program: &str, output: &str) {
     assert!(
         match compile_and_run(program, &[]) {

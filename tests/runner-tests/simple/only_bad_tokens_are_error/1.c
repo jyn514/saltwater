@@ -1,0 +1,2 @@
+// fail
+`int main(){}

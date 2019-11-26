@@ -50,12 +50,13 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
     let mut reader = io::BufReader::new(std::fs::File::open(path)?);
     let mut first_line = String::new();
     reader.read_line(&mut first_line)?;
-    let test_func = match dbg!(first_line.as_str().trim()) {
+    let test_func = match first_line.as_str().trim() {
         "// compile" => utils::assert_compiles,
         "// no-main" => utils::assert_compiles_no_main,
         "// fail" => utils::assert_compile_error,
         "// succeeds" => utils::assert_succeeds,
         "// crash" => utils::assert_crash,
+        "// ignore" => return Ok(()),
         line => {
             if line.starts_with("// code: ") {
                 let mut split = line.split("// code: ");
@@ -64,16 +65,19 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
                     &program,
                     split
                         .next()
-                        .unwrap()
+                        .expect("tests should have a return code after 'code: '")
                         .parse()
-                        .expect("tests should have a return code after 'code: '"),
+                        .expect("tests should have an integer return code after 'code: '"),
                 );
                 return Ok(());
             } else if line.starts_with("// output: ") {
                 // TODO: handle multiline output
                 let mut split = line.split("// output: ");
                 split.next();
-                let expected = format!("{}\n", split.next().unwrap());
+                let expected = format!(
+                    "{}\n",
+                    split.next().expect("output test should have an output")
+                );
                 utils::assert_output(&program, &expected);
                 return Ok(());
             } else {

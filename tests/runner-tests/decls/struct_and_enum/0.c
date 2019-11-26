@@ -1,0 +1,2 @@
+// fail
+enum e;

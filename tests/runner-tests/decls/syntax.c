@@ -1,0 +1,2 @@
+// fail
+union int w=

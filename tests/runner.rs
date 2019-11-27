@@ -123,7 +123,7 @@ fn output_test<B: BufRead>(line: &str, reader: &mut B, program: &str) -> Result<
         }
     };
     utils::assert_output(program, expected);
-    return Ok(());
+    Ok(())
 }
 
 fn state_machine<B: BufRead>(reader: &mut B) -> Result<String, io::Error> {
@@ -140,5 +140,5 @@ fn state_machine<B: BufRead>(reader: &mut B) -> Result<String, io::Error> {
         expected_out.push_str(&line[COMMENT.len()..]);
         expected_out.push('\n');
     }
-    return Ok(expected_out);
+    Ok(expected_out)
 }

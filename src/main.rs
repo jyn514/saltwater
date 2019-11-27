@@ -142,11 +142,33 @@ fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
     Ok(os_str.into())
 }
 
+macro_rules! type_sizes {
+    ($($type: ty),*) => {
+        $(println!("{}: {}", stringify!($type), std::mem::size_of::<$type>());)*
+    };
+}
 fn parse_args() -> Result<Opt, pico_args::Error> {
     let mut input = Arguments::from_env();
     if input.contains(["-h", "--help"]) {
         println!("{}", HELP);
         std::process::exit(1);
+    }
+    if input.contains("--print-type-sizes") {
+        use rcc::data::prelude::*;
+        type_sizes!(
+            Location,
+            CompileError,
+            Type,
+            Expr,
+            ExprType,
+            Stmt,
+            StmtType,
+            Declaration,
+            Symbol,
+            StructType,
+            Token,
+            RecoverableResult<Expr>
+        );
     }
     Ok(Opt {
         debug_lex: input.contains("--debug-lex"),

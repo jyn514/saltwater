@@ -58,9 +58,14 @@ impl Compiler {
             StmtType::Break | StmtType::Continue => {
                 self.loop_exit(stmt.data == StmtType::Break, stmt.location, builder)
             }
-            StmtType::For(init, condition, post_loop, body) => {
-                self.for_loop(init, condition, post_loop, body, stmt.location, builder)
-            }
+            StmtType::For(init, condition, post_loop, body) => self.for_loop(
+                init,
+                condition.map(|e| *e),
+                post_loop.map(|e| *e),
+                body,
+                stmt.location,
+                builder,
+            ),
             StmtType::Do(body, condition) => self.do_loop(*body, condition, builder),
             StmtType::Switch(condition, body) => self.switch(condition, *body, builder),
             StmtType::Label(name) => {

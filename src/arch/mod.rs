@@ -94,6 +94,7 @@ impl Type {
             Function(_) => Err("cannot take `sizeof` a function"),
             Void => Err("cannot take `sizeof` void"),
             VaList => Err("cannot take `sizeof` va_list"),
+            Error => Err("cannot take `sizeof` <type error>"),
         }
     }
     pub fn alignof(&self) -> Result<SIZE_T, &'static str> {
@@ -120,6 +121,7 @@ impl Type {
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),
             VaList => Err("cannot take `alignof` va_list"),
+            Error => Err("cannot take `alignof` <type error>"),
         }
     }
     pub fn ptr_type() -> IrType {

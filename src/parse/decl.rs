@@ -738,11 +738,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     *location,
                 );
             }
-            let (size, align, offset) =
-                Self::struct_type(members, c_struct).map_err(|err| Locatable {
-                    data: err.into(),
-                    location: *location,
-                })?;
+            let (size, align, offset) = match Self::struct_type(members, c_struct) {
+                Ok(tup) => tup,
+                Err(err) => {
+                    self.semantic_err(err, *location);
+                    return Ok(Type::Error);
+                }
+            };
             for tag in self.tag_scope.get_all_immediate().values_mut() {
                 match tag {
                     TagEntry::Union(members) | TagEntry::Struct(members) => {

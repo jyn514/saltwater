@@ -1,4 +1,4 @@
-// ignore
+// ignore: https://github.com/jyn514/rcc/issues/95
 // succeeds
 int main() {
     int x = 0;

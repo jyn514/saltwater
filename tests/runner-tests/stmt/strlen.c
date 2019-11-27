@@ -1,5 +1,4 @@
-// ignore
-// this is https://github.com/jyn514/rcc/issues/92
+// ignore: https://github.com/jyn514/rcc/issues/92
 // code: 2
 
     typedef unsigned long size_t;

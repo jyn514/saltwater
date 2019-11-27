@@ -40,6 +40,8 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
             "-D__FLT_MIN__=1.175494350822287507e-38F",
             #[cfg(linux)]
             "-D__linux__",
+            #[cfg(target_arch = "x86_64")]
+            "-D__x86_64__",
         ])
         .arg(path.as_os_str())
         .output()

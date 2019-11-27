@@ -1,4 +1,4 @@
-// output: fedcba
+// output: BEGIN: fedcba END
 
     int putchar(int);
     int main() {

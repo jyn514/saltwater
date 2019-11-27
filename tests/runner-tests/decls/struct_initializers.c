@@ -1,3 +1,4 @@
+// ignore
 // code: 1
 struct s {
         int i;

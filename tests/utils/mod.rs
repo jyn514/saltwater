@@ -120,7 +120,7 @@ pub fn assert_succeeds(program: &str) {
             Err(_) => false,
             Ok(output) => output.status.success(),
         },
-        "{} should exit successfully",
+        "'{}' should exit successfully",
         program
     );
 }

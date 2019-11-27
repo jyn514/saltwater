@@ -105,17 +105,14 @@ fn output_test<B: BufRead>(line: &str, reader: &mut B, program: &str) -> Result<
             &tmp_str
         }
         _ if line.starts_with(BEGIN) => {
-            println!("saw BEGIN, going to state machine");
             tmp_str = format!("{}{}", &line[BEGIN.len()..], state_machine(reader)?);
             &tmp_str
         }
         _ => {
-            println!("did not see BEGIN, saw '{}'", line);
             tmp_str = format!("{}\n", line);
             &tmp_str
         }
     };
-    println!("{}", expected);
     utils::assert_output(program, expected);
     return Ok(());
 }

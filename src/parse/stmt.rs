@@ -405,7 +405,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let body = self.statement()?.map(Box::new);
         self.leave_scope(self.last_location);
         Ok(Stmt {
-            data: StmtType::For(decl, controlling_expr, iter_expr, body),
+            data: StmtType::For(
+                decl,
+                controlling_expr.map(Box::new),
+                iter_expr.map(Box::new),
+                body,
+            ),
             location: start.location,
         })
     }

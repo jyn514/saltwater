@@ -38,8 +38,8 @@ pub enum StmtType {
     // for (;;) ;
     For(
         Option<Box<Stmt>>,
-        Option<Expr>,
-        Option<Expr>,
+        Option<Box<Expr>>,
+        Option<Box<Expr>>,
         Option<Box<Stmt>>,
     ),
     Switch(Expr, Box<Stmt>),

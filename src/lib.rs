@@ -4,6 +4,7 @@
 #![warn(unreachable_pub)]
 #![warn(deprecated_in_future)]
 #![deny(unsafe_code)]
+#![deny(unused_extern_crates)]
 
 use std::collections::VecDeque;
 use std::fs::File;
@@ -13,10 +14,6 @@ use std::process::Command;
 
 #[macro_use]
 extern crate lazy_static;
-extern crate cranelift;
-extern crate cranelift_faerie;
-extern crate cranelift_module;
-extern crate failure;
 
 use cranelift_faerie::FaerieBackend;
 use cranelift_module::{Backend, Module};

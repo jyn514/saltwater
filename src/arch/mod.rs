@@ -20,12 +20,13 @@ use Type::*;
 const CHAR_SIZE: u16 = 1;
 
 // TODO: allow this to be configured at runtime
+pub const TARGET: Triple = Triple::host();
+// TODO: make this const when const_if_match is stabilized
+// TODO: see https://github.com/rust-lang/rust/issues/49146
 lazy_static! {
-    // TODO: make this `const` when
-    // https://github.com/CraneStation/target-lexicon/pull/19 is merged
-    pub static ref TARGET: Triple = Triple::host();
     pub static ref CALLING_CONVENTION: CallConv = CallConv::triple_default(&TARGET);
 }
+
 mod x64;
 pub use x64::*;
 

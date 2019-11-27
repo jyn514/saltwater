@@ -100,7 +100,7 @@ impl Compiler {
             .expect("opt_level: speed should be a valid option");
 
         let isa = isa::lookup(TARGET.clone())
-            .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", *TARGET), 5))
+            .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", TARGET), 5))
             .finish(settings::Flags::new(flags_builder));
 
         let builder = FaerieBuilder::new(

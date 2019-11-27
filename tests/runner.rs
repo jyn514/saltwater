@@ -6,7 +6,7 @@ use std::path;
 extern crate env_logger;
 extern crate log;
 extern crate walkdir;
-use log::{debug, info};
+use log::debug;
 
 #[test]
 fn run_all() -> Result<(), io::Error> {
@@ -29,7 +29,7 @@ fn run_all() -> Result<(), io::Error> {
 }
 
 fn run_one(path: &path::Path) -> Result<(), io::Error> {
-    info!("testing {}", path.display());
+    println!("testing {}", path.display());
     let program_bytes = std::process::Command::new("cpp")
         .args(&[
             "-P",
@@ -50,7 +50,9 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
     let mut reader = io::BufReader::new(std::fs::File::open(path)?);
     let mut first_line = String::new();
     reader.read_line(&mut first_line)?;
-    let test_func = match first_line.as_str().trim() {
+    // remove trailing \n
+    first_line.pop();
+    let test_func = match first_line.as_str() {
         "// compile" => utils::assert_compiles,
         "// no-main" => utils::assert_compiles_no_main,
         "// fail" => utils::assert_compile_error,
@@ -59,27 +61,19 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
         "// ignore" => return Ok(()),
         line => {
             if line.starts_with("// code: ") {
-                let mut split = line.split("// code: ");
-                split.next();
-                utils::assert_code(
-                    &program,
-                    split
-                        .next()
-                        .expect("tests should have a return code after 'code: '")
-                        .parse()
-                        .expect("tests should have an integer return code after 'code: '"),
-                );
+                let code = line["// code: ".len()..]
+                    .parse()
+                    .expect("tests should have an integer after code:");
+                utils::assert_code(&program, code);
+                return Ok(());
+            } else if line.starts_with("// errors: ") {
+                let errors = line["// errors: ".len()..]
+                    .parse()
+                    .expect("tests should have an integer after code:");
+                utils::assert_num_errs(&program, errors);
                 return Ok(());
             } else if line.starts_with("// output: ") {
-                // TODO: handle multiline output
-                let mut split = line.split("// output: ");
-                split.next();
-                let expected = format!(
-                    "{}\n",
-                    split.next().expect("output test should have an output")
-                );
-                utils::assert_output(&program, &expected);
-                return Ok(());
+                return output_test(&line["// output: ".len()..], &mut reader, &program);
             } else {
                 // seems like a reasonable default
                 utils::assert_succeeds
@@ -89,4 +83,56 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
 
     test_func(&program);
     Ok(())
+}
+
+/// small state machine to handle 'output' syntax
+/// syntax: '// output: ' expected_output
+/// expected_output: '[^\n]*' | 'BEGIN: ' (comment_line* '\n' | [^\n]+) 'END'
+/// comment_line: '\n// ' [^\n+]
+fn output_test<B: BufRead>(line: &str, reader: &mut B, program: &str) -> Result<(), io::Error> {
+    const BEGIN: &str = "BEGIN: ";
+    const END: &str = "END";
+    let tmp_str;
+    let expected = match line {
+        "" => "", // special case this so empty output doesn't need to use 'BEGIN: END'
+        // everything between BEGIN: (...) END
+        _ if line.starts_with(BEGIN) && line.ends_with(END) => {
+            &line[BEGIN.len()..line.len() - END.len() - 1]
+        }
+        // special case initial lines that are empty
+        "BEGIN:" => {
+            tmp_str = state_machine(reader)?;
+            &tmp_str
+        }
+        _ if line.starts_with(BEGIN) => {
+            println!("saw BEGIN, going to state machine");
+            tmp_str = format!("{}{}", &line[BEGIN.len()..], state_machine(reader)?);
+            &tmp_str
+        }
+        _ => {
+            println!("did not see BEGIN, saw '{}'", line);
+            tmp_str = format!("{}\n", line);
+            &tmp_str
+        }
+    };
+    println!("{}", expected);
+    utils::assert_output(program, expected);
+    return Ok(());
+}
+
+fn state_machine<B: BufRead>(reader: &mut B) -> Result<String, io::Error> {
+    const COMMENT: &str = "// ";
+    let mut expected_out = String::new();
+    for line in reader.lines() {
+        let line = dbg!(line?);
+        if line == "// END" {
+            break;
+        } else if !line.starts_with(COMMENT) {
+            println!("warning: test runner: invalid syntax in program comment, expected `// <output>` or `// END`");
+            break;
+        }
+        expected_out.push_str(&line[COMMENT.len()..]);
+        expected_out.push('\n');
+    }
+    return Ok(expected_out);
 }

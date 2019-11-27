@@ -1,4 +1,4 @@
-// output: a
+// output: BEGIN: a END
 
 int putchar(char);
 int main(void) {

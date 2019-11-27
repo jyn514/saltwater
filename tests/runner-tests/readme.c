@@ -1,3 +1,4 @@
+// code: 6
 int puts(const char *s);
 int putchar(char);
 
@@ -21,7 +22,6 @@ int main(void) {
   puts("i is ");
   putchar('0' + j);
   putchar('\n');
-  // expected return code: 6
   return j;
 }
 

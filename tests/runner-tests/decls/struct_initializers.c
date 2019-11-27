@@ -1,4 +1,4 @@
-// ignore
+// ignore: https://github.com/jyn514/rcc/issues/53
 // code: 1
 struct s {
         int i;

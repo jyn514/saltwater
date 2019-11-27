@@ -58,7 +58,7 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
         "// fail" => utils::assert_compile_error,
         "// succeeds" => utils::assert_succeeds,
         "// crash" => utils::assert_crash,
-        "// ignore" => return Ok(()),
+        "// ignore" => panic!("ignored tests should have an associated issue"),
         line => {
             if line.starts_with("// code: ") {
                 let code = line["// code: ".len()..]
@@ -71,6 +71,13 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
                     .parse()
                     .expect("tests should have an integer after code:");
                 utils::assert_num_errs(&program, errors);
+                return Ok(());
+            } else if line.starts_with("// ignore: ") {
+                let url = &line["// ignore: ".len()..];
+                assert!(
+                    url.starts_with("https://") || url.starts_with("http://"),
+                    "ignored tests should have an associated issue"
+                );
                 return Ok(());
             } else if line.starts_with("// output: ") {
                 return output_test(&line["// output: ".len()..], &mut reader, &program);

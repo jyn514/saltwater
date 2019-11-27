@@ -6,10 +6,6 @@ rust:
 
 cache:
     cargo: ""
-    directories:
-        - fuzz/artifacts
-        - fuzz/corpus/libfuzzer
-        - fuzz/afl/outputs
 
 install:
     - rustup component add rustfmt

@@ -14,17 +14,19 @@ pub enum Type {
     Long(bool),
     Float,
     Double,
-    Pointer(Box<Type>), //, Qualifiers),
+    Pointer(Box<Type>),
     Array(Box<Type>, ArrayType),
     Function(FunctionType),
-    // name, members
-    // no members means a tentative definition (struct s;)
     Union(StructType),
     Struct(StructType),
-    // enums should always have members, since tentative definitions are not allowed
+    /// Enums should always have members, since tentative definitions are not allowed
     Enum(Option<InternedStr>, Vec<(InternedStr, i64)>),
+    /// This should probably be merged into Structs at some point
     Bitfield(Vec<BitfieldType>),
+    /// This is the type used for variadic arguments.
     VaList,
+    /// A semantic error occured while parsing this type.
+    Error,
 }
 
 /// Structs can be either named or anonymous.
@@ -44,7 +46,7 @@ pub enum Type {
 /// https://github.com/jyn514/rcc/issues/44 for an example of how this can manifest.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StructType {
-    // name, size, alignment, offsets
+    /// name, size, alignment, offsets
     Named(InternedStr, u64, u64, HashMap<InternedStr, u64>),
     Anonymous(Vec<Symbol>),
 }
@@ -260,6 +262,7 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         Struct(_) => write!(f, "<anonymous struct>"),
         Bitfield(_) => unimplemented!("printing bitfield type"),
         VaList => write!(f, "va_list"),
+        Error => write!(f, "<type error>"),
     }
 }
 

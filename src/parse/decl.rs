@@ -614,7 +614,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let constant = self.constant_expr()?.constexpr().unwrap_or_else(|err| {
                     let location = err.location();
                     self.pending.push_back(Err(err));
-                    Locatable::new((Token::Int(-1), Type::Int(true)), location)
+                    Locatable::new((Token::Int(-1), Type::Error), location)
                 });
                 current = match constant.data.0 {
                     Token::Int(i) => i,
@@ -1211,7 +1211,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             "cannot assign to variable with incomplete type",
                             self.last_location,
                         );
-                        return self.initializer(&Type::Int(true));
+                        return self.initializer(&Type::Error);
                     }
                     Some(TagEntry::Union(members)) => members,
                     _ => unreachable!(),
@@ -1220,7 +1220,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let first_ctype = members
                 .first()
                 .map(|m| m.ctype.clone())
-                .unwrap_or(Type::Int(true));
+                .unwrap_or(Type::Error);
             return self.initializer(&first_ctype);
         }
         // initializer_list
@@ -1338,6 +1338,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ) {
         use Type::*;
         match ctype {
+            // nothing to do, best to hope that the previous declaration was valid
+            Error => {}
             Array(inner, _) | Pointer(inner) => {
                 Self::update_forward_declarations(inner, new_type, ident)
             }

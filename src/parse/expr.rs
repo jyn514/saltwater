@@ -754,6 +754,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     };
                     let functype = match expr.ctype {
                         Type::Function(ref functype) => functype,
+                        Type::Error => continue, // we've already reported this error
                         _ => {
                             self.semantic_err(
                                 format!("called object of type '{}' is not a function", expr.ctype),
@@ -888,7 +889,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             format!("use of undeclared identifier '{}'", name),
                             location,
                         );
-                        Ok(Expr::zero(location))
+                        let mut pretend_zero = Expr::zero(location);
+                        pretend_zero.ctype = Type::Error;
+                        Ok(pretend_zero)
                     }
                     Some(symbol) => {
                         if let Type::Enum(ident, members) = &symbol.ctype {
@@ -1273,6 +1276,8 @@ impl Expr {
                 || self.ctype.is_char_pointer())
         {
             self.ctype = ctype.clone();
+            Ok(self)
+        } else if self.ctype == Type::Error {
             Ok(self)
         // TODO: allow implicit casts of const pointers
         } else {

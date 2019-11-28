@@ -485,16 +485,21 @@ impl<'a> Lexer<'a> {
             if c == '\\' {
                 if let Some(c) = self.next_char() {
                     Ok(match c {
+                        // escaped newline: "a\
+                        // b"
                         '\n' => return self.parse_single_char(string),
-                        'n' => '\n',
-                        'r' => '\r',
-                        't' => '\t',
-                        '"' => '"',
-                        '\'' => '\'',
-                        '\\' => '\\',
-                        '0' => '\0',
-                        'b' => '\x08',
-                        'f' => '\x0c',
+                        'n' => '\n',   // embedded newline: "a\nb"
+                        'r' => '\r',   // carriage return
+                        't' => '\t',   // tab
+                        '"' => '"',    // escaped "
+                        '\'' => '\'',  // escaped '
+                        '\\' => '\\',  // \
+                        '0' => '\0',   // null character: "\0"
+                        'a' => '\x07', // bell
+                        'b' => '\x08', // backspace
+                        'v' => '\x0b', // vertical tab
+                        'f' => '\x0c', // form feed
+                        '?' => '?',    // a literal '?', for trigraphs
                         _ => {
                             warn(
                                 &format!("unknown character escape '\\{}'", c),
@@ -1061,9 +1066,12 @@ mod tests {
         assert!(match_char(lex("'\\r'"), b'\r'));
         assert!(match_char(lex("'\\\"'"), b'"'));
         assert!(match_char(lex("'\\''"), b'\''));
+        assert!(match_char(lex("'\\a'"), b'\x07'));
         assert!(match_char(lex("'\\b'"), b'\x08'));
+        assert!(match_char(lex("'\\v'"), b'\x0b'));
         assert!(match_char(lex("'\\f'"), b'\x0c'));
         assert!(match_char(lex("'\\t'"), b'\t'));
+        assert!(match_char(lex("'\\?'"), b'?'));
     }
     #[test]
     fn test_strings() {

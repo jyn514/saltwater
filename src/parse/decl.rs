@@ -530,24 +530,32 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         if kind != Keyword::Struct {
                             self.semantic_err(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", ident, kind), location);
                         }
-                        let (size, align, offsets) =
-                            Self::struct_type(members, true).map_err(|err| Locatable {
-                                data: err.into(),
-                                location,
-                            })?;
-                        Ok(Type::Struct(StructType::Named(ident, size, align, offsets)))
+                        let ty = match Self::struct_type(members, true) {
+                            Ok((size, align, offsets)) => {
+                                Type::Struct(StructType::Named(ident, size, align, offsets))
+                            }
+                            Err(err) => {
+                                self.semantic_err(err, location);
+                                Type::Error
+                            }
+                        };
+                        Ok(ty)
                     }
                     TagEntry::Union(members) => {
                         let members = members.clone();
                         if kind != Keyword::Union {
                             self.semantic_err(format!("use of '{}' with type tag '{}' that does not match previous union declaration", ident, kind), location);
                         }
-                        let (size, align, offsets) =
-                            Self::struct_type(members, false).map_err(|err| Locatable {
-                                data: err.into(),
-                                location,
-                            })?;
-                        Ok(Type::Union(StructType::Named(ident, size, align, offsets)))
+                        let ty = match Self::struct_type(members, false) {
+                            Ok((size, align, offsets)) => {
+                                Type::Union(StructType::Named(ident, size, align, offsets))
+                            }
+                            Err(err) => {
+                                self.semantic_err(err, location);
+                                Type::Error
+                            }
+                        };
+                        Ok(ty)
                     }
                     TagEntry::Enum(members) => {
                         let members = members.clone();

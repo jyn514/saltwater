@@ -380,6 +380,9 @@ fn const_cast(token: &Token, ctype: &Type) -> Option<Token> {
         (Token::Float(f), Type::Double) | (Token::Float(f), Type::Float) => Token::Float(*f),
         (Token::Float(f), ty) if ty.is_integral() && ty.is_signed() => Token::Int(*f as i64),
         (Token::Float(f), ty) if ty.is_integral() => Token::UnsignedInt(*f as u64),
+        (Token::Int(i), _) if ctype.is_pointer() && *i >= 0 => Token::UnsignedInt(*i as u64),
+        (Token::UnsignedInt(u), _) if ctype.is_pointer() => Token::UnsignedInt(*u),
+        (Token::Char(c), _) if ctype.is_pointer() => Token::UnsignedInt(u64::from(*c)),
         _ => return None,
     };
     Some(token)

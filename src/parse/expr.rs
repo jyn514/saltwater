@@ -1153,6 +1153,7 @@ impl Expr {
                 Type::Pointer(_) => true,
                 _ => panic!("only pointers can be dereferenced"),
             },
+            ExprType::Member(_, _) => true,
             _ => unimplemented!("what's an lval but not a pointer or id?"),
         }
     }

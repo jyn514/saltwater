@@ -1212,27 +1212,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// initializer: assignment_expr
     ///     | '{' initializer (',' initializer)* '}'
     fn initializer(&mut self, ctype: &Type) -> Result<Initializer, SyntaxError> {
-        if let Type::Union(struct_type) = ctype {
-            let members = match struct_type {
-                StructType::Anonymous(members) => members,
-                StructType::Named(name, _, _, _) => match self.tag_scope.get(name) {
-                    None => {
-                        self.semantic_err(
-                            "cannot assign to variable with incomplete type",
-                            self.last_location,
-                        );
-                        return self.initializer(&Type::Error);
-                    }
-                    Some(TagEntry::Union(members)) => members,
-                    _ => unreachable!(),
-                },
-            };
-            let first_ctype = members
-                .first()
-                .map(|m| m.ctype.clone())
-                .unwrap_or(Type::Error);
-            return self.initializer(&first_ctype);
-        }
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
             let mut elements = vec![];
@@ -1242,42 +1221,46 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             while self.match_next(&Token::RightBrace).is_none() {
                 let elem_type = ctype
                     .type_at(&self.tag_scope, elements.len())
-                    .map_err(|err| Locatable {
-                        data: err,
-                        location: self.next_location(),
-                    })?;
+                    .unwrap_or_else(|err| {
+                        let loc = self.next_location();
+                        self.semantic_err(err, loc);
+                        Type::Error
+                    });
                 elements.push(self.initializer(&elem_type)?);
                 if self.match_next(&Token::RightBrace).is_some() {
                     break;
                 }
                 self.expect(Token::Comma)?;
             }
-            Ok(Initializer::InitializerList(elements))
-        } else {
-            let mut expr = self.assignment_expr()?;
-            // See section 6.7.9 of the C11 standard:
-            // The initializer for a scalar shall be a single expression, optionally enclosed in braces.
-            // The initial value of the object is that of the expression (after conversion)
-            //
-            // The only time (that I know of) that an expression will initialize a non-scalar
-            // is for character literals.
-            if ctype.is_scalar() {
-                expr = expr
-                    .rval()
-                    .cast(ctype)
-                    .into_inner(self.default_err_handler());
-                if !expr.lval && self.scope.is_global() && ctype.is_pointer() {
-                    expr = Expr {
-                        lval: false,
-                        constexpr: false,
-                        location: expr.location,
-                        ctype: expr.ctype.clone(),
-                        expr: ExprType::StaticRef(Box::new(expr)),
-                    };
-                }
-            }
-            Ok(Initializer::Scalar(Box::new(expr)))
+            return Ok(Initializer::InitializerList(elements));
         }
+        let mut expr = self.assignment_expr()?;
+        // The only time (that I know of) that an expression will initialize a non-scalar
+        // is for character literals.
+        let is_char_array = match ctype {
+            Type::Array(inner, _) => inner.is_char(),
+            _ => false,
+        };
+        // See section 6.7.9 of the C11 standard:
+        // The initializer for a scalar shall be a single expression, optionally enclosed in braces.
+        // The initial value of the object is that of the expression (after conversion)
+        if !is_char_array {
+            expr = expr
+                .rval()
+                // if ctype is not a scalar, this will report an error, so we don't have to handle it specially
+                .cast(ctype)
+                .into_inner(self.default_err_handler());
+        }
+        if !expr.lval && self.scope.is_global() && ctype.is_pointer() {
+            expr = Expr {
+                lval: false,
+                constexpr: false,
+                location: expr.location,
+                ctype: expr.ctype.clone(),
+                expr: ExprType::StaticRef(Box::new(expr)),
+            };
+        }
+        Ok(Initializer::Scalar(Box::new(expr)))
     }
     fn function_body(
         &mut self,
@@ -1664,8 +1647,8 @@ impl Type {
                     Ok(ty.clone())
                 } else {
                     Err(format!(
-                        "scalar initializers may only have one element (initialized with {})",
-                        index + 1
+                        "scalar initializers for '{}' may only have one element (initialized with {})",
+                        ty, index + 1
                     ))
                 }
             }
@@ -1688,6 +1671,23 @@ impl Type {
                     },
                     |symbol| Ok(symbol.ctype.clone()),
                 )
+            }
+            Type::Union(struct_type) => {
+                if index != 0 {
+                    return Err("can only initialize first member of an enum".into());
+                }
+                let members = match struct_type {
+                    StructType::Anonymous(members) => members,
+                    StructType::Named(name, _, _, _) => match tag_scope.get(name) {
+                        None => return Err("cannot assign to variable with incomplete type".into()),
+                        Some(TagEntry::Union(members)) => members,
+                        _ => unreachable!(),
+                    },
+                };
+                Ok(members
+                    .first()
+                    .map(|m| m.ctype.clone())
+                    .unwrap_or(Type::Error))
             }
             _ => unimplemented!("type checking for aggregate initializers of type {}", self),
         }

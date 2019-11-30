@@ -5,9 +5,10 @@ authors = ["Joshua Nelson <jyn514@gmail.com>"]
 edition = "2018"
 description = "A C compiler written in Rust, with a focus on good error messages."
 repository = "https://github.com/jyn514/rcc/"
-readme ="README.md"
-categories = ["parser-implementations"]
+readme = "README.md"
+categories = ["development-tools", "parser-implementations"]
 license = "BSD-3-Clause"
+keywords = ["C", "compiler", "recursive-descent", "cranelift"]
 
 [dependencies]
 lazy_static = "1"
@@ -16,6 +17,7 @@ cranelift = "0.49"
 cranelift-faerie = "0.49"
 cranelift-module = "0.49"
 env_logger = "0.7"
+# I would rather not use both failure and thiserror, but cranelift uses both
 failure = "0.1"
 hexf = "0.1"
 thiserror = "1"
@@ -23,7 +25,6 @@ log = "0.4"
 target-lexicon = "0.9"
 tempfile = "3"
 pico-args = "0.3"
-# not my favorite library but allows sharing strings with Faerie
 string-interner = "0.7"
 
 [dev-dependencies]

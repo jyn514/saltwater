@@ -30,19 +30,7 @@ fn run_all() -> Result<(), io::Error> {
 
 fn run_one(path: &path::Path) -> Result<(), io::Error> {
     println!("testing {}", path.display());
-    let program_bytes = std::process::Command::new("cpp")
-        .args(&[
-            "-P",
-            "-undef",
-            "-D__DBL_MAX__=1.797693134862315708e+308L",
-            "-D__DBL_MIN__=2.225073858507201383e-308L",
-            "-D__FLT_MAX__=3.402823466385288598e+38F",
-            "-D__FLT_MIN__=1.175494350822287507e-38F",
-            #[cfg(linux)]
-            "-D__linux__",
-            #[cfg(target_arch = "x86_64")]
-            "-D__x86_64__",
-        ])
+    let program_bytes = utils::cpp()
         .arg(path.as_os_str())
         .output()
         .expect("failed to run preprocessor")

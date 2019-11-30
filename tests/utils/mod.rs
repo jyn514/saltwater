@@ -15,6 +15,23 @@ pub fn init() {
     env_logger::builder().is_test(true).init();
 }
 
+pub fn cpp() -> std::process::Command {
+    let mut cpp = std::process::Command::new("cpp");
+    cpp.args(&[
+        "-P",
+        "-undef",
+        "-D__DBL_MAX__=1.797693134862315708e+308L",
+        "-D__DBL_MIN__=2.225073858507201383e-308L",
+        "-D__FLT_MAX__=3.402823466385288598e+38F",
+        "-D__FLT_MIN__=1.175494350822287507e-38F",
+        #[cfg(linux)]
+        "-D__linux__",
+        #[cfg(target_arch = "x86_64")]
+        "-D__x86_64__",
+    ]);
+    cpp
+}
+
 pub fn compile_and_run(program: &str, args: &[&str]) -> Result<Output, Error> {
     let output = compile(program, false)?;
     info!("running file {:?}", output);

@@ -6,9 +6,8 @@ mod utils;
 
 fn cpp_and_save(header: &str, dest: &Path) -> Result<(), Error> {
     use std::io::{ErrorKind, Write};
-    use std::process::{Command, Stdio};
-    let mut cpp = Command::new("cpp")
-        .args(&["-P", "-undef", "-x", "c"])
+    use std::process::Stdio;
+    let mut cpp = utils::cpp()
         .stdin(Stdio::piped())
         .stdout(File::create(dest)?)
         .spawn()

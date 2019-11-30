@@ -361,13 +361,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     (Type::Pointer(to), i)
                     | (Type::Array(to, _), i) if i.is_integral() && to.is_complete() => {
                         let to = to.clone();
-                        return Expr::pointer_arithmetic(*left, *right, &*to, token.location);
+                        let (left, right) = (left.rval(), right.rval());
+                        return Expr::pointer_arithmetic(left, right, &*to, token.location);
                     }
                     (i, Type::Pointer(to))
                         // `i - p` for pointer p is not valid
                     | (i, Type::Array(to, _)) if i.is_integral() && token.data == Token::Plus && to.is_complete() => {
                         let to = to.clone();
-                        return Expr::pointer_arithmetic(*right, *left, &*to, token.location);
+                        let (left, right) = (left.rval(), right.rval());
+                        return Expr::pointer_arithmetic(right, left, &*to, token.location);
                     }
                     _ => {}
                 };
@@ -733,6 +735,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let mut addr = Expr::pointer_arithmetic(array, index, &target_type, location)
                         .into_inner(|err| self.semantic_err(err.data, err.location));
                     addr.ctype = target_type;
+                    addr.lval = true;
                     addr
                 }
                 // function call
@@ -1345,7 +1348,7 @@ impl Expr {
             expr: ExprType::Mul(Box::new(size_cast), Box::new(offset)),
         };
         Ok(Expr {
-            lval: true,
+            lval: false,
             location,
             ctype: base.ctype.clone(),
             constexpr: base.constexpr && offset.constexpr,

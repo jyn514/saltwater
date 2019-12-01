@@ -23,7 +23,6 @@ use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule}
 
 use crate::arch::TARGET;
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
-use crate::parse::TagScope;
 use crate::utils;
 
 type Module = CraneliftModule<FaerieBackend>;
@@ -34,10 +33,9 @@ enum Id {
     Local(StackSlot),
 }
 
-struct Compiler<'a> {
+struct Compiler {
     module: Module,
     scope: Scope<InternedStr, Id>,
-    tag_scope: &'a TagScope,
     debug: bool,
     // if false, we last saw a switch
     last_saw_loop: bool,
@@ -51,16 +49,12 @@ struct Compiler<'a> {
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
-pub(crate) fn compile(
-    program: Vec<Locatable<Declaration>>,
-    debug: bool,
-    tag_scope: &TagScope,
-) -> CompileResult<Module> {
+pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> CompileResult<Module> {
     let name = program.first().map_or_else(
         || "<empty>".to_string(),
         |decl| decl.location.file.resolve_and_clone(),
     );
-    let mut compiler = Compiler::new(name, debug, tag_scope);
+    let mut compiler = Compiler::new(name, debug);
     for decl in program {
         match (decl.data.symbol.ctype.clone(), decl.data.init) {
             (Type::Function(func_type), None) => {
@@ -89,8 +83,8 @@ pub(crate) fn compile(
     Ok(compiler.module)
 }
 
-impl<'a> Compiler<'a> {
-    fn new(name: String, debug: bool, tag_scope: &TagScope) -> Compiler {
+impl Compiler {
+    fn new(name: String, debug: bool) -> Compiler {
         let mut flags_builder = settings::builder();
         // allow creating shared libraries
         flags_builder
@@ -120,7 +114,6 @@ impl<'a> Compiler<'a> {
         Compiler {
             module: Module::new(builder),
             scope: Scope::new(),
-            tag_scope,
             loops: Vec::new(),
             switches: Vec::new(),
             labels: HashMap::new(),

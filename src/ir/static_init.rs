@@ -10,13 +10,12 @@ use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::prelude::*;
 use crate::data::{types::ArrayType, Initializer};
-use crate::parse::TagEntry;
 use crate::utils::warn;
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
 
-impl<'a> Compiler<'a> {
+impl Compiler {
     pub(crate) fn store_static(
         &mut self,
         mut symbol: Symbol,
@@ -194,24 +193,14 @@ impl<'a> Compiler<'a> {
                     assert_eq!(initializers.len(), 1);
                     self.init_symbol(ctx, buf, offset, initializers.remove(0), ctype, location)
                 }
-                Type::Union(struct_type) => {
-                    let members = match struct_type {
-                        StructType::Anonymous(members) => members,
-                        StructType::Named(name, _, _, _) => match self.tag_scope.get(name).unwrap()
-                        {
-                            TagEntry::Union(members) => members,
-                            _ => unreachable!(),
-                        },
-                    };
-                    self.init_symbol(
-                        ctx,
-                        buf,
-                        offset,
-                        initializers.remove(0),
-                        &members.first().unwrap().ctype,
-                        location,
-                    )
-                }
+                Type::Union(struct_type) => self.init_symbol(
+                    ctx,
+                    buf,
+                    offset,
+                    initializers.remove(0),
+                    &struct_type.members().first().unwrap().ctype,
+                    location,
+                ),
                 Type::Struct(_) => unimplemented!("struct initializers"),
                 Type::Bitfield(_) => unimplemented!("bitfield initalizers"),
 

@@ -11,10 +11,10 @@ use crate::data::{prelude::*, Scope};
 use crate::utils::warn;
 
 type Lexeme = Result<Locatable<Token>, CompileError>;
-type TagScope = Scope<InternedStr, TagEntry>;
+pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
 
 #[derive(Clone, Debug)]
-enum TagEntry {
+pub(crate) enum TagEntry {
     Struct(Vec<Symbol>),
     Union(Vec<Symbol>),
     // list of (name, value)s
@@ -107,6 +107,13 @@ where
             current_function: None,
             debug,
         })
+    }
+    /// Get the struct, union, and enum types currently in scope.
+    ///
+    /// This is used by the backend to initialize structs that were declared
+    /// before they were defined.
+    pub(crate) fn tag_scope(&self) -> &TagScope {
+        &self.tag_scope
     }
 }
 

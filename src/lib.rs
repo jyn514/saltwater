@@ -68,9 +68,9 @@ pub fn compile(
     debug_ir: bool,
 ) -> Result<Product, Error> {
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
-    let parser = Parser::new(lexer, debug_ast)?;
+    let mut parser = Parser::new(lexer, debug_ast)?;
     let (mut hir, mut all_errs) = (vec![], vec_deque![]);
-    for result in parser {
+    for result in &mut parser {
         match result {
             Err(err) => all_errs.push_back(err),
             Ok(decl) => hir.push(decl),
@@ -80,7 +80,7 @@ pub fn compile(
         return Err(Error::Source(all_errs));
     }
 
-    ir::compile(hir, debug_ir)
+    ir::compile(hir, debug_ir, parser.tag_scope())
         .map_err(Error::from)
         .map(Module::<FaerieBackend>::finish)
 }

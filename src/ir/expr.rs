@@ -21,7 +21,7 @@ enum FuncCall {
     Indirect(Value),
 }
 
-impl Compiler {
+impl<'a> Compiler<'a> {
     // clippy doesn't like big match statements, but this is kind of essential complexity,
     // it can't be any smaller without supporting fewer features
     #[allow(clippy::cognitive_complexity)]

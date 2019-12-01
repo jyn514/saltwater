@@ -5,7 +5,7 @@ use cranelift::prelude::{Ebb, FunctionBuilder, InstBuilder};
 use super::Compiler;
 use crate::data::prelude::*;
 
-impl Compiler {
+impl<'a> Compiler<'a> {
     pub(crate) fn compile_all(
         &mut self,
         stmts: Vec<Stmt>,

@@ -1,4 +1,4 @@
-use super::{Lexeme, Parser, TagEntry};
+use super::{Lexeme, Parser};
 use crate::arch::SIZE_T;
 use crate::data::prelude::*;
 use crate::data::{lex::Keyword, types::ArrayType, StorageClass::Typedef};
@@ -954,21 +954,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // used for both s.a and s->a
     fn struct_member(&mut self, expr: Expr, id: InternedStr, location: Location) -> SyntaxResult {
         match &expr.ctype {
-            Type::Struct(StructType::Anonymous(members))
-            | Type::Union(StructType::Anonymous(members)) => {
-                struct_member_helper!(self, members, expr, id, location)
-            }
-            Type::Struct(StructType::Named(name, _, _, _))
-            | Type::Union(StructType::Named(name, _, _, _)) => match self.tag_scope.get(name) {
-                Some(TagEntry::Union(members)) | Some(TagEntry::Struct(members)) => {
-                    struct_member_helper!(self, members, expr, id, location)
-                }
-                None => {
+            Type::Struct(stype) | Type::Union(stype) => {
+                let members = stype.members();
+                if members.is_empty() {
                     self.semantic_err(format!("{} has not yet been defined", expr.ctype), location);
                     Ok(expr)
+                } else {
+                    struct_member_helper!(self, members, expr, id, location)
                 }
-                _ => unreachable!("parser should ensure types in scope are valid"),
-            },
+            }
             _ => {
                 self.semantic_err(
                     format!("expected struct or union, got type '{}'", expr.ctype),
@@ -1783,16 +1777,13 @@ mod tests {
         };
         assert!(parse_expr_with_scope("f(1,2,3)", &[&f]).is_err());
         let parsed = parse_expr_with_scope("f()", &[&f]);
-        assert!(
-            match parsed {
-                Ok(Expr {
-                    expr: ExprType::FuncCall(_, _),
-                    ..
-                }) => true,
-                _ => false,
-            },
-            parsed
-        );
+        assert!(match parsed {
+            Ok(Expr {
+                expr: ExprType::FuncCall(_, _),
+                ..
+            }) => true,
+            _ => false,
+        },);
     }
     #[test]
     fn test_type_errors() {

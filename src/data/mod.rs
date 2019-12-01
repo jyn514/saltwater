@@ -14,7 +14,7 @@ pub mod prelude {
             CompileError, CompileResult, Recoverable, RecoverableResult, SemanticError, SyntaxError,
         },
         lex::{Locatable, Location, Token},
-        types::{StructType, Type},
+        types::{StructRef, StructType, Type},
         Declaration, Expr, ExprType, Stmt, StmtType, Symbol,
     };
     pub use crate::intern::InternedStr;
@@ -140,7 +140,7 @@ pub enum ExprType {
     Noop(Box<Expr>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StorageClass {
     Static = Keyword::Static as isize,
     Extern = Keyword::Extern as isize,
@@ -159,7 +159,7 @@ pub struct Symbol {
     pub init: bool,
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Qualifiers {
     pub volatile: bool,
     pub c_const: bool,
@@ -186,10 +186,6 @@ impl Qualifiers {
         c_const: true,
         volatile: true,
     };
-}
-
-lazy_static! {
-    pub static ref INT_POINTER: Type = { Type::Pointer(Box::new(Type::Int(true))) };
 }
 
 pub enum LengthError {

@@ -1,4 +1,4 @@
-// errors: 2
+// fail
 struct s {
     int f();
 } my_s;

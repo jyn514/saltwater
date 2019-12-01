@@ -1,8 +1,5 @@
 language: rust
 
-cache:
-    cargo: ""
-
 jobs:
     include:
         - rust: stable

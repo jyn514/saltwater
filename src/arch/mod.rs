@@ -84,11 +84,8 @@ impl Type {
                     _ => return Err("enum cannot be represented in SIZE_T bits"),
                 })
             }
-            Union(StructType::Named(_, size, _, _)) | Struct(StructType::Named(_, size, _, _)) => {
-                Ok(*size)
-            }
-            Struct(StructType::Anonymous(symbols)) => struct_size(&symbols),
-            Union(StructType::Anonymous(symbols)) => union_size(&symbols),
+            Union(struct_type) => union_size(&struct_type.members()),
+            Struct(struct_type) => struct_size(&struct_type.members()),
             Bitfield(_) => unimplemented!("sizeof(bitfield)"),
             // illegal operations
             Function(_) => Err("cannot take `sizeof` a function"),
@@ -112,11 +109,7 @@ impl Type {
             // Clang uses the largest alignment of any element as the alignment of the whole
             // Not sure why, but who am I to argue
             // Anyway, Faerie panics if the alignment isn't a power of two so it's probably for the best
-            Union(StructType::Named(_, _, align, _))
-            | Struct(StructType::Named(_, _, align, _)) => Ok(*align),
-            Union(StructType::Anonymous(members)) | Struct(StructType::Anonymous(members)) => {
-                struct_align(members)
-            }
+            Union(struct_type) | Struct(struct_type) => struct_align(&struct_type.members()),
             Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),
@@ -311,7 +304,7 @@ mod tests {
             }
             v
         };
-        Type::Struct(StructType::Anonymous(members))
+        Type::Struct(StructType::Anonymous(std::rc::Rc::new(members)))
     }
     fn assert_offset(types: Vec<Type>, member_index: usize, offset: u64) {
         let struct_type = struct_for_types(types);

@@ -15,8 +15,8 @@ pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
 
 #[derive(Clone, Debug)]
 pub(crate) enum TagEntry {
-    Struct(Vec<Symbol>),
-    Union(Vec<Symbol>),
+    Struct(StructRef),
+    Union(StructRef),
     // list of (name, value)s
     Enum(Vec<(InternedStr, i64)>),
 }
@@ -33,7 +33,6 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     scope: Scope<InternedStr, Symbol>,
     /// the compound types that have been declared (struct/union/enum)
     tag_scope: TagScope,
-
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,
@@ -108,13 +107,6 @@ where
             debug,
         })
     }
-    /// Get the struct, union, and enum types currently in scope.
-    ///
-    /// This is used by the backend to initialize structs that were declared
-    /// before they were defined.
-    pub(crate) fn tag_scope(&self) -> &TagScope {
-        &self.tag_scope
-    }
 }
 
 impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
@@ -185,9 +177,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         use crate::data::StorageClass;
         for object in self.scope.get_all_immediate().values() {
             match &object.ctype {
-                Type::Struct(StructType::Named(name, size, _, _))
-                | Type::Union(StructType::Named(name, size, _, _)) => {
-                    if *size == 0
+                Type::Struct(StructType::Named(name, members))
+                | Type::Union(StructType::Named(name, members)) => {
+                    if members.get().is_empty()
                         && object.storage_class != StorageClass::Extern
                         && object.storage_class != StorageClass::Typedef
                     {

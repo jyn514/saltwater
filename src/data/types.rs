@@ -1,8 +1,55 @@
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use super::Symbol;
 use crate::arch::SIZE_T;
 use crate::intern::InternedStr;
+
+//pub type StructMembers = Vec<Vec<Symbol>>;
+
+thread_local!(
+    static TYPES: RefCell<Vec<Rc<Vec<Symbol>>>> = Default::default()
+);
+
+#[derive(Copy, Clone, Debug, Eq)]
+pub struct StructRef(usize);
+
+impl PartialEq for StructRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0 || self.get() == other.get()
+    }
+}
+
+impl Default for StructRef {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StructRef {
+    pub fn new() -> StructRef {
+        TYPES.with(|list| {
+            let mut types = list.borrow_mut();
+            let index = types.len();
+            types.push(Rc::new(vec![]));
+            StructRef(index)
+        })
+    }
+
+    pub fn get(self) -> Rc<Vec<Symbol>> {
+        TYPES.with(|list| list.borrow()[self.0].clone())
+    }
+
+    pub fn update<V>(self, members: V)
+    where
+        V: Into<Rc<Vec<Symbol>>>,
+    {
+        TYPES.with(|list| {
+            let mut types = list.borrow_mut();
+            types[self.0] = members.into();
+        });
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
@@ -47,8 +94,23 @@ pub enum Type {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StructType {
     /// name, size, alignment, offsets
-    Named(InternedStr, u64, u64, HashMap<InternedStr, u64>),
-    Anonymous(Vec<Symbol>),
+    Named(InternedStr, StructRef),
+    Anonymous(Rc<Vec<Symbol>>),
+}
+
+impl StructType {
+    pub fn members(&self) -> Rc<Vec<Symbol>> {
+        match self {
+            StructType::Anonymous(members) => Rc::clone(members),
+            StructType::Named(_, struct_ref) => struct_ref.get(),
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        match self {
+            StructType::Anonymous(members) => members.is_empty(),
+            StructType::Named(_, struct_ref) => struct_ref.get().is_empty(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -190,8 +252,7 @@ impl Type {
     }
     pub fn member_offset(&self, member: InternedStr) -> Result<u64, ()> {
         match self {
-            Type::Struct(StructType::Anonymous(members)) => Ok(self.struct_offset(members, member)),
-            Type::Struct(StructType::Named(_, _, _, offsets)) => Ok(*offsets.get(&member).unwrap()),
+            Type::Struct(stype) => Ok(self.struct_offset(&stype.members(), member)),
             Type::Union(_) => Ok(0),
             _ => Err(()),
         }
@@ -256,9 +317,9 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         Function(ftype) => write!(f, "{}", ftype.return_type),
         Enum(Some(ident), _) => write!(f, "enum {}", ident),
         Enum(None, _) => write!(f, "<anonymous enum>"),
-        Union(StructType::Named(ident, _, _, _)) => write!(f, "union {}", ident),
+        Union(StructType::Named(ident, _)) => write!(f, "union {}", ident),
         Union(_) => write!(f, "<anonymous union>"),
-        Struct(StructType::Named(ident, _, _, _)) => write!(f, "struct {}", ident),
+        Struct(StructType::Named(ident, _)) => write!(f, "struct {}", ident),
         Struct(_) => write!(f, "<anonymous struct>"),
         Bitfield(_) => unimplemented!("printing bitfield type"),
         VaList => write!(f, "va_list"),

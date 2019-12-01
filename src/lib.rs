@@ -80,7 +80,7 @@ pub fn compile(
         return Err(Error::Source(all_errs));
     }
 
-    ir::compile(hir, debug_ir, parser.tag_scope())
+    ir::compile(hir, debug_ir)
         .map_err(Error::from)
         .map(Module::<FaerieBackend>::finish)
 }

@@ -1834,18 +1834,18 @@ mod tests {
     fn test_pointers_and_arrays() {
         // cdecl: declare foo as array 10 of pointer to pointer to char
         assert!(match_type(
-            parse("char **foo[];"),
+            parse("char **foo[10];"),
             Array(
                 Box::new(Pointer(Box::new(Pointer(Box::new(Char(true)))))),
-                ArrayType::Unbounded,
+                ArrayType::Fixed(10),
             )
         ));
         // cdecl: declare foo as pointer to pointer to array 10 of int
         assert!(match_type(
-            parse("int (**foo)[];"),
+            parse("int (**foo)[10];"),
             Pointer(Box::new(Pointer(Box::new(Array(
                 Box::new(Int(true)),
-                ArrayType::Unbounded
+                ArrayType::Fixed(10)
             )))),)
         ));
     }

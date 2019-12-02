@@ -1,88 +1,133 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use super::Symbol;
 use crate::arch::SIZE_T;
 use crate::intern::InternedStr;
+pub use struct_ref::{StructRef, StructType};
 
-thread_local!(
-    /// The global storage for all struct definitions.
-    ///
-    /// The type is read like so:
-    /// RefCell: A container with interior mutability, used because `LocalKey`
-    /// returns an immutable reference.
-    /// Vec: A growable list of definitions.
-    /// Rc: A hack so that the members can be accessed across function boundaries,
-    /// see the documentation for `StructRef::get`.
-    /// Vec<Symbol>: The members of a single struct definition.
-    static TYPES: RefCell<Vec<Rc<Vec<Symbol>>>> = Default::default()
-);
+mod struct_ref {
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
-/// A reference to a struct definition. Allows self-referencing structs.
-#[derive(Copy, Clone, Debug, Eq)]
-pub struct StructRef(usize);
+    use super::Symbol;
 
-impl PartialEq for StructRef {
-    fn eq(&self, other: &Self) -> bool {
-        // see if we can do this the cheap way first; otherwise fall back to comparing every member
-        self.0 == other.0 || self.get() == other.get()
-    }
-}
+    thread_local!(
+        /// The global storage for all struct definitions.
+        ///
+        /// The type is read like so:
+        /// RefCell: A container with interior mutability, used because `LocalKey`
+        /// returns an immutable reference.
+        /// Vec: A growable list of definitions.
+        /// Rc: A hack so that the members can be accessed across function boundaries,
+        /// see the documentation for `StructRef::get`.
+        /// Vec<Symbol>: The members of a single struct definition.
+        static TYPES: RefCell<Vec<Rc<Vec<Symbol>>>> = Default::default()
+    );
 
-impl Default for StructRef {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+    /// A reference to a struct definition. Allows self-referencing structs.
+    #[derive(Copy, Clone, Debug, Eq)]
+    pub struct StructRef(usize);
 
-impl StructRef {
-    /// Create a reference to a new struct.
-    pub fn new() -> StructRef {
-        TYPES.with(|list| {
-            let mut types = list.borrow_mut();
-            let index = types.len();
-            types.push(Rc::new(vec![]));
-            StructRef(index)
-        })
+    impl PartialEq for StructRef {
+        fn eq(&self, other: &Self) -> bool {
+            // see if we can do this the cheap way first;
+            // otherwise fall back to comparing every member
+            self.0 == other.0 || self.get() == other.get()
+        }
     }
 
-    /// Returns the definition for a given struct.
-    ///
-    /// Examples:
-    /// ```
-    /// use rcc::data::types::StructRef;
-    /// let struct_ref = StructRef::new();
-    /// let members = struct_ref.get();
-    /// for symbol in members.iter() {
-    ///     println!("{:?}", symbol);
-    /// }
-    /// ```
-    // Implementation hack: because thread_local items cannot be returned from a closure,
-    // this uses an Rc so that it can be `clone`d cheaply. The clone is necessary
-    // so the members do not reference TYPES.
-    pub fn get(self) -> Rc<Vec<Symbol>> {
-        TYPES.with(|list| list.borrow()[self.0].clone())
+    impl Default for StructRef {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
-    /// Change the definition for a struct.
-    ///
-    /// It is a logic error to use this for anything other than defining forward-declared structs.
-    ///
-    /// Examples:
-    ///
-    /// ```compile_fail
-    /// use rcc::data::types::StructRef;
-    /// let struct_ref = StructRef::new();
-    /// struct_ref.update(vec![Symbol::new()]);
-    /// ```
-    pub(crate) fn update<V>(self, members: V)
-    where
-        V: Into<Rc<Vec<Symbol>>>,
-    {
-        TYPES.with(|list| {
-            let mut types = list.borrow_mut();
-            types[self.0] = members.into();
-        });
+    impl StructRef {
+        /// Create a reference to a new struct.
+        pub fn new() -> StructRef {
+            TYPES.with(|list| {
+                let mut types = list.borrow_mut();
+                let index = types.len();
+                types.push(Rc::new(vec![]));
+                StructRef(index)
+            })
+        }
+
+        /// Returns the definition for a given struct.
+        ///
+        /// Examples:
+        /// ```
+        /// use rcc::data::types::StructRef;
+        /// let struct_ref = StructRef::new();
+        /// let members = struct_ref.get();
+        /// for symbol in members.iter() {
+        ///     println!("{:?}", symbol);
+        /// }
+        /// ```
+        // Implementation hack: because thread_local items cannot be returned
+        // from a closure, this uses an Rc so that it can be `clone`d cheaply.
+        // The clone is necessary so the members do not reference TYPES.
+        pub fn get(self) -> Rc<Vec<Symbol>> {
+            TYPES.with(|list| list.borrow()[self.0].clone())
+        }
+
+        /// Change the definition for a struct.
+        ///
+        /// It is a logic error to use this for anything other than defining
+        /// forward-declared structs.
+        ///
+        /// Examples:
+        ///
+        /// ```compile_fail
+        /// use rcc::data::types::StructRef;
+        /// let struct_ref = StructRef::new();
+        /// struct_ref.update(vec![Symbol::new()]);
+        /// ```
+        pub(crate) fn update<V>(self, members: V)
+        where
+            V: Into<Rc<Vec<Symbol>>>,
+        {
+            TYPES.with(|list| {
+                let mut types = list.borrow_mut();
+                types[self.0] = members.into();
+            });
+        }
+    }
+
+    /// Structs can be either named or anonymous.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum StructType {
+        /// Named structs can have forward declarations and be defined at any point
+        /// in the program. In order to support self referential structs, named structs
+        /// contain an indirect reference to their members, which can be dereferenced with
+        /// `StructRef::get`.
+        ///
+        /// To update a forward declaration, use `StructRef::update`.
+        Named(super::InternedStr, StructRef),
+        /// Anonymous structs carry all their information with them,
+        /// there's no need (or way) to use StructRef.
+        Anonymous(Rc<Vec<Symbol>>),
+    }
+
+    impl StructType {
+        /// Get the members of a struct, regardless of which variant it is
+        pub fn members(&self) -> Rc<Vec<Symbol>> {
+            match self {
+                StructType::Anonymous(members) => Rc::clone(members),
+                StructType::Named(_, struct_ref) => struct_ref.get(),
+            }
+        }
+        /// Return whether the struct has no members.
+        ///
+        /// For `Named` structs, this occurs whenever we have seen
+        /// a forward declaration but no definition.
+        ///
+        /// For `Anonymous` structs, this occurs only when there has been a
+        /// type error of some sort.
+        pub fn is_empty(&self) -> bool {
+            match self {
+                StructType::Anonymous(members) => members.is_empty(),
+                StructType::Named(_, struct_ref) => struct_ref.get().is_empty(),
+            }
+        }
     }
 }
 
@@ -109,44 +154,6 @@ pub enum Type {
     VaList,
     /// A semantic error occured while parsing this type.
     Error,
-}
-
-/// Structs can be either named or anonymous.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum StructType {
-    /// Named structs can have forward declarations and be defined at any point
-    /// in the program. In order to support self referential structs, named structs
-    /// contain an indirect reference to their members, which can be dereferenced with
-    /// `StructRef::get`.
-    ///
-    /// To update a forward declaration, use `StructRef::update`.
-    Named(InternedStr, StructRef),
-    /// Anonymous structs carry all their information with them,
-    /// there's no need (or way) to use StructRef.
-    Anonymous(Rc<Vec<Symbol>>),
-}
-
-impl StructType {
-    /// Get the members of a struct, regardless of which variant it is
-    pub fn members(&self) -> Rc<Vec<Symbol>> {
-        match self {
-            StructType::Anonymous(members) => Rc::clone(members),
-            StructType::Named(_, struct_ref) => struct_ref.get(),
-        }
-    }
-    /// Return whether the struct has no members.
-    ///
-    /// For `Named` structs, this occurs whenever we have seen
-    /// a forward declaration but no definition.
-    ///
-    /// For `Anonymous` structs, this occurs only when there has been a
-    /// type error of some sort.
-    pub fn is_empty(&self) -> bool {
-        match self {
-            StructType::Anonymous(members) => members.is_empty(),
-            StructType::Named(_, struct_ref) => struct_ref.get().is_empty(),
-        }
-    }
 }
 
 #[derive(Clone, Debug)]

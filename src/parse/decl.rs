@@ -992,6 +992,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             next: prefix.map(Box::new),
                         })
                     } else {
+                        if self.match_next(&Token::Keyword(Keyword::Static)).is_some() {
+                            // TODO: Add information for the compiler to know
+                            // about a possible optimization. 
+                        }
+
                         let expr = self.constant_expr()?;
                         self.expect(Token::RightBracket)?;
                         // TODO: allow any integer type

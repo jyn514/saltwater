@@ -1800,6 +1800,14 @@ mod tests {
                 ArrayType::Unbounded
             )
         ));
+        assert!(match_type(
+            parse("int a[5];"),
+            Array(Box::new(Int(true)), ArrayType::Fixed(5))
+        ));
+        assert!(match_type(
+            parse("char b[static 42];"),
+            Array(Box::new(Char(true)), ArrayType::Fixed(42))
+        ));
     }
     #[test]
     fn test_pointers() {

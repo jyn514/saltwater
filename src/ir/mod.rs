@@ -98,6 +98,10 @@ impl Compiler {
         flags_builder
             .set("opt_level", "speed")
             .expect("opt_level: speed should be a valid option");
+        // don't emit call to __cranelift_probestack
+        flags_builder
+            .set("probestack_enabled", "false")
+            .expect("probestack_enabled should be a valid option");
 
         let isa = isa::lookup(TARGET.clone())
             .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", TARGET), 5))

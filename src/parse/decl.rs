@@ -16,7 +16,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* grammar functions
      * this parser is a top-down, recursive descent parser
      * and uses a modified version of the ANSI C Yacc grammar published at
-     * https://www.lysator.liu.se/c, self.all_structs)/ANSI-C-grammar-y.html.
+     * https://www.lysator.liu.se/c/ANSI-C-grammar-y.html.
      * Differences from the original grammar, if present, are noted
      * before each function.
      */
@@ -707,32 +707,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 TagEntry::Union
             }(struct_ref);
             self.tag_scope.insert(id, entry);
-            /*
-            let (size, align, offset) = match Self::struct_type(members, c_struct) {
-                Ok(tup) => tup,
-                Err(err) => {
-                    self.semantic_err(err, *location);
-                    return Ok(Type::Error);
-                }
-            };
-            for tag in self.tag_scope.get_all_immediate().values_mut() {
-                match tag {
-                    TagEntry::Union(members) | TagEntry::Struct(members) => {
-                        for member in members.iter_mut() {
-                            Self::update_forward_declarations(
-                                &mut member.ctype,
-                                (size, align, &offset),
-                                id,
-                            )
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            for variable in self.scope.get_all_immediate().values_mut() {
-                Self::update_forward_declarations(&mut variable.ctype, (size, align, &offset), id);
-            }
-            */
             Ok(constructor(StructType::Named(id, struct_ref)))
         } else {
             Ok(constructor(StructType::Anonymous(Rc::new(members))))
@@ -1287,54 +1261,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.leave_scope(self.last_location);
         body
     }
-    /* shouldn't be necessary since everything stores a reference to TYPES
-    fn update_forward_declarations(
-        ctype: &mut Type,
-        new_type: (u64, u64, &HashMap<InternedStr, u64>),
-        ident: InternedStr,
-    ) {
-        use Type::*;
-        match ctype {
-            // nothing to do, best to hope that the previous declaration was valid
-            Error => {}
-            Array(inner, _) | Pointer(inner) => {
-                Self::update_forward_declarations(inner, new_type, ident)
-            }
-            Function(ftype) => {
-                Self::update_forward_declarations(&mut ftype.return_type, new_type, ident);
-                for param in ftype.params.iter_mut() {
-                    Self::update_forward_declarations(&mut param.ctype, new_type, ident);
-                }
-            }
-            Union(StructType::Named(name, size @ 0, align @ 0, offset))
-            | Struct(StructType::Named(name, size @ 0, align @ 0, offset))
-                if *name == ident =>
-            {
-                *size = new_type.0;
-                *align = new_type.1;
-                *offset = new_type.2.clone();
-            }
-            Union(StructType::Anonymous(members)) | Struct(StructType::Anonymous(members)) => {
-                for member in members {
-                    Self::update_forward_declarations(&mut member.ctype, new_type, ident)
-                }
-            }
-            Void
-            | Bool
-            | Char(_)
-            | Short(_)
-            | Int(_)
-            | Long(_)
-            | Enum(_, _)
-            | Float
-            | Double
-            | Union(_)
-            | Struct(_)
-            | VaList => {}
-            Bitfield(_) => unimplemented!("updating bitfield after typedef"),
-        }
-    }
-    */
     #[inline]
     /* the reason this is such a mess (instead of just putting everything into
      * the hashmap, which would be much simpler logic) is so we have a Location

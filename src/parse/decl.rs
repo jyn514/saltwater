@@ -1816,7 +1816,7 @@ mod tests {
     #[test]
     fn test_functions_array_parameter_static() {
         assert!(match_type(
-            parse("void f(int a[static 5]);"), 
+            parse("void f(int a[static 5]);"),
             Function(FunctionType {
                 return_type: Box::new(Void),
                 params: vec![Symbol {

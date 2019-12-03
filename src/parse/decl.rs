@@ -1814,6 +1814,25 @@ mod tests {
         ));
     }
     #[test]
+    fn test_functions_array_parameter_static() {
+        assert!(match_type(
+            parse("void f(int a[static 5]);"), 
+            Function(FunctionType {
+                return_type: Box::new(Void),
+                params: vec![Symbol {
+                    id: InternedStr::get_or_intern("a"),
+                    ctype: Pointer(Box::new(Int(true))),
+                    qualifiers: Default::default(),
+                    storage_class: Default::default(),
+                    init: true,
+                }],
+                varargs: false
+            })
+        ));
+
+        assert!(parse("int b[static 10];").unwrap().is_err());
+    }
+    #[test]
     fn test_complex() {
         // cdecl: declare bar as const pointer to array 10 of pointer to function (int) returning const pointer to char
         assert!(match_type(

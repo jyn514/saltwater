@@ -939,7 +939,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             } else {
                                 return Err(SyntaxError(Locatable {
                                     data:
-                                        "`static` keyword is only allowed in function declarations"
+                                        "`static` keyword for array sizes is only allowed in function declarations"
                                             .to_string(),
                                     location: keyword.location,
                                 }));

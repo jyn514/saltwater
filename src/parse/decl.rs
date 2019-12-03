@@ -937,12 +937,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                                 // TODO: Add information for the compiler to know
                                 // to warn if `NULL` is passed into the function
                             } else {
-                                return Err(SyntaxError(Locatable {
-                                    data:
-                                        "`static` keyword for array sizes is only allowed in function declarations"
-                                            .to_string(),
-                                    location: keyword.location,
-                                }));
+                                self.semantic_err("`static` keyword for array sizes is only allowed in function declarations", keyword.location);
                             }
                         }
 

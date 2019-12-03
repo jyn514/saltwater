@@ -918,11 +918,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn postfix_type(
         &mut self,
         mut prefix: Option<Declarator>,
+        allow_abstract: bool,
     ) -> Result<Option<Declarator>, SyntaxError> {
         // postfix
         while let Some(data) = self.peek_token() {
             prefix = match data {
-                // array
+                // Array; Specified in section 6.7.6.2 of the C11 spec
                 Token::LeftBracket => {
                     self.expect(Token::LeftBracket).unwrap();
                     if self.match_next(&Token::RightBracket).is_some() {
@@ -931,6 +932,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             next: prefix.map(Box::new),
                         })
                     } else {
+                        if let Some(keyword) = self.match_next(&Token::Keyword(Keyword::Static)) {
+                            if allow_abstract {
+                                // TODO: Add information for the compiler to know
+                                // to warn if `NULL` is passed into the function
+                            } else {
+                                return Err(SyntaxError(Locatable {
+                                    data:
+                                        "`static` keyword is only allowed in function declarations"
+                                            .to_string(),
+                                    location: keyword.location,
+                                }));
+                            }
+                        }
+
                         let expr = self.constant_expr()?;
                         self.expect(Token::RightBracket)?;
                         // TODO: allow any integer type
@@ -1054,7 +1069,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 .into());
             }
         };
-        self.postfix_type(decl)
+        self.postfix_type(decl, allow_abstract)
     }
     /* parse everything after declaration specifiers. can be called recursively
      * allow_abstract: whether to require identifiers in declarators.

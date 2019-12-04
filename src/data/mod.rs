@@ -163,6 +163,7 @@ pub struct Symbol {
 pub struct Qualifiers {
     pub volatile: bool,
     pub c_const: bool,
+    pub inline: bool,
 }
 
 #[derive(Debug)]
@@ -173,18 +174,27 @@ impl Qualifiers {
     pub const NONE: Qualifiers = Qualifiers {
         c_const: false,
         volatile: false,
+        inline: false,
     };
     pub const VOLATILE: Qualifiers = Qualifiers {
         c_const: false,
         volatile: true,
+        inline: false,
     };
     pub const CONST: Qualifiers = Qualifiers {
         c_const: true,
         volatile: false,
+        inline: false,
     };
     pub const CONST_VOLATILE: Qualifiers = Qualifiers {
         c_const: true,
         volatile: true,
+        inline: false,
+    };
+    pub const INLINE: Qualifiers = Qualifiers {
+        c_const: false,
+        volatile: false,
+        inline: true,
     };
 }
 

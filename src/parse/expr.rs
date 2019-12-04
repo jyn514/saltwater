@@ -604,22 +604,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         }
                     },
                     Token::Star => match &expr.ctype {
-                        Type::Array(t, _) => Ok(Expr {
-                            constexpr: false,
-                            lval: true,
-                            ctype: (**t).clone(),
-                            location,
-                            expr: expr.expr,
-                        }),
-                        Type::Pointer(t) => Ok(Expr {
-                            constexpr: expr.constexpr,
-                            lval: !t.is_function(),
-                            ctype: (**t).clone(),
-                            location,
-                            // this is super hacky but the only way I can think of to prevent
-                            // https://github.com/jyn514/rcc/issues/90
-                            expr: ExprType::Noop(Box::new(expr.rval())),
-                        }),
+                        Type::Array(t, _) | Type::Pointer(t) => {
+                            let ctype = (**t).clone();
+                            Ok(expr.indirection(true, ctype, location))
+                        }
                         _ => {
                             self.semantic_err(
                                 format!(
@@ -835,16 +823,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             continue;
                         }
                     };
-                    // mostly copied from Token::Star in prefix_expr
-                    let expr = Expr {
-                        constexpr: expr.constexpr,
-                        lval: false,
-                        ctype: struct_type,
-                        location,
-                        // this is super hacky but the only way I can think of to prevent
-                        // https://github.com/jyn514/rcc/issues/90
-                        expr: ExprType::Noop(Box::new(expr.rval())),
-                    };
+                    let expr = expr.indirection(false, struct_type, location);
                     self.struct_member(expr, id, location)?
                 }
                 Token::PlusPlus => Expr::increment_op(false, true, expr, location)
@@ -1127,6 +1106,17 @@ impl Token {
 
 /* stateless helper functions */
 impl Expr {
+    fn indirection(self, lval: bool, ctype: Type, location: Location) -> Self {
+        Expr {
+            constexpr: self.constexpr,
+            location,
+            ctype,
+            lval,
+            // this is super hacky but the only way I can think of to prevent
+            // https://github.com/jyn514/rcc/issues/90
+            expr: ExprType::Noop(Box::new(self.rval())),
+        }
+    }
     fn is_null(&self) -> bool {
         if let ExprType::Literal(token) = &self.expr {
             match token {

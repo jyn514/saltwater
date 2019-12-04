@@ -487,6 +487,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if self.match_next(&Token::LeftBrace).is_none() {
             let (ident, location) = match ident {
                 Some(token) => (token.data, token.location),
+                // struct *s; or struct;
                 None => {
                     self.semantic_err(
                         format!("bare {} as type specifier is not allowed", kind),
@@ -500,48 +501,40 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     });
                 }
             };
-            return if let Some(entry) = self.tag_scope.get(&ident) {
-                match entry {
-                    TagEntry::Struct(struct_ref) => {
-                        let s = *struct_ref;
-                        if kind != Keyword::Struct {
-                            self.semantic_err(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", ident, kind), location);
-                        }
-                        Ok(Type::Struct(StructType::Named(ident, s)))
+            let has_semicolon = self.peek_token() == Some(&Token::Semicolon);
+            let entry = match self.tag_scope.get(&ident) {
+                Some(entry) => entry,
+                // struct s;
+                None => return Ok(self.forward_declaration(kind, ident, location)),
+            };
+            if has_semicolon && self.tag_scope.get_immediate(&ident).is_none() {
+                // struct s; { union s; }
+                return Ok(self.forward_declaration(kind, ident, location));
+            }
+            // struct s; struct s;
+            return match entry {
+                TagEntry::Struct(struct_ref) => {
+                    let s = *struct_ref;
+                    if kind != Keyword::Struct {
+                        self.semantic_err(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", ident, kind), location);
                     }
-                    TagEntry::Union(struct_ref) => {
-                        let s = *struct_ref;
-                        if kind != Keyword::Union {
-                            self.semantic_err(format!("use of '{}' with type tag '{}' that does not match previous union declaration", ident, kind), location);
-                        }
-                        Ok(Type::Union(StructType::Named(ident, s)))
-                    }
-                    TagEntry::Enum(members) => {
-                        let members = members.clone();
-                        if kind != Keyword::Enum {
-                            let err = format!("use of '{}' with type tag '{}' that does not match previous enum declaration", ident, kind);
-                            self.semantic_err(err, location);
-                        }
-                        Ok(Type::Enum(Some(ident), members))
-                    }
+                    Ok(Type::Struct(StructType::Named(ident, s)))
                 }
-            } else if kind == Keyword::Struct {
-                let struct_ref = StructRef::new();
-                let entry = TagEntry::Struct(struct_ref);
-                self.tag_scope.insert(ident, entry);
-                Ok(Type::Struct(StructType::Named(ident, struct_ref)))
-            } else if kind == Keyword::Union {
-                let struct_ref = StructRef::new();
-                let entry = TagEntry::Union(struct_ref);
-                self.tag_scope.insert(ident, entry);
-                Ok(Type::Union(StructType::Named(ident, struct_ref)))
-            } else {
-                // see section 6.7.2.3 of the C11 standard
-                self.semantic_err(
-                    format!("cannot have forward reference to enum type '{}'", ident),
-                    location,
-                );
-                Ok(Type::Enum(Some(ident), vec![]))
+                TagEntry::Union(struct_ref) => {
+                    let s = *struct_ref;
+                    if kind != Keyword::Union {
+                        self.semantic_err(format!("use of '{}' with type tag '{}' that does not match previous union declaration", ident, kind), location);
+                    }
+                    Ok(Type::Union(StructType::Named(ident, s)))
+                }
+                TagEntry::Enum(members) => {
+                    let members = members.clone();
+                    if kind != Keyword::Enum {
+                        let err = format!("use of '{}' with type tag '{}' that does not match previous enum declaration", ident, kind);
+                        self.semantic_err(err, location);
+                    }
+                    Ok(Type::Enum(Some(ident), members))
+                }
             };
         }
         if let Some(locatable) = self.match_next(&Token::RightBrace) {
@@ -555,6 +548,30 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }?;
         self.expect(Token::RightBrace)?;
         Ok(ctype)
+    }
+    fn forward_declaration(
+        &mut self,
+        kind: Keyword,
+        ident: InternedStr,
+        location: Location,
+    ) -> Type {
+        if kind == Keyword::Enum {
+            // see section 6.7.2.3 of the C11 standard
+            self.semantic_err(
+                format!("cannot have forward reference to enum type '{}'", ident),
+                location,
+            );
+            return Type::Enum(Some(ident), vec![]);
+        }
+        let struct_ref = StructRef::new();
+        let (entry_type, tag_type): (fn(_) -> _, fn(_) -> _) = if kind == Keyword::Struct {
+            (TagEntry::Struct, Type::Struct)
+        } else {
+            (TagEntry::Union, Type::Union)
+        };
+        let entry = entry_type(struct_ref);
+        self.tag_scope.insert(ident, entry);
+        tag_type(StructType::Named(ident, struct_ref))
     }
     /* rewritten grammar:
     enumerator_list: enumerator (',' enumerator)* ;
@@ -682,11 +699,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let constructor = if c_struct { Type::Struct } else { Type::Union };
         if let Some(id) = ident {
             let struct_ref = if let Some(TagEntry::Struct(struct_ref))
-            | Some(TagEntry::Union(struct_ref)) = self.tag_scope.get(&id)
+            | Some(TagEntry::Union(struct_ref)) =
+                self.tag_scope.get_immediate(&id)
             {
                 let struct_ref = *struct_ref;
-                // if it exists in the immediate scope, then .get() returned that immediate type
-                if self.tag_scope.get_immediate(&id).is_some() && !struct_ref.get().is_empty() {
+                if !struct_ref.get().is_empty() {
                     self.semantic_err(
                         format!(
                             "redefinition of {} '{}'",

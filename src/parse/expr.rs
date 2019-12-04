@@ -835,12 +835,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             continue;
                         }
                     };
+                    // mostly copied from Token::Star in prefix_expr
                     let expr = Expr {
-                        constexpr: false,
-                        location,
+                        constexpr: expr.constexpr,
+                        lval: false,
                         ctype: struct_type,
-                        lval: true,
-                        expr: ExprType::Deref(Box::new(expr)),
+                        location,
+                        // this is super hacky but the only way I can think of to prevent
+                        // https://github.com/jyn514/rcc/issues/90
+                        expr: ExprType::Noop(Box::new(expr.rval())),
                     };
                     self.struct_member(expr, id, location)?
                 }

@@ -1352,6 +1352,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             qualifiers.c_const = true;
         } else if keyword == Keyword::Volatile {
             qualifiers.volatile = true;
+        } else if keyword == Keyword::Inline {
+            qualifiers.inline = true;
         } else if keyword == Keyword::Signed || keyword == Keyword::Unsigned {
             if *ctype == Some(Type::Float) || *ctype == Some(Type::Double) {
                 self.semantic_err(

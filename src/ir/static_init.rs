@@ -164,7 +164,7 @@ impl Compiler {
         &self,
         ctx: &mut DataContext,
         buf: &mut [u8],
-        offset: u32,
+        mut offset: u32,
         initializer: Initializer,
         ctype: &Type,
         location: &Location,
@@ -201,7 +201,28 @@ impl Compiler {
                     &struct_type.members().first().unwrap().ctype,
                     location,
                 ),
-                Type::Struct(_) => unimplemented!("struct initializers"),
+                Type::Struct(struct_ref) => {
+                    let mut current_offset = 0;
+                    for (member, init) in struct_ref.members().iter().zip(initializers.into_iter())
+                    {
+                        let size_host: usize = member
+                            .ctype
+                            .sizeof()
+                            .map_err(|err| {
+                                CompileError::Semantic(Locatable::new(err.into(), *location))
+                            })?
+                            .try_into()
+                            .expect("cannot initialize struct larger than u32");
+                        let size: u32 = size_host
+                            .try_into()
+                            .expect("cannot intialize struct larger than host address space");
+                        let buf_slice = &mut buf[current_offset..current_offset + size_host];
+                        self.init_symbol(ctx, buf_slice, offset, init, &member.ctype, location)?;
+                        offset += size;
+                        current_offset += size_host;
+                    }
+                    Ok(())
+                }
                 Type::Bitfield(_) => unimplemented!("bitfield initalizers"),
 
                 Type::Function(_) => unreachable!("function initializers"),

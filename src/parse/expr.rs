@@ -131,9 +131,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         .cast(&lval.ctype)
                         .into_inner(self.default_err_handler());
                 }
-                if rval.ctype.is_struct() {
-                    unimplemented!("struct assignment");
-                }
                 Ok(Expr {
                     ctype: lval.ctype.clone(),
                     constexpr: rval.constexpr,
@@ -1164,6 +1161,11 @@ impl Expr {
                 lval: false,
                 ctype: Type::Pointer(Box::new(self.ctype)),
                 constexpr: false, // TODO: is this right?
+                ..self
+            },
+            // HACK: structs can't be dereferenced since they're not scalar, so we just fake it
+            Type::Struct(_) | Type::Union(_) if self.lval => Expr {
+                lval: false,
                 ..self
             },
             _ if self.lval => Expr {

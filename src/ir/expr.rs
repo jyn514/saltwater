@@ -495,7 +495,7 @@ impl Compiler {
         };
         let ctype = Type::Pointer(Box::new(var.ctype));
         Ok(Value {
-            ir_type: ctype.as_ir_type(),
+            ir_type: ptr_type,
             ir_val,
             ctype,
         })
@@ -539,15 +539,41 @@ impl Compiler {
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let ctype = lval.ctype.clone();
+        let location = lval.location;
         let is_id = match lval.expr {
             ExprType::Id(_) => true,
             _ => false,
         };
-        let (mut target, mut value) = (
+        let (target, value) = (
             self.compile_expr(lval, builder)?,
             self.compile_expr(rval, builder)?,
         );
-        let ir_target = target.ir_val;
+        if let Type::Union(_) | Type::Struct(_) = ctype {
+            if token != Token::Equal {
+                unreachable!("struct should not have a valid complex assignment");
+            }
+            use std::convert::TryInto;
+            let size = ctype
+                .sizeof()
+                .map_err(|e| Locatable::new(e.into(), location))?;
+            let align = ctype
+                .alignof()
+                .expect("if sizeof() succeeds so should alignof()")
+                .try_into()
+                .expect("align should never be more than 255 bytes");
+            builder.emit_small_memmove(
+                self.module.target_config(),
+                target.ir_val,
+                value.ir_val,
+                size,
+                align,
+                align,
+            );
+            return Ok(value);
+        }
+        // scalar assignment
+        let target_val = target.ir_val;
+        let (mut target, mut value) = (target, value);
         if token != Token::Equal {
             // need to deref explicitly to get an rval, the frontend didn't do it for us
             if is_id {
@@ -583,7 +609,7 @@ impl Compiler {
         }
         builder
             .ins()
-            .store(MemFlags::new(), value.ir_val, ir_target, 0);
+            .store(MemFlags::new(), value.ir_val, target_val, 0);
         Ok(value)
     }
     fn call(

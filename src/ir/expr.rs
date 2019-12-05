@@ -332,8 +332,8 @@ impl Compiler {
             (Token::Divide, ty, _) if ty.is_float() => b::fdiv,
             (Token::Mod, ty, true) if ty.is_int() => b::srem,
             (Token::Mod, ty, false) if ty.is_int() => b::urem,
-            (Token::Ampersand, ty, _) if ty.is_int() => b::band,
-            (Token::BitwiseOr, ty, _) if ty.is_int() => b::bor,
+            (Token::Ampersand, ty, _) if ty.is_int() || ty.is_bool() => b::band,
+            (Token::BitwiseOr, ty, _) if ty.is_int() || ty.is_bool() => b::bor,
             (Token::ShiftLeft, ty, _) if ty.is_int() => b::ishl,
             // arithmetic shift: keeps the sign of `left`
             (Token::ShiftRight, ty, true) if ty.is_int() => b::sshr,

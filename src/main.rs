@@ -17,12 +17,13 @@ use std::ffi::OsStr;
 use tempfile::NamedTempFile;
 
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
-const HELP: &str = "rcc 0.1.0
-Joshua Nelson <jyn514@gmail.com>
-A C compiler written in Rust, with a focus on good error messages.
-
-USAGE:
-    rcc [FLAGS] [OPTIONS] [file]
+const HELP: &str = concat!(
+    env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"), "\n",
+    env!("CARGO_PKG_AUTHORS"), "\n",
+    env!("CARGO_PKG_DESCRIPTION"), "\n",
+    "Homepage: ", env!("CARGO_PKG_REPOSITORY"), "\n",
+    "\n",
+"usage: ", env!("CARGO_PKG_NAME"), " [FLAGS] [OPTIONS] [<file>]
 
 FLAGS:
         --debug-asm    If set, print the intermediate representation of the program in addition to compiling
@@ -37,7 +38,8 @@ OPTIONS:
 
 ARGS:
     <file>    The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
-              Only one file at a time is currently accepted. [default: -]";
+              Only one file at a time is currently accepted. [default: -]");
+
 const USAGE: &str = "\
 usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
            [--debug-lex] [--no-link | -c] [<file>]";

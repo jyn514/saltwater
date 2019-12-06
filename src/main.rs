@@ -38,6 +38,9 @@ OPTIONS:
 ARGS:
     <file>    The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
               Only one file at a time is currently accepted. [default: -]";
+const USAGE: &str = "\
+usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
+           [--debug-lex] [--no-link | -c] [<file>]";
 
 #[derive(Debug)]
 struct Opt {
@@ -100,9 +103,12 @@ fn main() {
         Err(err) => {
             println!(
                 "{}: error parsing args: {}",
-                std::env::args().next().unwrap_or_else(|| "rcc".into()),
+                std::env::args()
+                    .next()
+                    .unwrap_or_else(|| env!("CARGO_PKG_NAME").into()),
                 err
             );
+            println!("{}", USAGE);
             std::process::exit(1);
         }
     };
@@ -152,6 +158,10 @@ fn parse_args() -> Result<Opt, pico_args::Error> {
     if input.contains(["-h", "--help"]) {
         println!("{}", HELP);
         std::process::exit(1);
+    }
+    if input.contains(["-V", "--version"]) {
+        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+        std::process::exit(0);
     }
     if input.contains("--print-type-sizes") {
         use rcc::data::prelude::*;

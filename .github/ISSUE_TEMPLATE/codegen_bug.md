@@ -1,5 +1,5 @@
 ---
-name: Code generation Bug
+name: Code Generation Bug
 about: Create a bug report about bad code generation
 title: Codegen Bug
 labels: 'codegen'

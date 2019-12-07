@@ -1,7 +1,7 @@
 ---
 name: Panic
 about: Report an internal compiler error
-title: [ICE] 
+title: "[ICE]"
 labels: 'bug'
 assignees: ''
 

@@ -35,7 +35,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if sc != None {
             self.semantic_err("type cannot have a storage class", self.last_location);
         }
-        let ctype = match self.declarator(true)? {
+        let ctype = match self.declarator(true, qualifiers)? {
             None => ctype,
             Some(decl) => {
                 let (id, ctype) = decl
@@ -79,7 +79,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
         // special case functions bodies - they can only occur as the first declarator
         let declarator = self
-            .declarator(false)?
+            .declarator(false, qualifiers)?
             .expect("declarator should return id when called with allow_abstract: false");
         let (id, first_type) = declarator
             .parse_type(
@@ -140,15 +140,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 None
             }
         };
-        if !symbol.ctype.is_function() && qualifiers.inline {
-            self.semantic_err(
-                format!(
-                    "`inline` qualifier is only allowed on functions. hint: try defining {} as a function",
-                    symbol.id
-                ),
-                id.location
-            );
-        }
+        // TODO: Take this out later
+        // if !symbol.ctype.is_function() && qualifiers.inline {
+        //     self.semantic_err(
+        //         format!(
+        //             "`inline` qualifier is only allowed on functions. hint: try defining {} as a function",
+        //             symbol.id
+        //         ),
+        //         id.location
+        //     );
+        // }
         if symbol.ctype.is_function() && qualifiers != Qualifiers::NONE {
             warn(
                 &format!("{} has no effect on function return type", qualifiers),
@@ -219,7 +220,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.expect(Token::Comma)?;
         loop {
             let decl = self
-                .declarator(false)?
+                .declarator(false, first_qualifiers)?
                 .expect("declarator should return Some when called with allow_abstract: false");
             let location = decl.id().unwrap().location;
             let (id, ctype) = decl
@@ -303,7 +304,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         // parse declarator
         // declarator: Result<Symbol, SyntaxError>
         let decl = self
-            .declarator(false)?
+            .declarator(false, qualifiers)?
             .expect("declarator should never return None when called with allow_abstract: false");
         let (id, ctype) = decl
             .parse_type(ctype, false, &self.last_location)
@@ -887,7 +888,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             let (sc, quals, param_type, _) = self.declaration_specifiers()?;
             // true: allow abstract_declarators
-            let declarator = self.declarator(true)?;
+            let declarator = self.declarator(true, quals)?;
             if let Some(storage_class) = sc {
                 self.semantic_err(
                     format!(
@@ -1076,6 +1077,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn direct_declarator(
         &mut self,
         allow_abstract: bool,
+        qualifiers: Qualifiers,
     ) -> Result<Option<Declarator>, SyntaxError> {
         // we'll pass this to postfix_type in just a second
         // if None, we didn't find an ID
@@ -1107,7 +1109,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         // the one we already matched
                         self.expect(Token::LeftParen)
                             .expect("peek_next_token should be accurate");
-                        let declarator = self.declarator(allow_abstract)?;
+                        let declarator = self.declarator(allow_abstract, qualifiers)?;
                         self.expect(Token::RightParen)?;
                         declarator
                     }
@@ -1131,6 +1133,25 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 .into());
             }
         };
+
+        dbg!(&decl);
+        if let Some(Declarator {
+            current: DeclaratorType::Function(_),
+            ..
+        }) = decl
+        {
+            // `inline` is allowed on function declarations
+        } else if let Some(Declarator { .. }) = decl {
+            if qualifiers.inline {
+                self.semantic_err(
+                    "`inline` is only allowed on function declarations",
+                    self.last_location,
+                );
+            }
+        } else {
+            assert!(allow_abstract, "Allow abstract wasn't true");
+        }
+
         self.postfix_type(decl, allow_abstract)
     }
     /* parse everything after declaration specifiers. can be called recursively
@@ -1160,12 +1181,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      ;
      *
      */
-    fn declarator(&mut self, allow_abstract: bool) -> Result<Option<Declarator>, SyntaxError> {
+    fn declarator(
+        &mut self,
+        allow_abstract: bool,
+        qualifiers: Qualifiers,
+    ) -> Result<Option<Declarator>, SyntaxError> {
         if let Some(data) = self.peek_token() {
             match data {
                 Token::Star => {
                     self.next_token();
-                    let mut qualifiers = Qualifiers::NONE;
+                    let mut pointer_qualifiers = Qualifiers::NONE;
                     while let Some(Locatable {
                         location,
                         data: Token::Keyword(keyword),
@@ -1177,16 +1202,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         &Token::Keyword(Keyword::ThreadLocal),
                     ]) {
                         if keyword == Keyword::Const {
-                            if qualifiers.c_const {
+                            if pointer_qualifiers.c_const {
                                 warn("duplicate 'const' declaration specifier", location);
                             } else {
-                                qualifiers.c_const = true;
+                                pointer_qualifiers.c_const = true;
                             }
                         } else if keyword == Keyword::Volatile {
-                            if qualifiers.volatile {
+                            if pointer_qualifiers.volatile {
                                 warn("duplicate 'volatile' declaration specifier", location);
                             } else {
-                                qualifiers.volatile = true;
+                                pointer_qualifiers.volatile = true;
                             }
                         } else {
                             warn(
@@ -1202,16 +1227,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     // modified but the pointer cannot.
                     // We have this backwards.
                     Ok(Some(Declarator {
-                        current: DeclaratorType::Pointer(qualifiers),
-                        next: self.declarator(allow_abstract)?.map(Box::new),
+                        current: DeclaratorType::Pointer(pointer_qualifiers),
+                        next: self.declarator(allow_abstract, qualifiers)?.map(Box::new),
                     }))
                 }
-                _ => self.direct_declarator(allow_abstract),
+                _ => self.direct_declarator(allow_abstract, qualifiers),
             }
         } else {
             // this is useful for integration tests, even though there's no scenario
             // where a type followed by EOF is legal in a real program
-            self.direct_declarator(allow_abstract)
+            self.direct_declarator(allow_abstract, qualifiers)
         }
     }
     /// initializer
@@ -1899,7 +1924,7 @@ mod tests {
     #[test]
     fn test_inline_keyword() {
         assert!(match_type(
-            parse("inline void f(void);"),
+            dbg!(parse("inline void f(void);")),
             Function(FunctionType {
                 return_type: Box::new(Void),
                 params: vec![],
@@ -1911,8 +1936,10 @@ mod tests {
 
         // TODO: Make sure the gaurds against inline work in all cases
         assert!(parse("void f(inline int a);").unwrap().is_err());
-        assert!(parse("struct F { inline int a; };").unwrap().is_err());
-        assert!(parse("int main() { void *a = (inline void*)(5); }").unwrap().is_err());
+        assert!(parse("struct F { inline int a; } f;").unwrap().is_err());
+        assert!(parse("int main() { void *a = (inline void*)(5); }")
+            .unwrap()
+            .is_err());
     }
     #[test]
     fn test_complex() {

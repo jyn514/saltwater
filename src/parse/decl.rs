@@ -1897,6 +1897,24 @@ mod tests {
         assert!(parse("int b[static 10];").unwrap().is_err());
     }
     #[test]
+    fn test_inline_keyword() {
+        assert!(match_type(
+            parse("inline void f(void);"),
+            Function(FunctionType {
+                return_type: Box::new(Void),
+                params: vec![],
+                varargs: false,
+            })
+        ));
+
+        assert!(parse("inline int a;").unwrap().is_err());
+
+        // TODO: Make sure the gaurds against inline work in all cases
+        assert!(parse("void f(inline int a);").unwrap().is_err());
+        assert!(parse("struct F { inline int a; };").unwrap().is_err());
+        assert!(parse("int main() { void *a = (inline void*)(5); }").unwrap().is_err());
+    }
+    #[test]
     fn test_complex() {
         // cdecl: declare bar as const pointer to array 10 of pointer to function (int) returning const pointer to char
         assert!(match_type(

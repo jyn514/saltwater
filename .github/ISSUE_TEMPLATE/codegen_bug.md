@@ -1,17 +1,14 @@
 ---
-name: Bug report
-about: Create a bug report
-title: Potential bug
-labels: ''
+name: Code generation Bug
+about: Create a bug report about bad code generation
+title: Codegen Bug
+labels: 'codegen'
 assignees: ''
 
 ---
 
-**Describe the bug**
-<!-- A clear and concise description of what the bug is -->
-
 **Expected behavior**
-<!-- A clear and concise description of what you expected to happen -->
+<!-- A description of what you expected to happen -->
 
 **Actual Behavior**
 <!-- A description of what actually happened -->

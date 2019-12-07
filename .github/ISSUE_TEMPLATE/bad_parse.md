@@ -2,7 +2,7 @@
 name: Bad Parse
 about: Report code that was not parsed correctly
 title: Misparse
-labels: ['bug', 'parser']
+labels: bug, parser
 assignees: ''
 
 ---

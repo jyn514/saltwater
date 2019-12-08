@@ -980,6 +980,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         mut prefix: Option<Declarator>,
         allow_abstract: bool,
+        qualifiers: Qualifiers,
     ) -> Result<Option<Declarator>, SyntaxError> {
         // postfix
         while let Some(data) = self.peek_token() {
@@ -1021,6 +1022,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 _ => break,
             };
         }
+
+        if let Some(Declarator {
+            current: DeclaratorType::Function(_),
+            ..
+        }) = prefix
+        {
+            // `inline` is allowed on function declarations
+        } else if qualifiers.inline {
+            self.semantic_err(
+                "`inline` is only allowed on function declarations",
+                self.last_location,
+            );
+        }
+
         Ok(prefix)
     }
     /*
@@ -1125,25 +1140,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         };
 
-        dbg!(&decl);
-        if let Some(Declarator {
-            current: DeclaratorType::Function(_),
-            ..
-        }) = decl
-        {
-            // `inline` is allowed on function declarations
-        } else if let Some(Declarator { .. }) = decl {
-            if qualifiers.inline {
-                self.semantic_err(
-                    "`inline` is only allowed on function declarations",
-                    self.last_location,
-                );
-            }
-        } else {
-            assert!(allow_abstract, "Allow abstract wasn't true");
-        }
-
-        self.postfix_type(decl, allow_abstract)
+        self.postfix_type(decl, allow_abstract, qualifiers)
     }
     /* parse everything after declaration specifiers. can be called recursively
      * allow_abstract: whether to require identifiers in declarators.

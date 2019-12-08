@@ -1,6 +1,5 @@
 use cranelift::codegen::ir::{condcodes, types, MemFlags};
 use cranelift::prelude::{FunctionBuilder, InstBuilder, Type as IrType, Value as IrValue};
-use cranelift_module::DataContext;
 use log::debug;
 
 use super::{Compiler, Id};
@@ -247,7 +246,11 @@ impl Compiler {
             (Token::Float(f), types::F32) => builder.ins().f32const(f as f32),
             (Token::Float(f), types::F64) => builder.ins().f64const(f),
             (Token::Char(c), _) => builder.ins().iconst(ir_type, i64::from(c)),
-            (Token::Str(string), _) => self.compile_string(string, builder, location)?,
+            (Token::Str(string), _) => {
+                let str_id = self.compile_string(string, location)?;
+                let str_addr = self.module.declare_data_in_func(str_id, builder.func);
+                builder.ins().global_value(Type::ptr_type(), str_addr)
+            }
             _ => unimplemented!("aggregate literals"),
         };
         Ok(Value {
@@ -255,31 +258,6 @@ impl Compiler {
             ir_type,
             ctype,
         })
-    }
-    fn compile_string(
-        &mut self,
-        string: InternedStr,
-        builder: &mut FunctionBuilder,
-        location: Location,
-    ) -> CompileResult<IrValue> {
-        use cranelift_module::Linkage;
-        let name = format!("str.{}", string.to_usize());
-        let str_id = match self.module.declare_data(&name, Linkage::Local, false, None) {
-            Ok(id) => id,
-            Err(err) => semantic_err!(format!("error declaring static string: {}", err), location),
-        };
-        if self.strings.insert(string, str_id).is_none() {
-            let mut ctx = DataContext::new();
-            ctx.define(string.resolve_and_clone().into_boxed_str().into());
-            self.module
-                .define_data(str_id, &ctx)
-                .map_err(|err| Locatable {
-                    data: format!("error defining static string: {}", err),
-                    location,
-                })?;
-        }
-        let addr = self.module.declare_data_in_func(str_id, builder.func);
-        Ok(builder.ins().global_value(Type::ptr_type(), addr))
     }
     fn unary_op<F>(&mut self, expr: Expr, builder: &mut FunctionBuilder, func: F) -> IrResult
     where

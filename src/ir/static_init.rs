@@ -4,12 +4,12 @@
 use std::convert::{TryFrom, TryInto};
 
 use cranelift::codegen::ir::types;
-use cranelift_module::DataContext;
+use cranelift_module::{DataContext, DataId, Linkage};
 
 use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::prelude::*;
-use crate::data::{types::ArrayType, Initializer};
+use crate::data::{types::ArrayType, Initializer, StorageClass};
 use crate::utils::warn;
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
@@ -101,8 +101,30 @@ impl Compiler {
             })
         })
     }
+    pub(crate) fn compile_string(
+        &mut self,
+        string: InternedStr,
+        location: Location,
+    ) -> CompileResult<DataId> {
+        let name = format!("str.{}", string.to_usize());
+        let str_id = match self.module.declare_data(&name, Linkage::Local, false, None) {
+            Ok(id) => id,
+            Err(err) => semantic_err!(format!("error declaring static string: {}", err), location),
+        };
+        if self.strings.insert(string, str_id).is_none() {
+            let mut ctx = DataContext::new();
+            ctx.define(string.resolve_and_clone().into_boxed_str().into());
+            self.module
+                .define_data(str_id, &ctx)
+                .map_err(|err| Locatable {
+                    data: format!("error defining static string: {}", err),
+                    location,
+                })?;
+        }
+        Ok(str_id)
+    }
     fn init_expr(
-        &self,
+        &mut self,
         ctx: &mut DataContext,
         buf: &mut [u8],
         offset: u32,
@@ -113,8 +135,10 @@ impl Compiler {
         match expr.expr {
             ExprType::StaticRef(inner) => match inner.expr {
                 ExprType::Id(symbol) => self.static_ref(symbol, 0, offset, ctx),
-                ExprType::Literal(Token::Str(_)) => {
-                    unimplemented!("address of literal in static context")
+                ExprType::Literal(Token::Str(str_ref)) => {
+                    let str_id = self.compile_string(str_ref, expr.location)?;
+                    let str_addr = self.module.declare_data_in_data(str_id, ctx);
+                    ctx.write_data_addr(offset, str_addr, 0);
                 }
                 ExprType::Literal(ref token) if token.is_zero() => buf.copy_from_slice(&ZERO_PTR),
                 ExprType::Cast(ref inner) if inner.is_zero() => buf.copy_from_slice(&ZERO_PTR),
@@ -161,7 +185,7 @@ impl Compiler {
         }
     }
     fn init_symbol(
-        &self,
+        &mut self,
         ctx: &mut DataContext,
         buf: &mut [u8],
         mut offset: u32,
@@ -236,7 +260,7 @@ impl Compiler {
         }
     }
     fn init_array(
-        &self,
+        &mut self,
         ctx: &mut DataContext,
         buf: &mut [u8],
         mut offset: u32,
@@ -356,9 +380,6 @@ impl Token {
         }
     }
 }
-
-use crate::data::StorageClass;
-use cranelift_module::Linkage;
 
 impl TryFrom<StorageClass> for Linkage {
     type Error = String;

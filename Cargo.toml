@@ -13,12 +13,10 @@ keywords = ["C", "compiler", "recursive-descent", "cranelift"]
 [dependencies]
 lazy_static = "1"
 ansi_term = "0.12"
-cranelift = "0.51"
-cranelift-faerie = "0.51"
-cranelift-module = "0.51"
+cranelift = { git = "https://github.com/bytecodealliance/cranelift", version = "0.51" }
+cranelift-module = { git = "https://github.com/bytecodealliance/cranelift", version = "0.51" }
+cranelift-object = { git = "https://github.com/bytecodealliance/cranelift" }
 env_logger = "0.7"
-# I would rather not use both failure and thiserror, but cranelift uses both
-failure = "0.1"
 hexf = "0.1"
 thiserror = ">=1.0.9"
 log = "0.4"

@@ -1,15 +1,74 @@
-use std::fs;
+use std::fs::{self, File};
+use std::io::Error;
+use std::path::{Path, PathBuf};
 
 mod utils;
 
-#[test]
-fn all_headers() -> Result<(), std::io::Error> {
-    for header_file in fs::read_dir("tests/c-headers/")? {
-        let path = header_file?.path();
-        if path.ends_with(".c") {
-            let header_code = fs::read_to_string(path)?;
-            utils::assert_compiles_no_main(&header_code);
+fn cpp_and_save(header: &str, dest: &Path) -> Result<(), Error> {
+    use std::io::{ErrorKind, Write};
+    use std::process::Stdio;
+    let mut cpp = utils::cpp()
+        .stdin(Stdio::piped())
+        .stdout(File::create(dest)?)
+        .spawn()
+        .expect("failed to start preprocessor");
+    let stdin = cpp.stdin.as_mut().expect("couldn't access stdin");
+    write!(stdin, "#include <{}.h>", header)?;
+    cpp.wait().and_then(|status| {
+        if status.success() {
+            Ok(())
+        } else {
+            Err(Error::new(ErrorKind::InvalidData, "cpp exited with error"))
         }
+    })
+}
+
+#[test]
+fn all_headers() -> Result<(), Error> {
+    const STANDARD_HEADERS: &[&str] = &[
+        "assert",
+        // _Complex is not yet supported
+        // "complex",
+        "ctype",
+        "errno",
+        // fenv uses bitfields on my machine
+        //"fenv",
+        "float",
+        "inttypes",
+        "limits",
+        "locale",
+        "math",
+        "setjmp",
+        "signal",
+        "stdalign",
+        "stdarg",
+        // _Atomic is not yet supported
+        //"stdatomic",
+        "stdbool",
+        // uses __attribute__
+        //"stddef",
+        "stdint",
+        "stdio",
+        "stdlib",
+        "stdnoreturn",
+        "string",
+        "time",
+        // assumes a builtin char16_t type that doesn't exist
+        //"uchar",
+        "wchar",
+        "wctype",
+    ];
+    fs::create_dir_all("tests/c-headers")?;
+    for header in STANDARD_HEADERS {
+        let dest = PathBuf::from(format!("tests/c-headers/{}.c", header));
+        cpp_and_save(header, &dest)?;
+    }
+    for header_file in fs::read_dir("tests/c-headers/")? {
+        let header_file = header_file?;
+        let path = header_file.path();
+        println!("compiling {}", path.display());
+        let header_code = fs::read_to_string(path)?;
+        utils::assert_compiles_no_main(&header_code);
     }
     Ok(())
 }

@@ -1884,9 +1884,11 @@ mod tests {
         assert!(parse("inline int a;").unwrap().is_err()); // Normal declarations
         assert!(parse("void f(inline int a);").unwrap().is_err()); // Parameter lists
         assert!(parse("struct F { inline int a; } f;").unwrap().is_err()); // Struct members
-        assert!(parse("int main() { char a = (inline char)(4); }") // Type names
-            .unwrap()
-            .is_err());
+        assert!(
+            parse("int main() { char a = (inline char)(4); }") // Type names
+                .unwrap()
+                .is_err()
+        );
     }
     #[test]
     fn test_complex() {

@@ -15,10 +15,10 @@ use std::process::Command;
 #[macro_use]
 extern crate lazy_static;
 
-use cranelift_faerie::FaerieBackend;
+use cranelift_object::ObjectBackend;
 use cranelift_module::{Backend, Module};
 
-pub type Product = <FaerieBackend as Backend>::Product;
+pub type Product = <ObjectBackend as Backend>::Product;
 
 use data::prelude::CompileError;
 pub use data::prelude::*;
@@ -38,7 +38,7 @@ mod parse;
 #[derive(Debug)]
 pub enum Error {
     Source(VecDeque<CompileError>),
-    Platform(failure::Error),
+    Platform(String),
     IO(io::Error),
 }
 
@@ -82,7 +82,7 @@ pub fn compile(
 
     ir::compile(hir, debug_ir)
         .map_err(Error::from)
-        .map(Module::<FaerieBackend>::finish)
+        .map(Module::<ObjectBackend>::finish)
 }
 
 pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {

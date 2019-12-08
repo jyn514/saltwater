@@ -18,14 +18,14 @@ use cranelift::codegen::{
 };
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Ebb, FunctionBuilder, FunctionBuilderContext, Signature};
-use cranelift_faerie::{FaerieBackend, FaerieBuilder, FaerieTrapCollection};
+use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
 use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule};
 
 use crate::arch::TARGET;
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
 use crate::utils;
 
-type Module = CraneliftModule<FaerieBackend>;
+type Module = CraneliftModule<ObjectBackend>;
 
 enum Id {
     Function(FuncId),
@@ -107,10 +107,10 @@ impl Compiler {
             .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", TARGET), 5))
             .finish(settings::Flags::new(flags_builder));
 
-        let builder = FaerieBuilder::new(
+        let builder = ObjectBuilder::new(
             isa,
             name,
-            FaerieTrapCollection::Disabled,
+            ObjectTrapCollection::Disabled,
             cranelift_module::default_libcall_names(),
         )
         .expect("unknown error creating module");

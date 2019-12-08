@@ -16,13 +16,17 @@ to show a very verbose description of the lexemes/AST/IR respectively.
 
 Use `cargo run -- --help` for all options.
 
+### Running on Windows
+
+You need to have `cc` on your PATH. You can either install mingw + gcc or MSVC.
+Other than that, it should work exactly the same as on Linux.
+
 ## TODO
 
 - Preprocessor
 - Fix boolean expressions
 - Multiple translation units (files)
 - Bitfields?
-- Compile on Windows (see https://github.com/jyn514/rcc/issues/77)
 - Compile on non-x86 platforms
 - Cross-compile
 

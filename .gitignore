@@ -2,3 +2,4 @@
 **/Cargo.lock
 **/*.rs.bak
 /fuzz/afl/outputs
+/tests/c-headers

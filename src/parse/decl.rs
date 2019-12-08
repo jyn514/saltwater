@@ -1911,8 +1911,9 @@ mod tests {
     }
     #[test]
     fn test_inline_keyword() {
+        // Correct usage
         assert!(match_type(
-            dbg!(parse("inline void f(void);")),
+            parse("inline void f(void);"),
             Function(FunctionType {
                 return_type: Box::new(Void),
                 params: vec![],
@@ -1920,12 +1921,11 @@ mod tests {
             })
         ));
 
-        assert!(parse("inline int a;").unwrap().is_err());
-
-        // TODO: Make sure the gaurds against inline work in all cases
-        assert!(parse("void f(inline int a);").unwrap().is_err());
-        assert!(parse("struct F { inline int a; } f;").unwrap().is_err());
-        assert!(parse("int main() { void *a = (inline void*)(5); }")
+        // `inline` is not allowed in the following cases
+        assert!(parse("inline int a;").unwrap().is_err()); // Normal declarations
+        assert!(parse("void f(inline int a);").unwrap().is_err()); // Parameter lists
+        assert!(parse("struct F { inline int a; } f;").unwrap().is_err()); // Struct members
+        assert!(parse("int main() { char a = (inline char)(4); }") // Type names
             .unwrap()
             .is_err());
     }

@@ -139,22 +139,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 None
             }
         };
-        // TODO: Take this out later
-        // if !symbol.ctype.is_function() && qualifiers.inline {
-        //     self.semantic_err(
-        //         format!(
-        //             "`inline` qualifier is only allowed on functions. hint: try defining {} as a function",
-        //             symbol.id
-        //         ),
-        //         id.location
-        //     );
-        // }
-        if symbol.ctype.is_function() && qualifiers != Qualifiers::NONE {
+        if symbol.ctype.is_function() && (qualifiers.c_const || qualifiers.volatile) {
             warn(
                 &format!("{} has no effect on function return type", qualifiers),
                 id.location,
             );
-            qualifiers = Qualifiers::NONE;
+            qualifiers.c_const = false;
+            qualifiers.volatile = false;
         }
         let decl = Locatable {
             data: Declaration { symbol, init },

@@ -15,8 +15,8 @@ use std::process::Command;
 #[macro_use]
 extern crate lazy_static;
 
-use cranelift_object::ObjectBackend;
 use cranelift_module::{Backend, Module};
+use cranelift_object::ObjectBackend;
 
 pub type Product = <ObjectBackend as Backend>::Product;
 
@@ -93,15 +93,23 @@ pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {
 }
 
 pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
+    use std::io::{Error, ErrorKind};
     // link the .o file using host linker
     let status = Command::new("cc")
         .args(&[&obj_file, Path::new("-o"), output])
-        .status()?;
+        .status()
+        .map_err(|err| {
+            if err.kind() == ErrorKind::NotFound {
+                Error::new(
+                    ErrorKind::NotFound,
+                    "could not find host cc (for linking). Is it on your PATH?",
+                )
+            } else {
+                err
+            }
+        })?;
     if !status.success() {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "linking program failed",
-        ))
+        Err(Error::new(ErrorKind::Other, "linking program failed"))
     } else {
         Ok(())
     }

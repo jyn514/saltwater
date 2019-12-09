@@ -24,8 +24,8 @@ pub fn cpp() -> std::process::Command {
         "-D__DBL_MIN__=2.225073858507201383e-308L",
         "-D__FLT_MAX__=3.402823466385288598e+38F",
         "-D__FLT_MIN__=1.175494350822287507e-38F",
-	"-D__INTPTR_TYPE__=8",
-	"-D__INT32_TYPE__=4",
+        "-D__INTPTR_TYPE__=8",
+        "-D__INT32_TYPE__=4",
         #[cfg(linux)]
         "-D__linux__",
         #[cfg(target_arch = "x86_64")]

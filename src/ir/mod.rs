@@ -18,8 +18,8 @@ use cranelift::codegen::{
 };
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Ebb, FunctionBuilder, FunctionBuilderContext, Signature};
-use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
 use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule};
+use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
 
 use crate::arch::TARGET;
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};

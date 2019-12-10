@@ -191,11 +191,6 @@ impl Qualifiers {
         volatile: true,
         inline: false,
     };
-    pub const INLINE: Qualifiers = Qualifiers {
-        c_const: false,
-        volatile: false,
-        inline: true,
-    };
 }
 
 pub enum LengthError {

@@ -4,6 +4,7 @@ use std::iter::{FromIterator, Iterator};
 use std::mem;
 
 use super::{FunctionData, Lexeme, Parser, TagEntry};
+use crate::arch::SIZE_T;
 use crate::data::{
     lex::Keyword,
     prelude::*,
@@ -736,6 +737,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(constructor(StructType::Anonymous(Rc::new(members))))
         }
     }
+    fn bitfield(&mut self) -> Result<SIZE_T, SyntaxError> {
+        Ok(self.constant_expr()?.const_int().unwrap_or_else(|err| {
+            self.pending.push_back(Err(err));
+            1
+        }))
+    }
     /*
     struct_declarator_list: struct_declarator (',' struct_declarator)* ;
     struct_declarator
@@ -745,21 +752,57 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ;
     */
     fn struct_declarator_list(&mut self, members: &mut Vec<Symbol>) -> Result<(), SyntaxError> {
-        let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
+        let (sc, qualifiers, original_ctype, _) = self.declaration_specifiers()?;
         if let Some(token) = self.match_next(&Token::Semicolon) {
             crate::utils::warn("declaration does not declare anything", token.location);
             return Ok(());
         }
         let mut last_location;
         loop {
-            let decl = self.init_declarator(StorageClass::Auto, qualifiers, ctype.clone())?;
-            if decl.data.symbol.init {
-                self.semantic_err(
-                    format!("cannot initialize struct member '{}'", decl.data.symbol.id),
-                    decl.location,
+            if let Some(token) = self.match_next(&Token::Colon) {
+                self.bitfield()?;
+                crate::utils::warn(
+                    "padding bits in bitfields are not implemented and will be ignored",
+                    token.location,
                 );
+                self.expect(Token::Semicolon)?;
+                return Ok(()); // NOTE: does not give a 2nd error if sc was given
             }
-            match decl.data.symbol.ctype {
+            let decl = self.declarator(false)?.unwrap();
+            let (declarator, ctype) = decl
+                .parse_type(original_ctype.clone(), false, &self.last_location)
+                .into_inner(self.multiple_err_handler());
+            // TODO: Declarator needs to be redesigned so there's only one unwrap
+            let Locatable { data: id, location } = declarator.unwrap();
+            let symbol = Symbol {
+                storage_class: StorageClass::Auto,
+                qualifiers,
+                ctype,
+                init: false,
+                id,
+            };
+            if let Some(token) = self.match_next(&Token::Colon) {
+                let bit_size = self.bitfield()?;
+                let type_size = symbol.ctype.sizeof().unwrap_or(0);
+                if bit_size == 0 {
+                    let err = format!(
+                        "C does not have zero-sized types. hint: omit the declarator {}",
+                        symbol.id
+                    );
+                    self.semantic_err(err, self.last_location);
+                } else if bit_size > type_size * u64::from(crate::arch::CHAR_BIT) {
+                    let err = format!(
+                        "cannot have bitfield {} with size {} larger than containing type {}",
+                        symbol.id, bit_size, symbol.ctype
+                    );
+                    self.semantic_err(err, token.location);
+                }
+                crate::utils::warn(
+                    "bitfields are not implemented and will be ignored",
+                    token.location,
+                );
+            };
+            match symbol.ctype {
                 Type::Struct(StructType::Named(_, members))
                 | Type::Union(StructType::Named(_, members))
                     if members.get().is_empty() =>
@@ -767,14 +810,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     self.semantic_err(
                         format!(
                             "cannot use type '{}' before it has been defined",
-                            decl.data.symbol.ctype
+                            symbol.ctype
                         ),
-                        decl.location,
+                        location,
                     );
                 }
-                _ => members.push(decl.data.symbol),
+                _ => members.push(symbol),
             }
-            last_location = decl.location;
+            last_location = location;
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon)?;
                 break;
@@ -968,8 +1011,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
                         let expr = self.constant_expr()?;
                         self.expect(Token::RightBracket)?;
-                        // TODO: allow any integer type
-                        // also TODO: look up the rules for this in the C standard
                         let length = expr.const_int().unwrap_or_else(|err| {
                             self.pending.push_back(Err(err));
                             1
@@ -2074,5 +2115,12 @@ mod tests {
     fn typedef_signed() {
         let mut parsed = parse_all("typedef unsigned uint; uint i;");
         assert!(match_type(parsed.pop(), Type::Int(false)));
+    }
+    #[test]
+    fn bitfields() {
+        assert!(parse("struct { int:5; } a;").unwrap().is_err());
+        assert!(parse("struct { int a:5; } b;").unwrap().is_ok());
+        assert!(parse("struct { int a:5, b:6; } c;").unwrap().is_ok());
+        assert!(parse("struct { extern int a:5; } d;").unwrap().is_err());
     }
 }

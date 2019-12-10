@@ -225,6 +225,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
     }
     fn declare_typedef(&mut self, id: Locatable<InternedStr>, ctype: Type, qualifiers: Qualifiers) {
+        if qualifiers.inline {
+            self.semantic_err(
+                "`inline` is only allowed on function declarations",
+                id.location,
+            );
+        }
         let typedef = Symbol {
             id: id.data,
             ctype: ctype.clone(),
@@ -1889,6 +1895,7 @@ mod tests {
                 .unwrap()
                 .is_err()
         );
+        assert!(parse("typedef a inlint int;").unwrap().is_err());
     }
     #[test]
     fn test_complex() {

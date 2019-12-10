@@ -1895,7 +1895,7 @@ mod tests {
                 .unwrap()
                 .is_err()
         );
-        assert!(parse("typedef a inlint int;").unwrap().is_err());
+        assert!(parse("typedef a inline int;").unwrap().is_err());
     }
     #[test]
     fn test_complex() {

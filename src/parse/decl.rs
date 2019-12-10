@@ -768,7 +768,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 self.expect(Token::Semicolon)?;
                 return Ok(()); // NOTE: does not give a 2nd error if sc was given
             }
-            let decl = self.declarator(false)?.unwrap();
+            let decl = self.declarator(false, qualifiers)?.unwrap();
             let (declarator, ctype) = decl
                 .parse_type(original_ctype.clone(), false, &self.last_location)
                 .into_inner(self.multiple_err_handler());

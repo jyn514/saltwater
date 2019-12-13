@@ -35,10 +35,14 @@ mod tests;
 pub struct Lexer<'a> {
     location: SingleLocation,
     chars: Chars<'a>,
-    // used for 2-character tokens
+    /// used for 2-character tokens
     current: Option<char>,
-    // used for 3-character tokens
+    /// used for 3-character tokens
     lookahead: Option<char>,
+    /// whether we've a token on this line before or not
+    /// used for preprocessing (e.g. `#line 5` is a directive
+    /// but `int main() { # line 5` is not)
+    seen_line_token: bool,
     /// whether to print out every token as it's encountered
     pub debug: bool,
     error_handler: ErrorHandler,
@@ -68,6 +72,7 @@ impl<'a> Lexer<'a> {
                 filename: InternedStr::get_or_intern(file),
             },
             chars,
+            seen_line_token: false,
             current: None,
             lookahead: None,
             debug,
@@ -604,7 +609,7 @@ impl<'a> Iterator for Lexer<'a> {
             let span_start = self.location.offset - 1;
             // this giant switch is most of the logic
             let data = match c {
-                '#' => self.cpp(),
+                '#' if !self.seen_line_token => self.cpp(),
                 '+' => match self.peek() {
                     Some('=') => {
                         self.next_char();
@@ -801,6 +806,7 @@ impl<'a> Iterator for Lexer<'a> {
                 location: self.span(span_start),
             }))
         });
+        self.seen_line_token = true;
         if self.debug {
             println!("lexeme: {:?}", c);
         }

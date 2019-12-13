@@ -572,6 +572,11 @@ impl<'a> Iterator for Lexer<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.consume_whitespace();
         let mut c = self.next_char();
+        // discard backslashes before newlines
+        while c == Some('\\') && self.match_next('\n') {
+            self.consume_whitespace();
+            c = self.next_char();
+        }
         // avoid stack overflow on lots of comments
         while c == Some('/') {
             c = match self.peek() {
@@ -1030,6 +1035,25 @@ mod tests {
         assert_eq!(lex(&lots_of(' ')), None);
         assert_eq!(lex(&lots_of('\t')), None);
         assert_eq!(lex(&lots_of('\n')), None);
+    }
+
+    #[test]
+    fn backslashes() {
+        let a = InternedStr::get_or_intern("a");
+        assert!(match_data(
+            lex(r"\
+        a"),
+            |lexed| lexed == Ok(&Token::Id(a))
+        ));
+        assert!(match_data(
+            lex(r"\
+        \
+        \
+        a"),
+            |lexed| lexed == Ok(&Token::Id(a))
+        ));
+        assert!(match_data(lex("\\\na"), |lexed| lexed == Ok(&Token::Id(a))));
+        assert_err(r"\a");
     }
 
     #[test]

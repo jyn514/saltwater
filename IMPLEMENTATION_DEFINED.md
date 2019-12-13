@@ -11,8 +11,8 @@ See the `src/arch` folder, excluding `src/arch/mod.rs`.
 ## How does right-shift behave on negative integers?
 
 It performs an arithmetic shift, keeping the sign of the value.
-For example, `-3 >> 1` in binary is `1000...0011 >> 1`,
-and shifted right will be `1000...0001`, or `-2`.
+For example, `-3 >> 1` in binary is `1111...1101 >> 1`,
+and shifted right will be `1111...1110`, or `-2`.
 This is the same as dividing by two and rounding towards negative infinity.
 
 ## Does `inline` do anything?

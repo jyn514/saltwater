@@ -90,9 +90,10 @@ impl Expr {
                 data: (token, folded.ctype),
                 location: folded.location,
             }),
-            _expr => {
-                Err(errors::GenericSemanticError::new(folded.location, "not a constant expression".to_owned()))
-            }
+            _expr => Err(errors::GenericSemanticError::new(
+                folded.location,
+                "not a constant expression".to_owned(),
+            )),
         }
     }
     pub fn const_fold(self) -> CompileResult<Expr> {
@@ -108,7 +109,9 @@ impl Expr {
                 _ => self.expr,
             },
             ExprType::Sizeof(ctype) => {
-                let sizeof = ctype.sizeof().map_err(|data| errors::GenericSemanticError::new(location, data.into()))?;
+                let sizeof = ctype
+                    .sizeof()
+                    .map_err(|data| errors::GenericSemanticError::new(location, data.into()))?;
                 ExprType::Literal(Token::UnsignedInt(sizeof))
             }
             ExprType::Negate(expr) => expr.const_fold()?.map_literal(
@@ -407,7 +410,9 @@ fn shift_right(
             Ok(u) => u,
             Err(_) => semantic_err!("cannot shift left by a negative amount".into(), *location),
         };
-        let sizeof = ctype.sizeof().map_err(|err| errors::GenericSemanticError::new(*location, err.into()))?;
+        let sizeof = ctype
+            .sizeof()
+            .map_err(|err| errors::GenericSemanticError::new(*location, err.into()))?;
         // Rust panics if the shift is greater than the size of the type
         if shift >= sizeof {
             return Ok(ExprType::Literal(if ctype.is_signed() {

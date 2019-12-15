@@ -77,11 +77,9 @@ pub enum Keyword {
     Alignof,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Token {
-    PlusPlus,
-    MinusMinus,
-
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum AssignmentToken {
+    Equal,
     PlusEqual,
     MinusEqual,
     StarEqual,
@@ -92,11 +90,34 @@ pub enum Token {
     AndEqual,
     OrEqual,
     XorEqual, // ^=
+}
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ComparisonToken {
+    Less,
+    Greater,
     EqualEqual,
     NotEqual,
     LessEqual,
     GreaterEqual,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Literal {
+    // literals
+    Int(i64),
+    UnsignedInt(u64),
+    Float(f64),
+    Str(InternedStr),
+    Char(u8),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Token {
+    PlusPlus,
+    MinusMinus,
+    Assignment(AssignmentToken),
+    Comparison(ComparisonToken),
 
     Plus,
     Minus,
@@ -104,9 +125,6 @@ pub enum Token {
     Divide,
     Mod,
     Xor,
-    Equal,
-    Less,
-    Greater,
     Ampersand,
     LogicalAnd,
     BitwiseOr,
@@ -128,15 +146,9 @@ pub enum Token {
     Dot,
     Question,
 
-    // literals
-    Int(i64),
-    UnsignedInt(u64),
-    Float(f64),
-    Str(InternedStr),
-    Char(u8),
-    Id(InternedStr),
-
     Keyword(Keyword),
+    Literal(Literal),
+    Id(InternedStr),
 
     // Misc
     Ellipsis,
@@ -157,56 +169,66 @@ impl<T> Locatable<T> {
     }
 }
 
-use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
 impl Token {
+    pub const Equal: Token = Token::Assignment(AssignmentToken::Equal);
+}
+
+impl Literal {
     pub fn is_zero(&self) -> bool {
         match *self {
-            Token::Int(i) => i == 0,
-            Token::UnsignedInt(u) => u == 0,
-            Token::Char(c) => c == 0,
+            Literal::Int(i) => i == 0,
+            Literal::UnsignedInt(u) => u == 0,
+            Literal::Char(c) => c == 0,
             _ => false,
         }
     }
-    pub fn to_int_compare(&self, signed: bool) -> Result<IntCC, ()> {
+}
+
+use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
+impl ComparisonToken {
+    pub fn to_int_compare(self, signed: bool) -> IntCC {
+        use ComparisonToken::*;
         match (self, signed) {
-            (Token::Less, true) => Ok(IntCC::SignedLessThan),
-            (Token::Less, false) => Ok(IntCC::UnsignedLessThan),
-            (Token::LessEqual, true) => Ok(IntCC::SignedLessThanOrEqual),
-            (Token::LessEqual, false) => Ok(IntCC::UnsignedLessThanOrEqual),
-            (Token::Greater, true) => Ok(IntCC::SignedGreaterThan),
-            (Token::Greater, false) => Ok(IntCC::UnsignedGreaterThan),
-            (Token::GreaterEqual, true) => Ok(IntCC::SignedGreaterThanOrEqual),
-            (Token::GreaterEqual, false) => Ok(IntCC::UnsignedGreaterThanOrEqual),
-            (Token::EqualEqual, _) => Ok(IntCC::Equal),
-            (Token::NotEqual, _) => Ok(IntCC::NotEqual),
-            _ => Err(()),
+            (Less, true) => IntCC::SignedLessThan,
+            (Less, false) => IntCC::UnsignedLessThan,
+            (LessEqual, true) => IntCC::SignedLessThanOrEqual,
+            (LessEqual, false) => IntCC::UnsignedLessThanOrEqual,
+            (Greater, true) => IntCC::SignedGreaterThan,
+            (Greater, false) => IntCC::UnsignedGreaterThan,
+            (GreaterEqual, true) => IntCC::SignedGreaterThanOrEqual,
+            (GreaterEqual, false) => IntCC::UnsignedGreaterThanOrEqual,
+            (EqualEqual, _) => IntCC::Equal,
+            (NotEqual, _) => IntCC::NotEqual,
         }
     }
-    pub fn to_float_compare(&self) -> Result<FloatCC, ()> {
+    pub fn to_float_compare(self) -> FloatCC {
+        use ComparisonToken::*;
         match self {
-            Token::Less => Ok(FloatCC::LessThan),
-            Token::LessEqual => Ok(FloatCC::LessThanOrEqual),
-            Token::Greater => Ok(FloatCC::GreaterThan),
-            Token::GreaterEqual => Ok(FloatCC::GreaterThanOrEqual),
-            Token::EqualEqual => Ok(FloatCC::Equal),
-            Token::NotEqual => Ok(FloatCC::NotEqual),
-            _ => Err(()),
+            Less => FloatCC::LessThan,
+            LessEqual => FloatCC::LessThanOrEqual,
+            Greater => FloatCC::GreaterThan,
+            GreaterEqual => FloatCC::GreaterThanOrEqual,
+            EqualEqual => FloatCC::Equal,
+            NotEqual => FloatCC::NotEqual,
         }
     }
-    pub fn without_assignment(&self) -> Result<Token, ()> {
-        Ok(match self {
-            Token::PlusEqual => Token::Plus,
-            Token::MinusEqual => Token::Minus,
-            Token::StarEqual => Token::Star,
-            Token::DivideEqual => Token::Divide,
-            Token::ModEqual => Token::Mod,
-            Token::AndEqual => Token::Ampersand,
-            Token::OrEqual => Token::BitwiseOr,
-            Token::LeftEqual => Token::ShiftLeft,
-            Token::RightEqual => Token::ShiftRight,
-            Token::XorEqual => Token::Xor,
-            _ => return Err(()),
-        })
+}
+impl AssignmentToken {
+    pub fn without_assignment(self) -> Token {
+        use AssignmentToken::*;
+        match self {
+            Equal => Equal.into(), // there's not really a good behavior here...
+            PlusEqual => Token::Plus,
+            MinusEqual => Token::Minus,
+            StarEqual => Token::Star,
+            DivideEqual => Token::Divide,
+            ModEqual => Token::Mod,
+            AndEqual => Token::Ampersand,
+            OrEqual => Token::BitwiseOr,
+            LeftEqual => Token::ShiftLeft,
+            RightEqual => Token::ShiftRight,
+            XorEqual => Token::Xor,
+        }
     }
 }
 
@@ -244,21 +266,7 @@ impl std::fmt::Display for Token {
         use Token::*;
         match self {
             PlusPlus => write!(f, "++"),
-            PlusEqual => write!(f, "+="),
             MinusMinus => write!(f, "--"),
-            MinusEqual => write!(f, "+="),
-            StarEqual => write!(f, "*="),
-            DivideEqual => write!(f, "/="),
-            ModEqual => write!(f, "%="),
-            AndEqual => write!(f, "&="),
-            OrEqual => write!(f, "|="),
-            XorEqual => write!(f, "^="),
-            LeftEqual => write!(f, "<<="),
-            RightEqual => write!(f, ">>="),
-            EqualEqual => write!(f, "=="),
-            NotEqual => write!(f, "!="),
-            LessEqual => write!(f, "<="),
-            GreaterEqual => write!(f, ">="),
             ShiftRight => write!(f, ">>"),
             ShiftLeft => write!(f, "<<"),
             Plus => write!(f, "+"),
@@ -266,9 +274,6 @@ impl std::fmt::Display for Token {
             Star => write!(f, "*"),
             Divide => write!(f, "/"),
             Xor => write!(f, "^"),
-            Equal => write!(f, "="),
-            Less => write!(f, "<"),
-            Greater => write!(f, ">"),
             Ampersand => write!(f, "&"),
             LogicalAnd => write!(f, "&&"),
             BitwiseOr => write!(f, "|"),
@@ -288,16 +293,66 @@ impl std::fmt::Display for Token {
             Question => write!(f, "?"),
             Mod => write!(f, "%"),
 
-            Int(i) => write!(f, "{}", i),
-            UnsignedInt(u) => write!(f, "{}", u),
-            Float(n) => write!(f, "{}", n),
-            Str(s) => write!(f, "\"{}\"", s),
-            Char(c) => write!(f, "{}", c),
+            Assignment(a) => write!(f, "{}", a),
+            Comparison(c) => write!(f, "{}", c),
+            Literal(lit) => write!(f, "{}", lit),
             Id(id) => write!(f, "{}", id),
             Keyword(k) => write!(f, "{}", k),
 
             Ellipsis => write!(f, "..."),
             StructDeref => write!(f, "->"),
         }
+    }
+}
+
+impl std::fmt::Display for Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use Literal::*;
+        match self {
+            Int(i) => write!(f, "{}", i),
+            UnsignedInt(u) => write!(f, "{}", u),
+            Float(n) => write!(f, "{}", n),
+            Str(s) => write!(f, "\"{}\"", s),
+            Char(c) => write!(f, "{}", c),
+        }
+    }
+}
+
+impl std::fmt::Display for ComparisonToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use ComparisonToken::*;
+        let s = match self {
+            EqualEqual => "==",
+            NotEqual => "!=",
+            Less => "<",
+            LessEqual => "<=",
+            Greater => ">",
+            GreaterEqual => ">=",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl std::fmt::Display for AssignmentToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}=", self.without_assignment())
+    }
+}
+
+impl From<Literal> for Token {
+    fn from(l: Literal) -> Self {
+        Token::Literal(l)
+    }
+}
+
+impl From<AssignmentToken> for Token {
+    fn from(a: AssignmentToken) -> Self {
+        Token::Assignment(a)
+    }
+}
+
+impl From<ComparisonToken> for Token {
+    fn from(a: ComparisonToken) -> Self {
+        Token::Comparison(a)
     }
 }

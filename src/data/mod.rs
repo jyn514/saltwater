@@ -13,7 +13,7 @@ pub mod prelude {
         error::{
             CompileError, CompileResult, Recoverable, RecoverableResult, SemanticError, SyntaxError,
         },
-        lex::{Locatable, Location, Token},
+        lex::{Literal, Locatable, Location, Token},
         types::{StructRef, StructType, Type},
         Declaration, Expr, ExprType, Stmt, StmtType, Symbol,
     };
@@ -21,7 +21,7 @@ pub mod prelude {
 }
 use crate::intern::InternedStr;
 use error::CompileError;
-use lex::{Keyword, Locatable, Location, Token};
+use lex::{AssignmentToken, ComparisonToken, Keyword, Literal, Locatable, Location};
 use types::Type;
 
 pub type Stmt = Locatable<StmtType>;
@@ -102,7 +102,7 @@ pub struct Expr {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprType {
     Id(Symbol),
-    Literal(Token),
+    Literal(Literal),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, InternedStr),
     // post increment/decrement
@@ -127,9 +127,9 @@ pub enum ExprType {
     // bool: left or right
     Shift(Box<Expr>, Box<Expr>, bool),
     // Token: make >, <, <=, ... part of the same variant
-    Compare(Box<Expr>, Box<Expr>, Token),
+    Compare(Box<Expr>, Box<Expr>, ComparisonToken),
     // Token: allow extended assignment
-    Assign(Box<Expr>, Box<Expr>, Token),
+    Assign(Box<Expr>, Box<Expr>, AssignmentToken),
     // Ternary: if ? then : else
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     Comma(Box<Expr>, Box<Expr>),
@@ -208,13 +208,14 @@ impl Expr {
         }
         let literal = self.constexpr()?;
         match literal.data.0 {
-            Token::UnsignedInt(u) => Ok(u),
-            Token::Int(x) => x.try_into().map_err(|_| {
+            Literal::UnsignedInt(u) => Ok(u),
+            Literal::Int(x) => x.try_into().map_err(|_| {
                 CompileError::Semantic(Locatable::new(
                     LengthError::Negative.into(),
                     literal.location,
                 ))
             }),
+            Literal::Char(c) => Ok(u64::from(c)),
             x => unreachable!("should have been caught already: {:?}", x),
         }
     }
@@ -222,7 +223,7 @@ impl Expr {
         Expr {
             ctype: Type::Int(true),
             constexpr: true,
-            expr: ExprType::Literal(Token::Int(0)),
+            expr: ExprType::Literal(Literal::Int(0)),
             lval: false,
             location,
         }

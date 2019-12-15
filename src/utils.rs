@@ -32,6 +32,7 @@ pub fn get_warnings() -> usize {
     WARNINGS.load(Ordering::SeqCst)
 }
 
+/// (f, g) => f . g
 pub fn compose<'a, A, B, C, G, F>(f: F, g: G) -> impl Fn(A) -> C + 'a
 where
     F: 'a + Fn(B) -> C,

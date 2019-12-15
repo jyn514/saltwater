@@ -1,4 +1,5 @@
 use std::fmt;
+use std::any::Any;
 use thiserror::Error;
 
 use super::{Expr, Locatable, Location};
@@ -87,7 +88,7 @@ pub enum CompileErrorLevel {
     FatalError,
 }
 
-pub trait NewCompileError {
+pub trait NewCompileError: Any {
     // Idealy this should be an associated constant, but those are not allowed
     // in trait objects
     fn level(&self) -> CompileErrorLevel;
@@ -97,6 +98,15 @@ pub trait NewCompileError {
 
     fn message(&self) -> String;
     fn location(&self) -> Location;
+}
+
+impl dyn NewCompileError {
+    pub fn is<T: NewCompileError>(&self) -> bool {
+        use std::any::TypeId;
+        let t = TypeId::of::<T>();
+        let boxed = self.type_id();
+        t == boxed
+    }
 }
 
 impl fmt::Debug for (dyn NewCompileError) {

@@ -873,7 +873,9 @@ mod tests {
     where
         T: FnOnce(CompileResult<&Token>) -> bool,
     {
-        // TODO: This used to only accept lexing errors,
+        // When this function is used to check for an error, `closure should
+        // check that the error is the correct type with `is` function on the
+        // error trait.
         match lexed {
             Some(Ok(l)) => closure(Ok(&l.data)),
             Some(Err(e)) => closure(Err(e)),

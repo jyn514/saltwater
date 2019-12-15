@@ -82,6 +82,7 @@ impl<T, E> Recoverable for Result<T, (E, T)> {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub enum ErrorKind {
     Warning,
     Lex,
@@ -208,5 +209,46 @@ impl From<CompileError> for Box<dyn NewCompileError> {
 impl From<SyntaxError> for Box<dyn NewCompileError> {
     fn from(err: SyntaxError) -> Box<dyn NewCompileError> {
         errors::GenericSyntaxError::boxed(err.0.location, err.0.data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_trait() {
+        #[allow(unreachable_pub)]
+        mod test_errors {
+            use super::*;
+
+            define_error! {
+                "test-error", ErrorKind::Semantic,
+                TestError(message: String),
+                "test-error: {message}"
+            }
+
+            define_error! {
+                "test-warning", ErrorKind::Warning,
+                TestWarning(number: i32),
+                "test-warning data: {number:x}"
+            }
+        }
+
+        let e = test_errors::TestError::boxed(Location::default(), "bad stuff happened".into());
+        assert!(e.is::<test_errors::TestError>());
+        assert!(!e.is::<test_errors::TestWarning>());
+        assert_eq!(e.kind(), ErrorKind::Semantic);
+        assert_eq!(e.name(), "test-error");
+        assert_eq!(e.message(), "test-error: bad stuff happened");
+        assert_eq!(e.location(), Location::default());
+
+        let w = test_errors::TestWarning::boxed(Location::default(), 32);
+        assert!(w.is::<test_errors::TestWarning>());
+        assert!(!w.is::<test_errors::TestError>());
+        assert_eq!(w.kind(), ErrorKind::Warning);
+        assert_eq!(w.name(), "test-warning");
+        assert_eq!(w.message(), "test-warning data: 20");
+        assert_eq!(w.location(), Location::default());
     }
 }

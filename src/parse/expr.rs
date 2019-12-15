@@ -9,26 +9,6 @@ use crate::data::{
 
 type SyntaxResult = Result<Expr, SyntaxError>;
 
-macro_rules! struct_member_helper {
-    ($self: expr, $members: expr, $expr: expr, $id: expr, $location: expr) => {
-        if let Some(member) = $members.iter().find(|member| member.id == $id) {
-            Ok(Expr {
-                ctype: member.ctype.clone(),
-                constexpr: $expr.constexpr,
-                lval: true,
-                location: $location,
-                expr: ExprType::Member(Box::new($expr), $id),
-            })
-        } else {
-            $self.semantic_err(
-                format!("no member named '{}' in '{}'", $id, $expr.ctype),
-                $location,
-            );
-            Ok($expr)
-        }
-    };
-}
-
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// expr_opt: expr ';' | ';'
     pub fn expr_opt(&mut self, token: Token) -> Result<Option<Expr>, SyntaxError> {
@@ -942,8 +922,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if members.is_empty() {
                     self.semantic_err(format!("{} has not yet been defined", expr.ctype), location);
                     Ok(expr)
+                } else if let Some(member) = members.iter().find(|member| member.id == id) {
+                    Ok(Expr {
+                        ctype: member.ctype.clone(),
+                        constexpr: expr.constexpr,
+                        lval: true,
+                        location,
+                        expr: ExprType::Member(Box::new(expr), id),
+                    })
                 } else {
-                    struct_member_helper!(self, members, expr, id, location)
+                    self.semantic_err(
+                        format!("no member named '{}' in '{}'", id, expr.ctype),
+                        location,
+                    );
+                    Ok(expr)
                 }
             }
             _ => {

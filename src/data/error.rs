@@ -1,5 +1,6 @@
 use std::fmt;
 use std::any::Any;
+use std::fmt;
 use thiserror::Error;
 
 use super::{Expr, Locatable, Location};

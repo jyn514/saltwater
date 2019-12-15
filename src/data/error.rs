@@ -173,7 +173,7 @@ pub mod errors {
     }
 
     define_error! {
-        "symantic-error", CompileErrorLevel::RecoverableError,
+        "semantic-error", CompileErrorLevel::RecoverableError,
         GenericSemanticError(message: String),
         "invalid program: {message}"
     }

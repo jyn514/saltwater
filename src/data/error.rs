@@ -1,4 +1,3 @@
-use std::fmt;
 use std::any::Any;
 use std::fmt;
 use thiserror::Error;
@@ -108,6 +107,8 @@ impl dyn NewCompileError {
         let boxed = self.type_id();
         t == boxed
     }
+
+    // TODO: Possibly add a downcast function
 }
 
 impl fmt::Debug for (dyn NewCompileError) {

@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/jyn514/rcc.svg?branch=master)](https://travis-ci.org/jyn514/rcc)
 ![Minimum supported Rustc](https://img.shields.io/badge/rustc-1.37+-green.svg)
-[Join us on Discord](https://discord.gg/2jRDZDU)
+[Join us on Discord](https://discord.gg/BPER7PF)
 
 rcc: a Rust C compiler
 

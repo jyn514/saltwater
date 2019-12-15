@@ -10,7 +10,7 @@ use std::mem;
 use crate::data::{prelude::*, Scope};
 use crate::utils::warn;
 
-type Lexeme = Result<Locatable<Token>, CompileError>;
+type Lexeme = CompileResult<Locatable<Token>>;
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
 
 #[derive(Clone, Debug)]
@@ -38,7 +38,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     tokens: I,
     /// VecDeque supports pop_front with reasonable efficiency
     /// this is useful because errors are FIFO
-    pending: VecDeque<Result<Locatable<Declaration>, CompileError>>,
+    pending: VecDeque<CompileResult<Locatable<Declaration>>>,
     /// in case we get to the end of the file and want to show an error
     last_location: Location,
     /// the last token we saw from the Lexer. None if we haven't looked ahead.
@@ -76,17 +76,20 @@ where
     ///     If there is at least one token that is not an error, returns a parser.
     ///     Otherwise, returns a list of the errors.
     /// Otherwise, returns None.
-    pub fn new(mut iter: I, debug: bool) -> Result<Self, VecDeque<CompileError>> {
+    pub fn new(mut iter: I, debug: bool) -> Result<Self, VecDeque<Box<dyn NewCompileError>>> {
         let mut pending = VecDeque::new();
         let first = loop {
             match iter.next() {
                 Some(Ok(token)) => break token,
                 Some(Err(err)) => pending.push_back(err),
                 None if pending.is_empty() => {
-                    pending.push_back(CompileError::Semantic(Locatable::new(
-                        "cannot have empty program".to_string(),
-                        Default::default(),
-                    )));
+                    pending.push_back(
+                        CompileError::Semantic(Locatable::new(
+                            "cannot have empty program".to_string(),
+                            Default::default(),
+                        ))
+                        .into(),
+                    );
                     return Err(pending);
                 }
                 None => return Err(pending),
@@ -110,7 +113,7 @@ where
 }
 
 impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
-    type Item = Result<Locatable<Declaration>, CompileError>;
+    type Item = CompileResult<Locatable<Declaration>>;
     /// translation_unit
     /// : external_declaration
     /// | translation_unit external_declaration
@@ -190,7 +193,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                                     name, object.id
                                 ),
                                 location,
-                            })));
+                            })
+                            .into()));
                     }
                 }
                 _ => {}
@@ -265,12 +269,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .push_back(Err(CompileError::Semantic(Locatable {
                 location,
                 data: msg.into(),
-            })));
+            })
+            .into()));
     }
     fn default_err_handler(&mut self) -> impl '_ + FnMut(Locatable<String>) {
         move |err| self.semantic_err(err.data, err.location)
     }
-    fn compile_err_handler(&mut self) -> impl '_ + FnMut(CompileError) {
+    fn compile_err_handler(&mut self) -> impl '_ + FnMut(Box<dyn NewCompileError>) {
         move |err| self.pending.push_back(Err(err))
     }
     fn multiple_err_handler(&mut self) -> impl '_ + FnMut(Vec<Locatable<String>>) {
@@ -327,7 +332,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let tmp = mem::replace(&mut self.current, item);
         mem::replace(&mut self.next, tmp);
     }
-    fn lex_error(&mut self, err: CompileError) {
+    fn lex_error(&mut self, err: Box<dyn NewCompileError>) {
         self.pending.push_back(Err(err));
     }
 }
@@ -358,7 +363,7 @@ mod tests {
     use crate::data::prelude::*;
     use crate::lex::Lexer;
 
-    pub(crate) type ParseType = Result<Locatable<Declaration>, CompileError>;
+    pub(crate) type ParseType = CompileResult<Locatable<Declaration>>;
     pub(crate) fn parse(input: &str) -> Option<ParseType> {
         let mut all = parse_all(input);
         match all.len() {
@@ -370,7 +375,8 @@ mod tests {
                     Err(x) => x.location(),
                 },
                 data: format!("Expected exactly one statement, got {}", n),
-            }))),
+            })
+            .into())),
         }
     }
     pub(crate) fn assert_errs_decls(input: &str, errs: usize, decls: usize) {

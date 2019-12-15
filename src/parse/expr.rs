@@ -1209,7 +1209,7 @@ impl Expr {
     // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
     //
     // if (expr)
-    pub fn truthy(mut self) -> RecoverableResult<Expr, CompileError> {
+    pub fn truthy(mut self) -> RecoverableResult<Expr, Box<dyn NewCompileError>> {
         self = self.rval();
         if self.ctype == Type::Bool {
             return Ok(self);
@@ -1222,7 +1222,8 @@ impl Expr {
                         "expression of type '{}' cannot be converted to bool",
                         self.ctype
                     ),
-                }),
+                })
+                .into(),
                 self,
             ))
         } else {

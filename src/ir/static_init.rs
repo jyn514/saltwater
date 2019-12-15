@@ -99,6 +99,7 @@ impl Compiler {
                 data: format!("error defining static variable: {}", err),
                 location,
             })
+            .into()
         })
     }
     pub(crate) fn compile_string(
@@ -208,7 +209,8 @@ impl Compiler {
                             ),
                             // TODO: this location points to the declarator, not the initializer
                             location: *location,
-                        }))
+                        })
+                        .into())
                     } else {
                         self.init_array(ctx, buf, offset, initializers, ty, location)
                     }

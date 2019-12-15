@@ -110,7 +110,8 @@ macro_rules! semantic_err {
         return Err(CompileError::Semantic(Locatable {
             data: $message,
             location: $location,
-        }));
+        })
+        .into());
     };
 }
 

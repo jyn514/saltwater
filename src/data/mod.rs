@@ -11,7 +11,8 @@ pub mod types;
 pub mod prelude {
     pub use super::{
         error::{
-            CompileError, CompileResult, Recoverable, RecoverableResult, SemanticError, SyntaxError,
+            errors, CompileError, CompileResult, NewCompileError, Recoverable, RecoverableResult,
+            SemanticError, SyntaxError,
         },
         lex::{Locatable, Location, Token},
         types::{StructRef, StructType, Type},
@@ -214,6 +215,7 @@ impl Expr {
                     LengthError::Negative.into(),
                     literal.location,
                 ))
+                .into()
             }),
             x => unreachable!("should have been caught already: {:?}", x),
         }

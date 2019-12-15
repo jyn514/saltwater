@@ -20,7 +20,6 @@ use cranelift_module::{Backend, Module};
 
 pub type Product = <FaerieBackend as Backend>::Product;
 
-use data::prelude::CompileError;
 pub use data::prelude::*;
 pub use lex::Lexer;
 pub use parse::Parser;
@@ -37,7 +36,7 @@ mod parse;
 
 #[derive(Debug)]
 pub enum Error {
-    Source(VecDeque<CompileError>),
+    Source(VecDeque<Box<dyn NewCompileError>>),
     Platform(failure::Error),
     IO(io::Error),
 }
@@ -48,14 +47,14 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<CompileError> for Error {
-    fn from(err: CompileError) -> Error {
+impl From<Box<dyn NewCompileError>> for Error {
+    fn from(err: Box<dyn NewCompileError>) -> Error {
         Error::Source(vec_deque![err])
     }
 }
 
-impl From<VecDeque<CompileError>> for Error {
-    fn from(errs: VecDeque<CompileError>) -> Self {
+impl From<VecDeque<Box<dyn NewCompileError>>> for Error {
+    fn from(errs: VecDeque<Box<dyn NewCompileError>>) -> Self {
         Error::Source(errs)
     }
 }

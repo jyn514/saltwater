@@ -25,7 +25,8 @@ impl Compiler {
             return Err(CompileError::Semantic(Locatable {
                 data: "unreachable statement".into(),
                 location: stmt.location,
-            }));
+            })
+            .into());
         }
         match stmt.data {
             StmtType::Compound(stmts) => self.compile_all(stmts, builder),
@@ -76,7 +77,8 @@ impl Compiler {
                     Err(CompileError::Semantic(Locatable {
                         data: format!("redeclaration of label {}", previous),
                         location: stmt.location,
-                    }))
+                    })
+                    .into())
                 } else {
                     Ok(())
                 }
@@ -89,7 +91,8 @@ impl Compiler {
                 None => Err(CompileError::Semantic(Locatable {
                     data: format!("use of undeclared label {}", name),
                     location: stmt.location,
-                })),
+                })
+                .into()),
             },
             StmtType::Case(constexpr, inner) => self.case(constexpr, inner, stmt.location, builder),
             StmtType::Default(inner) => self.default(inner, stmt.location, builder),
@@ -286,7 +289,8 @@ impl Compiler {
                 return Err(CompileError::Semantic(Locatable {
                     data: "case outside of switch statement".into(),
                     location,
-                }))
+                })
+                .into())
             }
         };
         if builder.is_pristine() {
@@ -316,14 +320,16 @@ impl Compiler {
                 return Err(CompileError::Semantic(Locatable {
                     data: "default case outside of switch statement".into(),
                     location,
-                }))
+                })
+                .into())
             }
         };
         if default.is_some() {
             Err(CompileError::Semantic(Locatable {
                 data: "cannot have multiple default cases in a switch statement".into(),
                 location,
-            }))
+            })
+            .into())
         } else {
             let default_ebb = if builder.is_pristine() {
                 builder.cursor().current_ebb().unwrap()

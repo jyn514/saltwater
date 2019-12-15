@@ -438,7 +438,7 @@ mod tests {
     use super::super::tests::*;
     use crate::data::prelude::*;
     use crate::intern::InternedStr;
-    fn parse_stmt(stmt: &str) -> Result<Option<Stmt>, CompileError> {
+    fn parse_stmt(stmt: &str) -> CompileResult<Option<Stmt>> {
         let mut p = parser(stmt);
         let exp = p.statement();
         if let Some(Err(err)) = p.pending.pop_front() {

@@ -185,7 +185,8 @@ impl Compiler {
                 return Err(CompileError::Semantic(Locatable {
                     data: err.into(),
                     location,
-                }))
+                })
+                .into())
             }
         };
         let kind = StackSlotKind::ExplicitSlot;
@@ -194,7 +195,7 @@ impl Compiler {
             Err(_) => return Err(CompileError::Semantic(Locatable {
                 data: "cannot store items on the stack that are more than 4 GB, it will overflow the stack".into(),
                 location,
-            }))
+            }).into())
         };
         let data = StackSlotData {
             kind,

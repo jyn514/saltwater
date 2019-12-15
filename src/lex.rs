@@ -255,7 +255,8 @@ impl<'a> Lexer<'a> {
         Err(CompileError::Lex(Locatable {
             location: self.location,
             data: "unterminated /* comment".to_string(),
-        }))
+        })
+        .into())
     }
     /// Parse a number literal, given the starting character and whether floats are allowed.
     ///
@@ -843,13 +844,13 @@ impl<'a> Iterator for Lexer<'a> {
         if self.debug {
             println!("lexeme: {:?}", c);
         }
-        c.map(|result| result.map_err(CompileError::Lex))
+        c.map(|result| result.map_err(|e| CompileError::Lex(e).into()))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{CompileError, CompileResult, Lexer, Locatable, Location, Token};
+    use super::{CompileResult, Lexer, Locatable, Location, Token};
     use crate::intern::InternedStr;
 
     type LexType = CompileResult<Locatable<Token>>;
@@ -870,17 +871,12 @@ mod tests {
 
     fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
     where
-        T: FnOnce(Result<&Token, &str>) -> bool,
+        T: FnOnce(CompileResult<&Token>) -> bool,
     {
-        match_data_ref(&lexed, closure)
-    }
-    fn match_data_ref<T>(lexed: &Option<LexType>, closure: T) -> bool
-    where
-        T: FnOnce(Result<&Token, &str>) -> bool,
-    {
+        // TODO: This used to only accept lexing errors,
         match lexed {
-            Some(Ok(result)) => closure(Ok(&result.data)),
-            Some(Err(CompileError::Lex(result))) => closure(Err(&result.data)),
+            Some(Ok(l)) => closure(Ok(&l.data)),
+            Some(Err(e)) => closure(Err(e)),
             _ => false,
         }
     }
@@ -914,10 +910,9 @@ mod tests {
     fn assert_float(s: &str, expected: f64) {
         let lexed = lex(s);
         assert!(
-            match_data_ref(&lexed, |lexed| lexed == Ok(&Token::Float(expected))),
-            "({}) {:?} != {}",
+            match_data(lexed, |lexed| lexed == Ok(&Token::Float(expected))),
+            "{} != {}",
             s,
-            lexed,
             expected
         );
     }

@@ -140,9 +140,8 @@ macro_rules! define_error {
         }
 
         impl $error_name {
-            // maybe rename this to boxed, clippy doesn't like Self::new not returning Self
-            // Perhaps a normal new function might be useful for something
-            pub fn new(location: Location, $($arg_name: $arg_type),*) -> Box<dyn NewCompileError> {
+            // Having this defer to a normal constructor might be useful
+            pub fn boxed(location: Location, $($arg_name: $arg_type),*) -> Box<dyn NewCompileError> {
                 Box::new($error_name { location, $($arg_name),* })
             }
         }
@@ -195,18 +194,19 @@ pub mod errors {
     }
 }
 
+// These two Into implementations shoul be phased out soon (see issue #156)
 impl From<CompileError> for Box<dyn NewCompileError> {
     fn from(err: CompileError) -> Box<dyn NewCompileError> {
         match err {
-            CompileError::Lex(l) => errors::GenericLexError::new(l.location, l.data),
-            CompileError::Syntax(s) => errors::GenericSyntaxError::new(s.0.location, s.0.data),
-            CompileError::Semantic(l) => errors::GenericSemanticError::new(l.location, l.data),
+            CompileError::Lex(l) => errors::GenericLexError::boxed(l.location, l.data),
+            CompileError::Syntax(s) => errors::GenericSyntaxError::boxed(s.0.location, s.0.data),
+            CompileError::Semantic(l) => errors::GenericSemanticError::boxed(l.location, l.data),
         }
     }
 }
 
 impl From<SyntaxError> for Box<dyn NewCompileError> {
     fn from(err: SyntaxError) -> Box<dyn NewCompileError> {
-        errors::GenericSyntaxError::new(err.0.location, err.0.data)
+        errors::GenericSyntaxError::boxed(err.0.location, err.0.data)
     }
 }

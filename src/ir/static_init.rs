@@ -23,7 +23,7 @@ impl Compiler {
         location: Location,
     ) -> CompileResult<()> {
         use crate::get_str;
-        let err_closure = |err| errors::GenericSemanticError::new(location, err);
+        let err_closure = |err| errors::GenericSemanticError::boxed(location, err);
         let linkage = symbol.storage_class.try_into().map_err(err_closure)?;
         let align = symbol
             .ctype
@@ -46,7 +46,12 @@ impl Compiler {
                 !symbol.qualifiers.c_const,
                 Some(align),
             )
-            .map_err(|err| errors::GenericSemanticError::new(location, format!("error storing static value: {}", err)))?;
+            .map_err(|err| {
+                errors::GenericSemanticError::boxed(
+                    location,
+                    format!("error storing static value: {}", err),
+                )
+            })?;
 
         self.scope.insert(symbol.id, Id::Global(id));
 
@@ -69,7 +74,10 @@ impl Compiler {
                     *size = ArrayType::Fixed(len.try_into().unwrap());
                 };
             }
-            let size_t = symbol.ctype.sizeof().map_err(|err| errors::GenericSemanticError::new(location, err.into()))?;
+            let size_t = symbol
+                .ctype
+                .sizeof()
+                .map_err(|err| errors::GenericSemanticError::boxed(location, err.into()))?;
             let size = size_t
                 .try_into()
                 .expect("initializer is larger than SIZE_T on host platform");
@@ -106,9 +114,12 @@ impl Compiler {
         if self.strings.insert(string, str_id).is_none() {
             let mut ctx = DataContext::new();
             ctx.define(string.resolve_and_clone().into_boxed_str().into());
-            self.module
-                .define_data(str_id, &ctx)
-                .map_err(|err| errors::GenericSemanticError::new(location, format!("error defining static string: {}", err)))?;
+            self.module.define_data(str_id, &ctx).map_err(|err| {
+                errors::GenericSemanticError::boxed(
+                    location,
+                    format!("error defining static string: {}", err),
+                )
+            })?;
         }
         Ok(str_id)
     }
@@ -266,7 +277,7 @@ impl Compiler {
         }
         let inner_size: usize = inner_type
             .sizeof()
-            .map_err(|err| errors::GenericSemanticError::new(*location, err.into()))?
+            .map_err(|err| errors::GenericSemanticError::boxed(*location, err.into()))?
             .try_into()
             .expect("cannot initialize array larger than address space of host");
         let mut element_offset: usize = 0;

@@ -99,19 +99,19 @@ pub trait NewCompileError {
     fn location(&self) -> Location;
 }
 
-impl fmt::Debug for (dyn NewCompileError + 'static) {
+impl fmt::Debug for (dyn NewCompileError) {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}: {}", self.name(), self.message())
     }
 }
 
-impl PartialEq for (dyn NewCompileError + 'static) {
+impl PartialEq for (dyn NewCompileError) {
     fn eq(&self, other: &Self) -> bool {
         self.name() == other.name()
     }
 }
 
-impl fmt::Display for (dyn NewCompileError + 'static) {
+impl fmt::Display for (dyn NewCompileError) {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} ({})", self.message(), self.name())
     }

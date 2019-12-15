@@ -82,16 +82,17 @@ impl<T, E> Recoverable for Result<T, (E, T)> {
     }
 }
 
-pub enum CompileErrorLevel {
+pub enum ErrorKind {
     Warning,
-    RecoverableError,
-    FatalError,
+    Lex,
+    Semantic,
+    Syntax,
 }
 
 pub trait NewCompileError: Any {
     // Idealy this should be an associated constant, but those are not allowed
     // in trait objects
-    fn level(&self) -> CompileErrorLevel;
+    fn kind(&self) -> ErrorKind;
 
     // Could also be an associated const
     fn name(&self) -> &'static str;
@@ -130,7 +131,7 @@ impl fmt::Display for (dyn NewCompileError) {
 }
 
 macro_rules! define_error {
-    ($error_short_name:expr, $error_level:expr, $error_name:ident($($arg_name:ident: $arg_type:ty ),*), $message:expr) => {
+    ($error_short_name:expr, $error_kind:expr, $error_name:ident($($arg_name:ident: $arg_type:ty ),*), $message:expr) => {
         #[derive(Debug)]
         pub struct $error_name {
             location: Location,
@@ -138,8 +139,8 @@ macro_rules! define_error {
         }
 
         impl $error_name {
-            pub fn new(location: Location, $($arg_name: $arg_type),*) -> $error_name {
-                $error_name { location, $($arg_name),* }
+            pub fn new(location: Location, $($arg_name: $arg_type),*) -> Box<dyn NewCompileError> {
+                Box::new($error_name { location, $($arg_name),* })
             }
         }
 
@@ -148,8 +149,8 @@ macro_rules! define_error {
                 $error_short_name
             }
 
-            fn level(&self) -> CompileErrorLevel {
-                $error_level
+            fn kind(&self) -> ErrorKind {
+                $error_kind
             }
 
             fn message(&self) -> String {
@@ -167,31 +168,25 @@ pub mod errors {
     use super::*;
 
     define_error! {
-        "error", CompileErrorLevel::FatalError,
-        GenericError(message: String),
-        "error: {message}"
-    }
-
-    define_error! {
-        "lex-error", CompileErrorLevel::FatalError,
+        "lex-error", ErrorKind::Lex,
         GenericLexError(token: String),
         "invalid token: {token}"
     }
 
     define_error! {
-        "syntax-error", CompileErrorLevel::FatalError,
+        "syntax-error", ErrorKind::Syntax,
         GenericSyntaxError(message: String),
         "invalid syntax: {message}"
     }
 
     define_error! {
-        "semantic-error", CompileErrorLevel::RecoverableError,
+        "semantic-error", ErrorKind::Semantic,
         GenericSemanticError(message: String),
         "invalid program: {message}"
     }
 
     define_error! {
-        "warning", CompileErrorLevel::Warning,
+        "warning", ErrorKind::Warning,
         GenericWarning(message: String),
         "warning: {message}"
     }
@@ -219,9 +214,8 @@ impl From<SyntaxError> for Box<dyn NewCompileError> {
     }
 }
 
-#[deprecated]
-impl From<Locatable<String>> for Box<dyn NewCompileError> {
-    fn from(err: Locatable<String>) -> Box<dyn NewCompileError> {
-        Box::new(errors::GenericError::new(err.location, err.data))
-    }
-}
+// impl From<Locatable<String>> for Box<dyn NewCompileError> {
+//     fn from(err: Locatable<String>) -> Box<dyn NewCompileError> {
+//         Box::new(errors::GenericError::new(err.location, err.data))
+//     }
+// }

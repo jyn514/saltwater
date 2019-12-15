@@ -15,7 +15,7 @@ use std::process::Command;
 #[macro_use]
 extern crate lazy_static;
 
-use cranelift_module::{Backend, Module};
+use cranelift_module::Backend;
 use cranelift_object::ObjectBackend;
 
 pub type Product = <ObjectBackend as Backend>::Product;
@@ -80,9 +80,7 @@ pub fn compile(
         return Err(Error::Source(all_errs));
     }
 
-    ir::compile(hir, debug_ir)
-        .map_err(Error::from)
-        .map(Module::<ObjectBackend>::finish)
+    ir::compile(hir, debug_ir).map_err(Error::from)
 }
 
 pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {

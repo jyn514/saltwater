@@ -19,7 +19,7 @@ use cranelift::codegen::{
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Ebb, FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule};
-use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
+use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct, ObjectTrapCollection};
 
 use crate::arch::TARGET;
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
@@ -49,7 +49,10 @@ struct Compiler {
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
-pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> CompileResult<Module> {
+pub(crate) fn compile(
+    program: Vec<Locatable<Declaration>>,
+    debug: bool,
+) -> CompileResult<ObjectProduct> {
     let name = program.first().map_or_else(
         || "<empty>".to_string(),
         |decl| decl.location.file.resolve_and_clone(),
@@ -80,7 +83,9 @@ pub(crate) fn compile(program: Vec<Locatable<Declaration>>, debug: bool) -> Comp
             (_, init) => compiler.store_static(decl.data.symbol, init, decl.location)?,
         }
     }
-    Ok(compiler.module)
+    let mut module = compiler.module;
+    module.finalize_definitions();
+    Ok(module.finish())
 }
 
 impl Compiler {

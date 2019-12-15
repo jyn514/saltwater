@@ -23,10 +23,7 @@ impl Compiler {
         location: Location,
     ) -> CompileResult<()> {
         use crate::get_str;
-        let err_closure = |err| Locatable {
-            data: err,
-            location,
-        };
+        let err_closure = |err| errors::GenericSemanticError::new(location, err);
         let linkage = symbol.storage_class.try_into().map_err(err_closure)?;
         let align = symbol
             .ctype
@@ -49,10 +46,7 @@ impl Compiler {
                 !symbol.qualifiers.c_const,
                 Some(align),
             )
-            .map_err(|err| Locatable {
-                data: format!("error storing static value: {}", err),
-                location,
-            })?;
+            .map_err(|err| errors::GenericSemanticError::new(location, format!("error storing static value: {}", err)))?;
 
         self.scope.insert(symbol.id, Id::Global(id));
 
@@ -75,10 +69,7 @@ impl Compiler {
                     *size = ArrayType::Fixed(len.try_into().unwrap());
                 };
             }
-            let size_t = symbol.ctype.sizeof().map_err(|err| Locatable {
-                data: err.into(),
-                location,
-            })?;
+            let size_t = symbol.ctype.sizeof().map_err(|err| errors::GenericSemanticError::new(location, err.into()))?;
             let size = size_t
                 .try_into()
                 .expect("initializer is larger than SIZE_T on host platform");
@@ -117,10 +108,7 @@ impl Compiler {
             ctx.define(string.resolve_and_clone().into_boxed_str().into());
             self.module
                 .define_data(str_id, &ctx)
-                .map_err(|err| Locatable {
-                    data: format!("error defining static string: {}", err),
-                    location,
-                })?;
+                .map_err(|err| errors::GenericSemanticError::new(location, format!("error defining static string: {}", err)))?;
         }
         Ok(str_id)
     }
@@ -278,10 +266,7 @@ impl Compiler {
         }
         let inner_size: usize = inner_type
             .sizeof()
-            .map_err(|err| Locatable {
-                data: err.into(),
-                location: *location,
-            })?
+            .map_err(|err| errors::GenericSemanticError::new(*location, err.into()))?
             .try_into()
             .expect("cannot initialize array larger than address space of host");
         let mut element_offset: usize = 0;

@@ -130,6 +130,7 @@ impl fmt::Display for (dyn NewCompileError) {
     }
 }
 
+// The ergonomics of this macro needs improvement.
 macro_rules! define_error {
     ($error_short_name:expr, $error_kind:expr, $error_name:ident($($arg_name:ident: $arg_type:ty ),*), $message:expr) => {
         #[derive(Debug)]
@@ -139,6 +140,8 @@ macro_rules! define_error {
         }
 
         impl $error_name {
+            // maybe rename this to boxed, clippy doesn't like Self::new not returning Self
+            // Perhaps a normal new function might be useful for something
             pub fn new(location: Location, $($arg_name: $arg_type),*) -> Box<dyn NewCompileError> {
                 Box::new($error_name { location, $($arg_name),* })
             }
@@ -192,30 +195,18 @@ pub mod errors {
     }
 }
 
-#[deprecated]
 impl From<CompileError> for Box<dyn NewCompileError> {
     fn from(err: CompileError) -> Box<dyn NewCompileError> {
         match err {
-            CompileError::Lex(l) => Box::new(errors::GenericLexError::new(l.location, l.data)),
-            CompileError::Syntax(s) => {
-                Box::new(errors::GenericSyntaxError::new(s.0.location, s.0.data))
-            }
-            CompileError::Semantic(l) => {
-                Box::new(errors::GenericSemanticError::new(l.location, l.data))
-            }
+            CompileError::Lex(l) => errors::GenericLexError::new(l.location, l.data),
+            CompileError::Syntax(s) => errors::GenericSyntaxError::new(s.0.location, s.0.data),
+            CompileError::Semantic(l) => errors::GenericSemanticError::new(l.location, l.data),
         }
     }
 }
 
-#[deprecated]
 impl From<SyntaxError> for Box<dyn NewCompileError> {
     fn from(err: SyntaxError) -> Box<dyn NewCompileError> {
-        Box::new(errors::GenericSyntaxError::new(err.0.location, err.0.data))
+        errors::GenericSyntaxError::new(err.0.location, err.0.data)
     }
 }
-
-// impl From<Locatable<String>> for Box<dyn NewCompileError> {
-//     fn from(err: Locatable<String>) -> Box<dyn NewCompileError> {
-//         Box::new(errors::GenericError::new(err.location, err.data))
-//     }
-// }

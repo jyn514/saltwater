@@ -533,7 +533,7 @@ impl Compiler {
             use std::convert::TryInto;
             let size = ctype
                 .sizeof()
-                .map_err(|e| Locatable::new(e.into(), location))?;
+                .map_err(|e| errors::GenericSemanticError::new(location, e.into()))?;
             let align = ctype
                 .alignof()
                 .expect("if sizeof() succeeds so should alignof()")

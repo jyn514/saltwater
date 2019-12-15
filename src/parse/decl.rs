@@ -119,7 +119,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     id.location.clone(),
                 )?))
             }
-            (Type::Function(_), Some(Token::Equal)) => {
+            (Type::Function(_), Some(t)) if *t == Token::Equal => {
                 return Err(SyntaxError(Locatable {
                     data: format!(
                         "expected '{{', got '=' while parsing function body for {}",
@@ -128,7 +128,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location: id.location,
                 }));
             }
-            (ctype, Some(Token::Equal)) => {
+            (ctype, Some(t)) if *t == Token::Equal => {
                 self.next_token();
                 let init = Some(self.initializer(ctype)?);
                 symbol.init = true;
@@ -602,11 +602,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let constant = self.constant_expr()?.constexpr().unwrap_or_else(|err| {
                     let location = err.location();
                     self.pending.push_back(Err(err));
-                    Locatable::new((Token::Int(-1), Type::Error), location)
+                    Locatable::new((Literal::Int(-1), Type::Error), location)
                 });
                 current = match constant.data.0 {
-                    Token::Int(i) => i,
-                    Token::UnsignedInt(u) => match i64::try_from(u) {
+                    Literal::Int(i) => i,
+                    Literal::UnsignedInt(u) => match i64::try_from(u) {
                         Ok(i) => i,
                         Err(_) => {
                             self.semantic_err(
@@ -616,7 +616,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             std::i64::MAX
                         }
                     },
-                    Token::Char(c) => i64::from(c),
+                    Literal::Char(c) => i64::from(c),
                     _ => {
                         self.semantic_err(
                             "expression is not an integer constant",

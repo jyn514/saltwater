@@ -850,7 +850,7 @@ impl<'a> Iterator for Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CompileResult, Lexer, Locatable, Location, Token};
+    use super::{CompileResult, ErrorKind, Lexer, Locatable, Location, Token};
     use crate::intern::InternedStr;
 
     type LexType = CompileResult<Locatable<Token>>;
@@ -878,7 +878,7 @@ mod tests {
         // error trait.
         match lexed {
             Some(Ok(l)) => closure(Ok(&l.data)),
-            Some(Err(e)) => closure(Err(e)),
+            Some(Err(e)) if e.kind() == ErrorKind::Lex => closure(Err(e)),
             _ => false,
         }
     }

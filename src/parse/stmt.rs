@@ -88,9 +88,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let expr = self.constant_expr()?;
                     self.expect(Token::Colon)?;
                     let int = match expr.expr {
-                        ExprType::Literal(Token::Int(i)) => i as u64,
-                        ExprType::Literal(Token::UnsignedInt(u)) => u,
-                        ExprType::Literal(Token::Char(c)) => u64::from(c),
+                        ExprType::Literal(Literal::Int(i)) => i as u64,
+                        ExprType::Literal(Literal::UnsignedInt(u)) => u,
+                        ExprType::Literal(Literal::Char(c)) => u64::from(c),
                         _ => {
                             self.semantic_err(
                                 "case expression is not an integer constant",

@@ -1,12 +1,13 @@
 use crate::arch::CHAR_BIT;
 use crate::data::prelude::*;
+use Literal::*;
 
 macro_rules! fold_int_unary_op {
     ($($op: tt)*) => {
         |token| match token {
-            Token::Int(i) => Token::Int($($op)*(i)),
-            Token::UnsignedInt(u) => Token::UnsignedInt($($op)*(u)),
-            Token::Char(c) => Token::Char($($op)*(c)),
+            Int(i) => Int($($op)*(i)),
+            UnsignedInt(u) => UnsignedInt($($op)*(u)),
+            Char(c) => Char($($op)*(c)),
             _ => token,
         }
     };
@@ -14,10 +15,10 @@ macro_rules! fold_int_unary_op {
 
 macro_rules! fold_int_bin_op {
     ($op: tt) => {
-        |a: &Token, b: &Token, _| match (a, b) {
-            (Token::Int(a), Token::Int(b)) => Ok(Some(Token::Int(a $op b))),
-            (Token::UnsignedInt(a), Token::UnsignedInt(b)) => Ok(Some(Token::UnsignedInt(a $op b))),
-            (Token::Char(a), Token::Char(b)) => Ok(Some(Token::Char(a $op b))),
+        |a: &Literal, b: &Literal, _| match (a, b) {
+            (Int(a), Int(b)) => Ok(Some(Int(a $op b))),
+            (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a $op b))),
+            (Char(a), Char(b)) => Ok(Some(Char(a $op b))),
             (_, _) => Ok(None),
         }
     }
@@ -25,13 +26,13 @@ macro_rules! fold_int_bin_op {
 
 macro_rules! fold_scalar_bin_op {
     ($op: tt) => {
-        |a: &Token, b: &Token, _| match (a, b) {
-            (Token::Int(a), Token::Int(b)) => Ok(Some(Token::Int(a $op b))),
-            (Token::UnsignedInt(a), Token::UnsignedInt(b)) => Ok(Some(Token::UnsignedInt(a $op b))),
-            (Token::Float(a), Token::Float(b)) => Ok(Some(Token::Float(a $op b))),
-            (Token::Char(a), Token::Char(b)) => Ok(Some(Token::Char(a $op b))),
+        |a: &Literal, b: &Literal, _| match (a, b) {
+            (Int(a), Int(b)) => Ok(Some(Int(a $op b))),
+            (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a $op b))),
+            (Float(a), Float(b)) => Ok(Some(Float(a $op b))),
+            (Char(a), Char(b)) => Ok(Some(Char(a $op b))),
             // TODO: find a way to do this that allows `"hello" + 2 - 1`
-            //(Token::Str(s), Token::Int(i)) | (Token::Int(i), Token::Str(s)) => {
+            //(Str(s), Int(i)) | (Int(i), Str(s)) => {
             (_, _) => Ok(None),
         }
     }
@@ -43,11 +44,11 @@ macro_rules! fold_compare_op {
         match (&left.expr, &right.expr) {
             (ExprType::Literal(a), ExprType::Literal(b)) => {
                 match (a, b) {
-                    (Token::Int(a), Token::Int(b)) => ExprType::Literal(Token::Int((a $op b) as i64)),
-                    (Token::UnsignedInt(a), Token::UnsignedInt(b)) => ExprType::Literal(Token::Int((a $op b) as i64)),
+                    (Int(a), Int(b)) => ExprType::Literal(Int((a $op b) as i64)),
+                    (UnsignedInt(a), UnsignedInt(b)) => ExprType::Literal(Int((a $op b) as i64)),
                     #[allow(clippy::float_cmp)]
-                    (Token::Float(a), Token::Float(b)) => ExprType::Literal(Token::Int((a $op b) as i64)),
-                    (Token::Char(a), Token::Char(b)) => ExprType::Literal(Token::Int((a $op b) as i64)),
+                    (Float(a), Float(b)) => ExprType::Literal(Int((a $op b) as i64)),
+                    (Char(a), Char(b)) => ExprType::Literal(Int((a $op b) as i64)),
                     (_, _) => ExprType::$constructor(Box::new(left), Box::new(right), $compare),
                 }
             }
@@ -60,10 +61,10 @@ impl Expr {
     pub fn is_zero(&self) -> bool {
         if let ExprType::Literal(token) = &self.expr {
             match *token {
-                Token::Int(i) => i == 0,
-                Token::UnsignedInt(u) => u == 0,
-                Token::Float(f) => f == 0.0,
-                Token::Char(c) => c == 0,
+                Int(i) => i == 0,
+                UnsignedInt(u) => u == 0,
+                Float(f) => f == 0.0,
+                Char(c) => c == 0,
                 _ => false,
             }
         } else {
@@ -73,8 +74,8 @@ impl Expr {
     pub fn is_negative(&self) -> bool {
         if let ExprType::Literal(token) = &self.expr {
             match *token {
-                Token::Int(i) => i < 0,
-                Token::Float(f) => f < 0.0,
+                Int(i) => i < 0,
+                Float(f) => f < 0.0,
                 _ => false,
             }
         } else {
@@ -83,7 +84,7 @@ impl Expr {
     }
     // first result: whether the expression itself is erroneous
     // second result: whether the expression was constexpr
-    pub fn constexpr(self) -> CompileResult<Locatable<(Token, Type)>> {
+    pub fn constexpr(self) -> CompileResult<Locatable<(Literal, Type)>> {
         let folded = self.const_fold()?;
         match folded.expr {
             ExprType::Literal(token) => Ok(Locatable {
@@ -97,12 +98,13 @@ impl Expr {
         }
     }
     pub fn const_fold(self) -> CompileResult<Expr> {
+        use crate::data::lex::ComparisonToken::*;
         let location = self.location;
         let folded = match self.expr {
             ExprType::Literal(_) => self.expr,
             ExprType::Id(ref name) => match &self.ctype {
                 Type::Enum(_, members) => match members.iter().find(|member| member.0 == name.id) {
-                    Some(enum_literal) => ExprType::Literal(Token::Int(enum_literal.1)),
+                    Some(enum_literal) => ExprType::Literal(Int(enum_literal.1)),
                     _ => self.expr,
                 },
                 // TODO: if a variable were const, could we const fold Ids?
@@ -112,14 +114,14 @@ impl Expr {
                 let sizeof = ctype
                     .sizeof()
                     .map_err(|data| errors::GenericSemanticError::boxed(location, data.into()))?;
-                ExprType::Literal(Token::UnsignedInt(sizeof))
+                ExprType::Literal(UnsignedInt(sizeof))
             }
             ExprType::Negate(expr) => expr.const_fold()?.map_literal(
                 |token| match token {
-                    Token::Int(i) => Token::Int(-i),
-                    Token::UnsignedInt(u) => Token::UnsignedInt(0u64.wrapping_sub(u)),
-                    Token::Char(c) => Token::Char(0u8.wrapping_sub(c)),
-                    Token::Float(f) => Token::Float(-f),
+                    Int(i) => Int(-i),
+                    UnsignedInt(u) => UnsignedInt(0u64.wrapping_sub(u)),
+                    Char(c) => Char(0u8.wrapping_sub(c)),
+                    Float(f) => Float(-f),
                     _ => token,
                 },
                 ExprType::Negate,
@@ -143,7 +145,7 @@ impl Expr {
             }
             ExprType::Deref(expr) => {
                 let folded = expr.const_fold()?;
-                if let ExprType::Literal(Token::Int(0)) = folded.expr {
+                if let ExprType::Literal(Int(0)) = folded.expr {
                     semantic_err!("cannot dereference NULL pointer".into(), folded.location);
                 }
                 ExprType::Deref(Box::new(folded))
@@ -155,17 +157,15 @@ impl Expr {
                 *right,
                 &location,
                 |a, b, ctype| match (a, b) {
-                    (Token::Int(a), Token::Int(b)) => Ok(Some(Token::Int(a - b))),
-                    (Token::UnsignedInt(a), Token::UnsignedInt(b)) => {
-                        Ok(Some(Token::UnsignedInt(a.wrapping_sub(*b))))
-                    }
+                    (Int(a), Int(b)) => Ok(Some(Int(a - b))),
+                    (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a.wrapping_sub(*b)))),
                     #[allow(clippy::float_cmp)]
-                    (Token::Float(a), Token::Float(b)) => Ok(Some(Token::Float(a - b))),
-                    (Token::Char(a), Token::Char(b)) => {
+                    (Float(a), Float(b)) => Ok(Some(Float(a - b))),
+                    (Char(a), Char(b)) => {
                         if ctype.is_signed() {
-                            Ok(Some(Token::Char(a - b)))
+                            Ok(Some(Char(a - b)))
                         } else {
-                            Ok(Some(Token::Char(a.wrapping_sub(*b))))
+                            Ok(Some(Char(a.wrapping_sub(*b))))
                         }
                     }
                     (_, _) => Ok(None),
@@ -205,26 +205,21 @@ impl Expr {
             ExprType::Shift(left, right, false) => {
                 shift_right(*left, *right, &self.ctype, &location)?
             }
-            ExprType::Compare(left, right, Token::Less) => {
-                fold_compare_op!(left, right, Compare, <, Token::Less)
+            ExprType::Compare(left, right, Less) => fold_compare_op!(left, right, Compare, <, Less),
+            ExprType::Compare(left, right, LessEqual) => {
+                fold_compare_op!(left, right, Compare, <=, LessEqual)
             }
-            ExprType::Compare(left, right, Token::LessEqual) => {
-                fold_compare_op!(left, right, Compare, <=, Token::LessEqual)
+            ExprType::Compare(left, right, Greater) => {
+                fold_compare_op!(left, right, Compare, >, Greater)
             }
-            ExprType::Compare(left, right, Token::Greater) => {
-                fold_compare_op!(left, right, Compare, >, Token::Greater)
+            ExprType::Compare(left, right, GreaterEqual) => {
+                fold_compare_op!(left, right, Compare, >=, GreaterEqual)
             }
-            ExprType::Compare(left, right, Token::GreaterEqual) => {
-                fold_compare_op!(left, right, Compare, >=, Token::GreaterEqual)
+            ExprType::Compare(left, right, EqualEqual) => {
+                fold_compare_op!(left, right, Compare, ==, EqualEqual)
             }
-            ExprType::Compare(left, right, Token::EqualEqual) => {
-                fold_compare_op!(left, right, Compare, ==, Token::EqualEqual)
-            }
-            ExprType::Compare(left, right, Token::NotEqual) => {
-                fold_compare_op!(left, right, Compare, !=, Token::NotEqual)
-            }
-            ExprType::Compare(_, _, _) => {
-                unreachable!("only comparison tokens should appear in ExprType::Compare")
+            ExprType::Compare(left, right, NotEqual) => {
+                fold_compare_op!(left, right, Compare, !=, NotEqual)
             }
             ExprType::Ternary(condition, then, otherwise) => {
                 let (condition, then, otherwise) = (
@@ -233,8 +228,8 @@ impl Expr {
                     otherwise.const_fold()?,
                 );
                 match condition.expr {
-                    ExprType::Literal(Token::Int(0)) => otherwise.expr,
-                    ExprType::Literal(Token::Int(_)) => then.expr,
+                    ExprType::Literal(Int(0)) => otherwise.expr,
+                    ExprType::Literal(Int(_)) => then.expr,
                     _ => {
                         ExprType::Ternary(Box::new(condition), Box::new(then), Box::new(otherwise))
                     }
@@ -272,8 +267,8 @@ impl Expr {
                 *right,
                 &location,
                 |left, right, _| match (left, right) {
-                    (Token::Int(1), Token::Int(1)) => Ok(Some(Token::Int(1))),
-                    (Token::Int(0), _) | (_, Token::Int(0)) => Ok(Some(Token::Int(0))),
+                    (Int(1), Int(1)) => Ok(Some(Int(1))),
+                    (Int(0), _) | (_, Int(0)) => Ok(Some(Int(0))),
                     _ => Ok(None),
                 },
                 ExprType::LogicalAnd,
@@ -282,8 +277,8 @@ impl Expr {
                 *right,
                 &location,
                 |left, right, _| match (left, right) {
-                    (Token::Int(0), Token::Int(0)) => Ok(Some(Token::Int(0))),
-                    (Token::Int(1), _) | (_, Token::Int(1)) => Ok(Some(Token::Int(1))),
+                    (Int(0), Int(0)) => Ok(Some(Int(0))),
+                    (Int(1), _) | (_, Int(1)) => Ok(Some(Int(1))),
                     _ => Ok(None),
                 },
                 ExprType::LogicalOr,
@@ -310,7 +305,7 @@ impl Expr {
         constructor: C,
     ) -> CompileResult<ExprType>
     where
-        F: FnOnce(&Token, &Token, &Type) -> Result<Option<Token>, String>,
+        F: FnOnce(&Literal, &Literal, &Type) -> Result<Option<Literal>, String>,
         C: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
     {
         let (left, right) = (self.const_fold()?, other.const_fold()?);
@@ -327,7 +322,7 @@ impl Expr {
     }
     fn map_literal<F, C>(self, literal_func: F, constructor: C) -> ExprType
     where
-        F: FnOnce(Token) -> Token,
+        F: FnOnce(Literal) -> Literal,
         C: FnOnce(Box<Expr>) -> ExprType,
     {
         match self.expr {
@@ -337,11 +332,12 @@ impl Expr {
     }
 }
 
-impl Token {
+impl Literal {
     fn non_negative_int(&self) -> Result<u64, ()> {
         match *self {
-            Token::Int(i) if i >= 0 => Ok(i as u64),
-            Token::UnsignedInt(u) => Ok(u),
+            Int(i) if i >= 0 => Ok(i as u64),
+            UnsignedInt(u) => Ok(u),
+            Char(c) => Ok(u64::from(c)),
             _ => Err(()),
         }
     }
@@ -364,25 +360,23 @@ fn cast(expr: Expr, ctype: &Type) -> CompileResult<ExprType> {
 /// all this does is make sure the folded value is in a valid range
 /// TODO: when we add suffix literals, that will have type information
 /// and we can use that to store the new type
-fn const_cast(token: &Token, ctype: &Type) -> Option<Token> {
+fn const_cast(token: &Literal, ctype: &Type) -> Option<Literal> {
     let token = match (token, ctype) {
-        (Token::Int(i), Type::Bool) => Token::Int((*i != 0) as i64),
-        (Token::Int(i), Type::Double) | (Token::Int(i), Type::Float) => Token::Float(*i as f64),
-        (Token::Int(i), ty) if ty.is_integral() && ty.is_signed() => Token::Int(*i),
-        (Token::Int(i), ty) if ty.is_integral() => Token::UnsignedInt(*i as u64),
-        (Token::UnsignedInt(u), Type::Bool) => Token::Int((*u != 0) as i64),
-        (Token::UnsignedInt(u), Type::Double) | (Token::UnsignedInt(u), Type::Float) => {
-            Token::Float(*u as f64)
-        }
-        (Token::UnsignedInt(u), ty) if ty.is_integral() && ty.is_signed() => Token::Int(*u as i64),
-        (Token::UnsignedInt(u), ty) if ty.is_integral() => Token::UnsignedInt(*u),
-        (Token::Float(f), Type::Bool) => Token::Int((*f != 0.0) as i64),
-        (Token::Float(f), Type::Double) | (Token::Float(f), Type::Float) => Token::Float(*f),
-        (Token::Float(f), ty) if ty.is_integral() && ty.is_signed() => Token::Int(*f as i64),
-        (Token::Float(f), ty) if ty.is_integral() => Token::UnsignedInt(*f as u64),
-        (Token::Int(i), _) if ctype.is_pointer() && *i >= 0 => Token::UnsignedInt(*i as u64),
-        (Token::UnsignedInt(u), _) if ctype.is_pointer() => Token::UnsignedInt(*u),
-        (Token::Char(c), _) if ctype.is_pointer() => Token::UnsignedInt(u64::from(*c)),
+        (Int(i), Type::Bool) => Int((*i != 0) as i64),
+        (Int(i), Type::Double) | (Int(i), Type::Float) => Float(*i as f64),
+        (Int(i), ty) if ty.is_integral() && ty.is_signed() => Int(*i),
+        (Int(i), ty) if ty.is_integral() => UnsignedInt(*i as u64),
+        (UnsignedInt(u), Type::Bool) => Int((*u != 0) as i64),
+        (UnsignedInt(u), Type::Double) | (UnsignedInt(u), Type::Float) => Float(*u as f64),
+        (UnsignedInt(u), ty) if ty.is_integral() && ty.is_signed() => Int(*u as i64),
+        (UnsignedInt(u), ty) if ty.is_integral() => UnsignedInt(*u),
+        (Float(f), Type::Bool) => Int((*f != 0.0) as i64),
+        (Float(f), Type::Double) | (Float(f), Type::Float) => Float(*f),
+        (Float(f), ty) if ty.is_integral() && ty.is_signed() => Int(*f as i64),
+        (Float(f), ty) if ty.is_integral() => UnsignedInt(*f as u64),
+        (Int(i), _) if ctype.is_pointer() && *i >= 0 => UnsignedInt(*i as u64),
+        (UnsignedInt(u), _) if ctype.is_pointer() => UnsignedInt(*u),
+        (Char(c), _) if ctype.is_pointer() => UnsignedInt(u64::from(*c)),
         _ => return None,
     };
     Some(token)
@@ -390,10 +384,10 @@ fn const_cast(token: &Token, ctype: &Type) -> Option<Token> {
 
 fn lnot_fold(expr: Expr) -> ExprType {
     match expr.expr {
-        ExprType::Literal(Token::Int(i)) => ExprType::Literal(Token::Int((i == 0) as i64)),
-        ExprType::Literal(Token::Float(f)) => ExprType::Literal(Token::Int((f == 0.0) as i64)),
-        ExprType::Literal(Token::Char(c)) => ExprType::Literal(Token::Int((c == 0) as i64)),
-        ExprType::Literal(Token::Str(_)) => ExprType::Literal(Token::Int(0)),
+        ExprType::Literal(Int(i)) => ExprType::Literal(Int((i == 0) as i64)),
+        ExprType::Literal(Float(f)) => ExprType::Literal(Int((f == 0.0) as i64)),
+        ExprType::Literal(Char(c)) => ExprType::Literal(Int((c == 0) as i64)),
+        ExprType::Literal(Str(_)) => ExprType::Literal(Int(0)),
         _ => ExprType::LogicalNot(Box::new(expr)),
     }
 }
@@ -416,17 +410,15 @@ fn shift_right(
         // Rust panics if the shift is greater than the size of the type
         if shift >= sizeof {
             return Ok(ExprType::Literal(if ctype.is_signed() {
-                Token::Int(0)
+                Int(0)
             } else {
-                Token::UnsignedInt(0)
+                UnsignedInt(0)
             }));
         }
         if let ExprType::Literal(token) = left.expr {
             Ok(match token {
-                Token::Int(i) => ExprType::Literal(Token::Int(i.wrapping_shr(shift as u32))),
-                Token::UnsignedInt(u) => {
-                    ExprType::Literal(Token::UnsignedInt(u.wrapping_shr(shift as u32)))
-                }
+                Int(i) => ExprType::Literal(Int(i.wrapping_shr(shift as u32))),
+                UnsignedInt(u) => ExprType::Literal(UnsignedInt(u.wrapping_shr(shift as u32))),
                 _ => unreachable!("only ints and unsigned ints can be right shifted"),
             })
         } else {
@@ -473,7 +465,7 @@ fn shift_left(
             }
         }
         Ok(match left.expr {
-            ExprType::Literal(Token::Int(i)) => {
+            ExprType::Literal(Int(i)) => {
                 let (result, overflow) = i.overflowing_shl(shift as u32);
                 if overflow {
                     semantic_err!(
@@ -481,10 +473,10 @@ fn shift_left(
                         *location
                     );
                 }
-                ExprType::Literal(Token::Int(result))
+                ExprType::Literal(Int(result))
             }
-            ExprType::Literal(Token::UnsignedInt(u)) => {
-                ExprType::Literal(Token::UnsignedInt(u.wrapping_shl(shift as u32)))
+            ExprType::Literal(UnsignedInt(u)) => {
+                ExprType::Literal(UnsignedInt(u.wrapping_shl(shift as u32)))
             }
             _ => ExprType::Shift(
                 Box::new(left),

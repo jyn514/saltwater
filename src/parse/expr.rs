@@ -1,29 +1,13 @@
 use super::{Lexeme, Parser};
 use crate::arch::SIZE_T;
 use crate::data::prelude::*;
-use crate::data::{lex::Keyword, types::ArrayType, StorageClass::Typedef};
+use crate::data::{
+    lex::{AssignmentToken, ComparisonToken, Keyword},
+    types::ArrayType,
+    StorageClass::Typedef,
+};
 
 type SyntaxResult = Result<Expr, SyntaxError>;
-
-macro_rules! struct_member_helper {
-    ($self: expr, $members: expr, $expr: expr, $id: expr, $location: expr) => {
-        if let Some(member) = $members.iter().find(|member| member.id == $id) {
-            Ok(Expr {
-                ctype: member.ctype.clone(),
-                constexpr: $expr.constexpr,
-                lval: true,
-                location: $location,
-                expr: ExprType::Member(Box::new($expr), $id),
-            })
-        } else {
-            $self.semantic_err(
-                format!("no member named '{}' in '{}'", $id, $expr.ctype),
-                $location,
-            );
-            Ok($expr)
-        }
-    };
-}
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// expr_opt: expr ';' | ';'
@@ -113,34 +97,36 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// (usually initializers)
     pub fn assignment_expr(&mut self) -> SyntaxResult {
         let lval = self.conditional_expr()?;
-        if self
-            .peek_token()
-            .map_or(false, Token::is_assignment_operator)
-        {
-            let assign_op = self.next_token().unwrap();
-            let mut rval = self.assignment_expr()?.rval();
-            if !lval.lval {
-                self.semantic_err(
-                    "expression is not assignable".to_string(),
-                    assign_op.location,
-                );
-                Ok(lval)
-            } else {
-                if rval.ctype != lval.ctype {
-                    rval = rval
-                        .cast(&lval.ctype)
-                        .into_inner(self.default_err_handler());
-                }
-                Ok(Expr {
-                    ctype: lval.ctype.clone(),
-                    constexpr: rval.constexpr,
-                    lval: false, // `(i = j) = 4`; is invalid
-                    location: assign_op.location,
-                    expr: ExprType::Assign(Box::new(lval), Box::new(rval), assign_op.data),
-                })
+        let assign_op = match self.next_token() {
+            Some(Locatable {
+                data: Token::Assignment(a),
+                location,
+            }) => Locatable::new(a, location),
+            x => {
+                self.unput(x);
+                return Ok(lval);
             }
-        } else {
+        };
+        let mut rval = self.assignment_expr()?.rval();
+        if !lval.lval {
+            self.semantic_err(
+                "expression is not assignable".to_string(),
+                assign_op.location,
+            );
             Ok(lval)
+        } else {
+            if rval.ctype != lval.ctype {
+                rval = rval
+                    .cast(&lval.ctype)
+                    .into_inner(self.default_err_handler());
+            }
+            Ok(Expr {
+                ctype: lval.ctype.clone(),
+                constexpr: rval.constexpr,
+                lval: false, // `(i = j) = 4`; is invalid
+                location: assign_op.location,
+                expr: ExprType::Assign(Box::new(lval), Box::new(rval), assign_op.data),
+            })
         }
     }
 
@@ -294,7 +280,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn equality_expr(&mut self) -> SyntaxResult {
         self.left_associative_binary_op(
             Self::relational_expr,
-            &[&Token::EqualEqual, &Token::NotEqual],
+            &[
+                &ComparisonToken::EqualEqual.into(),
+                &ComparisonToken::NotEqual.into(),
+            ],
             Expr::relational_expr,
         )
     }
@@ -310,10 +299,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.left_associative_binary_op(
             Self::shift_expr,
             &[
-                &Token::Less,
-                &Token::Greater,
-                &Token::LessEqual,
-                &Token::GreaterEqual,
+                &ComparisonToken::Less.into(),
+                &ComparisonToken::Greater.into(),
+                &ComparisonToken::LessEqual.into(),
+                &ComparisonToken::GreaterEqual.into(),
             ],
             Expr::relational_expr,
         )
@@ -862,10 +851,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | '(' expr ')'
     /// ;
     fn primary_expr(&mut self) -> SyntaxResult {
-        use Token::*;
         if let Some(Locatable { location, data }) = self.next_token() {
             match data {
-                Id(name) => match self.scope.get(&name) {
+                Token::Id(name) => match self.scope.get(&name) {
                     None => {
                         self.semantic_err(
                             format!("use of undeclared identifier '{}'", name),
@@ -890,21 +878,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                                     ctype: Type::Enum(*ident, members.clone()),
                                     location,
                                     lval: false,
-                                    expr: ExprType::Literal(Token::Int(e)),
+                                    expr: ExprType::Literal(Literal::Int(e)),
                                 });
                             }
                         }
                         Ok(Expr::id(symbol, location))
                     }
                 },
-                Char(literal) => Ok(Expr::char_literal(literal, location)),
-                Str(literal) => Ok(Expr::string_literal(literal, location)),
-                Int(literal) => Ok(Expr::int_literal(literal, location)),
-                UnsignedInt(literal) => Ok(Expr::unsigned_int_literal(literal, location)),
-                Float(literal) => Ok(Expr::float_literal(literal, location)),
-                LeftParen => {
+                Token::Literal(literal) => Ok(Expr::from((literal, location))),
+                Token::LeftParen => {
                     let expr = self.expr()?;
-                    self.expect(RightParen)?;
+                    self.expect(Token::RightParen)?;
                     Ok(expr)
                 }
                 other => {
@@ -938,8 +922,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if members.is_empty() {
                     self.semantic_err(format!("{} has not yet been defined", expr.ctype), location);
                     Ok(expr)
+                } else if let Some(member) = members.iter().find(|member| member.id == id) {
+                    Ok(Expr {
+                        ctype: member.ctype.clone(),
+                        constexpr: expr.constexpr,
+                        lval: true,
+                        location,
+                        expr: ExprType::Member(Box::new(expr), id),
+                    })
                 } else {
-                    struct_member_helper!(self, members, expr, id, location)
+                    self.semantic_err(
+                        format!("no member named '{}' in '{}'", id, expr.ctype),
+                        location,
+                    );
+                    Ok(expr)
                 }
             }
             _ => {
@@ -1091,14 +1087,6 @@ impl Token {
             _ => false,
         }
     }
-    fn is_assignment_operator(&self) -> bool {
-        use Token::*;
-        match self {
-            Equal | PlusEqual | MinusEqual | StarEqual | DivideEqual | ModEqual | LeftEqual
-            | RightEqual | AndEqual | OrEqual | XorEqual => true,
-            _ => false,
-        }
-    }
 }
 
 /* stateless helper functions */
@@ -1117,7 +1105,7 @@ impl Expr {
     fn is_null(&self) -> bool {
         if let ExprType::Literal(token) = &self.expr {
             match token {
-                Token::Int(0) | Token::UnsignedInt(0) => true,
+                Literal::Int(0) | Literal::UnsignedInt(0) | Literal::Char(0) => true,
                 _ => false,
             }
         } else {
@@ -1233,7 +1221,7 @@ impl Expr {
                 lval: false,
                 location: self.location,
                 ctype: Type::Bool,
-                expr: ExprType::Compare(Box::new(self), Box::new(zero), Token::NotEqual),
+                expr: ExprType::Compare(Box::new(self), Box::new(zero), ComparisonToken::NotEqual),
             })
         }
     }
@@ -1265,9 +1253,7 @@ impl Expr {
                 ctype: ctype.clone(),
             })
         } else if ctype.is_pointer()
-            && (self.expr == ExprType::Literal(Token::Int(0))
-                || self.ctype.is_void_pointer()
-                || self.ctype.is_char_pointer())
+            && (self.is_null() || self.ctype.is_void_pointer() || self.ctype.is_char_pointer())
         {
             self.ctype = ctype.clone();
             Ok(self)
@@ -1322,7 +1308,7 @@ impl Expr {
                 ))
             }
         };
-        let size_literal = Expr::unsigned_int_literal(size, offset.location);
+        let size_literal = Expr::from((Literal::UnsignedInt(size), offset.location));
         let size_cast = Expr {
             lval: false,
             location: offset.location,
@@ -1378,7 +1364,7 @@ impl Expr {
                 lval: false,
                 ctype: expr.ctype.clone(),
                 location,
-                expr: ExprType::Cast(Box::new(Expr::int_literal(1, location))),
+                expr: ExprType::Cast(Box::new(Expr::from((Literal::Int(1), location)))),
             };
             Ok(Expr {
                 ctype: expr.ctype.clone(),
@@ -1388,9 +1374,9 @@ impl Expr {
                     Box::new(expr),
                     Box::new(rval),
                     if increment {
-                        Token::PlusEqual
+                        AssignmentToken::PlusEqual
                     } else {
-                        Token::MinusEqual
+                        AssignmentToken::MinusEqual
                     },
                 ),
                 location,
@@ -1429,6 +1415,10 @@ impl Expr {
         mut right: Box<Expr>,
         token: Locatable<Token>,
     ) -> RecoverableResult<Expr, SemanticError> {
+        let token = match token.data {
+            Token::Comparison(c) => Locatable::new(c, token.location),
+            _ => unreachable!("bad use of relational_expr"),
+        };
         if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
             let tmp = Expr::binary_promote(*left, *right).map_err(flatten)?;
             *left = tmp.0;
@@ -1437,7 +1427,7 @@ impl Expr {
             let (left_expr, right_expr) = (left.rval(), right.rval());
             if !((left_expr.ctype.is_pointer() && left_expr.ctype == right_expr.ctype)
                 // equality operations have different rules :(
-                || ((token.data == Token::EqualEqual || token.data == Token::NotEqual)
+                || ((token.data == ComparisonToken::EqualEqual || token.data == ComparisonToken::NotEqual)
                     // shoot me now
                     && ((left_expr.ctype.is_pointer() && right_expr.ctype.is_void_pointer())
                         || (left_expr.ctype.is_void_pointer() && right_expr.ctype.is_pointer())
@@ -1481,49 +1471,23 @@ impl Expr {
             location,
         }
     }
-    // this and the next few '*_literal' functions make unit tests more convenient
-    fn char_literal(value: u8, location: Location) -> Expr {
-        Expr::literal(
-            Type::Char(true),
-            location,
-            ExprType::Literal(Token::Char(value)),
-        )
-    }
-    fn int_literal(value: i64, location: Location) -> Expr {
-        Expr::literal(
-            Type::Long(true),
-            location,
-            ExprType::Literal(Token::Int(value)),
-        )
-    }
-    fn unsigned_int_literal(value: u64, location: Location) -> Expr {
-        Expr::literal(
-            Type::Long(false),
-            location,
-            ExprType::Literal(Token::UnsignedInt(value)),
-        )
-    }
-    fn float_literal(value: f64, location: Location) -> Expr {
-        Expr::literal(
-            Type::Double,
-            location,
-            ExprType::Literal(Token::Float(value)),
-        )
-    }
-    fn string_literal(value: InternedStr, location: Location) -> Expr {
-        Expr::literal(
-            Type::for_string_literal(value.len() as SIZE_T),
-            location,
-            ExprType::Literal(Token::Str(value)),
-        )
-    }
-    fn literal(ctype: Type, location: Location, expr: ExprType) -> Expr {
+}
+
+impl From<(Literal, Location)> for Expr {
+    fn from((literal, location): (Literal, Location)) -> Self {
+        let ctype = match literal {
+            Literal::Char(_) => Type::Char(true),
+            Literal::Int(_) => Type::Long(true),
+            Literal::UnsignedInt(_) => Type::Long(false),
+            Literal::Float(_) => Type::Double,
+            Literal::Str(s) => Type::for_string_literal(s.len() as SIZE_T),
+        };
         Expr {
             constexpr: true,
             lval: false,
             ctype,
             location,
-            expr,
+            expr: ExprType::Literal(literal),
         }
     }
 }
@@ -1685,12 +1649,9 @@ mod tests {
             Err(err) => err.location(),
         }
     }
-    fn test_literal<C: std::string::ToString, T>(token: C, parse_literal: T) -> bool
-    where
-        T: Fn(C, Location) -> Expr,
-    {
+    fn assert_literal(token: Literal) {
         let parsed = parse_expr(&token.to_string());
-        parsed == Ok(parse_literal(token, get_location(&parsed)))
+        assert_eq!(parsed, Ok(Expr::from((token, get_location(&parsed)))));
     }
     fn parse_expr_with_scope<'a>(input: &'a str, variables: &[&Symbol]) -> CompileResult<Expr> {
         let mut parser = parser(input);
@@ -1714,19 +1675,22 @@ mod tests {
     }
     #[test]
     fn test_primaries() {
-        assert!(test_literal(141, Expr::int_literal));
+        assert_literal(Literal::Int(141));
         let parsed = parse_expr("\"hi there\"");
 
         assert_eq!(
             parsed,
-            Ok(Expr::string_literal(
-                InternedStr::get_or_intern("hi there\0"),
+            Ok(Expr::from((
+                Literal::Str(InternedStr::get_or_intern("hi there\0")),
                 get_location(&parsed)
-            ))
+            )))
         );
-        assert!(test_literal(1.5, Expr::float_literal));
+        assert_literal(Literal::Float(1.5));
         let parsed = parse_expr("(1)");
-        assert_eq!(parsed, Ok(Expr::int_literal(1, get_location(&parsed))));
+        assert_eq!(
+            parsed,
+            Ok(Expr::from((Literal::Int(1), get_location(&parsed))))
+        );
         let x = Symbol {
             ctype: Type::Int(true),
             id: InternedStr::get_or_intern("x"),

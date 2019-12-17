@@ -349,11 +349,14 @@ impl std::fmt::Display for TagEntry {
 
 impl Token {
     fn same_kind(&self, other: &Self) -> bool {
-        // special case keywords - they must match exactly
-        if let (Token::Keyword(left), Token::Keyword(right)) = (self, other) {
-            return left == right;
+        match (self, other) {
+            // special case keywords, assignments, and comparisons - they must match exactly
+            (Token::Keyword(left), Token::Keyword(right)) => left == right,
+            (Token::Assignment(left), Token::Assignment(right)) => left == right,
+            (Token::Comparison(left), Token::Comparison(right)) => left == right,
+            // in any other case, we're just checking they're the same enum variant
+            _ => mem::discriminant(self) == mem::discriminant(other),
         }
-        mem::discriminant(self) == mem::discriminant(other)
     }
 }
 

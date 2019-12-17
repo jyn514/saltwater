@@ -4,7 +4,10 @@ use log::debug;
 
 use super::{Compiler, Id};
 use crate::data::prelude::*;
-use crate::data::{lex::Token, Expr, ExprType};
+use crate::data::{
+    lex::{AssignmentToken, ComparisonToken, Literal, Token},
+    Expr, ExprType,
+};
 
 type IrResult = CompileResult<Value>;
 
@@ -95,7 +98,7 @@ impl Compiler {
             ExprType::Xor(left, right) => {
                 self.binary_assign_op(*left, *right, expr.ctype, Token::Xor, builder)
             }
-            ExprType::Compare(left, right, token) => self.compare(*left, *right, &token, builder),
+            ExprType::Compare(left, right, token) => self.compare(*left, *right, token, builder),
 
             // misfits
             ExprType::Assign(lval, rval, token) => self.assignment(*lval, *rval, token, builder),
@@ -234,19 +237,19 @@ impl Compiler {
         &mut self,
         ir_type: IrType,
         ctype: Type,
-        token: Token,
+        token: Literal,
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let ir_val = match (token, ir_type) {
-            (Token::Int(i), types::B1) => builder.ins().bconst(ir_type, i != 0),
-            (Token::Int(i), _) => builder.ins().iconst(ir_type, i),
-            (Token::UnsignedInt(u), types::B1) => builder.ins().bconst(ir_type, u != 0),
-            (Token::UnsignedInt(u), _) => builder.ins().iconst(ir_type, u as i64),
-            (Token::Float(f), types::F32) => builder.ins().f32const(f as f32),
-            (Token::Float(f), types::F64) => builder.ins().f64const(f),
-            (Token::Char(c), _) => builder.ins().iconst(ir_type, i64::from(c)),
-            (Token::Str(string), _) => {
+            (Literal::Int(i), types::B1) => builder.ins().bconst(ir_type, i != 0),
+            (Literal::Int(i), _) => builder.ins().iconst(ir_type, i),
+            (Literal::UnsignedInt(u), types::B1) => builder.ins().bconst(ir_type, u != 0),
+            (Literal::UnsignedInt(u), _) => builder.ins().iconst(ir_type, u as i64),
+            (Literal::Float(f), types::F32) => builder.ins().f32const(f as f32),
+            (Literal::Float(f), types::F64) => builder.ins().f64const(f),
+            (Literal::Char(c), _) => builder.ins().iconst(ir_type, i64::from(c)),
+            (Literal::Str(string), _) => {
                 let str_id = self.compile_string(string, location)?;
                 let str_addr = self.module.declare_data_in_func(str_id, builder.func);
                 builder.ins().global_value(Type::ptr_type(), str_addr)
@@ -482,7 +485,7 @@ impl Compiler {
         &mut self,
         left: Expr,
         right: Expr,
-        token: &Token,
+        token: ComparisonToken,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let (left, right) = (
@@ -492,15 +495,11 @@ impl Compiler {
         assert_eq!(left.ir_type, right.ir_type);
 
         let ir_val = if left.ir_type.is_int() {
-            let code = token
-                .to_int_compare(left.ctype.is_signed())
-                .expect("Expr::Compare should only have comparison tokens");
+            let code = token.to_int_compare(left.ctype.is_signed());
             builder.ins().icmp(code, left.ir_val, right.ir_val)
         } else {
             assert!(left.ir_type.is_float());
-            let code = token
-                .to_float_compare()
-                .expect("Expr::Compare should only have comparison tokens");
+            let code = token.to_float_compare();
             builder.ins().fcmp(code, left.ir_val, right.ir_val)
         };
         Ok(Value {
@@ -513,7 +512,7 @@ impl Compiler {
         &mut self,
         lval: Expr,
         rval: Expr,
-        token: Token,
+        token: AssignmentToken,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let ctype = lval.ctype.clone();
@@ -527,7 +526,7 @@ impl Compiler {
             self.compile_expr(rval, builder)?,
         );
         if let Type::Union(_) | Type::Struct(_) = ctype {
-            if token != Token::Equal {
+            if token != AssignmentToken::Equal {
                 unreachable!("struct should not have a valid complex assignment");
             }
             use std::convert::TryInto;
@@ -552,7 +551,7 @@ impl Compiler {
         // scalar assignment
         let target_val = target.ir_val;
         let (mut target, mut value) = (target, value);
-        if token != Token::Equal {
+        if token != AssignmentToken::Equal {
             // need to deref explicitly to get an rval, the frontend didn't do it for us
             if is_id {
                 let ctype = match target.ctype {
@@ -575,15 +574,8 @@ impl Compiler {
                     target.ir_type
                 );
             }
-            value = Self::binary_assign_ir(
-                target,
-                value,
-                ctype,
-                token
-                    .without_assignment()
-                    .expect("only valid assignment tokens should be passed to assignment"),
-                builder,
-            )?;
+            value =
+                Self::binary_assign_ir(target, value, ctype, token.without_assignment(), builder)?;
         }
         builder
             .ins()

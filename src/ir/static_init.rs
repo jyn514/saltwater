@@ -9,7 +9,7 @@ use cranelift_module::{DataContext, DataId, Linkage};
 use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::prelude::*;
-use crate::data::{types::ArrayType, Initializer, StorageClass};
+use crate::data::{lex::Literal, types::ArrayType, Initializer, StorageClass};
 use crate::utils::warn;
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
@@ -66,7 +66,7 @@ impl Compiler {
                 if let Some(len) = match &init {
                     Initializer::InitializerList(list) => Some(list.len()),
                     Initializer::Scalar(expr) => match &expr.expr {
-                        ExprType::Literal(Token::Str(s)) => Some(s.len()),
+                        ExprType::Literal(Literal::Str(s)) => Some(s.len()),
                         _ => None,
                     },
                     _ => None,
@@ -135,7 +135,7 @@ impl Compiler {
         match expr.expr {
             ExprType::StaticRef(inner) => match inner.expr {
                 ExprType::Id(symbol) => self.static_ref(symbol, 0, offset, ctx),
-                ExprType::Literal(Token::Str(str_ref)) => {
+                ExprType::Literal(Literal::Str(str_ref)) => {
                     let str_id = self.compile_string(str_ref, expr.location)?;
                     let str_addr = self.module.declare_data_in_data(str_id, ctx);
                     ctx.write_data_addr(offset, str_addr, 0);
@@ -327,7 +327,7 @@ macro_rules! bytes {
     }};
 }
 
-impl Token {
+impl Literal {
     fn into_bytes(self, ctype: &Type, location: &Location) -> CompileResult<Box<[u8]>> {
         let ir_type = ctype.as_ir_type();
         let big_endian = TARGET
@@ -336,7 +336,7 @@ impl Token {
             == target_lexicon::Endianness::Big;
 
         match self {
-            Token::Int(i) => Ok(match ir_type {
+            Literal::Int(i) => Ok(match ir_type {
                 types::I8 => bytes!(cast!(i, i64, i8, &ctype, *location), big_endian),
                 types::I16 => bytes!(cast!(i, i64, i16, &ctype, *location), big_endian),
                 types::I32 => bytes!(cast!(i, i64, i32, &ctype, *location), big_endian),
@@ -346,7 +346,7 @@ impl Token {
                     x, i
                 )),
             }),
-            Token::UnsignedInt(i) => Ok(match ir_type {
+            Literal::UnsignedInt(i) => Ok(match ir_type {
                 types::I8 => bytes!(cast!(i, u64, u8, &ctype, *location), big_endian),
                 types::I16 => bytes!(cast!(i, u64, u16, &ctype, *location), big_endian),
                 types::I32 => bytes!(cast!(i, u64, u32, &ctype, *location), big_endian),
@@ -356,7 +356,7 @@ impl Token {
                     x, i
                 )),
             }),
-            Token::Float(f) => Ok(match ir_type {
+            Literal::Float(f) => Ok(match ir_type {
                 types::F32 => {
                     let cast = f as f32;
                     if (f64::from(cast) - f).abs() >= std::f64::EPSILON {
@@ -372,9 +372,8 @@ impl Token {
                     x, f
                 )),
             }),
-            Token::Str(string) => Ok(string.resolve_and_clone().into_boxed_str().into()),
-            Token::Char(c) => Ok(Box::new([c])),
-            x => unimplemented!("storing static of type {:?}", x),
+            Literal::Str(string) => Ok(string.resolve_and_clone().into_boxed_str().into()),
+            Literal::Char(c) => Ok(Box::new([c])),
         }
     }
 }

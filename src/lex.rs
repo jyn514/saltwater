@@ -273,6 +273,7 @@ impl<'a> Lexer<'a> {
             '0' <= start && start <= '9',
             "main loop should only pass [-.0-9] as start to parse_num"
         );
+        let float_literal = |f| Token::Literal(Literal::Float(f));
         let mut buf = String::new();
         buf.push(start);
         // check for radix other than 10 - but if we see '.', use 10
@@ -287,7 +288,7 @@ impl<'a> Lexer<'a> {
                     16
                 }
                 // float: 0.431
-                Some('.') => return self.parse_float(10, buf).map(Token::Float),
+                Some('.') => return self.parse_float(10, buf).map(float_literal),
                 // octal: 0755 => 493
                 c => {
                     self.unput(c);
@@ -314,30 +315,30 @@ impl<'a> Lexer<'a> {
             }
         };
         if self.match_next('.') {
-            return self.parse_float(radix, buf).map(Token::Float);
+            return self.parse_float(radix, buf).map(float_literal);
         }
         if let Some('e') | Some('E') | Some('p') | Some('P') = self.peek() {
             buf.push_str(".0"); // hexf doesn't like floats without a decimal point
             let float = self.parse_exponent(radix == 16, buf);
             self.consume_float_suffix();
-            return float.map(Token::Float);
+            return float.map(float_literal);
         }
-        let token = Ok(if self.match_next('u') || self.match_next('U') {
+        let literal = if self.match_next('u') || self.match_next('U') {
             let unsigned = u64::try_from(digits)
                 .map_err(|_| "overflow while parsing unsigned integer literal")?;
-            Token::UnsignedInt(unsigned)
+            Literal::UnsignedInt(unsigned)
         } else {
             let long = i64::try_from(digits)
                 .map_err(|_| "overflow while parsing signed integer literal")?;
-            Token::Int(long)
-        });
+            Literal::Int(long)
+        };
         // get rid of 'l' and 'll' suffixes, we don't handle them
         if self.match_next('l') {
             self.match_next('l');
         } else if self.match_next('L') {
             self.match_next('L');
         }
-        token
+        Ok(Token::Literal(literal))
     }
     // at this point we've already seen a '.', if we see one again it's an error
     fn parse_float(&mut self, radix: u32, mut buf: String) -> Result<f64, String> {
@@ -545,7 +546,7 @@ impl<'a> Lexer<'a> {
         );
         match self.parse_single_char(false) {
             Ok(c) if c.is_ascii() => match self.next_char() {
-                Some('\'') => Ok(Token::Char(c as u8)),
+                Some('\'') => Ok(Literal::Char(c as u8).into()),
                 Some('\n') => newline_err,
                 None => term_err,
                 Some(_) => {
@@ -591,7 +592,7 @@ impl<'a> Lexer<'a> {
             self.consume_whitespace();
         }
         literal.push('\0');
-        Ok(Token::Str(InternedStr::get_or_intern(literal)))
+        Ok(Literal::Str(InternedStr::get_or_intern(literal)).into())
     }
     /// Parse an identifier or keyword, given the starting letter.
     ///
@@ -658,7 +659,7 @@ impl<'a> Iterator for Lexer<'a> {
                 '+' => match self.peek() {
                     Some('=') => {
                         self.next_char();
-                        Token::PlusEqual
+                        AssignmentToken::PlusEqual.into()
                     }
                     Some('+') => {
                         self.next_char();
@@ -669,7 +670,7 @@ impl<'a> Iterator for Lexer<'a> {
                 '-' => match self.peek() {
                     Some('=') => {
                         self.next_char();
-                        Token::MinusEqual
+                        AssignmentToken::MinusEqual.into()
                     }
                     Some('-') => {
                         self.next_char();
@@ -687,12 +688,12 @@ impl<'a> Iterator for Lexer<'a> {
                 '*' => match self.peek() {
                     Some('=') => {
                         self.next_char();
-                        Token::StarEqual
+                        AssignmentToken::StarEqual.into()
                     }
                     _ => Token::Star,
                 },
                 '/' => match self.next_char() {
-                    Some('=') => Token::DivideEqual,
+                    Some('=') => AssignmentToken::DivideEqual.into(),
                     c => {
                         self.unput(c);
                         Token::Divide
@@ -701,13 +702,13 @@ impl<'a> Iterator for Lexer<'a> {
                 '%' => match self.peek() {
                     Some('=') => {
                         self.next_char();
-                        Token::ModEqual
+                        AssignmentToken::ModEqual.into()
                     }
                     _ => Token::Mod,
                 },
                 '^' => {
                     if self.match_next('=') {
-                        Token::XorEqual
+                        AssignmentToken::XorEqual.into()
                     } else {
                         Token::Xor
                     }
@@ -715,46 +716,46 @@ impl<'a> Iterator for Lexer<'a> {
                 '=' => match self.peek() {
                     Some('=') => {
                         self.next_char();
-                        Token::EqualEqual
+                        ComparisonToken::EqualEqual.into()
                     }
                     _ => Token::Equal,
                 },
                 '!' => match self.peek() {
                     Some('=') => {
                         self.next_char();
-                        Token::NotEqual
+                        ComparisonToken::NotEqual.into()
                     }
                     _ => Token::LogicalNot,
                 },
                 '>' => match self.peek() {
                     Some('=') => {
                         self.next_char();
-                        Token::GreaterEqual
+                        ComparisonToken::GreaterEqual.into()
                     }
                     Some('>') => {
                         self.next_char();
                         if self.match_next('=') {
-                            Token::RightEqual
+                            AssignmentToken::RightEqual.into()
                         } else {
                             Token::ShiftRight
                         }
                     }
-                    _ => Token::Greater,
+                    _ => ComparisonToken::Greater.into(),
                 },
                 '<' => match self.peek() {
                     Some('=') => {
                         self.next_char();
-                        Token::LessEqual
+                        ComparisonToken::LessEqual.into()
                     }
                     Some('<') => {
                         self.next_char();
                         if self.match_next('=') {
-                            Token::LeftEqual
+                            AssignmentToken::LeftEqual.into()
                         } else {
                             Token::ShiftLeft
                         }
                     }
-                    _ => Token::Less,
+                    _ => ComparisonToken::Less.into(),
                 },
                 '&' => match self.peek() {
                     Some('&') => {
@@ -763,7 +764,7 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                     Some('=') => {
                         self.next_char();
-                        Token::AndEqual
+                        AssignmentToken::AndEqual.into()
                     }
                     _ => Token::Ampersand,
                 },
@@ -774,7 +775,7 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                     Some('=') => {
                         self.next_char();
-                        Token::OrEqual
+                        AssignmentToken::OrEqual.into()
                     }
                     _ => Token::BitwiseOr,
                 },
@@ -790,7 +791,7 @@ impl<'a> Iterator for Lexer<'a> {
                 ',' => Token::Comma,
                 '.' => match self.peek() {
                     Some(c) if c.is_ascii_digit() => match self.parse_float(10, String::new()) {
-                        Ok(f) => Token::Float(f),
+                        Ok(f) => Literal::Float(f).into(),
                         Err(err) => {
                             return Some(Err(Locatable {
                                 data: err,
@@ -850,7 +851,7 @@ impl<'a> Iterator for Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CompileResult, ErrorKind, Lexer, Locatable, Location, Token};
+    use super::{CompileResult, ErrorKind, Lexer, Literal, Locatable, Location, Token};
     use crate::intern::InternedStr;
 
     type LexType = CompileResult<Locatable<Token>>;
@@ -884,12 +885,12 @@ mod tests {
     }
 
     fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
-        match_data(lexed, |c| c == Ok(&Token::Char(expected)))
+        match_data(lexed, |c| c == Ok(&Literal::Char(expected).into()))
     }
 
     fn match_str(lexed: Option<LexType>, expected: &str) -> bool {
         let string = InternedStr::get_or_intern(format!("{}\0", expected));
-        match_data(lexed, |c| c == Ok(&Token::Str(string)))
+        match_data(lexed, |c| c == Ok(&Literal::Str(string).into()))
     }
 
     fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
@@ -903,7 +904,7 @@ mod tests {
     }
     fn assert_int(s: &str, expected: i64) {
         assert!(
-            match_data(lex(s), |lexed| lexed == Ok(&Token::Int(expected))),
+            match_data(lex(s), |lexed| lexed == Ok(&Literal::Int(expected).into())),
             "{} != {}",
             s,
             expected
@@ -912,7 +913,7 @@ mod tests {
     fn assert_float(s: &str, expected: f64) {
         let lexed = lex(s);
         assert!(
-            match_data(lexed, |lexed| lexed == Ok(&Token::Float(expected))),
+            match_data(lexed, |lexed| lexed == Ok(&Literal::Float(expected).into())),
             "{} != {}",
             s,
             expected
@@ -989,13 +990,18 @@ mod tests {
         for i in 0..10 {
             assert_float(&format!("1{}e{}", "0".repeat(i), 10 - i), 1e10);
         }
-        assert!(match_all(&lex_all("-1"), &[Token::Minus, Token::Int(1)]));
+        assert!(match_all(
+            &lex_all("-1"),
+            &[Token::Minus, Literal::Int(1).into()]
+        ));
         assert!(match_all(
             &lex_all("-1e10"),
-            &[Token::Minus, Token::Float(10_000_000_000.0)]
+            &[Token::Minus, Literal::Float(10_000_000_000.0).into()]
         ));
         assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
-            == Ok(&Token::UnsignedInt(9_223_372_036_854_775_807u64))));
+            == Ok(
+                &Literal::UnsignedInt(9_223_372_036_854_775_807u64).into()
+            )));
         assert_float("0x.ep0", 0.875);
         assert_float("0x.ep-0l", 0.875);
         assert_float("0xe.p-4f", 0.875);

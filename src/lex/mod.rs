@@ -8,6 +8,7 @@ use super::intern::InternedStr;
 mod cpp;
 #[cfg(test)]
 mod tests;
+pub use cpp::PreProcessor;
 
 /// A Lexer takes the source code and turns it into tokens with location information.
 ///
@@ -43,11 +44,10 @@ pub struct Lexer<'a> {
     /// used for preprocessing (e.g. `#line 5` is a directive
     /// but `int main() { # line 5` is not)
     seen_line_token: bool,
+    line: usize,
     /// whether to print out every token as it's encountered
     pub debug: bool,
     error_handler: ErrorHandler,
-    /// whether we've a seen a token already on this line or not
-    seen_line_token: bool,
 }
 
 // returned when lexing a string literal
@@ -73,34 +73,12 @@ impl<'a> Lexer<'a> {
             },
             chars,
             seen_line_token: false,
+            line: 0,
             current: None,
             lookahead: None,
             debug,
             error_handler: ErrorHandler::new(),
-            seen_line_token: false,
         }
-    }
-    /// Return the first valid token in the file,
-    /// or None if there are no valid tokens.
-    ///
-    /// In either case, return all invalid tokens found.
-    pub fn first_token(&mut self) -> (Option<Locatable<Token>>, VecDeque<CompileError>) {
-        let mut errs = VecDeque::new();
-        loop {
-            match self.next() {
-                Some(Ok(token)) => return (Some(token), errs),
-                Some(Err(err)) => errs.push_back(err),
-                None => return (None, errs),
-            }
-        }
-    }
-
-    /// Return all warnings found so far.
-    ///
-    /// These warnings are consumed and will not be returned if you call
-    /// `warnings()` again.
-    pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
-        std::mem::replace(&mut self.error_handler.warnings, Default::default())
     }
 
     /// This lexer is somewhat unique - it reads a single character at a time,
@@ -129,6 +107,7 @@ impl<'a> Lexer<'a> {
             self.location.offset += 1;
             if c == '\n' {
                 self.seen_line_token = false;
+                self.line += 1;
             }
             c
         })
@@ -609,7 +588,6 @@ impl<'a> Iterator for Lexer<'a> {
             let span_start = self.location.offset - 1;
             // this giant switch is most of the logic
             let data = match c {
-                '#' if !self.seen_line_token => self.cpp(),
                 '+' => match self.peek() {
                     Some('=') => {
                         self.next_char();
@@ -806,7 +784,6 @@ impl<'a> Iterator for Lexer<'a> {
                 location: self.span(span_start),
             }))
         });
-        self.seen_line_token = true;
         if self.debug {
             println!("lexeme: {:?}", c);
         }

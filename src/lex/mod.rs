@@ -33,7 +33,7 @@ pub use cpp::PreProcessor;
 /// }
 /// ```
 #[derive(Debug)]
-pub(crate) struct Lexer<'a> {
+struct Lexer<'a> {
     location: SingleLocation,
     chars: Chars<'a>,
     /// used for 2-character tokens
@@ -65,11 +65,7 @@ struct SingleLocation {
 
 impl<'a> Lexer<'a> {
     /// Creates a Lexer from a filename and the contents of a file
-    pub(crate) fn new<T: AsRef<str> + Into<String>>(
-        file: T,
-        chars: Chars<'a>,
-        debug: bool,
-    ) -> Lexer<'a> {
+    fn new<T: AsRef<str> + Into<String>>(file: T, chars: Chars<'a>, debug: bool) -> Lexer<'a> {
         Lexer {
             location: SingleLocation {
                 offset: 0,

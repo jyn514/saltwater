@@ -164,6 +164,7 @@ pub enum Token {
     // Misc
     Ellipsis,
     StructDeref, // ->
+    Hash,        // #, used for preprocessing
 }
 
 /* impls */
@@ -338,6 +339,7 @@ impl std::fmt::Display for Token {
 
             Ellipsis => write!(f, "..."),
             StructDeref => write!(f, "->"),
+            Hash => write!(f, "#"),
         }
     }
 }

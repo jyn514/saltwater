@@ -1,11 +1,11 @@
-use lazy_static::lazy_static;
-
-use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 use std::str::Chars;
 
 use super::data::{error::LexError, lex::*, prelude::*};
 use super::intern::InternedStr;
+
+mod cpp;
+pub use cpp::PreProcessor;
 
 /// A Lexer takes the source code and turns it into tokens with location information.
 ///
@@ -40,6 +40,8 @@ pub struct Lexer<'a> {
     /// whether to print out every token as it's encountered
     pub debug: bool,
     error_handler: ErrorHandler,
+    /// whether we've a seen a token already on this line or not
+    seen_line_token: bool,
 }
 
 // returned when lexing a string literal
@@ -49,71 +51,9 @@ enum CharError {
     Terminator,
 }
 
-#[derive(Debug)]
 struct SingleLocation {
     offset: u32,
     filename: InternedStr,
-}
-
-lazy_static! {
-    static ref KEYWORDS: HashMap<&'static str, Keyword> = map!{
-        // control flow
-        "if" => Keyword::If,
-        "else" => Keyword::Else,
-        "do" => Keyword::Do,
-        "while" => Keyword::While,
-        "for" => Keyword::For,
-        "switch" => Keyword::Switch,
-        "case" => Keyword::Case,
-        "default" => Keyword::Default,
-        "break" => Keyword::Break,
-        "continue" => Keyword::Continue,
-        "return" => Keyword::Return,
-        "goto" => Keyword::Goto,
-
-        // types
-        "__builtin_va_list" => Keyword::VaList,
-        "_Bool" => Keyword::Bool,
-        "char" => Keyword::Char,
-        "short" => Keyword::Short,
-        "int" => Keyword::Int,
-        "long" => Keyword::Long,
-        "float" => Keyword::Float,
-        "double" => Keyword::Double,
-        "_Complex" => Keyword::Complex,
-        "_Imaginary" => Keyword::Imaginary,
-        "void" => Keyword::Void,
-        "signed" => Keyword::Signed,
-        "unsigned" => Keyword::Unsigned,
-        "typedef" => Keyword::Typedef,
-        "enum" => Keyword::Enum,
-        "union" => Keyword::Union,
-        "struct" => Keyword::Struct,
-
-        // qualifiers
-        "const" => Keyword::Const,
-        "volatile" => Keyword::Volatile,
-        "restrict" => Keyword::Restrict,
-        "_Atomic" => Keyword::Atomic,
-        "_Thread_local" => Keyword::ThreadLocal,
-
-        // function qualifiers
-        "inline" => Keyword::Inline,
-        "_Noreturn" => Keyword::NoReturn,
-
-        // storage classes
-        "auto" => Keyword::Auto,
-        "register" => Keyword::Register,
-        "static" => Keyword::Static,
-        "extern" => Keyword::Extern,
-
-        // compiler intrinsics
-        "sizeof" => Keyword::Sizeof,
-        "_Alignof" => Keyword::Alignof,
-        "_Alignas" => Keyword::Alignas,
-        "_Generic" => Keyword::Generic,
-        "_Static_assert" => Keyword::StaticAssert,
-    };
 }
 
 impl<'a> Lexer<'a> {
@@ -129,6 +69,7 @@ impl<'a> Lexer<'a> {
             lookahead: None,
             debug,
             error_handler: ErrorHandler::new(),
+            seen_line_token: false,
         }
     }
     /// Return the first valid token in the file,
@@ -178,6 +119,9 @@ impl<'a> Lexer<'a> {
         };
         next.map(|c| {
             self.location.offset += 1;
+            if x == '\n' {
+                self.seen_line_token = false;
+            }
             c
         })
     }
@@ -609,10 +553,7 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
-        match KEYWORDS.get::<str>(&id) {
-            Some(keyword) => Ok(Token::Keyword(*keyword)),
-            None => Ok(Token::Id(InternedStr::get_or_intern(id))),
-        }
+        Ok(Token::Id(InternedStr::get_or_intern(id)))
     }
 }
 
@@ -845,6 +786,7 @@ impl<'a> Iterator for Lexer<'a> {
                     }))
                 }
             };
+            self.seen_line_token = true;
             Some(Ok(Locatable {
                 data,
                 location: self.span(span_start),

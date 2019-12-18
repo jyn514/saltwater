@@ -19,7 +19,7 @@ pub type Product = <ObjectBackend as Backend>::Product;
 
 use data::prelude::CompileError;
 pub use data::prelude::*;
-pub use lex::Lexer;
+pub use lex::PreProcessor;
 pub use parse::Parser;
 
 #[macro_use]
@@ -66,8 +66,8 @@ pub fn compile(
     debug_ir: bool,
 ) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
     let filename_ref = InternedStr::get_or_intern(&filename);
-    let mut lexer = Lexer::new(filename, buf.chars(), debug_lex);
-    let (first, mut errs) = lexer.first_token();
+    let mut cpp = PreProcessor::new(filename, buf.chars(), debug_lex);
+    let (first, mut errs) = cpp.first_token();
     let eof = || Location {
         span: (buf.len() as u32..buf.len() as u32).into(),
         filename: filename_ref,
@@ -79,11 +79,11 @@ pub fn compile(
             if errs.is_empty() {
                 errs.push_back(eof().error(SemanticError::EmptyProgram));
             }
-            return (Err(Error::Source(errs)), lexer.warnings());
+            return (Err(Error::Source(errs)), cpp.warnings());
         }
     };
 
-    let mut parser = Parser::new(first, &mut lexer, debug_ast);
+    let mut parser = Parser::new(first, &mut cpp, debug_ast);
     let (hir, parse_errors) = parser.collect_results();
     errs.extend(parse_errors.into_iter());
     if hir.is_empty() && errs.is_empty() {
@@ -91,7 +91,7 @@ pub fn compile(
     }
 
     let mut warnings = parser.warnings();
-    warnings.extend(lexer.warnings());
+    warnings.extend(cpp.warnings());
     if !errs.is_empty() {
         return (Err(Error::Source(errs)), warnings);
     }

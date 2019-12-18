@@ -357,7 +357,7 @@ impl Token {
 pub(crate) mod tests {
     use super::Parser;
     use crate::data::prelude::*;
-    use crate::lex::Lexer;
+    use crate::lex::PreProcessor as Lexer;
 
     pub(crate) use super::expr::tests::parse_expr;
 

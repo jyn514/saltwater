@@ -214,7 +214,7 @@ impl<'a> PreProcessor<'a> {
     }
     fn replace_id(&mut self, name: InternedStr) -> Option<Result<Token, Error>> {
         // TODO: actually implement #define
-        Some(match KEYWORDS.get(dbg!(get_str!(name))) {
+        Some(match KEYWORDS.get(get_str!(name)) {
             Some(keyword) => Ok(Token::Keyword(*keyword)),
             None => Ok(Token::Id(name)),
         })

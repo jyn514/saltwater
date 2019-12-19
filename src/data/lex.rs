@@ -372,7 +372,11 @@ impl std::fmt::Display for ComparisonToken {
 
 impl std::fmt::Display for AssignmentToken {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}=", self.without_assignment())
+        if *self == AssignmentToken::Equal {
+            write!(f, "=")
+        } else {
+            write!(f, "{}=", self.without_assignment())
+        }
     }
 }
 

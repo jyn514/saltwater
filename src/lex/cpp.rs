@@ -89,7 +89,7 @@ impl Iterator for PreProcessor<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         let next_token = self.lexer.next();
         let processed = if let Some(Ok(loc)) = next_token {
-            match loc.data {
+            let mut token = match loc.data {
                 Token::Hash if !self.lexer.seen_line_token => {
                     let current_line = self.lexer.line;
                     self.lexer.consume_whitespace();
@@ -107,7 +107,11 @@ impl Iterator for PreProcessor<'_> {
                     self.add_location(stream, loc.location)
                 }
                 _ => Some(Ok(loc)),
+            };
+            if let Some(Ok(ref mut loc)) = &mut token {
+                Self::replace_keywords(&mut loc.data);
             }
+            token
         } else {
             next_token
         };
@@ -173,6 +177,14 @@ impl<'a> PreProcessor<'a> {
         })
     }
 
+    #[inline]
+    fn replace_keywords(token: &mut Token) {
+        if let Token::Id(name) = token {
+            if let Some(keyword) = KEYWORDS.get(get_str!(name)) {
+                *token = Token::Keyword(*keyword)
+            }
+        }
+    }
     fn expect_id(&mut self) -> CppResult<InternedStr> {
         fn err_handler(
             value: Option<CppResult<Token>>,
@@ -220,10 +232,7 @@ impl<'a> PreProcessor<'a> {
     }
     fn replace_id(&mut self, name: InternedStr) -> Option<Result<Token, CompileError>> {
         // TODO: actually implement #define
-        Some(match KEYWORDS.get(get_str!(name)) {
-            Some(keyword) => Ok(Token::Keyword(*keyword)),
-            None => Ok(Token::Id(name)),
-        })
+        Some(Ok(Token::Id(name)))
     }
     fn const_expr(&mut self) -> Result<Literal, CompileError> {
         unimplemented!("constant expressions")

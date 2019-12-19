@@ -14,13 +14,14 @@ lazy_static! {
 
 #[macro_export]
 macro_rules! get_str {
-    ($self: expr) => {
+    ($self: expr) => {{
+        let tmp = $self.0;
         $crate::intern::STRINGS
             .read()
             .expect("failed to lock String cache for reading")
-            .resolve($self.0)
+            .resolve(tmp)
             .expect("tried to get value of non-interned string")
-    };
+    }};
 }
 
 impl InternedStr {

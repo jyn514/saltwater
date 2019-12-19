@@ -1,4 +1,4 @@
-use super::{CompileError, CompileResult, Lexer, Literal, Locatable, Location, Token};
+use super::{CompileResult, Lexer, Literal, Locatable, Location, Token};
 use crate::intern::InternedStr;
 
 type LexType = CompileResult<Locatable<Token>>;
@@ -14,7 +14,7 @@ fn lex(input: &str) -> Option<LexType> {
     lexed.pop()
 }
 fn lex_all(input: &str) -> Vec<LexType> {
-    Lexer::new("<test suite>".to_string(), input.chars(), false).collect()
+    Lexer::new("<test suite>".to_string(), input.chars()).collect()
 }
 
 fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
@@ -29,7 +29,7 @@ where
 {
     match lexed {
         Some(Ok(result)) => closure(Ok(&result.data)),
-        Some(Err(CompileError::Lex(result))) => closure(Err(&result.data)),
+        Some(Err(err)) if err.is_lex_err() => closure(Err(&err.data.to_string())),
         _ => false,
     }
 }

@@ -45,8 +45,6 @@ struct Lexer<'a> {
     /// but `int main() { # line 5` is not)
     seen_line_token: bool,
     line: usize,
-    /// whether to print out every token as it's encountered
-    debug: bool,
     error_handler: ErrorHandler,
 }
 
@@ -65,7 +63,7 @@ struct SingleLocation {
 
 impl<'a> Lexer<'a> {
     /// Creates a Lexer from a filename and the contents of a file
-    fn new<T: AsRef<str> + Into<String>>(file: T, chars: Chars<'a>, debug: bool) -> Lexer<'a> {
+    fn new<T: AsRef<str> + Into<String>>(file: T, chars: Chars<'a>) -> Lexer<'a> {
         Lexer {
             location: SingleLocation {
                 offset: 0,
@@ -76,7 +74,6 @@ impl<'a> Lexer<'a> {
             line: 0,
             current: None,
             lookahead: None,
-            debug,
             error_handler: ErrorHandler::new(),
         }
     }
@@ -785,9 +782,6 @@ impl<'a> Iterator for Lexer<'a> {
                 location: self.span(span_start),
             }))
         });
-        if self.debug {
-            println!("lexeme: {:?}", c);
-        }
         // oof
         c.map(|result| result.map_err(|err| err.map(|err| LexError::Generic(err).into())))
     }

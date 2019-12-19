@@ -588,6 +588,7 @@ impl<'a> Iterator for Lexer<'a> {
             let span_start = self.location.offset - 1;
             // this giant switch is most of the logic
             let data = match c {
+                '#' => Token::Hash,
                 '+' => match self.peek() {
                     Some('=') => {
                         self.next_char();
@@ -778,7 +779,7 @@ impl<'a> Iterator for Lexer<'a> {
                     }))
                 }
             };
-            self.seen_line_token = true;
+            self.seen_line_token |= data != Token::Hash;
             Some(Ok(Locatable {
                 data,
                 location: self.span(span_start),

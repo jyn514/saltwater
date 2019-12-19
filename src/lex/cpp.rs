@@ -4,7 +4,8 @@ use std::collections::{HashMap, VecDeque};
 
 use super::{Lexer, Token, SingleLocation};
 use crate::data::lex::{Keyword, Literal};
-use crate::data::prelude::{CompileError as Error, *};
+use crate::data::prelude::{CompileError, Error, *};
+use crate::data::error::CppError;
 use crate::get_str;
 
 lazy_static! {
@@ -76,16 +77,18 @@ pub struct PreProcessor<'a> {
     /// the preprocessor has no concept of scope other than `undef`
     definitions: HashMap<InternedStr, InternedStr>,
     error_handler: ErrorHandler,
+    /// Whether or not to display each token as it is processed
+    debug: bool,
 }
 
-type CppResult<T> = Result<Locatable<T>, Error>;
+type CppResult<T> = Result<Locatable<T>, CompileError>;
 
 impl Iterator for PreProcessor<'_> {
     /// The preprocessor hides all internal complexity and returns only tokens.
     type Item = CppResult<Token>;
     fn next(&mut self) -> Option<Self::Item> {
         let next_token = self.lexer.next();
-        if let Some(Ok(loc)) = next_token {
+        let processed = if let Some(Ok(loc)) = next_token {
             match loc.data {
                 Token::Hash if !self.lexer.seen_line_token => {
                     let current_line = self.lexer.line;
@@ -107,7 +110,13 @@ impl Iterator for PreProcessor<'_> {
             }
         } else {
             next_token
+        };
+        if self.debug {
+            if let Some(Ok(token)) = &processed {
+                println!("token: {}", token.data);
+            }
         }
+        processed
     }
 }
 
@@ -128,8 +137,9 @@ impl<'a> PreProcessor<'a> {
         debug: bool,
     ) -> Self {
         Self {
-            lexer: Lexer::new(file, chars, debug),
+            lexer: Lexer::new(file, chars),
             definitions: Default::default(),
+            debug,
             error_handler: Default::default(),
         }
     }
@@ -156,7 +166,7 @@ impl<'a> PreProcessor<'a> {
         std::mem::replace(&mut self.error_handler.warnings, Default::default())
     }
 
-    fn add_location<T>(&self, option: Option<Result<T, Error>>, location: Location) -> Option<CppResult<T>> {
+    fn add_location<T>(&self, option: Option<Result<T, CompileError>>, location: Location) -> Option<CppResult<T>> {
         Some(match option? {
             Ok(data) => Ok(Locatable::new(data, location)),
             Err(err) => Err(err),
@@ -164,7 +174,6 @@ impl<'a> PreProcessor<'a> {
     }
 
     fn expect_id(&mut self) -> CppResult<InternedStr> {
-        const ERR: &str = "preprocessor: expected identifier, got ";
         fn err_handler(
             value: Option<CppResult<Token>>,
             location: Location,
@@ -175,14 +184,11 @@ impl<'a> PreProcessor<'a> {
                     location,
                 })) => Ok(Locatable::new(name, location)),
                 Some(Err(err)) => Err(err),
-                Some(Ok(other)) => Err(Error::from(Locatable::new(
-                    format!("{}{}", ERR, other.data),
-                    other.location,
-                ))),
-                None => Err(Error::from(Locatable::new(
-                    format!("{}{}", ERR, "<end-of-file>"),
+                Some(Ok(other)) => Err(other.map(|tok| CppError::UnexpectedToken("identifier", tok).into())),
+                None => Err(CompileError {
+                    data: CppError::EndOfFile("identifier").into(),
                     location,
-                ))),
+                }),
             }
         }
         let location = self.lexer.span(self.lexer.location.offset);
@@ -192,7 +198,7 @@ impl<'a> PreProcessor<'a> {
             .map(|maybe_err| maybe_err.map(|data| Locatable::new(data, name.location)));
         err_handler(actual, name.location)
     }
-    fn directive(&mut self) -> Option<Result<Token, Error>> {
+    fn directive(&mut self) -> Option<Result<Token, CompileError>> {
         let id = ret_err!(self.expect_id());
         match get_str!(id.data) {
             "if" => {
@@ -207,22 +213,22 @@ impl<'a> PreProcessor<'a> {
                 unimplemented!("preprocessing directives besides if/ifdef")
             }
             _ => Some(Err(CompileError::new(
-                SemanticError::Generic("invalid preprocessing directive".into()).into(),
+                CppError::InvalidDirective.into(),
                 id.location,
             ))),
         }
     }
-    fn replace_id(&mut self, name: InternedStr) -> Option<Result<Token, Error>> {
+    fn replace_id(&mut self, name: InternedStr) -> Option<Result<Token, CompileError>> {
         // TODO: actually implement #define
         Some(match KEYWORDS.get(get_str!(name)) {
             Some(keyword) => Ok(Token::Keyword(*keyword)),
             None => Ok(Token::Id(name)),
         })
     }
-    fn const_expr(&mut self) -> Result<Literal, Error> {
+    fn const_expr(&mut self) -> Result<Literal, CompileError> {
         unimplemented!("constant expressions")
     }
-    fn if_directive(&mut self, _condition: bool) -> Option<Result<Token, Error>> {
+    fn if_directive(&mut self, _condition: bool) -> Option<Result<Token, CompileError>> {
         unimplemented!("if/ifdef")
     }
 }

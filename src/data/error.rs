@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use thiserror::Error;
 
-use super::{Expr, Locatable, Location};
+use super::{Expr, Locatable, Location, lex::Token};
 
 /// RecoverableResult is a type that represents a Result that can be recovered from.
 ///
@@ -68,6 +68,9 @@ pub enum Error {
     #[error("invalid syntax: {0}")]
     Syntax(#[from] SyntaxError),
 
+    #[error("invalid macro: {0}")]
+    PreProcessor(#[from] CppError),
+
     #[error("invalid token: {0}")]
     Lex(#[from] LexError),
 }
@@ -108,6 +111,21 @@ pub enum SyntaxError {
     #[error("{0}")]
     Generic(String),
 
+    #[error("expected {0}, got <end-of-file>")]
+    EndOfFile(&'static str),
+
+    #[doc(hidden)]
+    #[error("internal error: do not construct nonexhaustive variants")]
+    __Nonexhaustive,
+}
+
+/// Preprocessing errors are non-exhaustive and may have new variants added at any time
+#[derive(Clone, Debug, Error, PartialEq)]
+pub enum CppError {
+    #[error("invalid preprocessing directive")]
+    InvalidDirective,
+    #[error("expected {0}, got {1}")]
+    UnexpectedToken(&'static str, Token),
     #[error("expected {0}, got <end-of-file>")]
     EndOfFile(&'static str),
 

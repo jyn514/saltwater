@@ -17,10 +17,7 @@ pub struct Locatable<T> {
 }
 
 impl<T> Locatable<T> {
-    fn map<S, F>(self, f: F) -> Locatable<S>
-    where
-        F: FnOnce(T) -> S,
-    {
+    pub fn map<S, F: FnOnce(T) -> S>(self, f: F) -> Locatable<S> {
         Locatable {
             data: f(self.data),
             location: self.location,

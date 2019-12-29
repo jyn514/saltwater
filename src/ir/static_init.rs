@@ -76,7 +76,7 @@ impl Compiler {
                 };
             }
             let size_t = symbol.ctype.sizeof().map_err(|err| Locatable {
-                data: err.into(),
+                data: err.to_string(),
                 location,
             })?;
             let size = size_t
@@ -277,7 +277,7 @@ impl Compiler {
         let inner_size: usize = inner_type
             .sizeof()
             .map_err(|err| Locatable {
-                data: err.into(),
+                data: err.to_string(),
                 location: *location,
             })?
             .try_into()

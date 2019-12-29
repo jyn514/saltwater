@@ -7,13 +7,26 @@ pub type CompileResult<T> = Result<T, CompileError>;
 pub type SemanticError = Locatable<String>;
 
 #[derive(Debug, PartialEq, Eq, Error)]
-pub enum CompileError {
-    #[error("invalid token: {}", .0.data)]
-    Lex(Locatable<String>),
-    #[error("invalid syntax: {}", (.0).0.data)]
-    Syntax(#[from] SyntaxError),
-    #[error("invalid program: {}", .0.data)]
-    Semantic(Locatable<String>),
+pub enum ErrorKind {
+    #[error("invalid token")]
+    Lex,
+    #[error("invalid syntax")]
+    Syntax,
+    #[error("invalid program")]
+    Semantic,
+}
+
+// TODO: remove this and use Locatable<Error>
+pub struct CompileError {
+    error: Error,
+    location: Location,
+}
+
+#[derive(Debug)]
+pub enum Error {
+    GenericLex(Locatable<String>),
+    GenericSyntax(SyntaxError),
+    GenericSemantic(Locatable<String>),
 }
 
 #[derive(Debug, PartialEq, Eq, Error)]
@@ -23,6 +36,15 @@ pub struct SyntaxError(pub Locatable<String>);
 impl From<Locatable<String>> for CompileError {
     fn from(err: Locatable<String>) -> Self {
         CompileError::Semantic(err)
+    }
+}
+
+impl From<SyntaxError> for CompileError {
+    fn from(err: SyntaxError) -> Self {
+        CompileError {
+            location: err.0.location,
+            data: err.0.data,
+        }
     }
 }
 

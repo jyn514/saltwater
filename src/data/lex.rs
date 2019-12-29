@@ -16,6 +16,18 @@ pub struct Locatable<T> {
     pub location: Location,
 }
 
+impl<T> Locatable<T> {
+    fn map<S, F>(self, f: F) -> Locatable<S>
+    where
+        F: FnOnce(T) -> S,
+    {
+        Locatable {
+            data: f(self.data),
+            location: self.location,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Keyword {
     // statements

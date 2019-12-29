@@ -7,17 +7,6 @@ use super::{Expr, Locatable, Location};
 pub type RecoverableResult<T = Expr, E = CompileError> = Result<T, (E, T)>;
 pub type CompileResult<T> = Result<T, CompileError>;
 pub type SemanticError = Locatable<String>;
-
-#[derive(Debug, PartialEq, Eq, Error)]
-pub enum ErrorKind {
-    #[error("invalid token")]
-    Lex,
-    #[error("invalid syntax")]
-    Syntax,
-    #[error("invalid program")]
-    Semantic,
-}
-
 pub type CompileError = Locatable<Error>;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -33,6 +22,28 @@ pub enum Error {
     // specific errors
     #[error("unterminated /* comment")]
     UnterminatedComment,
+}
+
+impl Error {
+    pub fn kind(&self) -> ErrorKind {
+        use Error::*;
+        match self {
+            GenericLex(_) => ErrorKind::Lex,
+            GenericSyntax(_) => ErrorKind::Syntax,
+            GenericSemantic(_) => ErrorKind::Semantic,
+            UnterminatedComment => ErrorKind::Lex,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Error)]
+pub enum ErrorKind {
+    #[error("invalid token")]
+    Lex,
+    #[error("invalid syntax")]
+    Syntax,
+    #[error("invalid program")]
+    Semantic,
 }
 
 impl CompileError {
@@ -57,18 +68,6 @@ impl CompileError {
 impl fmt::Display for CompileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}: {}", self.data.kind(), self.data)
-    }
-}
-
-impl Error {
-    pub fn kind(&self) -> ErrorKind {
-        use Error::*;
-        match self {
-            GenericLex(_) => ErrorKind::Lex,
-            GenericSyntax(_) => ErrorKind::Syntax,
-            GenericSemantic(_) => ErrorKind::Semantic,
-            UnterminatedComment => ErrorKind::Lex,
-        }
     }
 }
 

@@ -10,7 +10,7 @@ use std::mem;
 use crate::data::{prelude::*, Scope};
 use crate::utils::warn;
 
-type Lexeme = Result<Locatable<Token>, CompileError>;
+type Lexeme = CompileResult<Locatable<Token>>;
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
 
 #[derive(Clone, Debug)]
@@ -38,7 +38,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     tokens: I,
     /// VecDeque supports pop_front with reasonable efficiency
     /// this is useful because errors are FIFO
-    pending: VecDeque<Result<Locatable<Declaration>, CompileError>>,
+    pending: VecDeque<CompileResult<Locatable<Declaration>>>,
     /// in case we get to the end of the file and want to show an error
     last_location: Location,
     /// the last token we saw from the Lexer. None if we haven't looked ahead.
@@ -110,7 +110,7 @@ where
 }
 
 impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
-    type Item = Result<Locatable<Declaration>, CompileError>;
+    type Item = CompileResult<Locatable<Declaration>>;
     /// translation_unit
     /// : external_declaration
     /// | translation_unit external_declaration
@@ -361,7 +361,7 @@ mod tests {
     use crate::data::prelude::*;
     use crate::lex::Lexer;
 
-    pub(crate) type ParseType = Result<Locatable<Declaration>, CompileError>;
+    pub(crate) type ParseType = CompileResult<Locatable<Declaration>>;
     pub(crate) fn parse(input: &str) -> Option<ParseType> {
         let mut all = parse_all(input);
         match all.len() {

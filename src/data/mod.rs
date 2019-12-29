@@ -11,7 +11,8 @@ pub mod types;
 pub mod prelude {
     pub use super::{
         error::{
-            CompileError, CompileResult, Recoverable, RecoverableResult, SemanticError, SyntaxError,
+            CompileError, CompileResult, Error, Recoverable, RecoverableResult, SemanticError,
+            SyntaxError,
         },
         lex::{Literal, Locatable, Location, Token},
         types::{StructRef, StructType, Type},

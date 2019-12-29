@@ -92,7 +92,7 @@ impl Expr {
                 location: folded.location,
             }),
             _expr => {
-                Err(Locatable::new("not a constant expression".into(), folded.location).into())
+                Err(Locatable::new("not a constant expression".to_string(), folded.location).into())
             }
         }
     }
@@ -111,7 +111,7 @@ impl Expr {
             },
             ExprType::Sizeof(ctype) => {
                 let sizeof = ctype.sizeof().map_err(|data| Locatable {
-                    data: data.into(),
+                    data: data.to_string(),
                     location,
                 })?;
                 ExprType::Literal(UnsignedInt(sizeof))
@@ -405,7 +405,7 @@ fn shift_right(
             Err(_) => semantic_err!("cannot shift left by a negative amount".into(), *location),
         };
         let sizeof = ctype.sizeof().map_err(|err| Locatable {
-            data: err.into(),
+            data: err.to_string(),
             location: *location,
         })?;
         // Rust panics if the shift is greater than the size of the type

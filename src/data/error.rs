@@ -1,3 +1,5 @@
+use std::fmt;
+
 use thiserror::Error;
 
 use super::{Expr, Locatable, Location};
@@ -16,17 +18,52 @@ pub enum ErrorKind {
     Semantic,
 }
 
-// TODO: remove this and use Locatable<Error>
-pub struct CompileError {
-    error: Error,
-    location: Location,
+pub type CompileError = Locatable<Error>;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum Error {
+    #[error("{0}")]
+    GenericLex(String),
+    #[error("{0}")]
+    GenericSyntax(String),
+    #[error("{0}")]
+    GenericSemantic(String),
 }
 
-#[derive(Debug)]
-pub enum Error {
-    GenericLex(Locatable<String>),
-    GenericSyntax(SyntaxError),
-    GenericSemantic(Locatable<String>),
+impl CompileError {
+    #[allow(non_snake_case)]
+    pub(crate) fn Semantic(err: Locatable<String>) -> Self {
+        Self::from(err)
+    }
+    pub fn location(&self) -> Location {
+        self.location
+    }
+    pub fn is_lex_err(&self) -> bool {
+        self.data.kind() == ErrorKind::Lex
+    }
+    pub fn is_syntax_err(&self) -> bool {
+        self.data.kind() == ErrorKind::Syntax
+    }
+    pub fn is_semantic_err(&self) -> bool {
+        self.data.kind() == ErrorKind::Semantic
+    }
+}
+
+impl fmt::Display for CompileError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.data.kind(), self.data)
+    }
+}
+
+impl Error {
+    pub fn kind(&self) -> ErrorKind {
+        use Error::*;
+        match self {
+            GenericLex(_) => ErrorKind::Lex,
+            GenericSyntax(_) => ErrorKind::Syntax,
+            GenericSemantic(_) => ErrorKind::Semantic,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Error)]
@@ -35,50 +72,19 @@ pub struct SyntaxError(pub Locatable<String>);
 
 impl From<Locatable<String>> for CompileError {
     fn from(err: Locatable<String>) -> Self {
-        CompileError::Semantic(err)
+        err.map(Error::GenericSemantic)
     }
 }
 
 impl From<SyntaxError> for CompileError {
     fn from(err: SyntaxError) -> Self {
-        CompileError {
-            location: err.0.location,
-            data: err.0.data,
-        }
+        err.0.map(Error::GenericSyntax)
     }
 }
 
 impl From<Locatable<String>> for SyntaxError {
     fn from(err: Locatable<String>) -> Self {
         Self(err)
-    }
-}
-
-impl CompileError {
-    pub fn location(&self) -> Location {
-        match self {
-            CompileError::Lex(err) => err.location,
-            CompileError::Syntax(err) => err.0.location,
-            CompileError::Semantic(err) => err.location,
-        }
-    }
-    pub fn is_lex_err(&self) -> bool {
-        match self {
-            CompileError::Lex(_) => true,
-            _ => false,
-        }
-    }
-    pub fn is_syntax_err(&self) -> bool {
-        match self {
-            CompileError::Syntax(_) => true,
-            _ => false,
-        }
-    }
-    pub fn is_semantic_err(&self) -> bool {
-        match self {
-            CompileError::Semantic(_) => true,
-            _ => false,
-        }
     }
 }
 

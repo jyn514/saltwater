@@ -252,10 +252,10 @@ impl<'a> Lexer<'a> {
                 return Ok(());
             }
         }
-        Err(CompileError::Lex(Locatable {
+        Err(CompileError {
             location: self.location,
-            data: "unterminated /* comment".to_string(),
-        }))
+            data: Error::GenericLex("unterminated /* comment".to_string()),
+        })
     }
     /// Parse a number literal, given the starting character and whether floats are allowed.
     ///
@@ -844,13 +844,15 @@ impl<'a> Iterator for Lexer<'a> {
         if self.debug {
             println!("lexeme: {:?}", c);
         }
-        c.map(|result| result.map_err(CompileError::Lex))
+        // oof
+        c.map(|result| result.map_err(|err| err.map(Error::GenericLex)))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{CompileError, CompileResult, Lexer, Literal, Locatable, Location, Token};
+    use crate::data::prelude::*;
     use crate::intern::InternedStr;
 
     type LexType = CompileResult<Locatable<Token>>;
@@ -881,7 +883,10 @@ mod tests {
     {
         match lexed {
             Some(Ok(result)) => closure(Ok(&result.data)),
-            Some(Err(CompileError::Lex(result))) => closure(Err(&result.data)),
+            Some(Err(CompileError {
+                data: Error::GenericLex(result),
+                ..
+            })) => closure(Err(&result)),
             _ => false,
         }
     }

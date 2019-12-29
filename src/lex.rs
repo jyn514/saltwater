@@ -717,7 +717,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.next_char();
                         ComparisonToken::EqualEqual.into()
                     }
-                    _ => Token::Equal,
+                    _ => Token::EQUAL,
                 },
                 '!' => match self.peek() {
                     Some('=') => {

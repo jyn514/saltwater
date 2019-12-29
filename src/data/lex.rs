@@ -170,7 +170,7 @@ impl<T> Locatable<T> {
 }
 
 impl Token {
-    pub const Equal: Token = Token::Assignment(AssignmentToken::Equal);
+    pub const EQUAL: Token = Token::Assignment(AssignmentToken::Equal);
 }
 
 impl Literal {

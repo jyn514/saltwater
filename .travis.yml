@@ -23,6 +23,10 @@ jobs:
                 - libiberty-dev
                 - libssl-dev
           before_cache: cargo install cargo-tarpaulin -f
+          # cache ~/.cargo explicitly so that ./target isn't cached
+          cache:
+              directories:
+                  - $HOME/.cargo
           after_success: |
               cargo tarpaulin --out Xml &&
               bash <(curl -s https://codecov.io/bash) &&

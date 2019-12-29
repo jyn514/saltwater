@@ -119,7 +119,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     id.location.clone(),
                 )?))
             }
-            (Type::Function(_), Some(t)) if *t == Token::Equal => {
+            (Type::Function(_), Some(t)) if *t == Token::EQUAL => {
                 return Err(SyntaxError(Locatable {
                     data: format!(
                         "expected '{{', got '=' while parsing function body for {}",
@@ -128,7 +128,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location: id.location,
                 }));
             }
-            (ctype, Some(t)) if *t == Token::Equal => {
+            (ctype, Some(t)) if *t == Token::EQUAL => {
                 self.next_token();
                 let init = Some(self.initializer(ctype)?);
                 symbol.init = true;
@@ -309,7 +309,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let id = id.expect("declarator should return id when called with allow_abstract: false");
 
         // optionally, parse an initializer
-        let init = if self.match_next(&Token::Equal).is_some() {
+        let init = if self.match_next(&Token::EQUAL).is_some() {
             Some(self.initializer(&ctype)?)
         } else {
             None
@@ -598,7 +598,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Token::Id(id) => id,
                 _ => unreachable!("expect is broken"),
             };
-            if self.match_next(&Token::Equal).is_some() {
+            if self.match_next(&Token::EQUAL).is_some() {
                 let constant = self.constant_expr()?.constexpr().unwrap_or_else(|err| {
                     let location = err.location();
                     self.pending.push_back(Err(err));

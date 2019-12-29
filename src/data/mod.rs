@@ -211,7 +211,7 @@ impl Expr {
         match literal.data.0 {
             Literal::UnsignedInt(u) => Ok(u),
             Literal::Int(x) => x.try_into().map_err(|_| {
-                CompileError::Semantic(Locatable::new(
+                CompileError::semantic(Locatable::new(
                     LengthError::Negative.into(),
                     literal.location,
                 ))

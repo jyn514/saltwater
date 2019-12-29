@@ -47,8 +47,7 @@ pub enum ErrorKind {
 }
 
 impl CompileError {
-    #[allow(non_snake_case)]
-    pub(crate) fn Semantic(err: Locatable<String>) -> Self {
+    pub(crate) fn semantic(err: Locatable<String>) -> Self {
         Self::from(err)
     }
     pub fn location(&self) -> Location {

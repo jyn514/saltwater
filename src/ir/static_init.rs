@@ -95,7 +95,7 @@ impl Compiler {
             );
         };
         self.module.define_data(id, &ctx).map_err(|err| {
-            CompileError::Semantic(Locatable {
+            CompileError::semantic(Locatable {
                 data: format!("error defining static variable: {}", err),
                 location,
             })
@@ -200,7 +200,7 @@ impl Compiler {
                 }
                 Type::Array(ty, ArrayType::Fixed(size)) => {
                     if initializers.len() as u64 > *size {
-                        Err(CompileError::Semantic(Locatable {
+                        Err(CompileError::semantic(Locatable {
                             data: format!(
                                 "too many elements for array (expected {}, got {})",
                                 size,
@@ -233,7 +233,7 @@ impl Compiler {
                             .ctype
                             .sizeof()
                             .map_err(|err| {
-                                CompileError::Semantic(Locatable::new(err.into(), *location))
+                                CompileError::semantic(Locatable::new(err.into(), *location))
                             })?
                             .try_into()
                             .expect("cannot initialize struct larger than u32");

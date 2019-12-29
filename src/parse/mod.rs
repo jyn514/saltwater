@@ -83,7 +83,7 @@ where
                 Some(Ok(token)) => break token,
                 Some(Err(err)) => pending.push_back(err),
                 None if pending.is_empty() => {
-                    pending.push_back(CompileError::Semantic(Locatable::new(
+                    pending.push_back(CompileError::semantic(Locatable::new(
                         "cannot have empty program".to_string(),
                         Default::default(),
                     )));
@@ -184,7 +184,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         && object.storage_class != StorageClass::Typedef
                     {
                         self.pending
-                            .push_back(Err(CompileError::Semantic(Locatable {
+                            .push_back(Err(CompileError::semantic(Locatable {
                                 data: format!(
                                     "forward declaration of {} is never completed (used in {})",
                                     name, object.id
@@ -262,7 +262,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* error handling functions */
     fn semantic_err<S: Into<String>>(&mut self, msg: S, location: Location) {
         self.pending
-            .push_back(Err(CompileError::Semantic(Locatable {
+            .push_back(Err(CompileError::semantic(Locatable {
                 location,
                 data: msg.into(),
             })));
@@ -367,7 +367,7 @@ mod tests {
         match all.len() {
             0 => None,
             1 => Some(all.remove(0)),
-            n => Some(Err(CompileError::Semantic(Locatable {
+            n => Some(Err(CompileError::semantic(Locatable {
                 location: match all.remove(1) {
                     Ok(x) => x.location,
                     Err(x) => x.location(),

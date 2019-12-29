@@ -107,8 +107,8 @@ macro_rules! matches {
 /// Assumes that 'Locatable' is in scope and that the function it is called in
 /// returns a 'Result<Locatable<T>>'
 macro_rules! semantic_err {
-    ($message: expr, $location: expr$(,)?) => {
-        return Err(CompileError::Semantic(Locatable {
+    ($message: expr, $location: expr $(,)?) => {
+        return Err(CompileError::semantic(Locatable {
             data: $message,
             location: $location,
         }));

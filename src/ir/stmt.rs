@@ -22,7 +22,7 @@ impl Compiler {
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         if builder.is_filled() && !stmt.data.is_jump_target() {
-            return Err(CompileError::Semantic(Locatable {
+            return Err(CompileError::semantic(Locatable {
                 data: "unreachable statement".into(),
                 location: stmt.location,
             }));
@@ -73,7 +73,7 @@ impl Compiler {
                 Self::jump_to_block(new_block, builder);
                 builder.switch_to_block(new_block);
                 if let Some(previous) = self.labels.insert(name, new_block) {
-                    Err(CompileError::Semantic(Locatable {
+                    Err(CompileError::semantic(Locatable {
                         data: format!("redeclaration of label {}", previous),
                         location: stmt.location,
                     }))
@@ -86,7 +86,7 @@ impl Compiler {
                     Self::jump_to_block(*ebb, builder);
                     Ok(())
                 }
-                None => Err(CompileError::Semantic(Locatable {
+                None => Err(CompileError::semantic(Locatable {
                     data: format!("use of undeclared label {}", name),
                     location: stmt.location,
                 })),
@@ -283,7 +283,7 @@ impl Compiler {
         let (switch, _, _) = match self.switches.last_mut() {
             Some(x) => x,
             None => {
-                return Err(CompileError::Semantic(Locatable {
+                return Err(CompileError::semantic(Locatable {
                     data: "case outside of switch statement".into(),
                     location,
                 }))
@@ -313,14 +313,14 @@ impl Compiler {
         let (_, default, _) = match self.switches.last_mut() {
             Some(x) => x,
             None => {
-                return Err(CompileError::Semantic(Locatable {
+                return Err(CompileError::semantic(Locatable {
                     data: "default case outside of switch statement".into(),
                     location,
                 }))
             }
         };
         if default.is_some() {
-            Err(CompileError::Semantic(Locatable {
+            Err(CompileError::semantic(Locatable {
                 data: "cannot have multiple default cases in a switch statement".into(),
                 location,
             }))

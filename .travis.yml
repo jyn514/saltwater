@@ -22,7 +22,7 @@ jobs:
                 - binutils-dev
                 - libiberty-dev
                 - libssl-dev
-          before_cache: cargo install cargo-tarpaulin -f
+          before_cache: cargo install cargo-tarpaulin
           # cache ~/.cargo explicitly so that ./target isn't cached
           cache:
               directories:

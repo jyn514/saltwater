@@ -13,9 +13,9 @@ keywords = ["C", "compiler", "recursive-descent", "cranelift"]
 [dependencies]
 lazy_static = "1"
 ansi_term = "0.12"
-cranelift = { git = "https://github.com/bytecodealliance/cranelift", version = "0.51" }
-cranelift-module = { git = "https://github.com/bytecodealliance/cranelift", version = "0.51" }
-cranelift-object = { git = "https://github.com/bytecodealliance/cranelift" }
+cranelift = "0.52"
+cranelift-module = "0.52"
+cranelift-object = "0.52"
 env_logger = "0.7"
 hexf = "0.1"
 thiserror = ">=1.0.9"

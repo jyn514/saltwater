@@ -243,7 +243,7 @@ impl Compiler {
                 let ir_type = param.ctype.as_ir_type();
                 Ok(builder.append_ebb_param(func_start, ir_type))
             })
-            .collect::<Result<_, Locatable<String>>>()?;
+            .collect::<CompileResult<_>>()?;
         for (param, ir_val) in params.into_iter().zip(ir_vals) {
             let u64_size = match param.ctype.sizeof() {
                 Err(data) => semantic_err!(data.into(), *location),

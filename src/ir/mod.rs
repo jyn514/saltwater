@@ -83,9 +83,7 @@ pub(crate) fn compile(
             (_, init) => compiler.store_static(decl.data.symbol, init, decl.location)?,
         }
     }
-    let mut module = compiler.module;
-    module.finalize_definitions();
-    Ok(module.finish())
+    Ok(compiler.module.finish())
 }
 
 impl Compiler {

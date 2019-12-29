@@ -207,8 +207,8 @@ fn err_exit(err: Error) -> ! {
             print_issues(num_warnings, num_errors);
             process::exit(2);
         }
-        IO(err) => utils::fatal(&format!("{}", err), 3),
-        Platform(err) => utils::fatal(&format!("{}", err), 4),
+        IO(err) => utils::fatal(&err, 3),
+        Platform(err) => utils::fatal(&err, 4),
     }
 }
 

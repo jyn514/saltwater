@@ -1204,7 +1204,7 @@ impl Expr {
         }
         if !self.ctype.is_scalar() {
             Err((
-                CompileError::Semantic(Locatable {
+                CompileError::semantic(Locatable {
                     location: self.location,
                     data: format!(
                         "expression of type '{}' cannot be converted to bool",

@@ -22,12 +22,17 @@ pub type CompileError = Locatable<Error>;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum Error {
+    // for compatibility with previous error system
     #[error("{0}")]
     GenericLex(String),
     #[error("{0}")]
     GenericSyntax(String),
     #[error("{0}")]
     GenericSemantic(String),
+
+    // specific errors
+    #[error("unterminated /* comment")]
+    UnterminatedComment,
 }
 
 impl CompileError {
@@ -62,6 +67,7 @@ impl Error {
             GenericLex(_) => ErrorKind::Lex,
             GenericSyntax(_) => ErrorKind::Syntax,
             GenericSemantic(_) => ErrorKind::Semantic,
+            UnterminatedComment => ErrorKind::Lex,
         }
     }
 }

@@ -10,6 +10,7 @@ pub type SemanticError = Locatable<String>;
 pub type CompileError = Locatable<Error>;
 
 #[derive(Debug, Error, PartialEq, Eq)]
+/// errors are non-exhaustive and may have new variants added at any time
 pub enum Error {
     // for compatibility with previous error system
     #[error("{0}")]
@@ -22,6 +23,10 @@ pub enum Error {
     // specific errors
     #[error("unterminated /* comment")]
     UnterminatedComment,
+
+    #[doc(hidden)]
+    #[error("internal error: do not construct nonexhaustive variants")]
+    __Nonexhaustive,
 }
 
 impl Error {
@@ -32,6 +37,7 @@ impl Error {
             GenericSyntax(_) => ErrorKind::Syntax,
             GenericSemantic(_) => ErrorKind::Semantic,
             UnterminatedComment => ErrorKind::Lex,
+            __Nonexhaustive => panic!("do not construct nonexhaustive variants manually"),
         }
     }
 }

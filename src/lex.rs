@@ -254,7 +254,7 @@ impl<'a> Lexer<'a> {
         }
         Err(CompileError {
             location: self.location,
-            data: Error::GenericLex("unterminated /* comment".to_string()),
+            data: Error::UnterminatedComment,
         })
     }
     /// Parse a number literal, given the starting character and whether floats are allowed.

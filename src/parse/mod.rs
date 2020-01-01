@@ -38,7 +38,7 @@ pub struct Parser<'e, I: Iterator<Item = Lexeme>> {
     tokens: I,
     /// VecDeque supports pop_front with reasonable efficiency
     /// this is useful because errors are FIFO
-    pending: VecDeque<CompileResult<Locatable<Declaration>>>,
+    pending: VecDeque<Locatable<Declaration>>,
     /// in case we get to the end of the file and want to show an error
     last_location: Location,
     /// the last token we saw from the Lexer. None if we haven't looked ahead.
@@ -116,7 +116,7 @@ where
 }
 
 impl<'a, I: Iterator<Item = Lexeme>> Iterator for Parser<'a, I> {
-    type Item = CompileResult<Locatable<Declaration>>;
+    type Item = Locatable<Declaration>;
     /// translation_unit
     /// : external_declaration
     /// | translation_unit external_declaration
@@ -148,23 +148,19 @@ impl<'a, I: Iterator<Item = Lexeme>> Iterator for Parser<'a, I> {
                 Ok(decls) => decls,
                 // output errors in program order
                 Err(err) => {
-                    if self.pending.is_empty() {
-                        return Some(Err(err.into()));
-                    } else {
-                        self.pending.push_back(Err(err.into()));
-                        return self.pending.pop_front();
-                    }
+                    self.error_handler.push_err(err.into());
+                    return self.pending.pop_front();
                 }
             };
             let next = match decls.pop_front() {
                 Some(decl) => decl,
                 None => return self.next(),
             };
-            self.pending.extend(decls.into_iter().map(Result::Ok));
-            Some(Ok(next))
+            self.pending.extend(decls.into_iter());
+            Some(next)
         });
         if self.debug {
-            if let Some(Ok(decl)) = &next {
+            if let Some(decl) = &next {
                 println!("{}", decl.data);
             }
         }
@@ -189,14 +185,14 @@ impl<'e, I: Iterator<Item = Lexeme>> Parser<'e, I> {
                         && object.storage_class != StorageClass::Extern
                         && object.storage_class != StorageClass::Typedef
                     {
-                        self.pending
-                            .push_back(Err(CompileError::semantic(Locatable {
+                        self.error_handler
+                            .push_err(CompileError::semantic(Locatable {
                                 data: format!(
                                     "forward declaration of {} is never completed (used in {})",
                                     name, object.id
                                 ),
                                 location,
-                            })));
+                            }));
                     }
                 }
                 _ => {}
@@ -267,11 +263,11 @@ impl<'e, I: Iterator<Item = Lexeme>> Parser<'e, I> {
     }
     /* error handling functions */
     fn semantic_err<S: Into<String>>(&mut self, msg: S, location: Location) {
-        self.pending
-            .push_back(Err(CompileError::semantic(Locatable {
+        self.error_handler
+            .push_err(CompileError::semantic(Locatable {
                 location,
                 data: msg.into(),
-            })));
+            }));
     }
     /*
      * If we're in an invalid state, try to recover.
@@ -321,7 +317,7 @@ impl<'e, I: Iterator<Item = Lexeme>> Parser<'e, I> {
         mem::replace(&mut self.next, tmp);
     }
     fn lex_error(&mut self, err: CompileError) {
-        self.pending.push_back(Err(err));
+        self.error_handler.push_err(err);
     }
 }
 
@@ -373,7 +369,8 @@ mod tests {
     pub(crate) fn assert_errs_decls(input: &str, errs: usize, decls: usize) {
         let mut error_handler = ErrorHandler::new();
         let parser = parser(input, &mut error_handler);
-        let (err_iter, decl_iter): (Vec<_>, Vec<_>) = parser.partition(Result::is_err);
+        let decl_iter = parser.collect::<Vec<_>>();
+        let err_iter = error_handler.into_iter().collect::<Vec<_>>();
         assert!(
             (err_iter.len(), decl_iter.len()) == (errs, decls),
             "({} errs, {} decls) != ({}, {}) when parsing {}",
@@ -387,7 +384,8 @@ mod tests {
     #[inline]
     pub(crate) fn parse_all(input: &str) -> Vec<ParseType> {
         let mut error_handler = ErrorHandler::new();
-        let mut results: Vec<ParseType> = parser(input, &mut error_handler).collect();
+        let mut results: Vec<ParseType> =
+            parser(input, &mut error_handler).map(Result::Ok).collect();
         for error in error_handler {
             results.push(Err(error));
         }
@@ -451,6 +449,7 @@ mod tests {
             instance.next_token().unwrap().data,
             Token::Keyword(Keyword::Int)
         );
+        assert!(error_handler.is_successful());
     }
     #[test]
     fn multiple_declaration() {

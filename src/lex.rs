@@ -22,13 +22,16 @@ use super::utils::warn;
 ///
 /// ```
 /// use rcc::Lexer;
+/// use rcc::data::prelude::*;
 ///
+/// let mut error_handler = ErrorHandler::new();
 /// let lexer = Lexer::new("<stdin>".to_string(),
 ///                        "int main(void) { char *hello = \"hi\"; }".chars(),
-///                         false);
+///                         false, &mut error_handler);
 /// for token in lexer {
 ///     assert!(token.is_ok());
 /// }
+/// assert!(error_handler.is_successful());
 /// ```
 #[derive(Debug)]
 pub struct Lexer<'a> {
@@ -150,12 +153,15 @@ impl<'a> Lexer<'a> {
     /// Example:
     /// ```
     /// use rcc::Lexer;
+    /// use rcc::data::prelude::*;
     ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
+    /// let mut error_handler = ErrorHandler::new();
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false, &mut error_handler);
     /// assert!(lexer.next_char() == Some('i'));
     /// assert!(lexer.next_char() == Some('n'));
     /// assert!(lexer.next_char() == Some('t'));
     /// assert!(lexer.next_char() == Some(' '));
+    /// assert!(error_handler.is_successful());
     /// ```
     pub fn next_char(&mut self) -> Option<char> {
         if let Some(c) = self.current {
@@ -180,12 +186,15 @@ impl<'a> Lexer<'a> {
     /// Examples:
     /// ```
     /// use rcc::Lexer;
+    /// use rcc::data::prelude::*;
     ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
+    /// let mut error_handler = ErrorHandler::new();
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false, &mut error_handler);
     /// let first = lexer.next_char();
     /// assert!(first == Some('i'));
     /// lexer.unput(first);
     /// assert!(lexer.next_char() == Some('i'));
+    /// assert!(error_handler.is_successful());
     /// ```
     pub fn unput(&mut self, c: Option<char>) {
         self.current = c;
@@ -196,13 +205,16 @@ impl<'a> Lexer<'a> {
     /// Examples:
     /// ```
     /// use rcc::Lexer;
+    /// use rcc::data::prelude::*;
     ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
+    /// let mut error_handler = ErrorHandler::new();
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false, &mut error_handler);
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.next_char() == Some('i'));
     /// assert!(lexer.peek() == Some('n'));
+    /// assert!(error_handler.is_successful());
     /// ```
     pub fn peek(&mut self) -> Option<char> {
         self.current = self.next_char();
@@ -214,11 +226,14 @@ impl<'a> Lexer<'a> {
     /// Examples:
     /// ```
     /// use rcc::Lexer;
+    /// use rcc::data::prelude::*;
     ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
+    /// let mut error_handler = ErrorHandler::new();
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false, &mut error_handler);
     /// assert!(lexer.match_next('i'));
     /// assert!(lexer.match_next('n'));
     /// assert!(lexer.next_char() == Some('t'));
+    /// assert!(error_handler.is_successful());
     /// ```
     pub fn match_next(&mut self, item: char) -> bool {
         if self.peek().map_or(false, |c| c == item) {
@@ -865,7 +880,7 @@ mod tests {
     type LexType = CompileResult<Locatable<Token>>;
 
     fn lex(input: &str) -> Option<LexType> {
-        let mut lexed = lex_all(input).0;
+        let mut lexed = lex_all(input);
         assert!(
             lexed.len() <= 1,
             "too many lexemes for {}: {:?}",
@@ -874,7 +889,7 @@ mod tests {
         );
         lexed.pop()
     }
-    fn lex_all(input: &str) -> (Vec<LexType>, ErrorHandler) {
+    fn lex_all(input: &str) -> Vec<LexType> {
         let mut error_handler = ErrorHandler::new();
         let results = Lexer::new(
             "<test suite>".to_string(),
@@ -883,8 +898,8 @@ mod tests {
             &mut error_handler,
         )
         .collect();
-
-        (results, error_handler)
+        assert!(error_handler.is_successful());
+        results
     }
 
     fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
@@ -945,9 +960,9 @@ mod tests {
         );
     }
     fn assert_err(s: &str) {
-        let (lexed, e) = lex_all(s);
+        let lexed = lex_all(s);
         assert!(
-            lexed.iter().any(|e| e.is_err()) || !e.is_successful(),
+            lexed.iter().any(|e| e.is_err()),
             "{:?} is not an error (from {})",
             &lexed,
             s
@@ -973,7 +988,7 @@ mod tests {
     #[test]
     fn test_ellipses() {
         assert!(match_all(
-            &lex_all("...;...;..").0,
+            &lex_all("...;...;.."),
             &[
                 Token::Ellipsis,
                 Token::Semicolon,
@@ -1006,7 +1021,7 @@ mod tests {
         assert_err("0b");
         assert_err("0x");
         assert_err("09");
-        assert_eq!(lex_all("1a").0.len(), 2);
+        assert_eq!(lex_all("1a").len(), 2);
     }
     #[test]
     fn test_float_literals() {
@@ -1016,11 +1031,11 @@ mod tests {
             assert_float(&format!("1{}e{}", "0".repeat(i), 10 - i), 1e10);
         }
         assert!(match_all(
-            &lex_all("-1").0,
+            &lex_all("-1"),
             &[Token::Minus, Literal::Int(1).into()]
         ));
         assert!(match_all(
-            &lex_all("-1e10").0,
+            &lex_all("-1e10"),
             &[Token::Minus, Literal::Float(10_000_000_000.0).into()]
         ));
         assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
@@ -1049,7 +1064,7 @@ mod tests {
         assert_err("1e.");
         assert_err("1e100000");
         assert_err("1e-100000");
-        assert_eq!(lex_all("1e1.0").0.len(), 2);
+        assert_eq!(lex_all("1e1.0").len(), 2);
     }
 
     fn lots_of(c: char) -> String {
@@ -1076,7 +1091,6 @@ mod tests {
                 "/* make sure it finds things _after_ comments */
         int i;"
             )
-            .0
             .len(),
             3
         );
@@ -1124,7 +1138,6 @@ mod tests {
             a[i] = i << 2 + i*4;
             }"
         )
-        .0
         .into_iter()
         .all(|x| x.is_ok()))
     }

@@ -569,10 +569,11 @@ impl PartialEq for Symbol {
 impl Eq for Symbol {}
 
 mod tests {
-    use crate::{data::prelude::*, Lexer, Parser};
 
     #[test]
     fn type_display() {
+        use crate::{data::prelude::*, Lexer, Parser};
+
         let types = [
             "int",
             "int *",
@@ -599,6 +600,8 @@ mod tests {
                 ),
                 ty
             );
+
+            assert!(error_handler.is_successful());
         }
     }
 }

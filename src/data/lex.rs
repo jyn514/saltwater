@@ -165,6 +165,19 @@ pub enum Token {
 }
 
 /* impls */
+impl PartialOrd for Location {
+    fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
+        if self.file == other.file {
+            match self.line.cmp(&other.line) {
+                Ordering::Equal => Some(self.column.cmp(&other.column)),
+                o => Some(o)
+            }
+        } else {
+            None
+        }
+    }
+}
+
 impl<T: PartialEq> PartialEq for Locatable<T> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data

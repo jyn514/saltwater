@@ -601,7 +601,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<'_, I> {
             if self.match_next(&Token::EQUAL).is_some() {
                 let constant = self.constant_expr()?.constexpr().unwrap_or_else(|err| {
                     let location = err.location();
-                    self.pending.push_back(Err(err));
+                    self.error_handler.push_err(err);
                     Locatable::new((Literal::Int(-1), Type::Error), location)
                 });
                 current = match constant.data.0 {
@@ -739,7 +739,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<'_, I> {
     }
     fn bitfield(&mut self) -> Result<SIZE_T, SyntaxError> {
         Ok(self.constant_expr()?.const_int().unwrap_or_else(|err| {
-            self.pending.push_back(Err(err));
+            self.error_handler.push_err(err);
             1
         }))
     }
@@ -1012,7 +1012,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<'_, I> {
                         let expr = self.constant_expr()?;
                         self.expect(Token::RightBracket)?;
                         let length = expr.const_int().unwrap_or_else(|err| {
-                            self.pending.push_back(Err(err));
+                            self.error_handler.push_err(err);
                             1
                         });
                         Some(Declarator {

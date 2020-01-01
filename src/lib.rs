@@ -67,21 +67,11 @@ pub fn compile(
     let mut error_handler = ErrorHandler::new();
     let lexer = Lexer::new(filename, buf.chars(), debug_lex, &mut error_handler);
     let tokens = lexer.collect::<Vec<_>>();
-    let mut parser = Parser::new(tokens.into_iter(), debug_ast, &mut error_handler)?;
-    let (mut hir, mut all_errs) = (vec![], vec_deque![]);
-    for result in &mut parser {
-        match result {
-            Err(err) => all_errs.push_back(err),
-            Ok(decl) => hir.push(decl),
-        }
+    let parser = Parser::new(tokens.into_iter(), debug_ast, &mut error_handler)?;
+    let hir = parser.collect();
+    if !error_handler.is_successful() {
+        return Err(Error::Source(error_handler.into_iter().collect()));
     }
-    for error in error_handler {
-        all_errs.push_back(error)
-    }
-    if !all_errs.is_empty() {
-        return Err(Error::Source(all_errs));
-    }
-
     ir::compile(hir, debug_ir).map_err(Error::from)
 }
 

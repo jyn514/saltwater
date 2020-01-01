@@ -40,6 +40,7 @@ pub struct Lexer<'a> {
     lookahead: Option<char>,
     /// whether to print out every token as it's encountered
     pub debug: bool,
+    error_handler: &'a mut ErrorHandler,
 }
 
 // returned when lexing a string literal
@@ -112,7 +113,12 @@ lazy_static! {
 
 impl<'a> Lexer<'a> {
     /// Creates a Lexer from a filename and the contents of a file
-    pub fn new<T: AsRef<str> + Into<String>>(file: T, chars: Chars<'a>, debug: bool) -> Lexer<'a> {
+    pub fn new<T: AsRef<str> + Into<String>>(
+        file: T,
+        chars: Chars<'a>,
+        debug: bool,
+        error_handler: &'a mut ErrorHandler,
+    ) -> Lexer<'a> {
         Lexer {
             location: Location {
                 line: 1,
@@ -124,6 +130,7 @@ impl<'a> Lexer<'a> {
             current: None,
             lookahead: None,
             debug,
+            error_handler,
         }
     }
     /// This lexer is somewhat unique - it reads a single character at a time,
@@ -858,7 +865,7 @@ mod tests {
     type LexType = CompileResult<Locatable<Token>>;
 
     fn lex(input: &str) -> Option<LexType> {
-        let mut lexed = lex_all(input);
+        let mut lexed = lex_all(input).0;
         assert!(
             lexed.len() <= 1,
             "too many lexemes for {}: {:?}",
@@ -867,8 +874,17 @@ mod tests {
         );
         lexed.pop()
     }
-    fn lex_all(input: &str) -> Vec<LexType> {
-        Lexer::new("<test suite>".to_string(), input.chars(), false).collect()
+    fn lex_all(input: &str) -> (Vec<LexType>, ErrorHandler) {
+        let mut error_handler = ErrorHandler::new();
+        let results = Lexer::new(
+            "<test suite>".to_string(),
+            input.chars(),
+            false,
+            &mut error_handler,
+        )
+        .collect();
+
+        (results, error_handler)
     }
 
     fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
@@ -929,9 +945,9 @@ mod tests {
         );
     }
     fn assert_err(s: &str) {
-        let lexed = lex_all(s);
+        let (lexed, e) = lex_all(s);
         assert!(
-            lexed.iter().any(|e| e.is_err()),
+            lexed.iter().any(|e| e.is_err()) || !e.is_successful(),
             "{:?} is not an error (from {})",
             &lexed,
             s
@@ -957,7 +973,7 @@ mod tests {
     #[test]
     fn test_ellipses() {
         assert!(match_all(
-            &lex_all("...;...;.."),
+            &lex_all("...;...;..").0,
             &[
                 Token::Ellipsis,
                 Token::Semicolon,
@@ -990,7 +1006,7 @@ mod tests {
         assert_err("0b");
         assert_err("0x");
         assert_err("09");
-        assert_eq!(lex_all("1a").len(), 2);
+        assert_eq!(lex_all("1a").0.len(), 2);
     }
     #[test]
     fn test_float_literals() {
@@ -1000,11 +1016,11 @@ mod tests {
             assert_float(&format!("1{}e{}", "0".repeat(i), 10 - i), 1e10);
         }
         assert!(match_all(
-            &lex_all("-1"),
+            &lex_all("-1").0,
             &[Token::Minus, Literal::Int(1).into()]
         ));
         assert!(match_all(
-            &lex_all("-1e10"),
+            &lex_all("-1e10").0,
             &[Token::Minus, Literal::Float(10_000_000_000.0).into()]
         ));
         assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
@@ -1032,7 +1048,7 @@ mod tests {
         assert_err("1e.");
         assert_err("1e100000");
         assert_err("1e-100000");
-        assert_eq!(lex_all("1e1.0").len(), 2);
+        assert_eq!(lex_all("1e1.0").0.len(), 2);
     }
 
     fn lots_of(c: char) -> String {
@@ -1059,6 +1075,7 @@ mod tests {
                 "/* make sure it finds things _after_ comments */
         int i;"
             )
+            .0
             .len(),
             3
         );
@@ -1106,6 +1123,7 @@ mod tests {
             a[i] = i << 2 + i*4;
             }"
         )
+        .0
         .into_iter()
         .all(|x| x.is_ok()))
     }

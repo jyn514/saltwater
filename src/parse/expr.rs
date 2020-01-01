@@ -9,7 +9,7 @@ use crate::data::{
 
 type SyntaxResult = Result<Expr, SyntaxError>;
 
-impl<I: Iterator<Item = Lexeme>> Parser<I> {
+impl<I: Iterator<Item = Lexeme>> Parser<'_, I> {
     /// expr_opt: expr ';' | ';'
     pub fn expr_opt(&mut self, token: Token) -> Result<Option<Expr>, SyntaxError> {
         if self.match_next(&token).is_some() {
@@ -116,9 +116,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(lval)
         } else {
             if rval.ctype != lval.ctype {
-                rval = rval
-                    .cast(&lval.ctype)
-                    .into_inner(self.default_err_handler());
+                rval = rval.cast(&lval.ctype).recover(self.error_handler);
             }
             Ok(Expr {
                 ctype: lval.ctype.clone(),
@@ -149,13 +147,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn conditional_expr(&mut self) -> SyntaxResult {
         let condition = self.logical_or_expr()?;
         if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {
-            let condition = condition.truthy().into_inner(self.compile_err_handler());
+            let condition = condition.truthy().recover(self.error_handler);
             let mut then = self.expr()?.rval();
             self.expect(Token::Colon)?;
             let mut otherwise = self.conditional_expr()?.rval();
             if then.ctype.is_arithmetic() && otherwise.ctype.is_arithmetic() {
                 let (tmp1, tmp2) =
-                    Expr::binary_promote(then, otherwise).into_inner(self.default_err_handler());
+                    Expr::binary_promote(then, otherwise).recover(self.error_handler);
                 then = tmp1;
                 otherwise = tmp2;
             } else if !Type::pointer_promote(&mut then, &mut otherwise) {
@@ -524,14 +522,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(Token::PlusPlus) => {
                 let Locatable { location, .. } = self.next_token().unwrap();
                 let expr = self.unary_expr()?;
-                Ok(Expr::increment_op(true, true, expr, location)
-                    .into_inner(self.default_err_handler()))
+                Ok(Expr::increment_op(true, true, expr, location).recover(self.error_handler))
             }
             Some(Token::MinusMinus) => {
                 let Locatable { location, .. } = self.next_token().unwrap();
                 let expr = self.unary_expr()?;
-                Ok(Expr::increment_op(true, false, expr, location)
-                    .into_inner(self.default_err_handler()))
+                Ok(Expr::increment_op(true, false, expr, location).recover(self.error_handler))
             }
             Some(Token::Keyword(Keyword::Sizeof)) => {
                 self.next_token();
@@ -614,9 +610,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             );
                             Ok(expr)
                         } else {
-                            let expr = expr
-                                .integer_promote()
-                                .into_inner(self.default_err_handler());
+                            let expr = expr.integer_promote().recover(self.error_handler);
                             Ok(Expr {
                                 lval: false,
                                 location,
@@ -632,9 +626,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             );
                             Ok(expr)
                         } else {
-                            let expr = expr
-                                .integer_promote()
-                                .into_inner(self.default_err_handler());
+                            let expr = expr.integer_promote().recover(self.error_handler);
                             Ok(Expr {
                                 lval: false,
                                 ctype: expr.ctype.clone(),
@@ -652,9 +644,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             );
                             Ok(expr)
                         } else {
-                            let expr = expr
-                                .integer_promote()
-                                .into_inner(|err| self.semantic_err(err.data, err.location));
+                            let expr = expr.integer_promote().recover(self.error_handler);
                             Ok(Expr {
                                 lval: false,
                                 ctype: expr.ctype.clone(),
@@ -707,7 +697,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         }
                     };
                     let mut addr = Expr::pointer_arithmetic(array, index, &target_type, location)
-                        .into_inner(|err| self.semantic_err(err.data, err.location));
+                        .recover(self.error_handler);
                     addr.ctype = target_type;
                     addr.lval = true;
                     addr
@@ -763,7 +753,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             Some(expected) => arg.rval().cast(&expected.ctype),
                             None => arg.default_promote(),
                         };
-                        let promoted = maybe_err.into_inner(self.default_err_handler());
+                        let promoted = maybe_err.recover(self.error_handler);
                         promoted_args.push(promoted);
                     }
                     Expr {
@@ -812,10 +802,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let expr = expr.indirection(false, struct_type, location);
                     self.struct_member(expr, id, location)?
                 }
-                Token::PlusPlus => Expr::increment_op(false, true, expr, location)
-                    .into_inner(self.default_err_handler()),
-                Token::MinusMinus => Expr::increment_op(false, false, expr, location)
-                    .into_inner(self.default_err_handler()),
+                Token::PlusPlus => {
+                    Expr::increment_op(false, true, expr, location).recover(self.error_handler)
+                }
+                Token::MinusMinus => {
+                    Expr::increment_op(false, false, expr, location).recover(self.error_handler)
+                }
                 _ => {
                     self.unput(Some(Locatable {
                         location,
@@ -1634,7 +1626,8 @@ mod tests {
     use crate::parse::tests::*;
     fn parse_expr(input: &str) -> CompileResult<Expr> {
         // because we're a child module of parse, we can skip straight to `expr()`
-        let mut p = parser(input);
+        let mut error_handler = ErrorHandler::new();
+        let mut p = parser(input, &mut error_handler);
         let exp = p.expr();
         if let Some(Err(err)) = p.pending.pop_front() {
             Err(err)
@@ -1653,7 +1646,8 @@ mod tests {
         assert_eq!(parsed, Ok(Expr::from((token, get_location(&parsed)))));
     }
     fn parse_expr_with_scope<'a>(input: &'a str, variables: &[&Symbol]) -> CompileResult<Expr> {
-        let mut parser = parser(input);
+        let mut error_handler = ErrorHandler::new();
+        let mut parser = parser(input, &mut error_handler);
         let mut scope = Scope::new();
         for var in variables {
             scope.insert(var.id.clone(), (*var).clone());

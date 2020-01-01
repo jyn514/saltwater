@@ -1,7 +1,7 @@
 use super::{Lexeme, Parser};
 use crate::data::prelude::*;
 use crate::data::{lex::Keyword, StorageClass};
-use crate::utils::{compose, warn};
+use crate::utils::warn;
 use std::iter::Iterator;
 
 type StmtResult = Result<Stmt, SyntaxError>;
@@ -36,11 +36,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<'_, I> {
             pending_errs.push(actual_err.into());
         }
         if let Some(err) = pending_errs.pop() {
-            self.pending.extend(
-                pending_errs
-                    .into_iter()
-                    .map(compose(Err, SyntaxError::into)),
-            );
+            for error in pending_errs {
+                self.error_handler.push_err(error.into());
+            }
             return Err(err);
         }
         Ok(if stmts.is_empty() {
@@ -440,7 +438,8 @@ mod tests {
         let mut error_handler = ErrorHandler::new();
         let mut p = parser(stmt, &mut error_handler);
         let exp = p.statement();
-        if let Some(Err(err)) = p.pending.pop_front() {
+        if !error_handler.is_successful() {
+            let err = error_handler.into_iter().next().unwrap();
             Err(err)
         } else {
             exp.map_err(SyntaxError::into)
@@ -464,6 +463,7 @@ mod tests {
                 file: InternedStr::get_or_intern("<test-suite>"),
             },
         }));
-        assert_eq!(dbg!(parsed), dbg!(expected))
+        assert_eq!(dbg!(parsed), dbg!(expected));
+        assert!(error_handler.is_successful());
     }
 }

@@ -1,4 +1,5 @@
 use crate::intern::InternedStr;
+use std::cmp::Ordering;
 
 // holds where a piece of code came from
 // should almost always be immutable
@@ -170,7 +171,7 @@ impl PartialOrd for Location {
         if self.file == other.file {
             match self.line.cmp(&other.line) {
                 Ordering::Equal => Some(self.column.cmp(&other.column)),
-                o => Some(o)
+                o => Some(o),
             }
         } else {
             None

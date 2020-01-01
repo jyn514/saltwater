@@ -1629,7 +1629,8 @@ mod tests {
         let mut error_handler = ErrorHandler::new();
         let mut p = parser(input, &mut error_handler);
         let exp = p.expr();
-        if let Some(Err(err)) = p.pending.pop_front() {
+        if !error_handler.is_successful() {
+            let err = error_handler.into_iter().next().unwrap();
             Err(err)
         } else {
             exp.map_err(SyntaxError::into)
@@ -1654,7 +1655,8 @@ mod tests {
         }
         parser.scope = scope;
         let exp = parser.expr();
-        if let Some(Err(err)) = parser.pending.pop_front() {
+        if !error_handler.is_successful() {
+            let err = error_handler.into_iter().next().unwrap();
             Err(err)
         } else {
             exp.map_err(SyntaxError::into)

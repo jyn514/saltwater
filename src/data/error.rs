@@ -23,6 +23,7 @@ impl ErrorHandler {
         self.errors.push(error);
     }
 
+    #[must_use]
     pub fn is_successful(&self) -> bool {
         self.errors.is_empty()
     }
@@ -31,7 +32,7 @@ impl ErrorHandler {
 impl<'a> IntoIterator for &'a ErrorHandler {
     type Item = &'a CompileError;
     type IntoIter = <&'a Vec<CompileError> as IntoIterator>::IntoIter;
-    
+
     fn into_iter(self) -> Self::IntoIter {
         self.errors.iter()
     }

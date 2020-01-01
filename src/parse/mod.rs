@@ -22,7 +22,7 @@ pub(crate) enum TagEntry {
 }
 
 #[derive(Debug)]
-pub struct Parser<I: Iterator<Item = Lexeme>> {
+pub struct Parser<'e, I: Iterator<Item = Lexeme>> {
     /// C actually has 4 different scopes:
     /// - label names
     /// - tags
@@ -46,7 +46,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     current: Option<Locatable<Token>>,
     /// TODO: are we sure we need 2 tokens of lookahead?
     /// this was put here for declarations, so we know the difference between
-    /// int (*x) and int (int), but there's probably a workaround
+    /// int (*x) and int (int), but there's probabsly a workaround
     next: Option<Locatable<Token>>,
     /// the function we are currently compiling.
     /// if `None`, we are in global scope.
@@ -54,6 +54,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     current_function: Option<FunctionData>,
     /// whether to debug each declaration
     debug: bool,
+    error_handler: &'e mut ErrorHandler,
 }
 
 #[derive(Debug)]
@@ -68,7 +69,7 @@ struct FunctionData {
     return_type: Type,
 }
 
-impl<I> Parser<I>
+impl<'e, I> Parser<'e, I>
 where
     I: Iterator<Item = Lexeme>,
 {
@@ -76,14 +77,18 @@ where
     ///     If there is at least one token that is not an error, returns a parser.
     ///     Otherwise, returns a list of the errors.
     /// Otherwise, returns None.
-    pub fn new(mut iter: I, debug: bool) -> Result<Self, VecDeque<CompileError>> {
+    pub fn new(
+        mut iter: I,
+        debug: bool,
+        error_handler: &'e mut ErrorHandler,
+    ) -> Result<Self, VecDeque<CompileError>> {
         let mut pending = VecDeque::new();
         let first = loop {
             match iter.next() {
                 Some(Ok(token)) => break token,
                 Some(Err(err)) => pending.push_back(err),
                 None if pending.is_empty() => {
-                    pending.push_back(CompileError::semantic(Locatable::new(
+                    error_handler.push_err(CompileError::semantic(Locatable::new(
                         "cannot have empty program".to_string(),
                         Default::default(),
                     )));
@@ -105,11 +110,12 @@ where
             next: None,
             current_function: None,
             debug,
+            error_handler,
         })
     }
 }
 
-impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
+impl<'a, I: Iterator<Item = Lexeme>> Iterator for Parser<'a, I> {
     type Item = CompileResult<Locatable<Declaration>>;
     /// translation_unit
     /// : external_declaration
@@ -166,7 +172,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
     }
 }
 
-impl<I: Iterator<Item = Lexeme>> Parser<I> {
+impl<'e, I: Iterator<Item = Lexeme>> Parser<'e, I> {
     /* utility functions */
     #[inline]
     fn enter_scope(&mut self) {
@@ -267,19 +273,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 data: msg.into(),
             })));
     }
-    fn default_err_handler(&mut self) -> impl '_ + FnMut(Locatable<String>) {
-        move |err| self.semantic_err(err.data, err.location)
-    }
-    fn compile_err_handler(&mut self) -> impl '_ + FnMut(CompileError) {
-        move |err| self.pending.push_back(Err(err))
-    }
-    fn multiple_err_handler(&mut self) -> impl '_ + FnMut(Vec<Locatable<String>>) {
-        move |errs| {
-            for err in errs {
-                self.semantic_err(err.data, err.location);
-            }
-        }
-    }
     /*
      * If we're in an invalid state, try to recover.
      * Consume tokens until the end of a statement - either ';' or '}'
@@ -357,6 +350,7 @@ impl Token {
 
 #[cfg(test)]
 mod tests {
+    use super::Lexeme;
     use super::Parser;
     use crate::data::prelude::*;
     use crate::lex::Lexer;
@@ -377,7 +371,8 @@ mod tests {
         }
     }
     pub(crate) fn assert_errs_decls(input: &str, errs: usize, decls: usize) {
-        let parser = parser(input);
+        let mut error_handler = ErrorHandler::new();
+        let parser = parser(input, &mut error_handler);
         let (err_iter, decl_iter): (Vec<_>, Vec<_>) = parser.partition(Result::is_err);
         assert!(
             (err_iter.len(), decl_iter.len()) == (errs, decls),
@@ -391,7 +386,12 @@ mod tests {
     }
     #[inline]
     pub(crate) fn parse_all(input: &str) -> Vec<ParseType> {
-        parser(input).collect()
+        let mut error_handler = ErrorHandler::new();
+        let mut results: Vec<ParseType> = parser(input, &mut error_handler).collect();
+        for error in error_handler {
+            results.push(Err(error));
+        }
+        results
     }
     #[inline]
     pub(crate) fn match_data<T>(lexed: Option<ParseType>, closure: T) -> bool
@@ -415,15 +415,25 @@ mod tests {
         })
     }
     #[inline]
-    pub(crate) fn parser(input: &str) -> Parser<Lexer> {
-        let lex = Lexer::new("<test suite>".to_string(), input.chars(), false);
-        Parser::new(lex, false).unwrap()
+    pub(crate) fn parser<'e>(
+        input: &str,
+        error_handler: &'e mut ErrorHandler,
+    ) -> Parser<'e, impl Iterator<Item = Lexeme>> {
+        let tokens = Lexer::new(
+            "<test suite>".to_string(),
+            input.chars(),
+            false,
+            error_handler,
+        )
+        .collect::<Vec<_>>();
+        Parser::new(tokens.into_iter(), false, error_handler).unwrap()
     }
     #[test]
     fn peek() {
         use crate::data::lex::{Keyword, Token};
         use crate::intern::InternedStr;
-        let mut instance = parser("int a[(int)1];");
+        let mut error_handler = ErrorHandler::new();
+        let mut instance = parser("int a[(int)1];", &mut error_handler);
         assert_eq!(
             instance.next_token().unwrap().data,
             Token::Keyword(Keyword::Int)

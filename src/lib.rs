@@ -64,14 +64,19 @@ pub fn compile(
     debug_ast: bool,
     debug_ir: bool,
 ) -> Result<Product, Error> {
-    let lexer = Lexer::new(filename, buf.chars(), debug_lex);
-    let mut parser = Parser::new(lexer, debug_ast)?;
+    let mut error_handler = ErrorHandler::new();
+    let lexer = Lexer::new(filename, buf.chars(), debug_lex, &mut error_handler);
+    let tokens = lexer.collect::<Vec<_>>();
+    let mut parser = Parser::new(tokens.into_iter(), debug_ast, &mut error_handler)?;
     let (mut hir, mut all_errs) = (vec![], vec_deque![]);
     for result in &mut parser {
         match result {
             Err(err) => all_errs.push_back(err),
             Ok(decl) => hir.push(decl),
         }
+    }
+    for error in error_handler {
+        all_errs.push_back(error)
     }
     if !all_errs.is_empty() {
         return Err(Error::Source(all_errs));

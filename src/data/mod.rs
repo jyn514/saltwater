@@ -11,8 +11,8 @@ pub mod types;
 pub mod prelude {
     pub use super::{
         error::{
-            CompileError, CompileResult, Error, Recoverable, RecoverableResult, SemanticError,
-            SyntaxError,
+            CompileError, CompileResult, Error, ErrorHandler, Recover, RecoverableResult,
+            SemanticError, SyntaxError,
         },
         lex::{Literal, Locatable, Location, Token},
         types::{StructRef, StructType, Type},
@@ -569,6 +569,8 @@ impl PartialEq for Symbol {
 impl Eq for Symbol {}
 
 mod tests {
+    use crate::{data::prelude::*, Lexer, Parser};
+
     #[test]
     fn type_display() {
         let types = [
@@ -581,18 +583,19 @@ mod tests {
             "struct s",
         ];
         for ty in types.iter() {
+            let mut error_handler = ErrorHandler::new();
+            let tokens = Lexer::new("<integration-test>", ty.chars(), false, &mut error_handler)
+                .collect::<Vec<_>>();
+
             assert_eq!(
                 &format!(
                     "{}",
-                    crate::Parser::new(
-                        crate::Lexer::new("<integration-test>", ty.chars(), false),
-                        false
-                    )
-                    .unwrap()
-                    .type_name()
-                    .unwrap()
-                    .data
-                    .0
+                    Parser::new(tokens.into_iter(), false, &mut error_handler,)
+                        .unwrap()
+                        .type_name()
+                        .unwrap()
+                        .data
+                        .0
                 ),
                 ty
             );

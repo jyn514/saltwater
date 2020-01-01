@@ -6,7 +6,7 @@ use std::iter::Iterator;
 
 type StmtResult = Result<Stmt, SyntaxError>;
 
-impl<I: Iterator<Item = Lexeme>> Parser<I> {
+impl<I: Iterator<Item = Lexeme>> Parser<'_, I> {
     pub fn compound_statement(&mut self) -> Result<Option<Stmt>, SyntaxError> {
         let start = self
             .expect(Token::LeftBrace)
@@ -239,9 +239,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             (Some(expr), true) => {
                 let expr = expr.rval();
                 if expr.ctype != *ret_type {
-                    StmtType::Return(Some(
-                        Expr::cast(expr, ret_type).into_inner(self.default_err_handler()),
-                    ))
+                    StmtType::Return(Some(Expr::cast(expr, ret_type).recover(self.error_handler)))
                 } else {
                     StmtType::Return(Some(expr))
                 }
@@ -319,7 +317,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn while_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::While))?;
         self.expect(Token::LeftParen)?;
-        let condition = self.expr()?.truthy().into_inner(self.compile_err_handler());
+        let condition = self.expr()?.truthy().recover(self.error_handler);
         self.expect(Token::RightParen)?;
         let body = self.statement()?;
         Ok(Stmt {
@@ -337,7 +335,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let body = self.statement()?;
         self.expect(Token::Keyword(Keyword::While))?;
         self.expect(Token::LeftParen)?;
-        let condition = self.expr()?.truthy().into_inner(self.compile_err_handler());
+        let condition = self.expr()?.truthy().recover(self.error_handler);
         self.expect(Token::RightParen)?;
         self.expect(Token::Semicolon)?;
         let stmt = if let Some(body) = body {
@@ -400,7 +398,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
         let controlling_expr = self
             .expr_opt(Token::Semicolon)?
-            .map(|expr| Expr::truthy(expr).into_inner(self.compile_err_handler()));
+            .map(|expr| Expr::truthy(expr).recover(self.error_handler));
         let iter_expr = self.expr_opt(Token::RightParen)?;
         let body = self.statement()?.map(Box::new);
         self.leave_scope(self.last_location);
@@ -439,7 +437,8 @@ mod tests {
     use crate::data::prelude::*;
     use crate::intern::InternedStr;
     fn parse_stmt(stmt: &str) -> CompileResult<Option<Stmt>> {
-        let mut p = parser(stmt);
+        let mut error_handler = ErrorHandler::new();
+        let mut p = parser(stmt, &mut error_handler);
         let exp = p.statement();
         if let Some(Err(err)) = p.pending.pop_front() {
             Err(err)
@@ -455,8 +454,10 @@ mod tests {
     // Try `cargo test -- --nocapture 2>&1 | grep -v semicolon` in the meantime
     fn test_expr_stmt() {
         let parsed = parse_stmt("1;");
+
+        let mut error_handler = ErrorHandler::new();
         let expected = Ok(Some(Stmt {
-            data: StmtType::Expr(parser("1").expr().unwrap()),
+            data: StmtType::Expr(parser("1", &mut error_handler).expr().unwrap()),
             location: Location {
                 line: 1,
                 column: 1,

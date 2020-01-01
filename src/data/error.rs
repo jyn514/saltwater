@@ -2,12 +2,49 @@ use std::fmt;
 
 use thiserror::Error;
 
-use super::{Expr, Locatable, Location};
+use super::{Locatable, Location};
 
-pub type RecoverableResult<T = Expr, E = CompileError> = Result<T, (E, T)>;
+pub type RecoverableResult<T, E = CompileError> = Result<T, (E, T)>;
 pub type CompileResult<T> = Result<T, CompileError>;
 pub type SemanticError = Locatable<String>;
 pub type CompileError = Locatable<Error>;
+
+#[derive(Debug, Default)]
+pub struct ErrorHandler {
+    errors: Vec<CompileError>,
+}
+
+impl ErrorHandler {
+    pub fn new() -> ErrorHandler {
+        Default::default()
+    }
+
+    pub fn push_err(&mut self, error: CompileError) {
+        self.errors.push(error);
+    }
+
+    pub fn is_successful(&self) -> bool {
+        self.errors.is_empty()
+    }
+}
+
+impl<'a> IntoIterator for &'a ErrorHandler {
+    type Item = &'a CompileError;
+    type IntoIter = <&'a Vec<CompileError> as IntoIterator>::IntoIter;
+    
+    fn into_iter(self) -> Self::IntoIter {
+        self.errors.iter()
+    }
+}
+
+impl IntoIterator for ErrorHandler {
+    type Item = CompileError;
+    type IntoIter = <Vec<CompileError> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.errors.into_iter()
+    }
+}
 
 #[derive(Debug, Error, PartialEq, Eq)]
 /// errors are non-exhaustive and may have new variants added at any time
@@ -98,22 +135,29 @@ impl From<Locatable<String>> for SyntaxError {
     }
 }
 
-pub trait Recoverable {
+pub trait Recover {
     type Ok;
-    type Error;
-    fn into_inner<F: FnMut(Self::Error)>(self, error_handler: F) -> Self::Ok;
+    fn recover(self, error_handler: &mut ErrorHandler) -> Self::Ok;
 }
 
-impl<T, E> Recoverable for Result<T, (E, T)> {
+impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, E> {
     type Ok = T;
-    type Error = E;
-    fn into_inner<F: FnMut(E)>(self, mut error_handler: F) -> T {
-        match self {
-            Ok(inner) => inner,
-            Err((err, inner)) => {
-                error_handler(err);
-                inner
+    fn recover(self, error_hander: &mut ErrorHandler) -> T {
+        self.unwrap_or_else(|(e, i)| {
+            error_hander.push_err(e.into());
+            i
+        })
+    }
+}
+
+impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, Vec<E>> {
+    type Ok = T;
+    fn recover(self, error_handler: &mut ErrorHandler) -> T {
+        self.unwrap_or_else(|(es, i)| {
+            for e in es {
+                error_handler.push_err(e.into());
             }
-        }
+            i
+        })
     }
 }

@@ -294,6 +294,12 @@ mod tests {
         ));
         assert_eq!(r.recover(&mut error_handler), 42);
         let errors = error_handler.into_iter().collect::<Vec<_>>();
-        assert_eq!(errors, vec![new_error(Error::UnterminatedComment)]);
+        assert_eq!(
+            errors,
+            vec![
+                new_error(Error::UnterminatedComment),
+                new_error(Error::GenericSemantic("pears".to_string())),
+            ]
+        );
     }
 }

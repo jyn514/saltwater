@@ -109,14 +109,6 @@ impl<'a> Lexer<'a> {
             c
         })
     }
-    /// Return a character to the stream.
-    /// Can be called at most one time before previous characters will be discarded.
-    /// Use with caution!
-    fn unput(&mut self, c: Option<char>) {
-        self.location.offset -= 1;
-        self.lookahead = self.current;
-        self.current = c;
-    }
     /// Return the character that would be returned by `next_char`.
     /// Can be called any number of the times and will still return the same result.
     fn peek(&mut self) -> Option<char> {
@@ -206,19 +198,17 @@ impl<'a> Lexer<'a> {
         buf.push(start);
         // check for radix other than 10 - but if we see '.', use 10
         let radix = if start == '0' {
-            match self.next_char() {
-                Some('b') => 2,
-                Some('x') => {
-                    buf.push('x');
-                    16
-                }
+            if self.match_next('b') {
+                2
+            } else if self.match_next('x') {
+                buf.push('x');
+                16
+            } else if self.match_next('.') {
                 // float: 0.431
-                Some('.') => return self.parse_float(10, buf).map(float_literal),
+                return self.parse_float(10, buf).map(float_literal);
+            } else {
                 // octal: 0755 => 493
-                c => {
-                    self.unput(c);
-                    8
-                }
+                8
             }
         } else {
             10
@@ -529,11 +519,11 @@ impl<'a> Lexer<'a> {
     fn parse_id(&mut self, start: char) -> Result<Token, String> {
         let mut id = String::new();
         id.push(start);
-        while let Some(c) = self.next_char() {
+        while let Some(c) = self.peek() {
             if c.is_digit(10) || 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_' {
+                self.next_char();
                 id.push(c);
             } else {
-                self.unput(Some(c));
                 break;
             }
         }
@@ -619,13 +609,13 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                     _ => Token::Star,
                 },
-                '/' => match self.next_char() {
-                    Some('=') => AssignmentToken::DivideEqual.into(),
-                    c => {
-                        self.unput(c);
+                '/' => {
+                    if self.match_next('=') {
+                        AssignmentToken::DivideEqual.into()
+                    } else {
                         Token::Divide
                     }
-                },
+                }
                 '%' => match self.peek() {
                     Some('=') => {
                         self.next_char();
@@ -760,7 +750,7 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                 },
                 '"' => {
-                    self.unput(Some('"'));
+                    self.current = Some('"');
                     match self.parse_string() {
                         Ok(id) => id,
                         Err(err) => {

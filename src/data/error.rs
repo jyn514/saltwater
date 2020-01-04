@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use thiserror::Error;
 
-use super::{Expr, Locatable, Location, lex::Token};
+use super::{lex::Token, Expr, Locatable, Location};
 
 /// RecoverableResult is a type that represents a Result that can be recovered from.
 ///
@@ -122,12 +122,19 @@ pub enum SyntaxError {
 /// Preprocessing errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum CppError {
+    #[error("{0}")]
+    Generic(String),
+
     #[error("invalid preprocessing directive")]
     InvalidDirective,
+    // valid token in the wrong position
     #[error("expected {0}, got {1}")]
     UnexpectedToken(&'static str, Token),
     #[error("expected {0}, got <end-of-file>")]
     EndOfFile(&'static str),
+    // invalid token
+    #[error("invalid preprocessor token {0}")]
+    InvalidCppToken(Token),
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
@@ -223,6 +230,12 @@ impl From<Locatable<SemanticError>> for CompileError {
 impl From<Locatable<SyntaxError>> for CompileError {
     fn from(err: Locatable<SyntaxError>) -> Self {
         err.map(Error::Syntax)
+    }
+}
+
+impl From<Locatable<CppError>> for CompileError {
+    fn from(err: Locatable<CppError>) -> Self {
+        err.map(Error::PreProcessor)
     }
 }
 

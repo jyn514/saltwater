@@ -379,4 +379,14 @@ mod tests {
             assert_keyword(cpp(&keyword.to_string()).next(), *keyword);
         }
     }
+    #[test]
+    fn ifdef() {
+        let code = "#ifdef a
+        whatever, doesn't matter
+        #endif";
+        assert_eq!(cpp(code).next(), None);
+        let code = "#ifdef a\n#endif";
+        assert_eq!(cpp(code).next(), None);
+        assert!(cpp("#ifdef").next().unwrap().is_err());
+    }
 }

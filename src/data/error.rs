@@ -83,6 +83,8 @@ pub enum SemanticError {
 
     #[error("cannot have empty program")]
     EmptyProgram,
+    #[error("use of undeclared identifier '{0}'")]
+    UndeclaredVar(crate::intern::InternedStr),
 
     #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
     ConstOverflow { is_positive: bool },

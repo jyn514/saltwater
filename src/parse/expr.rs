@@ -852,10 +852,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             match data {
                 Token::Id(name) => match self.scope.get(&name) {
                     None => {
-                        self.semantic_err(
-                            format!("use of undeclared identifier '{}'", name),
+                        self.error_handler.push_back(CompileError::new(
+                            SemanticError::UndeclaredVar(name).into(),
                             location,
-                        );
+                        ));
                         let mut pretend_zero = Expr::zero(location);
                         pretend_zero.ctype = Type::Error;
                         Ok(pretend_zero)

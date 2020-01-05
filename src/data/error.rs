@@ -150,9 +150,9 @@ pub(crate) trait Recover {
 
 impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, E> {
     type Ok = T;
-    fn recover(self, error_hander: &mut ErrorHandler) -> T {
+    fn recover(self, error_handler: &mut ErrorHandler) -> T {
         self.unwrap_or_else(|(e, i)| {
-            error_hander.push_back(e.into());
+            error_handler.push_back(e);
             i
         })
     }

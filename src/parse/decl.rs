@@ -2118,7 +2118,7 @@ mod tests {
     }
     #[test]
     fn bitfields() {
-        assert!(dbg!(parse("struct { int:5; } a;")).unwrap().is_err());
+        assert!(parse("struct { int:5; } a;").unwrap().is_err());
         assert!(parse("struct { int a:5; } b;").unwrap().is_ok());
         assert!(parse("struct { int a:5, b:6; } c;").unwrap().is_ok());
         assert!(parse("struct { extern int a:5; } d;").unwrap().is_err());

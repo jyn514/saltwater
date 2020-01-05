@@ -9,11 +9,9 @@ pub mod error;
 pub mod lex;
 pub mod types;
 pub mod prelude {
+    pub(crate) use super::error::{ErrorHandler, Recover, RecoverableResult};
     pub use super::{
-        error::{
-            CompileError, CompileResult, Error, ErrorHandler, Recover, RecoverableResult,
-            SemanticError, SyntaxError,
-        },
+        error::{CompileError, CompileResult, Error, SemanticError, SyntaxError},
         lex::{Literal, Locatable, Location, Token},
         types::{StructRef, StructType, Type},
         Declaration, Expr, ExprType, Stmt, StmtType, Symbol,
@@ -568,12 +566,12 @@ impl PartialEq for Symbol {
 
 impl Eq for Symbol {}
 
+#[cfg(test)]
 mod tests {
+    use crate::{Lexer, Parser};
 
     #[test]
     fn type_display() {
-        use crate::{data::prelude::*, Lexer, Parser};
-
         let types = [
             "int",
             "int *",
@@ -584,14 +582,12 @@ mod tests {
             "struct s",
         ];
         for ty in types.iter() {
-            let mut error_handler = ErrorHandler::new();
-            let tokens = Lexer::new("<integration-test>", ty.chars(), false, &mut error_handler)
-                .collect::<Vec<_>>();
+            let tokens = Lexer::new("<integration-test>", ty.chars(), false).collect::<Vec<_>>();
 
             assert_eq!(
                 &format!(
                     "{}",
-                    Parser::new(tokens.into_iter(), false, &mut error_handler,)
+                    Parser::new(tokens.into_iter(), false)
                         .unwrap()
                         .type_name()
                         .unwrap()
@@ -600,8 +596,6 @@ mod tests {
                 ),
                 ty
             );
-
-            assert!(error_handler.is_successful());
         }
     }
 }

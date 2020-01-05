@@ -364,7 +364,6 @@ impl Token {
 
 #[cfg(test)]
 mod tests {
-    use super::Lexeme;
     use super::Parser;
     use crate::data::prelude::*;
     use crate::lex::Lexer;
@@ -423,10 +422,9 @@ mod tests {
         })
     }
     #[inline]
-    pub(crate) fn parser(input: &str) -> Parser<impl Iterator<Item = Lexeme>> {
-        let tokens =
-            Lexer::new("<test suite>".to_string(), input.chars(), false).collect::<Vec<_>>();
-        Parser::new(tokens.into_iter(), false).unwrap()
+    pub(crate) fn parser(input: &str) -> Parser<Lexer> {
+        let lexer = Lexer::new("<test suite>".to_string(), input.chars(), false);
+        Parser::new(lexer, false).unwrap()
     }
     #[test]
     fn peek() {

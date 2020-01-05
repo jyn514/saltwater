@@ -39,12 +39,6 @@ impl ErrorHandler {
         self.errors.pop_front()
     }
 
-    /// Checks if there are any errors present in the error handler. Does not
-    /// count warnings.
-    pub(crate) fn is_successful(&self) -> bool {
-        self.errors.is_empty()
-    }
-
     /// Checks if there are errors in the handler
     pub(crate) fn is_empty(&self) -> bool {
         self.errors.is_empty()
@@ -281,7 +275,7 @@ mod tests {
         let mut error_handler = ErrorHandler::new();
         let r: RecoverableResult<i32> = Ok(1);
         assert_eq!(r.recover(&mut error_handler), 1);
-        assert!(error_handler.is_successful());
+        assert!(error_handler.is_empty());
 
         let mut error_handler = ErrorHandler::new();
         let r: RecoverableResult<i32> = Err((new_error(Error::UnterminatedComment), 42));
@@ -295,7 +289,7 @@ mod tests {
         let mut error_handler = ErrorHandler::new();
         let r: RecoverableResult<i32, Vec<CompileError>> = Ok(1);
         assert_eq!(r.recover(&mut error_handler), 1);
-        assert!(error_handler.is_successful());
+        assert!(error_handler.is_empty());
 
         let mut error_handler = ErrorHandler::new();
         let r: RecoverableResult<i32, Vec<CompileError>> = Err((

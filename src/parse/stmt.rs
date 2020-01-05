@@ -37,7 +37,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         if let Some(err) = pending_errs.pop() {
             for error in pending_errs {
-                self.error_handler.push_err(error.into());
+                self.error_handler.push_back(error);
             }
             return Err(err);
         }

@@ -85,7 +85,7 @@ where
                 Some(Ok(token)) => break token,
                 Some(Err(err)) => pending.push_back(err),
                 None if pending.is_empty() => {
-                    error_handler.push_err(CompileError::semantic(Locatable::new(
+                    error_handler.push_back(CompileError::semantic(Locatable::new(
                         "cannot have empty program".to_string(),
                         Default::default(),
                     )));
@@ -159,7 +159,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                             self.pending.extend(decls.into_iter());
                         }
                         Err(err) => {
-                            self.error_handler.push_err(err.into());
+                            self.error_handler.push_back(err);
                         }
                     }
 
@@ -193,7 +193,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         && object.storage_class != StorageClass::Typedef
                     {
                         self.error_handler
-                            .push_err(CompileError::semantic(Locatable {
+                            .push_back(CompileError::semantic(Locatable {
                                 data: format!(
                                     "forward declaration of {} is never completed (used in {})",
                                     name, object.id
@@ -271,7 +271,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* error handling functions */
     fn semantic_err<S: Into<String>>(&mut self, msg: S, location: Location) {
         self.error_handler
-            .push_err(CompileError::semantic(Locatable {
+            .push_back(CompileError::semantic(Locatable {
                 location,
                 data: msg.into(),
             }));
@@ -324,7 +324,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         mem::replace(&mut self.next, tmp);
     }
     fn lex_error(&mut self, err: CompileError) {
-        self.error_handler.push_err(err);
+        self.error_handler.push_back(err);
     }
     pub fn collect_results(self) -> (Vec<Locatable<Declaration>>, Vec<CompileError>) {
         let mut decls = Vec::new();

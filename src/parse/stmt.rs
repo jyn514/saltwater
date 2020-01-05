@@ -439,7 +439,7 @@ mod tests {
     fn parse_stmt(stmt: &str) -> CompileResult<Option<Stmt>> {
         let mut p = parser(stmt);
         let exp = p.statement();
-        if !p.error_handler.is_successful() {
+        if !p.error_handler.is_empty() {
             let err = p.error_handler.into_iter().next().unwrap();
             Err(err)
         } else {

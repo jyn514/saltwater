@@ -1630,7 +1630,7 @@ mod tests {
         // because we're a child module of parse, we can skip straight to `expr()`
         let mut p = parser(input);
         let exp = p.expr();
-        if !p.error_handler.is_successful() {
+        if !p.error_handler.is_empty() {
             let err = p.error_handler.into_iter().next().unwrap();
             Err(err)
         } else {
@@ -1655,7 +1655,7 @@ mod tests {
         }
         parser.scope = scope;
         let exp = parser.expr();
-        if !parser.error_handler.is_successful() {
+        if !parser.error_handler.is_empty() {
             let err = parser.error_handler.into_iter().next().unwrap();
             Err(err)
         } else {

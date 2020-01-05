@@ -64,13 +64,12 @@ pub fn compile(
     debug_ast: bool,
     debug_ir: bool,
 ) -> Result<Product, Error> {
-    let mut error_handler = ErrorHandler::new();
-    let lexer = Lexer::new(filename, buf.chars(), debug_lex, &mut error_handler);
+    let lexer = Lexer::new(filename, buf.chars(), debug_lex);
     let tokens = lexer.collect::<Vec<_>>();
-    let parser = Parser::new(tokens.into_iter(), debug_ast, &mut error_handler)?;
-    let hir = parser.collect();
-    if !error_handler.is_successful() {
-        return Err(Error::Source(error_handler.into_iter().collect()));
+    let parser = Parser::new(tokens.into_iter(), debug_ast)?;
+    let (hir, errors) = parser.collect_results();
+    if !errors.is_empty() {
+        return Err(Error::Source(errors.into()));
     }
     ir::compile(hir, debug_ir).map_err(Error::from)
 }

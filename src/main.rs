@@ -12,7 +12,11 @@ extern crate rcc;
 
 use ansi_term::Colour;
 use pico_args::Arguments;
-use rcc::{assemble, compile, data::lex::Location, link, utils, Error};
+use rcc::{
+    assemble, compile,
+    data::{error::RecoverableResult, lex::Location},
+    link, utils, Error,
+};
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
 

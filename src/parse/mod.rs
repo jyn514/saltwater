@@ -22,7 +22,7 @@ pub(crate) enum TagEntry {
 }
 
 #[derive(Debug)]
-pub struct Parser<'e, I: Iterator<Item = Lexeme>> {
+pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// C actually has 4 different scopes:
     /// - label names
     /// - tags
@@ -54,7 +54,7 @@ pub struct Parser<'e, I: Iterator<Item = Lexeme>> {
     current_function: Option<FunctionData>,
     /// whether to debug each declaration
     debug: bool,
-    error_handler: &'e mut ErrorHandler,
+    error_handler: ErrorHandler,
 }
 
 #[derive(Debug)]
@@ -69,7 +69,7 @@ struct FunctionData {
     return_type: Type,
 }
 
-impl<'e, I> Parser<'e, I>
+impl<I> Parser<I>
 where
     I: Iterator<Item = Lexeme>,
 {
@@ -77,11 +77,8 @@ where
     ///     If there is at least one token that is not an error, returns a parser.
     ///     Otherwise, returns a list of the errors.
     /// Otherwise, returns None.
-    pub fn new(
-        mut iter: I,
-        debug: bool,
-        error_handler: &'e mut ErrorHandler,
-    ) -> Result<Self, VecDeque<CompileError>> {
+    pub fn new(mut iter: I, debug: bool) -> Result<Self, VecDeque<CompileError>> {
+        let mut error_handler = ErrorHandler::new();
         let mut pending = VecDeque::new();
         let first = loop {
             match iter.next() {
@@ -115,8 +112,8 @@ where
     }
 }
 
-impl<'a, I: Iterator<Item = Lexeme>> Iterator for Parser<'a, I> {
-    type Item = Locatable<Declaration>;
+impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
+    type Item = CompileResult<Locatable<Declaration>>;
     /// translation_unit
     /// : external_declaration
     /// | translation_unit external_declaration
@@ -132,35 +129,45 @@ impl<'a, I: Iterator<Item = Lexeme>> Iterator for Parser<'a, I> {
     /// | declaration_specifiers declarator compound_statement
     /// ;
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.pending.pop_front().or_else(|| {
-            while let Some(locatable) = self.match_next(&Token::Semicolon) {
-                warn("extraneous semicolon at top level", locatable.location);
-            }
+        let next = self
+            .pending
+            .pop_front()
+            .map(Result::Ok)
+            .or_else(|| self.error_handler.pop_err().map(Result::Err))
+            .or_else(|| {
+                // Parse more of our file
 
-            // check for end of file
-            if self.peek_token().is_none() {
-                if self.scope.is_global() {
-                    self.leave_scope(self.last_location);
+                // Remove extra semicolons
+                while let Some(locatable) = self.match_next(&Token::Semicolon) {
+                    warn("extraneous semicolon at top level", locatable.location);
                 }
-                return self.pending.pop_front();
-            }
-            let mut decls = match self.declaration() {
-                Ok(decls) => decls,
-                // output errors in program order
-                Err(err) => {
-                    self.error_handler.push_err(err.into());
-                    return self.pending.pop_front();
+
+                // Check for end of file
+                if self.peek_token().is_none() {
+                    if self.scope.is_global() {
+                        self.leave_scope(self.last_location);
+                    }
+
+                    if self.pending.is_empty() && self.error_handler.is_empty() {
+                        None
+                    } else {
+                        self.next()
+                    }
+                } else {
+                    match self.declaration() {
+                        Ok(decls) => {
+                            self.pending.extend(decls.into_iter());
+                        }
+                        Err(err) => {
+                            self.error_handler.push_err(err.into());
+                        }
+                    }
+
+                    self.next()
                 }
-            };
-            let next = match decls.pop_front() {
-                Some(decl) => decl,
-                None => return self.next(),
-            };
-            self.pending.extend(decls.into_iter());
-            Some(next)
-        });
+            });
         if self.debug {
-            if let Some(decl) = &next {
+            if let Some(Ok(decl)) = &next {
                 println!("{}", decl.data);
             }
         }
@@ -168,7 +175,7 @@ impl<'a, I: Iterator<Item = Lexeme>> Iterator for Parser<'a, I> {
     }
 }
 
-impl<'e, I: Iterator<Item = Lexeme>> Parser<'e, I> {
+impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* utility functions */
     #[inline]
     fn enter_scope(&mut self) {
@@ -319,6 +326,17 @@ impl<'e, I: Iterator<Item = Lexeme>> Parser<'e, I> {
     fn lex_error(&mut self, err: CompileError) {
         self.error_handler.push_err(err);
     }
+    pub fn collect_results(self) -> (Vec<Locatable<Declaration>>, Vec<CompileError>) {
+        let mut decls = Vec::new();
+        let mut errs = Vec::new();
+        for result in self {
+            match result {
+                Ok(decl) => decls.push(decl),
+                Err(err) => errs.push(err),
+            }
+        }
+        (decls, errs)
+    }
 }
 
 impl std::fmt::Display for TagEntry {
@@ -367,10 +385,8 @@ mod tests {
         }
     }
     pub(crate) fn assert_errs_decls(input: &str, errs: usize, decls: usize) {
-        let mut error_handler = ErrorHandler::new();
-        let parser = parser(input, &mut error_handler);
-        let decl_iter = parser.collect::<Vec<_>>();
-        let err_iter = error_handler.into_iter().collect::<Vec<_>>();
+        let parser = parser(input);
+        let (decl_iter, err_iter) = parser.collect_results();
         assert!(
             (err_iter.len(), decl_iter.len()) == (errs, decls),
             "({} errs, {} decls) != ({}, {}) when parsing {}",
@@ -383,13 +399,7 @@ mod tests {
     }
     #[inline]
     pub(crate) fn parse_all(input: &str) -> Vec<ParseType> {
-        let mut error_handler = ErrorHandler::new();
-        let mut results: Vec<ParseType> =
-            parser(input, &mut error_handler).map(Result::Ok).collect();
-        for error in error_handler {
-            results.push(Err(error));
-        }
-        results
+        parser(input).collect()
     }
     #[inline]
     pub(crate) fn match_data<T>(lexed: Option<ParseType>, closure: T) -> bool
@@ -413,25 +423,16 @@ mod tests {
         })
     }
     #[inline]
-    pub(crate) fn parser<'e>(
-        input: &str,
-        error_handler: &'e mut ErrorHandler,
-    ) -> Parser<'e, impl Iterator<Item = Lexeme>> {
-        let tokens = Lexer::new(
-            "<test suite>".to_string(),
-            input.chars(),
-            false,
-            error_handler,
-        )
-        .collect::<Vec<_>>();
-        Parser::new(tokens.into_iter(), false, error_handler).unwrap()
+    pub(crate) fn parser(input: &str) -> Parser<impl Iterator<Item = Lexeme>> {
+        let tokens =
+            Lexer::new("<test suite>".to_string(), input.chars(), false).collect::<Vec<_>>();
+        Parser::new(tokens.into_iter(), false).unwrap()
     }
     #[test]
     fn peek() {
         use crate::data::lex::{Keyword, Token};
         use crate::intern::InternedStr;
-        let mut error_handler = ErrorHandler::new();
-        let mut instance = parser("int a[(int)1];", &mut error_handler);
+        let mut instance = parser("int a[(int)1];");
         assert_eq!(
             instance.next_token().unwrap().data,
             Token::Keyword(Keyword::Int)
@@ -449,7 +450,6 @@ mod tests {
             instance.next_token().unwrap().data,
             Token::Keyword(Keyword::Int)
         );
-        assert!(error_handler.is_successful());
     }
     #[test]
     fn multiple_declaration() {

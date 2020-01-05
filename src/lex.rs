@@ -22,16 +22,13 @@ use super::utils::warn;
 ///
 /// ```
 /// use rcc::Lexer;
-/// use rcc::data::prelude::*;
 ///
-/// let mut error_handler = ErrorHandler::new();
 /// let lexer = Lexer::new("<stdin>".to_string(),
 ///                        "int main(void) { char *hello = \"hi\"; }".chars(),
-///                         false, &mut error_handler);
+///                         false);
 /// for token in lexer {
 ///     assert!(token.is_ok());
 /// }
-/// assert!(error_handler.is_successful());
 /// ```
 #[derive(Debug)]
 pub struct Lexer<'a> {
@@ -43,7 +40,7 @@ pub struct Lexer<'a> {
     lookahead: Option<char>,
     /// whether to print out every token as it's encountered
     pub debug: bool,
-    error_handler: &'a mut ErrorHandler,
+    error_handler: ErrorHandler,
 }
 
 // returned when lexing a string literal
@@ -116,12 +113,7 @@ lazy_static! {
 
 impl<'a> Lexer<'a> {
     /// Creates a Lexer from a filename and the contents of a file
-    pub fn new<T: AsRef<str> + Into<String>>(
-        file: T,
-        chars: Chars<'a>,
-        debug: bool,
-        error_handler: &'a mut ErrorHandler,
-    ) -> Lexer<'a> {
+    pub fn new<T: AsRef<str> + Into<String>>(file: T, chars: Chars<'a>, debug: bool) -> Lexer<'a> {
         Lexer {
             location: Location {
                 line: 1,
@@ -133,7 +125,7 @@ impl<'a> Lexer<'a> {
             current: None,
             lookahead: None,
             debug,
-            error_handler,
+            error_handler: ErrorHandler::new(),
         }
     }
     /// This lexer is somewhat unique - it reads a single character at a time,
@@ -153,15 +145,12 @@ impl<'a> Lexer<'a> {
     /// Example:
     /// ```
     /// use rcc::Lexer;
-    /// use rcc::data::prelude::*;
     ///
-    /// let mut error_handler = ErrorHandler::new();
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false, &mut error_handler);
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// assert!(lexer.next_char() == Some('i'));
     /// assert!(lexer.next_char() == Some('n'));
     /// assert!(lexer.next_char() == Some('t'));
     /// assert!(lexer.next_char() == Some(' '));
-    /// assert!(error_handler.is_successful());
     /// ```
     pub fn next_char(&mut self) -> Option<char> {
         if let Some(c) = self.current {
@@ -186,15 +175,12 @@ impl<'a> Lexer<'a> {
     /// Examples:
     /// ```
     /// use rcc::Lexer;
-    /// use rcc::data::prelude::*;
     ///
-    /// let mut error_handler = ErrorHandler::new();
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false, &mut error_handler);
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// let first = lexer.next_char();
     /// assert!(first == Some('i'));
     /// lexer.unput(first);
     /// assert!(lexer.next_char() == Some('i'));
-    /// assert!(error_handler.is_successful());
     /// ```
     pub fn unput(&mut self, c: Option<char>) {
         self.current = c;
@@ -205,16 +191,13 @@ impl<'a> Lexer<'a> {
     /// Examples:
     /// ```
     /// use rcc::Lexer;
-    /// use rcc::data::prelude::*;
     ///
-    /// let mut error_handler = ErrorHandler::new();
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false, &mut error_handler);
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.peek() == Some('i'));
     /// assert!(lexer.next_char() == Some('i'));
     /// assert!(lexer.peek() == Some('n'));
-    /// assert!(error_handler.is_successful());
     /// ```
     pub fn peek(&mut self) -> Option<char> {
         self.current = self.next_char();
@@ -226,14 +209,11 @@ impl<'a> Lexer<'a> {
     /// Examples:
     /// ```
     /// use rcc::Lexer;
-    /// use rcc::data::prelude::*;
     ///
-    /// let mut error_handler = ErrorHandler::new();
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false, &mut error_handler);
+    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
     /// assert!(lexer.match_next('i'));
     /// assert!(lexer.match_next('n'));
     /// assert!(lexer.next_char() == Some('t'));
-    /// assert!(error_handler.is_successful());
     /// ```
     pub fn match_next(&mut self, item: char) -> bool {
         if self.peek().map_or(false, |c| c == item) {
@@ -890,16 +870,7 @@ mod tests {
         lexed.pop()
     }
     fn lex_all(input: &str) -> Vec<LexType> {
-        let mut error_handler = ErrorHandler::new();
-        let results = Lexer::new(
-            "<test suite>".to_string(),
-            input.chars(),
-            false,
-            &mut error_handler,
-        )
-        .collect();
-        assert!(error_handler.is_successful());
-        results
+        Lexer::new("<test suite>".to_string(), input.chars(), false).collect()
     }
 
     fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool

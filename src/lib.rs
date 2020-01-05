@@ -65,8 +65,7 @@ pub fn compile(
     debug_ir: bool,
 ) -> Result<Product, Error> {
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
-    let tokens = lexer.collect::<Vec<_>>();
-    let parser = Parser::new(tokens.into_iter(), debug_ast)?;
+    let parser = Parser::new(lexer, debug_ast)?;
     let (hir, errors) = parser.collect_results();
     if !errors.is_empty() {
         return Err(Error::Source(errors.into()));

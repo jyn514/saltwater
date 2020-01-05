@@ -148,7 +148,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                         self.leave_scope(self.last_location);
                     }
 
-                    if self.pending.is_empty() && self.error_handler.is_empty() {
+                    if self.error_handler.is_empty() {
                         None
                     } else {
                         self.next()

@@ -46,7 +46,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     current: Option<Locatable<Token>>,
     /// TODO: are we sure we need 2 tokens of lookahead?
     /// this was put here for declarations, so we know the difference between
-    /// int (*x) and int (int), but there's probabsly a workaround
+    /// int (*x) and int (int), but there's probably a workaround
     next: Option<Locatable<Token>>,
     /// the function we are currently compiling.
     /// if `None`, we are in global scope.

@@ -440,7 +440,7 @@ mod tests {
         let mut p = parser(stmt);
         let exp = p.statement();
         if !p.error_handler.is_empty() {
-            let err = p.error_handler.into_iter().next().unwrap();
+            let err = p.error_handler.pop_front().unwrap();
             Err(err)
         } else {
             exp.map_err(SyntaxError::into)

@@ -31,8 +31,8 @@ impl ErrorHandler {
     }
 
     /// Add an error to the error handler.
-    pub(crate) fn push_err(&mut self, error: CompileError) {
-        self.errors.push_back(error);
+    pub(crate) fn push_back<E: Into<CompileError>>(&mut self, error: E) {
+        self.errors.push_back(error.into());
     }
 
     pub(crate) fn pop_err(&mut self) -> Option<CompileError> {
@@ -152,7 +152,7 @@ impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, E> {
     type Ok = T;
     fn recover(self, error_hander: &mut ErrorHandler) -> T {
         self.unwrap_or_else(|(e, i)| {
-            error_hander.push_err(e.into());
+            error_hander.push_back(e.into());
             i
         })
     }
@@ -163,7 +163,7 @@ impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, Vec<E>> {
     fn recover(self, error_handler: &mut ErrorHandler) -> T {
         self.unwrap_or_else(|(es, i)| {
             for e in es {
-                error_handler.push_err(e.into());
+                error_handler.push_back(e.into());
             }
             i
         })
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn test_error_handler_push_err() {
         let mut error_handler = ErrorHandler::new();
-        error_handler.push_err(new_error(Error::UnterminatedComment));
+        error_handler.push_back(new_error(Error::UnterminatedComment));
 
         assert_eq!(
             error_handler,
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn test_error_handler_into_iterator() {
         let mut error_handler = ErrorHandler::new();
-        error_handler.push_err(new_error(Error::GenericSemantic("stuff".to_string())));
+        error_handler.push_back(new_error(Error::GenericSemantic("stuff".to_string())));
         let errors = error_handler.into_iter().collect::<Vec<_>>();
         assert_eq!(errors.len(), 1);
     }

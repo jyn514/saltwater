@@ -35,7 +35,7 @@ impl ErrorHandler {
         self.errors.push_back(error.into());
     }
 
-    pub(crate) fn pop_err(&mut self) -> Option<CompileError> {
+    pub(crate) fn pop_front(&mut self) -> Option<CompileError> {
         self.errors.pop_front()
     }
 

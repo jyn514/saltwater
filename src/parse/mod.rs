@@ -133,7 +133,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
             .pending
             .pop_front()
             .map(Result::Ok)
-            .or_else(|| self.error_handler.pop_err().map(Result::Err))
+            .or_else(|| self.error_handler.pop_front().map(Result::Err))
             .or_else(|| {
                 // Parse more of our file
 

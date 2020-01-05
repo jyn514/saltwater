@@ -148,10 +148,10 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                         self.leave_scope(self.last_location);
                     }
 
-                    if self.error_handler.is_empty() {
-                        None
+                    if let Some(err) = self.error_handler.pop_front() {
+                        Some(Err(err))
                     } else {
-                        self.next()
+                        None
                     }
                 } else {
                     match self.declaration() {

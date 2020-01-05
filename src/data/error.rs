@@ -162,9 +162,9 @@ impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, Vec<E>> {
     type Ok = T;
     fn recover(self, error_handler: &mut ErrorHandler) -> T {
         self.unwrap_or_else(|(es, i)| {
-            for e in es {
-                error_handler.push_back(e.into());
-            }
+            error_handler
+                .errors
+                .extend(es.into_iter().map(|e| e.into()));
             i
         })
     }

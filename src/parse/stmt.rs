@@ -439,8 +439,7 @@ mod tests {
     fn parse_stmt(stmt: &str) -> CompileResult<Option<Stmt>> {
         let mut p = parser(stmt);
         let exp = p.statement();
-        if !p.error_handler.is_empty() {
-            let err = p.error_handler.pop_front().unwrap();
+        if let Some(err) = p.error_handler.pop_front() {
             Err(err)
         } else {
             exp.map_err(SyntaxError::into)

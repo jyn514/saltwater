@@ -1628,8 +1628,7 @@ mod tests {
         // because we're a child module of parse, we can skip straight to `expr()`
         let mut p = parser(input);
         let exp = p.expr();
-        if !p.error_handler.is_empty() {
-            let err = p.error_handler.pop_front().unwrap();
+        if let Some(err) = p.error_handler.pop_front() {
             Err(err)
         } else {
             exp.map_err(SyntaxError::into)
@@ -1653,8 +1652,7 @@ mod tests {
         }
         parser.scope = scope;
         let exp = parser.expr();
-        if !parser.error_handler.is_empty() {
-            let err = parser.error_handler.pop_front().unwrap();
+        if let Some(err) = parser.error_handler.pop_front() {
             Err(err)
         } else {
             exp.map_err(SyntaxError::into)

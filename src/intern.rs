@@ -1,6 +1,7 @@
 use std::fmt;
 use std::sync::RwLock;
 
+use lazy_static::lazy_static;
 use string_interner::{StringInterner, Sym, Symbol};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

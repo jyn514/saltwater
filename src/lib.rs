@@ -12,9 +12,6 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command;
 
-#[macro_use]
-extern crate lazy_static;
-
 use cranelift_module::Backend;
 use cranelift_object::ObjectBackend;
 

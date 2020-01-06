@@ -35,8 +35,14 @@ impl ErrorHandler {
         self.errors.push_back(error.into());
     }
 
+    /// Remove the first error from the queue
     pub(crate) fn pop_front(&mut self) -> Option<CompileError> {
         self.errors.pop_front()
+    }
+
+    /// Add an iterator of errors to the error queue
+    pub(crate) fn extend<E: Into<CompileError>>(&mut self, iter: impl Iterator<Item = E>) {
+        self.errors.extend(iter.map(Into::into));
     }
 }
 
@@ -156,9 +162,7 @@ impl<T, E: Into<CompileError>> Recoverable for RecoverableResult<T, Vec<E>> {
     type Ok = T;
     fn into_inner(self, error_handler: &mut ErrorHandler) -> T {
         self.unwrap_or_else(|(es, i)| {
-            error_handler
-                .errors
-                .extend(es.into_iter().map(|e| e.into()));
+            error_handler.extend(es.into_iter());
             i
         })
     }

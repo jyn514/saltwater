@@ -143,14 +143,14 @@ impl From<Locatable<String>> for SyntaxError {
     }
 }
 
-pub(crate) trait Recover {
+pub(crate) trait Recoverable {
     type Ok;
-    fn recover(self, error_handler: &mut ErrorHandler) -> Self::Ok;
+    fn into_inner(self, error_handler: &mut ErrorHandler) -> Self::Ok;
 }
 
-impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, E> {
+impl<T, E: Into<CompileError>> Recoverable for RecoverableResult<T, E> {
     type Ok = T;
-    fn recover(self, error_handler: &mut ErrorHandler) -> T {
+    fn into_inner(self, error_handler: &mut ErrorHandler) -> T {
         self.unwrap_or_else(|(e, i)| {
             error_handler.push_back(e);
             i
@@ -158,9 +158,9 @@ impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, E> {
     }
 }
 
-impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, Vec<E>> {
+impl<T, E: Into<CompileError>> Recoverable for RecoverableResult<T, Vec<E>> {
     type Ok = T;
-    fn recover(self, error_handler: &mut ErrorHandler) -> T {
+    fn into_inner(self, error_handler: &mut ErrorHandler) -> T {
         self.unwrap_or_else(|(es, i)| {
             error_handler
                 .errors
@@ -274,12 +274,12 @@ mod tests {
     fn test_recover_error() {
         let mut error_handler = ErrorHandler::new();
         let r: RecoverableResult<i32> = Ok(1);
-        assert_eq!(r.recover(&mut error_handler), 1);
+        assert_eq!(r.into_inner(&mut error_handler), 1);
         assert!(error_handler.is_empty());
 
         let mut error_handler = ErrorHandler::new();
         let r: RecoverableResult<i32> = Err((new_error(Error::UnterminatedComment), 42));
-        assert_eq!(r.recover(&mut error_handler), 42);
+        assert_eq!(r.into_inner(&mut error_handler), 42);
         let errors = error_handler.into_iter().collect::<Vec<_>>();
         assert_eq!(errors, vec![new_error(Error::UnterminatedComment)]);
     }
@@ -288,7 +288,7 @@ mod tests {
     fn test_recover_multiple_errors() {
         let mut error_handler = ErrorHandler::new();
         let r: RecoverableResult<i32, Vec<CompileError>> = Ok(1);
-        assert_eq!(r.recover(&mut error_handler), 1);
+        assert_eq!(r.into_inner(&mut error_handler), 1);
         assert!(error_handler.is_empty());
 
         let mut error_handler = ErrorHandler::new();
@@ -299,7 +299,7 @@ mod tests {
             ],
             42,
         ));
-        assert_eq!(r.recover(&mut error_handler), 42);
+        assert_eq!(r.into_inner(&mut error_handler), 42);
         let errors = error_handler.into_iter().collect::<Vec<_>>();
         assert_eq!(
             errors,

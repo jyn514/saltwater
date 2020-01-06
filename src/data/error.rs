@@ -40,12 +40,11 @@ impl ErrorHandler {
     }
 }
 
-impl IntoIterator for ErrorHandler {
+impl Iterator for ErrorHandler {
     type Item = CompileError;
-    type IntoIter = <VecDeque<CompileError> as IntoIterator>::IntoIter;
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.errors.into_iter()
+    fn next(&mut self) -> Option<CompileError> {
+        self.pop_front()
     }
 }
 
@@ -190,7 +189,7 @@ mod tests {
     fn test_error_handler_into_iterator() {
         let mut error_handler = ErrorHandler::new();
         error_handler.push_back(new_error(Error::GenericSemantic("stuff".to_string())));
-        let errors = error_handler.into_iter().collect::<Vec<_>>();
+        let errors = error_handler.collect::<Vec<_>>();
         assert_eq!(errors.len(), 1);
     }
 
@@ -275,7 +274,7 @@ mod tests {
         let mut error_handler = ErrorHandler::new();
         let r: RecoverableResult<i32> = Err((new_error(Error::UnterminatedComment), 42));
         assert_eq!(r.into_inner(&mut error_handler), 42);
-        let errors = error_handler.into_iter().collect::<Vec<_>>();
+        let errors = error_handler.collect::<Vec<_>>();
         assert_eq!(errors, vec![new_error(Error::UnterminatedComment)]);
     }
 
@@ -295,7 +294,7 @@ mod tests {
             42,
         ));
         assert_eq!(r.into_inner(&mut error_handler), 42);
-        let errors = error_handler.into_iter().collect::<Vec<_>>();
+        let errors = error_handler.collect::<Vec<_>>();
         assert_eq!(
             errors,
             vec![

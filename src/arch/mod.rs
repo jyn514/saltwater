@@ -8,6 +8,7 @@ use cranelift::codegen::{
     },
     isa::{CallConv, TargetIsa},
 };
+use lazy_static::lazy_static;
 use target_lexicon::Triple;
 
 use crate::data::{

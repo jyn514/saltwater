@@ -40,7 +40,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(decl) => {
                 let (id, ctype) = decl
                     .parse_type(ctype, false, &self.last_location)
-                    .recover(&mut self.error_handler);
+                    .into_inner(&mut self.error_handler);
                 if let Some(Locatable {
                     location,
                     data: name,
@@ -87,7 +87,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 sc == Some(StorageClass::Typedef),
                 &self.last_location,
             )
-            .recover(&mut self.error_handler);
+            .into_inner(&mut self.error_handler);
         let id = id.expect("declarator should return id when called with allow_abstract: false");
         let sc = match sc {
             Some(sc) => sc,
@@ -216,7 +216,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let location = decl.id().unwrap().location;
             let (id, ctype) = decl
                 .parse_type(first_ctype.clone(), true, &location)
-                .recover(&mut self.error_handler);
+                .into_inner(&mut self.error_handler);
             let id = id.unwrap();
             self.declare_typedef(id, ctype, first_qualifiers);
             if self.match_next(&Token::Comma).is_none() {
@@ -305,7 +305,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             .expect("declarator should never return None when called with allow_abstract: false");
         let (id, ctype) = decl
             .parse_type(ctype, false, &self.last_location)
-            .recover(&mut self.error_handler);
+            .into_inner(&mut self.error_handler);
         let id = id.expect("declarator should return id when called with allow_abstract: false");
 
         // optionally, parse an initializer
@@ -771,7 +771,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let decl = self.declarator(false, qualifiers)?.unwrap();
             let (declarator, ctype) = decl
                 .parse_type(original_ctype.clone(), false, &self.last_location)
-                .recover(&mut self.error_handler);
+                .into_inner(&mut self.error_handler);
             // TODO: Declarator needs to be redesigned so there's only one unwrap
             let Locatable { data: id, location } = declarator.unwrap();
             let symbol = Symbol {
@@ -907,7 +907,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             if let Some(decl) = declarator {
                 let (id, mut ctype) = decl
                     .parse_type(param_type, false, &self.last_location)
-                    .recover(&mut self.error_handler);
+                    .into_inner(&mut self.error_handler);
                 // int f(int a[]) is the same as int f(int *a)
                 // TODO: parse int f(int a[static 5])
                 if let Type::Array(to, _) = ctype {
@@ -1282,7 +1282,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 .rval()
                 // if ctype is not a scalar, this will report an error, so we don't have to handle it specially
                 .cast(ctype)
-                .recover(&mut self.error_handler);
+                .into_inner(&mut self.error_handler);
         }
         if !expr.lval && self.scope.is_global() && ctype.is_pointer() {
             expr = Expr {

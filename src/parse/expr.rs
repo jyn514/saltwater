@@ -116,7 +116,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(lval)
         } else {
             if rval.ctype != lval.ctype {
-                rval = rval.cast(&lval.ctype).recover(&mut self.error_handler);
+                rval = rval.cast(&lval.ctype).into_inner(&mut self.error_handler);
             }
             Ok(Expr {
                 ctype: lval.ctype.clone(),
@@ -147,13 +147,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn conditional_expr(&mut self) -> SyntaxResult {
         let condition = self.logical_or_expr()?;
         if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {
-            let condition = condition.truthy().recover(&mut self.error_handler);
+            let condition = condition.truthy().into_inner(&mut self.error_handler);
             let mut then = self.expr()?.rval();
             self.expect(Token::Colon)?;
             let mut otherwise = self.conditional_expr()?.rval();
             if then.ctype.is_arithmetic() && otherwise.ctype.is_arithmetic() {
                 let (tmp1, tmp2) =
-                    Expr::binary_promote(then, otherwise).recover(&mut self.error_handler);
+                    Expr::binary_promote(then, otherwise).into_inner(&mut self.error_handler);
                 then = tmp1;
                 otherwise = tmp2;
             } else if !Type::pointer_promote(&mut then, &mut otherwise) {
@@ -522,15 +522,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(Token::PlusPlus) => {
                 let Locatable { location, .. } = self.next_token().unwrap();
                 let expr = self.unary_expr()?;
-                Ok(Expr::increment_op(true, true, expr, location).recover(&mut self.error_handler))
+                Ok(Expr::increment_op(true, true, expr, location)
+                    .into_inner(&mut self.error_handler))
             }
             Some(Token::MinusMinus) => {
                 let Locatable { location, .. } = self.next_token().unwrap();
                 let expr = self.unary_expr()?;
-                Ok(
-                    Expr::increment_op(true, false, expr, location)
-                        .recover(&mut self.error_handler),
-                )
+                Ok(Expr::increment_op(true, false, expr, location)
+                    .into_inner(&mut self.error_handler))
             }
             Some(Token::Keyword(Keyword::Sizeof)) => {
                 self.next_token();
@@ -613,7 +612,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             );
                             Ok(expr)
                         } else {
-                            let expr = expr.integer_promote().recover(&mut self.error_handler);
+                            let expr = expr.integer_promote().into_inner(&mut self.error_handler);
                             Ok(Expr {
                                 lval: false,
                                 location,
@@ -629,7 +628,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             );
                             Ok(expr)
                         } else {
-                            let expr = expr.integer_promote().recover(&mut self.error_handler);
+                            let expr = expr.integer_promote().into_inner(&mut self.error_handler);
                             Ok(Expr {
                                 lval: false,
                                 ctype: expr.ctype.clone(),
@@ -647,7 +646,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             );
                             Ok(expr)
                         } else {
-                            let expr = expr.integer_promote().recover(&mut self.error_handler);
+                            let expr = expr.integer_promote().into_inner(&mut self.error_handler);
                             Ok(Expr {
                                 lval: false,
                                 ctype: expr.ctype.clone(),
@@ -700,7 +699,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         }
                     };
                     let mut addr = Expr::pointer_arithmetic(array, index, &target_type, location)
-                        .recover(&mut self.error_handler);
+                        .into_inner(&mut self.error_handler);
                     addr.ctype = target_type;
                     addr.lval = true;
                     addr
@@ -756,7 +755,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             Some(expected) => arg.rval().cast(&expected.ctype),
                             None => arg.default_promote(),
                         };
-                        let promoted = maybe_err.recover(&mut self.error_handler);
+                        let promoted = maybe_err.into_inner(&mut self.error_handler);
                         promoted_args.push(promoted);
                     }
                     Expr {
@@ -805,11 +804,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let expr = expr.indirection(false, struct_type, location);
                     self.struct_member(expr, id, location)?
                 }
-                Token::PlusPlus => {
-                    Expr::increment_op(false, true, expr, location).recover(&mut self.error_handler)
-                }
+                Token::PlusPlus => Expr::increment_op(false, true, expr, location)
+                    .into_inner(&mut self.error_handler),
                 Token::MinusMinus => Expr::increment_op(false, false, expr, location)
-                    .recover(&mut self.error_handler),
+                    .into_inner(&mut self.error_handler),
                 _ => {
                     self.unput(Some(Locatable {
                         location,

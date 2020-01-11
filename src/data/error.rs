@@ -137,6 +137,8 @@ pub enum CppError {
     // invalid token
     #[error("invalid preprocessor token {0}")]
     InvalidCppToken(Token),
+    #[error("{0} is never terminated")]
+    UnterminatedDirective(&'static str),
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

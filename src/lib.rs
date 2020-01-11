@@ -65,23 +65,41 @@ pub fn compile(
     debug_ast: bool,
     debug_ir: bool,
 ) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
-    let lexer = Lexer::new(filename, buf.chars(), debug_lex);
-    let mut parser = match Parser::new(lexer, debug_ast) {
-        Ok(parser) => parser,
-        Err(errors) => return (Err(errors.into()), VecDeque::new()),
+    let mut lexer = Lexer::new(filename, buf.chars(), debug_lex);
+
+    let mut lex_errs = VecDeque::new();
+    let first = loop {
+        match lexer.next() {
+            Some(Ok(token)) => break token,
+            Some(Err(err)) => lex_errs.push_back(err),
+            None => {
+                if lex_errs.is_empty() {
+                    lex_errs.push_back(CompileError::new(
+                        SemanticError::EmptyProgram.into(),
+                        lexer.location(),
+                    ));
+                }
+                return (Err(Error::Source(lex_errs)), Default::default());
+            }
+        }
     };
+    let mut parser = Parser::new(first, &mut lexer, debug_ast);
     let (hir, errors) = parser.collect_results();
-    let warnings = parser.warnings();
-    if !errors.is_empty() {
-        return (Err(Error::Source(errors.into())), warnings);
+
+    lex_errs.extend(errors.into_iter());
+    if hir.is_empty() {
+        lex_errs.push_back(CompileError::new(
+            SemanticError::EmptyProgram.into(),
+            parser.location(),
+        ));
     }
-    (
-        match ir::compile(hir, debug_ir) {
-            Ok(product) => Ok(product),
-            Err(err) => Err(err.into()),
-        },
-        warnings,
-    )
+
+    let warnings = parser.warnings();
+    if !lex_errs.is_empty() {
+        (Err(Error::Source(lex_errs)), warnings)
+    } else {
+        (ir::compile(hir, debug_ir).map_err(Error::from), warnings)
+    }
 }
 
 pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {

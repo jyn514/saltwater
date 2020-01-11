@@ -582,20 +582,12 @@ mod tests {
             "struct s",
         ];
         for ty in types.iter() {
-            let lexer = Lexer::new("<integration-test>", ty.chars(), false);
+            let mut lexer = Lexer::new("<integration-test>", ty.chars(), false);
+            let first = lexer.next().unwrap().unwrap();
+            let mut parser = Parser::new(first, &mut lexer, false);
 
-            assert_eq!(
-                &format!(
-                    "{}",
-                    Parser::new(lexer, false)
-                        .unwrap()
-                        .type_name()
-                        .unwrap()
-                        .data
-                        .0
-                ),
-                ty
-            );
+            let parsed_ty = parser.type_name().unwrap().data.0;
+            assert_eq!(&parsed_ty.to_string(), *ty);
         }
     }
 }

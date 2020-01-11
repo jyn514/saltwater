@@ -187,7 +187,24 @@ impl<'a> PreProcessor<'a> {
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn const_expr(&mut self) -> Result<Literal, CompileError> {
-        unimplemented!("constant expressions")
+        /*
+        let mut tokens = vec![];
+        let line = self.lexer.location.line;
+        loop {
+            let next = match self.lexer.next() {
+                Some(token) => token,
+                None => return
+            };
+            if next.location.line == line {
+                tokens.push(next);
+            } else {
+                self.lexer.current = Some(next.data);
+                self.lexer.seen_line_token = false;
+                break;
+            }
+        }
+        */
+        unimplemented!("const expressions in #if");
     }
     fn if_directive(&mut self, condition: bool, start: u32) -> Option<CppResult<Token>> {
         if condition {

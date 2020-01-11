@@ -106,7 +106,7 @@ impl Compiler {
             .set("probestack_enabled", "false")
             .expect("probestack_enabled should be a valid option");
 
-        let isa = isa::lookup(TARGET.clone())
+        let isa = isa::lookup(TARGET)
             .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", TARGET), 5))
             .finish(settings::Flags::new(flags_builder));
 

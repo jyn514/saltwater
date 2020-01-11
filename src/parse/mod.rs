@@ -70,6 +70,14 @@ struct FunctionData {
     return_type: Type,
 }
 
+/*
+pub struct CompileItem {
+    Ok(Declaration),
+    Warning(CompileError),
+    Error(CompileError),
+}
+*/
+
 impl<I> Parser<I>
 where
     I: Iterator<Item = Lexeme>,
@@ -327,26 +335,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.error_handler.push_back(err);
     }
     /// Return a (Declaration, Warning, Error) triple
-    pub fn collect_results(
-        self,
-    ) -> (
-        Vec<Locatable<Declaration>>,
-        Vec<CompileError>,
-        Vec<CompileError>,
-    ) {
-        use crate::data::error::ErrorKind;
-
+    pub fn collect_results(&mut self) -> (Vec<Locatable<Declaration>>, Vec<CompileError>) {
         let mut decls = Vec::new();
-        let mut warnings = Vec::new();
         let mut errs = Vec::new();
         for result in self {
             match result {
                 Ok(decl) => decls.push(decl),
-                Err(err) if err.data.kind() == ErrorKind::Warning => warnings.push(err),
                 Err(err) => errs.push(err),
             }
         }
-        (decls, warnings, errs)
+        (decls, errs)
+    }
+    /// Return all warnings
+    pub fn warnings(self) -> VecDeque<CompileWarning> {
+        self.error_handler.warnings
     }
 }
 
@@ -395,8 +397,9 @@ mod tests {
         }
     }
     pub(crate) fn assert_errs_decls(input: &str, errs: usize, warnings: usize, decls: usize) {
-        let parser = parser(input);
-        let (decl_iter, warn_iter, err_iter) = parser.collect_results();
+        let mut parser = parser(input);
+        let (decl_iter, err_iter) = parser.collect_results();
+        let warn_iter = parser.warnings().into_iter();
         assert!(
             (err_iter.len(), warn_iter.len(), decl_iter.len()) == (errs, warnings, decls),
             "({} errs, {} warnings, {} decls) != ({}, {}, {}) when parsing {}",

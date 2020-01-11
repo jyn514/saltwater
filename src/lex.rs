@@ -125,6 +125,11 @@ impl<'a> Lexer<'a> {
             error_handler: ErrorHandler::new(),
         }
     }
+    /// Return the current location of the lexer
+    pub fn location(&self) -> Location {
+        self.location
+    }
+
     /// This lexer is somewhat unique - it reads a single character at a time,
     /// unlike most lexers which read a token at a time (e.g. string literals).
     /// This makes some things harder to do than normal, for example integer and float parsing, because

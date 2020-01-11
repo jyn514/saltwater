@@ -41,7 +41,7 @@ pub fn compile_and_run(program: &str, args: &[&str]) -> Result<Output, Error> {
 }
 
 pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, Error> {
-    let (module, warnings) = rcc::compile(
+    let (module, _warnings) = rcc::compile(
         program,
         "<integration-test>".to_string(),
         false,

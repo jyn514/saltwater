@@ -11,7 +11,7 @@ pub mod types;
 pub mod prelude {
     pub(crate) use super::error::{ErrorHandler, Recover, RecoverableResult};
     pub use super::{
-        error::{CompileError, CompileResult, Error, SemanticError, SyntaxError},
+        error::{CompileError, CompileResult, CompileWarning, Error, SemanticError, SyntaxError},
         lex::{Literal, Locatable, Location, Token},
         types::{StructRef, StructType, Type},
         Declaration, Expr, ExprType, Stmt, StmtType, Symbol,

@@ -64,15 +64,15 @@ pub fn compile(
     debug_lex: bool,
     debug_ast: bool,
     debug_ir: bool,
-) -> Result<(Product, Vec<CompileError>), Error> {
+) -> Result<(Product, VecDeque<CompileWarning>), Error> {
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
-    let parser = Parser::new(lexer, debug_ast)?;
-    let (hir, warnings, errors) = parser.collect_results();
+    let mut parser = Parser::new(lexer, debug_ast)?;
+    let (hir, errors) = parser.collect_results();
     if !errors.is_empty() {
         return Err(Error::Source(errors.into()));
     }
     match ir::compile(hir, debug_ir) {
-        Ok(product) => Ok((product, warnings)),
+        Ok(product) => Ok((product, parser.warnings())),
         Err(err) => Err(err.into()),
     }
 }

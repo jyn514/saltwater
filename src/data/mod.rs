@@ -582,12 +582,12 @@ mod tests {
             "struct s",
         ];
         for ty in types.iter() {
-            let tokens = Lexer::new("<integration-test>", ty.chars(), false).collect::<Vec<_>>();
+            let lexer = Lexer::new("<integration-test>", ty.chars(), false);
 
             assert_eq!(
                 &format!(
                     "{}",
-                    Parser::new(tokens.into_iter(), false)
+                    Parser::new(lexer, false)
                         .unwrap()
                         .type_name()
                         .unwrap()

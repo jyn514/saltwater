@@ -112,6 +112,10 @@ pub enum Warning {
     // for compatibility
     #[error("{0}")]
     Generic(String),
+
+    #[doc(hidden)]
+    #[error("internal error: do not construct nonexhaustive variants")]
+    __Nonexhaustive,
 }
 
 impl<T: Into<String>> From<T> for Warning {

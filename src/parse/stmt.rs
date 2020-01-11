@@ -236,7 +236,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let expr = expr.rval();
                 if expr.ctype != *ret_type {
                     StmtType::Return(Some(
-                        Expr::cast(expr, ret_type).into_inner(&mut self.error_handler),
+                        Expr::cast(expr, ret_type).recover(&mut self.error_handler),
                     ))
                 } else {
                     StmtType::Return(Some(expr))
@@ -315,7 +315,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn while_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::While))?;
         self.expect(Token::LeftParen)?;
-        let condition = self.expr()?.truthy().into_inner(&mut self.error_handler);
+        let condition = self.expr()?.truthy().recover(&mut self.error_handler);
         self.expect(Token::RightParen)?;
         let body = self.statement()?;
         Ok(Stmt {
@@ -333,7 +333,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let body = self.statement()?;
         self.expect(Token::Keyword(Keyword::While))?;
         self.expect(Token::LeftParen)?;
-        let condition = self.expr()?.truthy().into_inner(&mut self.error_handler);
+        let condition = self.expr()?.truthy().recover(&mut self.error_handler);
         self.expect(Token::RightParen)?;
         self.expect(Token::Semicolon)?;
         let stmt = if let Some(body) = body {
@@ -396,7 +396,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
         let controlling_expr = self
             .expr_opt(Token::Semicolon)?
-            .map(|expr| Expr::truthy(expr).into_inner(&mut self.error_handler));
+            .map(|expr| Expr::truthy(expr).recover(&mut self.error_handler));
         let iter_expr = self.expr_opt(Token::RightParen)?;
         let body = self.statement()?.map(Box::new);
         self.leave_scope(self.last_location);

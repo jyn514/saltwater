@@ -131,3 +131,32 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::error::ErrorKind;
+    #[test]
+    fn empty() {
+        let err = compile("`", "<test-suite>".to_owned(), false, false, false)
+            .err()
+            .unwrap();
+        match err {
+            Error::Source(mut errs) => {
+                assert!(errs.pop_front().unwrap().data.kind() == ErrorKind::Lex);
+                assert!(errs.is_empty());
+            }
+            _ => unreachable!(),
+        }
+        let err = compile("", "<test-suite>".into(), false, false, false)
+            .err()
+            .unwrap();
+        match err {
+            Error::Source(mut errs) => {
+                assert!(errs.pop_front().unwrap().data.kind() == ErrorKind::Semantic);
+                assert!(errs.is_empty());
+            }
+            _ => unreachable!(),
+        }
+    }
+}

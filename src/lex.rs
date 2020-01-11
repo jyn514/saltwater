@@ -392,7 +392,7 @@ impl<'a> Lexer<'a> {
             self.next_char();
         }
         let float = if hex {
-            hexf::parse_hexf64(&buf, false).map_err(|err| err.description().into())
+            hexf_parse::parse_hexf64(&buf, false).map_err(|err| err.description().into())
         } else {
             buf.parse()
                 .map_err(|err: std::num::ParseFloatError| err.to_string())

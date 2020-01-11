@@ -182,6 +182,10 @@ impl<'a> PreProcessor<'a> {
         // TODO: actually implement #define
         Some(Ok(Locatable::new(Token::Id(name), self.lexer.span(start))))
     }
+    /// A C expression on a single line. Used for `#if` directives.
+    ///
+    /// Note that identifiers are replaced with a constant 0,
+    /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn const_expr(&mut self) -> Result<Literal, CompileError> {
         unimplemented!("constant expressions")
     }
@@ -224,7 +228,7 @@ impl<'a> PreProcessor<'a> {
                 Some(token) => token,
                 None => {
                     return Err(Locatable::new(
-                        CppError::Generic("unterminated conditional directive".into()),
+                        CppError::UnterminatedDirective("#if or #ifdef"),
                         self.lexer.span(start),
                     )
                     .into())
@@ -388,5 +392,15 @@ mod tests {
         let code = "#ifdef a\n#endif";
         assert_eq!(cpp(code).next(), None);
         assert!(cpp("#ifdef").next().unwrap().is_err());
+        let nested = "#ifdef a
+        #ifdef b
+        int main() {}
+        #endif
+        #endif
+        char;";
+        assert_eq!(
+            cpp(nested).next().unwrap().unwrap().data,
+            Token::Keyword(Keyword::Char)
+        );
     }
 }

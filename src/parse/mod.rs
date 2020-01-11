@@ -8,7 +8,6 @@ use std::iter::Iterator;
 use std::mem;
 
 use crate::data::{prelude::*, Scope};
-use crate::utils::warn;
 
 type Lexeme = CompileResult<Locatable<Token>>;
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
@@ -141,7 +140,8 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 
                 // Remove extra semicolons
                 while let Some(locatable) = self.match_next(&Token::Semicolon) {
-                    warn("extraneous semicolon at top level", locatable.location);
+                    self.error_handler
+                        .warn("extraneous semicolon at top level", locatable.location);
                 }
 
                 // Check for end of file
@@ -326,16 +326,27 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn lex_error(&mut self, err: CompileError) {
         self.error_handler.push_back(err);
     }
-    pub fn collect_results(self) -> (Vec<Locatable<Declaration>>, Vec<CompileError>) {
+    /// Return a (Declaration, Warning, Error) triple
+    pub fn collect_results(
+        self,
+    ) -> (
+        Vec<Locatable<Declaration>>,
+        Vec<CompileError>,
+        Vec<CompileError>,
+    ) {
+        use crate::data::error::ErrorKind;
+
         let mut decls = Vec::new();
+        let mut warnings = Vec::new();
         let mut errs = Vec::new();
         for result in self {
             match result {
                 Ok(decl) => decls.push(decl),
+                Err(err) if err.data.kind() == ErrorKind::Warning => warnings.push(err),
                 Err(err) => errs.push(err),
             }
         }
-        (decls, errs)
+        (decls, warnings, errs)
     }
 }
 
@@ -383,15 +394,17 @@ mod tests {
             }))),
         }
     }
-    pub(crate) fn assert_errs_decls(input: &str, errs: usize, decls: usize) {
+    pub(crate) fn assert_errs_decls(input: &str, errs: usize, warnings: usize, decls: usize) {
         let parser = parser(input);
-        let (decl_iter, err_iter) = parser.collect_results();
+        let (decl_iter, warn_iter, err_iter) = parser.collect_results();
         assert!(
-            (err_iter.len(), decl_iter.len()) == (errs, decls),
-            "({} errs, {} decls) != ({}, {}) when parsing {}",
+            (err_iter.len(), warn_iter.len(), decl_iter.len()) == (errs, warnings, decls),
+            "({} errs, {} warnings, {} decls) != ({}, {}, {}) when parsing {}",
             err_iter.len(),
+            warn_iter.len(),
             decl_iter.len(),
             errs,
+            warnings,
             decls,
             input
         );
@@ -455,7 +468,7 @@ mod tests {
         assert_eq!(decls.len(), 2, "{:?}", decls);
         assert!(decls.pop().unwrap().is_ok());
         assert!(decls.pop().unwrap().is_ok());
-        assert_errs_decls("int a; char *a[];", 1, 2);
+        assert_errs_decls("int a; char *a[];", 1, 0, 2);
     }
     #[test]
     fn semicolons() {

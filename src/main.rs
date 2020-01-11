@@ -88,7 +88,7 @@ impl Default for Opt {
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
 fn real_main(buf: &str, opt: Opt) -> Result<(), Error> {
     env_logger::init();
-    let product = compile(
+    let (product, warnings) = compile(
         buf,
         opt.filename.to_string_lossy().into_owned(),
         opt.debug_lex,

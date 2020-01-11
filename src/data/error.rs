@@ -40,6 +40,13 @@ impl ErrorHandler {
         self.errors.pop_front()
     }
 
+    /// Stopgap to make it easier to transition to lazy warnings.
+    ///
+    /// TODO: Remove this method
+    pub(crate) fn warn<S: Into<String>>(&mut self, msg: S, location: Location) {
+        let warning = CompileError::new(Error::GenericWarning(msg.into()), location);
+        self.errors.push_back(warning);
+    }
     /// Add an iterator of errors to the error queue
     pub(crate) fn extend<E: Into<CompileError>>(&mut self, iter: impl Iterator<Item = E>) {
         self.errors.extend(iter.map(Into::into));
@@ -64,6 +71,8 @@ pub enum Error {
     GenericSyntax(String),
     #[error("{0}")]
     GenericSemantic(String),
+    #[error("{0}")]
+    GenericWarning(String),
 
     // specific errors
     #[error("unterminated /* comment")]
@@ -81,6 +90,7 @@ impl Error {
             GenericLex(_) => ErrorKind::Lex,
             GenericSyntax(_) => ErrorKind::Syntax,
             GenericSemantic(_) => ErrorKind::Semantic,
+            GenericWarning(_) => ErrorKind::Warning,
             UnterminatedComment => ErrorKind::Lex,
             __Nonexhaustive => panic!("do not construct nonexhaustive variants manually"),
         }
@@ -95,6 +105,8 @@ pub enum ErrorKind {
     Syntax,
     #[error("invalid program")]
     Semantic,
+    #[error("warning")]
+    Warning,
 }
 
 impl CompileError {

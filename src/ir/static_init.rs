@@ -10,7 +10,6 @@ use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::prelude::*;
 use crate::data::{lex::Literal, types::ArrayType, Initializer, StorageClass};
-use crate::utils::warn;
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
@@ -159,7 +158,8 @@ impl Compiler {
                 _ => semantic_err!("cannot take the address of an rvalue".into(), expr.location),
             },
             ExprType::Literal(token) => {
-                let bytes = token.into_bytes(&expr.ctype, &expr.location)?;
+                let bytes =
+                    token.into_bytes(&expr.ctype, &expr.location, &mut self.error_handler)?;
                 buf.copy_from_slice(&bytes);
             }
             _ => semantic_err!(
@@ -303,10 +303,10 @@ impl Compiler {
 }
 
 macro_rules! cast {
-    ($i: expr, $from: ty, $to: ty, $ctype: expr, $location: expr) => {{
+    ($i: expr, $from: ty, $to: ty, $ctype: expr, $location: expr, $handler: expr) => {{
         let cast = $i as $to;
         if cast as $from != $i {
-            warn(
+            $handler.warn(
                 &format!(
                     "conversion to {} loses precision ({} != {})",
                     $ctype, cast as $from, $i
@@ -330,7 +330,12 @@ macro_rules! bytes {
 }
 
 impl Literal {
-    fn into_bytes(self, ctype: &Type, location: &Location) -> CompileResult<Box<[u8]>> {
+    fn into_bytes(
+        self,
+        ctype: &Type,
+        location: &Location,
+        error_handler: &mut ErrorHandler,
+    ) -> CompileResult<Box<[u8]>> {
         let ir_type = ctype.as_ir_type();
         let big_endian = TARGET
             .endianness()
@@ -339,9 +344,18 @@ impl Literal {
 
         match self {
             Literal::Int(i) => Ok(match ir_type {
-                types::I8 => bytes!(cast!(i, i64, i8, &ctype, *location), big_endian),
-                types::I16 => bytes!(cast!(i, i64, i16, &ctype, *location), big_endian),
-                types::I32 => bytes!(cast!(i, i64, i32, &ctype, *location), big_endian),
+                types::I8 => bytes!(
+                    cast!(i, i64, i8, &ctype, *location, error_handler),
+                    big_endian
+                ),
+                types::I16 => bytes!(
+                    cast!(i, i64, i16, &ctype, *location, error_handler),
+                    big_endian
+                ),
+                types::I32 => bytes!(
+                    cast!(i, i64, i32, &ctype, *location, error_handler),
+                    big_endian
+                ),
                 types::I64 => bytes!(i, big_endian),
                 x => unreachable!(format!(
                     "ir_type {} for integer {} is not of integer type",
@@ -349,9 +363,18 @@ impl Literal {
                 )),
             }),
             Literal::UnsignedInt(i) => Ok(match ir_type {
-                types::I8 => bytes!(cast!(i, u64, u8, &ctype, *location), big_endian),
-                types::I16 => bytes!(cast!(i, u64, u16, &ctype, *location), big_endian),
-                types::I32 => bytes!(cast!(i, u64, u32, &ctype, *location), big_endian),
+                types::I8 => bytes!(
+                    cast!(i, u64, u8, &ctype, *location, error_handler),
+                    big_endian
+                ),
+                types::I16 => bytes!(
+                    cast!(i, u64, u16, &ctype, *location, error_handler),
+                    big_endian
+                ),
+                types::I32 => bytes!(
+                    cast!(i, u64, u32, &ctype, *location, error_handler),
+                    big_endian
+                ),
                 types::I64 => bytes!(i, big_endian),
                 x => unreachable!(format!(
                     "ir_type {} for integer {} is not of integer type",
@@ -362,8 +385,11 @@ impl Literal {
                 types::F32 => {
                     let cast = f as f32;
                     if (f64::from(cast) - f).abs() >= std::f64::EPSILON {
-                        warn(&format!("conversion from double to float loses precision ({} is different from {} by more than DBL_EPSILON ({}))",
-                        f64::from(cast), f, std::f64::EPSILON), *location);
+                        let warning = format!(
+                            "conversion from double to float loses precision ({} is different from {} by more than DBL_EPSILON ({}))",
+                            f, std::f64::EPSILON, f64::from(cast)
+                        );
+                        error_handler.warn(&warning, *location);
                     }
                     let float_as_int = cast.to_bits();
                     bytes!(float_as_int, big_endian)

@@ -6,7 +6,6 @@ use std::str::Chars;
 
 use super::data::{lex::*, prelude::*};
 use super::intern::InternedStr;
-use super::utils::warn;
 
 /// A Lexer takes the source code and turns it into tokens with location information.
 ///
@@ -281,7 +280,8 @@ impl<'a> Lexer<'a> {
         let radix = if start == '0' {
             match self.next_char() {
                 Some('b') => {
-                    crate::utils::warn("binary number literals are an extension", self.location);
+                    self.error_handler
+                        .warn("binary number literals are an extension", self.location);
                     2
                 }
                 Some('x') => {
@@ -504,7 +504,7 @@ impl<'a> Lexer<'a> {
                         'f' => '\x0c', // form feed
                         '?' => '?',    // a literal '?', for trigraphs
                         _ => {
-                            warn(
+                            self.error_handler.warn(
                                 &format!("unknown character escape '\\{}'", c),
                                 self.location,
                             );

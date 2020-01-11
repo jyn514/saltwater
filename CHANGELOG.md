@@ -5,11 +5,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Fix pretty printing for exotic keywords (`_Noreturn`, ...)
-- Make linking work on Windows, thanks to cranelift-object
+## [0.3.0] - 2020-01-10
+
+### Changed
+
 - Change lots of error internals to make it an enum instead of a String
-- Add instructions for building on Windows
+
+### Fixed
+
+- Fix pretty printing for exotic keywords (`_Noreturn`, ...)
 - Fix incorrect description of arithmetic shift
+
+### Added
+
+- Make linking work on Windows, thanks to cranelift-object
+- Add instructions for building on Windows
 - Parse (and discard) `inline` keyword
 - Parse (and discard) bitfields
 - Implement pointers to character literals (https://github.com/jyn514/rcc/issues/146)

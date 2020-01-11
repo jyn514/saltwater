@@ -9,7 +9,7 @@ pub mod error;
 pub mod lex;
 pub mod types;
 pub mod prelude {
-    pub(crate) use super::error::{ErrorHandler, Recoverable, RecoverableResult};
+    pub(crate) use super::error::{ErrorHandler, Recover, RecoverableResult};
     pub use super::{
         error::{CompileError, CompileResult, Error, SemanticError, SyntaxError},
         lex::{Literal, Locatable, Location, Token},

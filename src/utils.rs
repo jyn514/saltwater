@@ -1,12 +1,9 @@
 use std::process;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ansi_term::{ANSIString, Colour};
 
 use crate::data::lex::Location;
 use crate::intern::STRINGS;
-
-static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 
 pub fn pretty_print<T: std::fmt::Display>(prefix: ANSIString, msg: T, location: Location) {
     println!(
@@ -23,20 +20,9 @@ pub fn pretty_print<T: std::fmt::Display>(prefix: ANSIString, msg: T, location: 
     );
 }
 
-/*
-pub fn warn(msg: &str, location: Location) {
-    WARNINGS.fetch_add(1, Ordering::Relaxed);
-    pretty_print(Colour::Yellow.bold().paint("warning"), msg, location);
-}
-*/
-
 pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
     eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
     process::exit(code);
-}
-
-pub fn get_warnings() -> usize {
-    WARNINGS.load(Ordering::SeqCst)
 }
 
 /// (f, g) => f . g

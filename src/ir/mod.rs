@@ -55,7 +55,7 @@ pub(crate) fn compile(
 ) -> CompileResult<ObjectProduct> {
     let name = program.first().map_or_else(
         || "<empty>".to_string(),
-        |decl| decl.location.file.resolve_and_clone(),
+        |decl| decl.location.filename.resolve_and_clone(),
     );
     let mut compiler = Compiler::new(name, debug);
     for decl in program {

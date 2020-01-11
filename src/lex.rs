@@ -119,7 +119,7 @@ impl<'a> Lexer<'a> {
                 line: 1,
                 // not 1 because we increment column _before_ returning current char
                 column: 0,
-                file: InternedStr::get_or_intern(file),
+                filename: InternedStr::get_or_intern(file),
             },
             chars,
             current: None,
@@ -948,7 +948,7 @@ mod tests {
             Some(Ok(Locatable {
                 data: Token::Plus,
                 location: Location {
-                    file: InternedStr::get_or_intern("<stdin>"),
+                    filename: InternedStr::get_or_intern("<stdin>"),
                     line: 1,
                     column: 1
                 }

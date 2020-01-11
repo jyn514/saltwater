@@ -456,7 +456,7 @@ mod tests {
             location: Location {
                 line: 1,
                 column: 1,
-                file: InternedStr::get_or_intern("<test-suite>"),
+                filename: InternedStr::get_or_intern("<test-suite>"),
             },
         }));
         assert_eq!(dbg!(parsed), dbg!(expected));

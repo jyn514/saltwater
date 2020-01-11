@@ -11,7 +11,11 @@ static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 pub fn pretty_print<T: std::fmt::Display>(prefix: ANSIString, msg: T, location: Location) {
     println!(
         "{}:{}:{}: {}: {}",
-        STRINGS.read().unwrap().resolve(location.file.0).unwrap(),
+        STRINGS
+            .read()
+            .unwrap()
+            .resolve(location.filename.0)
+            .unwrap(),
         location.line,
         location.column,
         prefix,

@@ -57,20 +57,24 @@ impl From<VecDeque<CompileError>> for Error {
     }
 }
 
+/// Compile and return the declarations and warnings.
 pub fn compile(
     buf: &str,
     filename: String,
     debug_lex: bool,
     debug_ast: bool,
     debug_ir: bool,
-) -> Result<Product, Error> {
+) -> Result<(Product, Vec<CompileError>), Error> {
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
     let parser = Parser::new(lexer, debug_ast)?;
-    let (hir, errors) = parser.collect_results();
+    let (hir, warnings, errors) = parser.collect_results();
     if !errors.is_empty() {
         return Err(Error::Source(errors.into()));
     }
-    ir::compile(hir, debug_ir).map_err(Error::from)
+    match ir::compile(hir, debug_ir) {
+        Ok(product) => Ok((product, warnings)),
+        Err(err) => Err(err.into()),
+    }
 }
 
 pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {

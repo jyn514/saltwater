@@ -37,7 +37,8 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// breaks at the end, we don't only show lex errors
     tokens: I,
     /// VecDeque supports pop_front with reasonable efficiency
-    /// this is useful because errors are FIFO
+    /// this is useful because there could be multiple declarators
+    /// in a single declaration; e.g. `int a, b, c;`
     pending: VecDeque<Locatable<Declaration>>,
     /// in case we get to the end of the file and want to show an error
     last_location: Location,
@@ -54,6 +55,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     current_function: Option<FunctionData>,
     /// whether to debug each declaration
     debug: bool,
+    /// Internal API which makes it easier to return errors lazily
     error_handler: ErrorHandler,
 }
 
@@ -148,17 +150,15 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                         self.leave_scope(self.last_location);
                     }
 
-                    if let Some(err) = self.error_handler.pop_front() {
-                        Some(Err(err))
-                    } else {
-                        None
-                    }
+                    self.error_handler.pop_front().map(Err)
                 } else {
                     match self.declaration() {
                         Ok(decls) => {
                             self.pending.extend(decls.into_iter());
                         }
                         Err(err) => {
+                            // there could be semantic errors that were reported in the meantime,
+                            // so we can't just return this error (it might be in the wrong order)
                             self.error_handler.push_back(err);
                         }
                     }

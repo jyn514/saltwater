@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::PathBuf;
@@ -14,13 +15,18 @@ use ansi_term::Colour;
 use pico_args::Arguments;
 use rcc::{
     assemble, compile,
-    data::{error::RecoverableResult, lex::Location},
+    data::{
+        error::{CompileWarning, RecoverableResult},
+        lex::Location,
+    },
     link, utils, Error,
 };
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
 
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
+static WARNINGS: AtomicUsize = AtomicUsize::new(0);
+
 const HELP: &str = concat!(
     env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"), "\n",
     env!("CARGO_PKG_AUTHORS"), "\n",
@@ -95,7 +101,8 @@ fn real_main(buf: &str, opt: Opt) -> Result<(), Error> {
         opt.debug_ast,
         opt.debug_asm,
     );
-    // TODO: handle warnings
+    handle_warnings(warnings);
+
     let product = result?;
     if opt.no_link {
         return assemble(product, opt.output.as_path());
@@ -103,6 +110,14 @@ fn real_main(buf: &str, opt: Opt) -> Result<(), Error> {
     let tmp_file = NamedTempFile::new()?;
     assemble(product, tmp_file.as_ref())?;
     link(tmp_file.as_ref(), opt.output.as_path()).map_err(io::Error::into)
+}
+
+fn handle_warnings(warnings: VecDeque<CompileWarning>) {
+    WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
+    let tag = Colour::Yellow.bold().paint("warning");
+    for warning in warnings {
+        utils::pretty_print(tag.clone(), warning.data, warning.location);
+    }
 }
 
 fn main() {
@@ -209,7 +224,7 @@ fn err_exit(err: Error) -> ! {
             for err in errs {
                 error(&err, err.location());
             }
-            let (num_warnings, num_errors) = (utils::get_warnings(), get_errors());
+            let (num_warnings, num_errors) = (get_warnings(), get_errors());
             print_issues(num_warnings, num_errors);
             process::exit(2);
         }
@@ -235,6 +250,11 @@ fn print_issues(warnings: usize, errors: usize) {
 fn error<T: std::fmt::Display>(msg: T, location: Location) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
     utils::pretty_print(Colour::Red.bold().paint("error"), msg, location);
+}
+
+#[inline]
+fn get_warnings() -> usize {
+    ERRORS.load(Ordering::SeqCst)
 }
 
 #[inline]

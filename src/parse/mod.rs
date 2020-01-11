@@ -80,38 +80,23 @@ where
     ///     If there is at least one token that is not an error, returns a parser.
     ///     Otherwise, returns a list of the errors.
     /// Otherwise, returns None.
-    pub fn new(mut iter: I, debug: bool) -> Result<Self, VecDeque<CompileError>> {
-        let mut error_handler = ErrorHandler::new();
-        let mut pending = VecDeque::new();
-        let first = loop {
-            match iter.next() {
-                Some(Ok(token)) => break token,
-                Some(Err(err)) => pending.push_back(err),
-                None if pending.is_empty() => {
-                    error_handler.push_back(CompileError::semantic(Locatable::new(
-                        "cannot have empty program".to_string(),
-                        Default::default(),
-                    )));
-                    return Err(pending);
-                }
-                None => return Err(pending),
-            }
-        };
-        if !pending.is_empty() {
-            return Err(pending);
-        }
-        Ok(Parser {
-            scope: Scope::new(),
-            tag_scope: Scope::new(),
-            tokens: iter,
+    pub fn new(first: Locatable<Token>, tokens: I, debug: bool) -> Self {
+        Parser {
+            scope: Default::default(),
+            tag_scope: Default::default(),
+            tokens,
             pending: Default::default(),
             last_location: first.location,
             current: Some(first),
             next: None,
             current_function: None,
             debug,
-            error_handler,
-        })
+            error_handler: ErrorHandler::new(),
+        }
+    }
+    /// Return the current location of the parser.
+    pub fn location(&self) -> Location {
+        self.last_location
     }
 }
 
@@ -327,7 +312,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn lex_error(&mut self, err: CompileError) {
         self.error_handler.push_back(err);
     }
-    /// Return a (Declaration, Warning, Error) triple
     pub fn collect_results(&mut self) -> (Vec<Locatable<Declaration>>, Vec<CompileError>) {
         let mut decls = Vec::new();
         let mut errs = Vec::new();
@@ -432,8 +416,9 @@ mod tests {
     }
     #[inline]
     pub(crate) fn parser(input: &str) -> Parser<Lexer> {
-        let lexer = Lexer::new("<test suite>".to_string(), input.chars(), false);
-        Parser::new(lexer, false).unwrap()
+        let mut lexer = Lexer::new("<test suite>".to_string(), input.chars(), false);
+        let first = lexer.next().unwrap().unwrap();
+        Parser::new(first, lexer, false)
     }
     #[test]
     fn peek() {

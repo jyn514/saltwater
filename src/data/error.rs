@@ -78,6 +78,8 @@ pub enum Error {
 pub enum SemanticError {
     #[error("{0}")]
     Generic(String),
+    #[error("cannot have empty program")]
+    EmptyProgram,
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

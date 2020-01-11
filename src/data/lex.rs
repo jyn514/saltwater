@@ -8,7 +8,7 @@ pub struct Location {
     // if there's a 4 GB input file, we have bigger problems
     pub line: u32,
     pub column: u32,
-    pub file: InternedStr,
+    pub filename: InternedStr,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -168,7 +168,7 @@ pub enum Token {
 /* impls */
 impl PartialOrd for Location {
     fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
-        if self.file == other.file {
+        if self.filename == other.filename {
             match self.line.cmp(&other.line) {
                 Ordering::Equal => Some(self.column.cmp(&other.column)),
                 o => Some(o),
@@ -260,7 +260,7 @@ impl Default for Location {
         Self {
             line: 1,
             column: 1,
-            file: Default::default(),
+            filename: Default::default(),
         }
     }
 }

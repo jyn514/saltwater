@@ -23,10 +23,13 @@ pub fn pretty_print<T: std::fmt::Display>(prefix: ANSIString, msg: T, location: 
     );
 }
 
+/*
 pub fn warn(msg: &str, location: Location) {
     WARNINGS.fetch_add(1, Ordering::Relaxed);
     pretty_print(Colour::Yellow.bold().paint("warning"), msg, location);
 }
+*/
+
 pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
     eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
     process::exit(code);

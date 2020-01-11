@@ -46,6 +46,7 @@ struct Compiler {
     // we didn't see a default case
     switches: Vec<(Switch, Option<Ebb>, Ebb)>,
     labels: HashMap<InternedStr, Ebb>,
+    error_handler: ErrorHandler,
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
@@ -127,6 +128,7 @@ impl Compiler {
             // the initial value doesn't really matter
             last_saw_loop: true,
             strings: Default::default(),
+            error_handler: Default::default(),
             debug,
         }
     }

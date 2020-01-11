@@ -1,7 +1,6 @@
 use super::{Lexeme, Parser};
 use crate::data::prelude::*;
 use crate::data::{lex::Keyword, StorageClass};
-use crate::utils::warn;
 use std::iter::Iterator;
 
 type StmtResult = Result<Stmt, SyntaxError>;
@@ -267,7 +266,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
         let stmt = match (body, otherwise) {
             (None, None) => {
-                not_executed_warning(
+                self.not_executed_warning(
                     "missing both if body and else body",
                     "if (expr) {}",
                     "expr;",
@@ -298,7 +297,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let stmt = if let Some(body) = body {
             StmtType::Switch(expr, Box::new(body))
         } else {
-            not_executed_warning(
+            self.not_executed_warning(
                 "empty switch body is never executed",
                 "switch (expr) {}",
                 "expr;",
@@ -339,7 +338,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let stmt = if let Some(body) = body {
             StmtType::Do(Box::new(body), condition)
         } else {
-            not_executed_warning(
+            self.not_executed_warning(
                 "empty body for do-while statement",
                 "do {} while (expr)",
                 "while (expr) {}",
@@ -423,10 +422,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             location: start.location,
         })
     }
-}
-
-fn not_executed_warning(description: &str, from: &str, to: &str, location: Location) {
-    warn(&format!("{} will be rewritten internally. help: to silence this warning, rewrite it yourself: `{}` => `{}`", description, from, to), location);
+    fn not_executed_warning(
+        &mut self,
+        description: &str,
+        from: &str,
+        to: &str,
+        location: Location,
+    ) {
+        let warning = format!(
+            "{} will be rewritten internally. help: to silence this warning, rewrite it yourself: `{}` => `{}`",
+            description, from, to
+        );
+        self.error_handler.warn(&warning, location);
+    }
 }
 
 #[cfg(test)]

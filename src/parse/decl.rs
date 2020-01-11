@@ -11,7 +11,6 @@ use crate::data::{
     types::{ArrayType, FunctionType},
     Initializer, Qualifiers, StorageClass,
 };
-use crate::utils::warn;
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* grammar functions
@@ -69,10 +68,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers()?;
         if self.match_next(&Token::Semicolon).is_some() {
             if !seen_compound_type {
-                warn(
-                    "declaration does not declare anything",
-                    self.next_location(),
-                );
+                let loc = self.next_location();
+                self.error_handler
+                    .warn("declaration does not declare anything", loc);
             }
             return Ok(VecDeque::new());
         }
@@ -141,7 +139,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         };
         if symbol.ctype.is_function() && (qualifiers.c_const || qualifiers.volatile) {
-            warn(
+            self.error_handler.warn(
                 &format!("{} has no effect on function return type", qualifiers),
                 id.location,
             );
@@ -269,7 +267,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         // e.g. extern int i = 1;
         // this is a silly thing to do, but valid: https://stackoverflow.com/a/57900212/7669110
         if decl.storage_class == StorageClass::Extern && !decl.ctype.is_function() && decl.init {
-            crate::utils::warn(
+            self.error_handler.warn(
                 "this is a definition, not a declaration, the 'extern' keyword has no effect",
                 *location,
             );
@@ -423,7 +421,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     || keyword == Keyword::Signed
                     || keyword == Keyword::Unsigned
                 {
-                    warn(
+                    self.error_handler.warn(
                         &format!("duplicate declaration specifier '{}'", keyword),
                         location,
                     );
@@ -452,10 +450,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     // if it's not an id, it's invalid anyway
                     // other parts of the parser will have a better error message
                     if let Some(Token::Id(_)) = self.peek_token() {
-                        warn(
-                            "type specifier missing, defaults to int",
-                            self.next_location(),
-                        );
+                        let loc = self.next_location();
+                        self.error_handler
+                            .warn("type specifier missing, defaults to int", loc);
                     }
                 }
                 Type::Int(signed.unwrap_or(true))
@@ -691,7 +688,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             if let Some(Token::RightBrace) = self.peek_token() {
                 break;
             } else if let Some(token) = self.match_next(&Token::Semicolon) {
-                crate::utils::warn(
+                self.error_handler.warn(
                     "extraneous semicolon in struct declaration is not allowed by ISO C",
                     token.location,
                 );
@@ -754,14 +751,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn struct_declarator_list(&mut self, members: &mut Vec<Symbol>) -> Result<(), SyntaxError> {
         let (sc, qualifiers, original_ctype, _) = self.declaration_specifiers()?;
         if let Some(token) = self.match_next(&Token::Semicolon) {
-            crate::utils::warn("declaration does not declare anything", token.location);
+            self.error_handler
+                .warn("declaration does not declare anything", token.location);
             return Ok(());
         }
         let mut last_location;
         loop {
             if let Some(token) = self.match_next(&Token::Colon) {
                 self.bitfield()?;
-                crate::utils::warn(
+                self.error_handler.warn(
                     "padding bits in bitfields are not implemented and will be ignored",
                     token.location,
                 );
@@ -797,7 +795,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     );
                     self.semantic_err(err, token.location);
                 }
-                crate::utils::warn(
+                self.error_handler.warn(
                     "bitfields are not implemented and will be ignored",
                     token.location,
                 );
@@ -1197,18 +1195,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     ]) {
                         if keyword == Keyword::Const {
                             if pointer_qualifiers.c_const {
-                                warn("duplicate 'const' declaration specifier", location);
+                                self.error_handler
+                                    .warn("duplicate 'const' declaration specifier", location);
                             } else {
                                 pointer_qualifiers.c_const = true;
                             }
                         } else if keyword == Keyword::Volatile {
                             if pointer_qualifiers.volatile {
-                                warn("duplicate 'volatile' declaration specifier", location);
+                                self.error_handler
+                                    .warn("duplicate 'volatile' declaration specifier", location);
                             } else {
                                 pointer_qualifiers.volatile = true;
                             }
                         } else {
-                            warn(
+                            self.error_handler.warn(
                                 &format!("qualifier '{}' has not yet been implemented", keyword),
                                 location,
                             );

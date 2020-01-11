@@ -64,17 +64,24 @@ pub fn compile(
     debug_lex: bool,
     debug_ast: bool,
     debug_ir: bool,
-) -> Result<(Product, VecDeque<CompileWarning>), Error> {
+) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
     let lexer = Lexer::new(filename, buf.chars(), debug_lex);
-    let mut parser = Parser::new(lexer, debug_ast)?;
+    let mut parser = match Parser::new(lexer, debug_ast) {
+        Ok(parser) => parser,
+        Err(errors) => return (Err(errors.into()), VecDeque::new()),
+    };
     let (hir, errors) = parser.collect_results();
+    let warnings = parser.warnings();
     if !errors.is_empty() {
-        return Err(Error::Source(errors.into()));
+        return (Err(Error::Source(errors.into())), warnings);
     }
-    match ir::compile(hir, debug_ir) {
-        Ok(product) => Ok((product, parser.warnings())),
-        Err(err) => Err(err.into()),
-    }
+    (
+        match ir::compile(hir, debug_ir) {
+            Ok(product) => Ok(product),
+            Err(err) => Err(err.into()),
+        },
+        warnings,
+    )
 }
 
 pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {

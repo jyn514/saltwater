@@ -137,9 +137,15 @@ impl CompileError {
     pub fn location(&self) -> Location {
         self.location
     }
-    pub fn is_lex_err(&self) -> bool { self.data.is_lex_err() }
-    pub fn is_syntax_err(&self) -> bool { self.data.is_syntax_err() }
-    pub fn is_semantic_err(&self) -> bool { self.data.is_semantic_err() }
+    pub fn is_lex_err(&self) -> bool {
+        self.data.is_lex_err()
+    }
+    pub fn is_syntax_err(&self) -> bool {
+        self.data.is_syntax_err()
+    }
+    pub fn is_semantic_err(&self) -> bool {
+        self.data.is_semantic_err()
+    }
 }
 
 impl Error {
@@ -199,12 +205,6 @@ impl<S: Into<String>> From<S> for SemanticError {
 impl<S: Into<String>> From<S> for SyntaxError {
     fn from(err: S) -> Self {
         SyntaxError::Generic(err.into())
-    }
-}
-
-impl From<String> for LexError {
-    fn from(err: String) -> Self {
-        LexError::Generic(err)
     }
 }
 
@@ -316,7 +316,10 @@ mod tests {
 
     #[test]
     fn test_compile_error_from_syntax_error() {
-        let _ = CompileError::new(SyntaxError::from("oranges".to_string()).into(), Location::default());
+        let _ = CompileError::new(
+            SyntaxError::from("oranges".to_string()).into(),
+            Location::default(),
+        );
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::str::Chars;
 
-use super::data::{lex::*, prelude::*, error::LexError};
+use super::data::{error::LexError, lex::*, prelude::*};
 use super::intern::InternedStr;
 
 /// A Lexer takes the source code and turns it into tokens with location information.
@@ -847,15 +847,15 @@ impl<'a> Iterator for Lexer<'a> {
             println!("lexeme: {:?}", c);
         }
         // oof
-        c.map(|result| {
-            result.map_err(|err| err.map(|err| LexError::Generic(err).into()))
-        })
+        c.map(|result| result.map_err(|err| err.map(|err| LexError::Generic(err).into())))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{LexError, CompileError, CompileResult, Error, Lexer, Literal, Locatable, Location, Token};
+    use super::{
+        CompileError, CompileResult, Error, LexError, Lexer, Literal, Locatable, Location, Token,
+    };
     use crate::intern::InternedStr;
 
     type LexType = CompileResult<Locatable<Token>>;

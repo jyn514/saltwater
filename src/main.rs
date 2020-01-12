@@ -102,7 +102,7 @@ fn real_main(buf: &str, opt: Opt) -> Result<(), Error> {
         opt.debug_ast,
         opt.debug_asm,
     );
-    handle_warnings(warnings);
+    handle_warnings(warnings, buf);
 
     let product = result?;
     if opt.no_link {
@@ -113,11 +113,11 @@ fn real_main(buf: &str, opt: Opt) -> Result<(), Error> {
     link(tmp_file.as_ref(), opt.output.as_path()).map_err(io::Error::into)
 }
 
-fn handle_warnings(warnings: VecDeque<CompileWarning>) {
+fn handle_warnings(warnings: VecDeque<CompileWarning>, file: &str) {
     WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
     let tag = Colour::Yellow.bold().paint("warning");
     for warning in warnings {
-        pretty_print(tag.clone(), warning.data, warning.location);
+        pretty_print(tag.clone(), warning.data, warning.location, file);
     }
 }
 
@@ -165,7 +165,7 @@ fn main() {
     // What's happening here is the function has type `fn(...) -> !`,
     // but when it's called, that's coerced to `!`,
     // so the closure has type `fn(...) -> i32`
-    real_main(&buf, opt).unwrap_or_else(|err| err_exit(err));
+    real_main(&buf, opt).unwrap_or_else(|err| err_exit(err, &buf));
 }
 
 fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
@@ -218,12 +218,12 @@ fn parse_args() -> Result<Opt, pico_args::Error> {
     })
 }
 
-fn err_exit(err: Error) -> ! {
+fn err_exit(err: Error, file: &str) -> ! {
     use Error::*;
     match err {
         Source(errs) => {
             for err in errs {
-                error(&err.data, err.location());
+                error(&err.data, err.location(), file);
             }
             let (num_warnings, num_errors) = (get_warnings(), get_errors());
             print_issues(num_warnings, num_errors);
@@ -248,12 +248,18 @@ fn print_issues(warnings: usize, errors: usize) {
     eprintln!("{} generated", msg);
 }
 
-fn error<T: std::fmt::Display>(msg: T, location: Location) {
+fn error<T: std::fmt::Display>(msg: T, location: Location, file: &str) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
-    pretty_print(Colour::Red.bold().paint("error"), msg, location);
+    pretty_print(Colour::Red.bold().paint("error"), msg, location, file);
 }
 
-pub fn pretty_print<T: std::fmt::Display>(prefix: ANSIString, msg: T, location: Location) {
+pub fn pretty_print<T: std::fmt::Display>(
+    prefix: ANSIString,
+    msg: T,
+    location: Location,
+    file: &str,
+) {
+    let (line, column) = location.calculate_line_column(file);
     println!(
         "{}:{}:{}: {}: {}",
         STRINGS
@@ -261,8 +267,8 @@ pub fn pretty_print<T: std::fmt::Display>(prefix: ANSIString, msg: T, location: 
             .unwrap()
             .resolve(location.filename.0)
             .unwrap(),
-        location.line,
-        location.column,
+        line,
+        column,
         prefix,
         msg
     );

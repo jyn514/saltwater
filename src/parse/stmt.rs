@@ -464,9 +464,8 @@ mod tests {
         let expected = Ok(Some(Stmt {
             data: StmtType::Expr(parser("1").expr().unwrap()),
             location: Location {
-                line: 1,
-                column: 1,
                 filename: InternedStr::get_or_intern("<test-suite>"),
+                ..Default::default()
             },
         }));
         assert_eq!(dbg!(parsed), dbg!(expected));

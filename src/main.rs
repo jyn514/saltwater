@@ -11,7 +11,7 @@ extern crate log;
 extern crate pico_args;
 extern crate rcc;
 
-use ansi_term::Colour;
+use ansi_term::{ANSIString, Colour};
 use pico_args::Arguments;
 use rcc::{
     assemble, compile,
@@ -19,6 +19,7 @@ use rcc::{
         error::{CompileWarning, RecoverableResult},
         lex::Location,
     },
+    intern::STRINGS,
     link, utils, Error,
 };
 use std::ffi::OsStr;
@@ -116,7 +117,7 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>) {
     WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
     let tag = Colour::Yellow.bold().paint("warning");
     for warning in warnings {
-        utils::pretty_print(tag.clone(), warning.data, warning.location);
+        pretty_print(tag.clone(), warning.data, warning.location);
     }
 }
 
@@ -249,7 +250,22 @@ fn print_issues(warnings: usize, errors: usize) {
 
 fn error<T: std::fmt::Display>(msg: T, location: Location) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
-    utils::pretty_print(Colour::Red.bold().paint("error"), msg, location);
+    pretty_print(Colour::Red.bold().paint("error"), msg, location);
+}
+
+pub fn pretty_print<T: std::fmt::Display>(prefix: ANSIString, msg: T, location: Location) {
+    println!(
+        "{}:{}:{}: {}: {}",
+        STRINGS
+            .read()
+            .unwrap()
+            .resolve(location.filename.0)
+            .unwrap(),
+        location.line,
+        location.column,
+        prefix,
+        msg
+    );
 }
 
 #[inline]

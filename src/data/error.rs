@@ -77,6 +77,8 @@ pub enum Error {
     // specific errors
     #[error("unterminated /* comment")]
     UnterminatedComment,
+    #[error("expected {0}, got <end-of-file>")]
+    EndOfFile(&'static str),
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
@@ -91,6 +93,7 @@ impl Error {
             GenericSyntax(_) => ErrorKind::Syntax,
             GenericSemantic(_) => ErrorKind::Semantic,
             UnterminatedComment => ErrorKind::Lex,
+            EndOfFile(_) => ErrorKind::Syntax,
             __Nonexhaustive => panic!("do not construct nonexhaustive variants manually"),
         }
     }
@@ -150,7 +153,7 @@ impl fmt::Display for CompileError {
 
 #[derive(Debug, PartialEq, Eq, Error)]
 #[error("{}", .0.data)]
-pub struct SyntaxError(pub Locatable<String>);
+pub struct SyntaxError(pub(crate) CompileError);
 
 impl From<Locatable<String>> for CompileError {
     fn from(err: Locatable<String>) -> Self {
@@ -160,13 +163,24 @@ impl From<Locatable<String>> for CompileError {
 
 impl From<SyntaxError> for CompileError {
     fn from(err: SyntaxError) -> Self {
-        err.0.map(Error::GenericSyntax)
+        err.0
     }
 }
 
 impl From<Locatable<String>> for SyntaxError {
     fn from(err: Locatable<String>) -> Self {
-        Self(err)
+        Self(err.map(Error::GenericSyntax))
+    }
+}
+
+impl std::convert::TryFrom<Locatable<Error>> for SyntaxError {
+    type Error = Locatable<Error>;
+    fn try_from(err: Locatable<Error>) -> Result<Self, Self::Error> {
+        if err.is_syntax_err() {
+            Ok(Self(err))
+        } else {
+            Err(err)
+        }
     }
 }
 
@@ -289,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_compile_error_from_syntax_error() {
-        let e = CompileError::from(SyntaxError(Locatable::new(
+        let e = CompileError::from(SyntaxError::from(Locatable::new(
             "oranges".to_string(),
             Location::default(),
         )));

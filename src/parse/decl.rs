@@ -2065,21 +2065,27 @@ mod tests {
         assert!(parse("int i = 3;").unwrap().is_ok());
 
         // bounded and unbounded arrays
-        assert!(all_match!(
-            Some(Ok(Locatable {
-                data:
-                    Declaration {
-                        init: Some(Initializer::InitializerList(_)),
-                        ..
-                    },
-                ..
-            })),
+        let parsed = [
             parse("int a[] = {1, 2, 3};"),
             parse("int a[3] = {1, 2, 3};"),
             // possibly with trailing commas
             parse("int a[] = {1, 2, 3,};"),
-            parse("int a[3] = {1, 2, 3,};")
-        ));
+            parse("int a[3] = {1, 2, 3,};"),
+        ];
+        for res in &parsed {
+            let matches = match res {
+                Some(Ok(Locatable {
+                    data:
+                        Declaration {
+                            init: Some(Initializer::InitializerList(_)),
+                            ..
+                        },
+                    ..
+                })) => true,
+                _ => false,
+            };
+            assert!(matches);
+        }
     }
     #[test]
     fn enum_declaration() {

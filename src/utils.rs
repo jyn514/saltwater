@@ -55,20 +55,6 @@ macro_rules! vec_deque {
     ($($x:expr,)*) => ($crate::vec_deque![$($x),*])
 }
 
-/// Check if an expression matches a pattern.
-///
-/// Very similar to `if let $pattern = $expr {}`,
-/// but can be used as an expression instead of a block.
-#[allow(unused_macros)]
-macro_rules! matches {
-    ($pattern: pat, $val: expr) => {
-        match $val {
-            $pattern => true,
-            _ => false,
-        }
-    };
-}
-
 /// Return an error from a function
 /// Assumes that 'Locatable' is in scope and that the function it is called in
 /// returns a 'Result<Locatable<T>>'
@@ -78,26 +64,5 @@ macro_rules! semantic_err {
             data: $message,
             location: $location,
         }));
-    };
-}
-
-/// Check that many expressions match a pattern
-/// TODO: only works for 1, 2, or 3 arguments
-#[allow(unused_macros)]
-macro_rules! all_match {
-    ($pat: pat, $val: expr) => {
-        matches!($pat, $val)
-    };
-    ($pat: pat, $val: expr, $val2: expr) => {
-        matches!($pat, $val) && matches!($pat, $val2)
-    };
-    ($pat: pat, $val: expr, $val2: expr, $val3: expr) => {
-        matches!($pat, $val) && matches!($pat, $val2) && matches!($pat, $val3)
-    };
-    ($pat: pat, $val: expr, $val2: expr, $val3: expr, $val4: expr) => {
-        matches!($pat, $val)
-            && matches!($pat, $val2)
-            && matches!($pat, $val3)
-            && matches!($pat, $val4)
     };
 }

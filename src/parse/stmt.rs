@@ -1,6 +1,7 @@
 use super::{Lexeme, Parser};
 use crate::data::prelude::*;
 use crate::data::{lex::Keyword, StorageClass};
+use std::convert::TryFrom;
 use std::iter::Iterator;
 
 type StmtResult = Result<Stmt, SyntaxError>;
@@ -388,10 +389,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 })),
                 None => None,
             },
-            None => syntax_err!(
-                "expected expression or ';', got <end-of-file>".to_string(),
-                self.last_location,
-            ),
+            None => {
+                return Err(SyntaxError::try_from(CompileError::new(
+                    Error::EndOfFile("expression or ';'"),
+                    self.last_location,
+                ))
+                .unwrap())
+            }
         };
         let controlling_expr = self
             .expr_opt(Token::Semicolon)?

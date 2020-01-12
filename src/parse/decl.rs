@@ -118,7 +118,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 )?))
             }
             (Type::Function(_), Some(t)) if *t == Token::EQUAL => {
-                return Err(SyntaxError(Locatable {
+                return Err(SyntaxError::from(Locatable {
                     data: format!(
                         "expected '{{', got '=' while parsing function body for {}",
                         symbol.id,
@@ -357,10 +357,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut seen_compound = false;
         let mut seen_typedef = false;
         if self.peek_token().is_none() {
-            return Err(SyntaxError(Locatable {
-                data: "expected declaration specifier, got <end-of-file>".into(),
+            return Err(SyntaxError::try_from(Locatable {
+                data: Error::EndOfFile("declaration specifier"),
                 location: self.last_location,
-            }));
+            })
+            .unwrap());
         }
         // unsigned const int
         while let Some(locatable) = self.next_token() {

@@ -886,7 +886,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 other => {
                     let err = Err(Locatable {
                         location,
-                        data: SyntaxError::from(format!("expected '(' or literal in expression, got '{}'", other)),
+                        data: SyntaxError::from(format!(
+                            "expected '(' or literal in expression, got '{}'",
+                            other
+                        )),
                     });
                     self.unput(Some(Locatable {
                         location,
@@ -1047,7 +1050,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         mut expr_func: E,
     ) -> SyntaxResult
     where
-        E: FnMut(Box<Expr>, Box<Expr>, Locatable<Token>) -> RecoverableResult<Expr, Locatable<SemanticError>>,
+        E: FnMut(
+            Box<Expr>,
+            Box<Expr>,
+            Locatable<Token>,
+        ) -> RecoverableResult<Expr, Locatable<SemanticError>>,
         G: Fn(&mut Self) -> SyntaxResult,
     {
         let mut expr = next_grammar_func(self)?;
@@ -1172,7 +1179,10 @@ impl Expr {
     // Perform a binary conversion, including all relevant casts.
     //
     // See `Type::binary_promote` for conversion rules.
-    fn binary_promote(left: Expr, right: Expr) -> RecoverableResult<(Expr, Expr), Locatable<SemanticError>> {
+    fn binary_promote(
+        left: Expr,
+        right: Expr,
+    ) -> RecoverableResult<(Expr, Expr), Locatable<SemanticError>> {
         let (left, right) = (left.rval(), right.rval());
         let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
         match (left.cast(&ctype), right.cast(&ctype)) {
@@ -1262,7 +1272,8 @@ impl Expr {
                         } else {
                             String::new()
                         }
-                    ).into(),
+                    )
+                    .into(),
                 },
                 self,
             ))
@@ -1292,7 +1303,8 @@ impl Expr {
                     "cannot perform pointer arithmetic when size of pointed type '{}' is unknown",
                     pointee
                 ),
-                    }.into(),
+                    }
+                    .into(),
                     base,
                 ))
             }
@@ -1331,7 +1343,8 @@ impl Expr {
                 Locatable {
                     location: expr.location,
                     data: "expression is not assignable".to_string(),
-                }.into(),
+                }
+                .into(),
                 expr,
             ));
         } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
@@ -1342,7 +1355,8 @@ impl Expr {
                         "cannot increment or decrement value of type '{}'",
                         expr.ctype
                     ),
-                }.into(),
+                }
+                .into(),
                 expr,
             ));
         }

@@ -5,10 +5,29 @@ use std::cmp::Ordering;
 // should almost always be immutable
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Location {
-    // if there's a 4 GB input file, we have bigger problems
-    pub line: u32,
-    pub column: u32,
+    pub offset: usize,
     pub filename: InternedStr,
+}
+
+impl Location {
+    // TODO: cache some of this so we don't recalculate every time
+    // if there's a 4 GB input file, we have bigger problems
+    pub fn calculate_line_column(self, file: &str) -> (u32, u32) {
+        // work around bug in lexer: it reports the first character as offset 1
+        let (mut line, mut column) = (1, 0);
+        for (i, c) in file.chars().enumerate() {
+            if i == self.offset {
+                break;
+            }
+            if c == '\n' {
+                line += 1;
+                column = 0;
+            } else {
+                column += 1;
+            }
+        }
+        (line, column)
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -169,10 +188,7 @@ pub enum Token {
 impl PartialOrd for Location {
     fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
         if self.filename == other.filename {
-            match self.line.cmp(&other.line) {
-                Ordering::Equal => Some(self.column.cmp(&other.column)),
-                o => Some(o),
-            }
+            Some(self.offset.cmp(&other.offset))
         } else {
             None
         }
@@ -258,8 +274,7 @@ impl AssignmentToken {
 impl Default for Location {
     fn default() -> Self {
         Self {
-            line: 1,
-            column: 1,
+            offset: 0,
             filename: Default::default(),
         }
     }

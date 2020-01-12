@@ -115,9 +115,7 @@ impl<'a> Lexer<'a> {
     pub fn new<T: AsRef<str> + Into<String>>(file: T, chars: Chars<'a>, debug: bool) -> Lexer<'a> {
         Lexer {
             location: Location {
-                line: 1,
-                // not 1 because we increment column _before_ returning current char
-                column: 0,
+                offset: 0,
                 filename: InternedStr::get_or_intern(file),
             },
             chars,
@@ -157,12 +155,7 @@ impl<'a> Lexer<'a> {
             Some(c)
         } else {
             self.chars.next().map(|x| {
-                if x == '\n' {
-                    self.location.line += 1;
-                    self.location.column = 1;
-                } else {
-                    self.location.column += 1;
-                };
+                self.location.offset += 1;
                 x
             })
         }
@@ -950,8 +943,7 @@ mod tests {
                 data: Token::Plus,
                 location: Location {
                     filename: InternedStr::get_or_intern("<stdin>"),
-                    line: 1,
-                    column: 1
+                    ..Default::default()
                 }
             }))
         )

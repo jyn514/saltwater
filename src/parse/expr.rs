@@ -1,4 +1,4 @@
-use super::{Lexeme, Parser};
+use super::{Lexeme, Parser, SyntaxResult};
 use crate::arch::SIZE_T;
 use crate::data::prelude::*;
 use crate::data::{
@@ -7,11 +7,9 @@ use crate::data::{
     StorageClass::Typedef,
 };
 
-type SyntaxResult = Result<Expr, SyntaxError>;
-
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// expr_opt: expr ';' | ';'
-    pub fn expr_opt(&mut self, token: Token) -> Result<Option<Expr>, SyntaxError> {
+    pub fn expr_opt(&mut self, token: Token) -> SyntaxResult<Option<Expr>> {
         if self.match_next(&token).is_some() {
             Ok(None)
         } else {
@@ -368,13 +366,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     (left.ctype.clone(), true)
                 } else {
                     return Err((Locatable::new(
-                        format!(
+                        SemanticError::from(format!(
                             "invalid operators for '{}' (expected either arithmetic types or pointer operation, got '{} {} {}'",
                             token.data,
                             left.ctype,
                             token.data,
                             right.ctype
-                        ),
+                        )),
                         token.location
                     ), *left));
                 };
@@ -408,18 +406,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     && !(left.ctype.is_integral() && right.ctype.is_integral())
                 {
                     return Err((Locatable::new(
-                        format!(
+                        SemanticError::from(format!(
                             "expected integers for both operators of %, got '{}' and '{}'",
                             left.ctype, right.ctype
-                        ),
+                        )),
                         token.location,
                     ), *left));
                 } else if !(left.ctype.is_arithmetic() && right.ctype.is_arithmetic()) {
                     return Err((Locatable::new(
-                        format!(
+                        SemanticError::from(format!(
                             "expected float or integer types for both operands of {}, got '{}' and '{}'",
                             token.data, left.ctype, right.ctype
-                        ),
+                        )),
                         token.location,
                     ), *left));
                 }
@@ -826,7 +824,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// : /* empty */
     /// | assignment_expr (',' assignment_expr)*
     /// ;
-    fn argument_expr_list_opt(&mut self) -> Result<Vec<Expr>, SyntaxError> {
+    fn argument_expr_list_opt(&mut self) -> SyntaxResult<Vec<Expr>> {
         if self.peek_token() == Some(&Token::RightParen) {
             return Ok(vec![]);
         }
@@ -888,9 +886,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 other => {
                     let err = Err(Locatable {
                         location,
-                        data: format!("expected '(' or literal in expression, got '{}'", other),
-                    }
-                    .into());
+                        data: SyntaxError::from(format!("expected '(' or literal in expression, got '{}'", other)),
+                    });
                     self.unput(Some(Locatable {
                         location,
                         data: other,
@@ -900,10 +897,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         } else {
             Err(Locatable {
+                data: SyntaxError::from("expected '(' or literal in expression, got <end-of-file>"),
                 location: self.next_location(),
-                data: "expected '(' or literal in expression, got <end-of-file>".to_string(),
-            }
-            .into())
+            })
         }
     }
 
@@ -960,7 +956,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ctype: Type,
     ) -> SyntaxResult
     where
-        E: Fn(Box<Expr>, Box<Expr>) -> Result<ExprType, (SemanticError, Expr)>,
+        E: Fn(Box<Expr>, Box<Expr>) -> Result<ExprType, (Locatable<SemanticError>, Expr)>,
         G: Fn(&mut Self) -> SyntaxResult,
     {
         self.left_associative_binary_op(next_grammar_func, &[token], move |left, right, token| {
@@ -973,10 +969,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             };
             if let Some(ctype) = non_scalar {
                 return Err((Locatable {
-                    data: format!(
+                    data: SemanticError::from(format!(
                         "expected scalar type (number or pointer) for both operands of '{}', got '{}'",
                         token.data, ctype
-                    ),
+                    )),
                     location: token.location,
                 }, *left));
             }
@@ -1006,7 +1002,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         expr_func: E,
     ) -> SyntaxResult
     where
-        E: Fn(Expr, Expr, Locatable<Token>) -> RecoverableResult<Expr, Locatable<String>>,
+        E: Fn(Expr, Expr, Locatable<Token>) -> RecoverableResult<Expr, Locatable<SemanticError>>,
         G: Fn(&mut Self) -> SyntaxResult,
     {
         self.left_associative_binary_op(next_grammar_func, tokens, |expr, next, token| {
@@ -1020,10 +1016,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             if let Some(ctype) = non_scalar {
                 return Err((
                     Locatable {
-                        data: format!(
+                        data: SemanticError::from(format!(
                             "expected integer on both sides of '{}', got '{}'",
                             token.data, ctype
-                        ),
+                        )),
                         location: token.location,
                     },
                     *expr,
@@ -1051,7 +1047,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         mut expr_func: E,
     ) -> SyntaxResult
     where
-        E: FnMut(Box<Expr>, Box<Expr>, Locatable<Token>) -> RecoverableResult<Expr, SemanticError>,
+        E: FnMut(Box<Expr>, Box<Expr>, Locatable<Token>) -> RecoverableResult<Expr, Locatable<SemanticError>>,
         G: Fn(&mut Self) -> SyntaxResult,
     {
         let mut expr = next_grammar_func(self)?;
@@ -1061,7 +1057,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Ok(combined) => expr = combined,
                 Err((err, original)) => {
                     expr = original;
-                    self.semantic_err(err.data, err.location);
+                    self.error_handler.push_back(err);
                 }
             }
         }
@@ -1160,7 +1156,7 @@ impl Expr {
             _ => self,
         }
     }
-    fn default_promote(self) -> RecoverableResult<Expr, SemanticError> {
+    fn default_promote(self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         let expr = self.rval();
         let ctype = expr.ctype.clone().default_promote();
         expr.cast(&ctype)
@@ -1168,7 +1164,7 @@ impl Expr {
     // Perform an integer conversion, including all relevant casts.
     //
     // See `Type::integer_promote` for conversion rules.
-    fn integer_promote(self) -> RecoverableResult<Expr, SemanticError> {
+    fn integer_promote(self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         let expr = self.rval();
         let ctype = expr.ctype.clone().integer_promote();
         expr.cast(&ctype)
@@ -1176,7 +1172,7 @@ impl Expr {
     // Perform a binary conversion, including all relevant casts.
     //
     // See `Type::binary_promote` for conversion rules.
-    fn binary_promote(left: Expr, right: Expr) -> RecoverableResult<(Expr, Expr), SemanticError> {
+    fn binary_promote(left: Expr, right: Expr) -> RecoverableResult<(Expr, Expr), Locatable<SemanticError>> {
         let (left, right) = (left.rval(), right.rval());
         let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
         match (left.cast(&ctype), right.cast(&ctype)) {
@@ -1229,7 +1225,7 @@ impl Expr {
     }
     // Simple assignment rules, section 6.5.16.1 of the C standard
     // the funky return type is so we don't consume the original expression in case of an error
-    pub fn cast(mut self, ctype: &Type) -> RecoverableResult<Expr, SemanticError> {
+    pub fn cast(mut self, ctype: &Type) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         if self.ctype == *ctype {
             Ok(self)
         } else if self.ctype.is_arithmetic() && ctype.is_arithmetic()
@@ -1266,7 +1262,7 @@ impl Expr {
                         } else {
                             String::new()
                         }
-                    ),
+                    ).into(),
                 },
                 self,
             ))
@@ -1277,7 +1273,7 @@ impl Expr {
         index: Expr,
         pointee: &Type,
         location: Location,
-    ) -> RecoverableResult<Expr, SemanticError> {
+    ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         let offset = Expr {
             lval: false,
             location: index.location,
@@ -1296,7 +1292,7 @@ impl Expr {
                     "cannot perform pointer arithmetic when size of pointed type '{}' is unknown",
                     pointee
                 ),
-                    },
+                    }.into(),
                     base,
                 ))
             }
@@ -1329,13 +1325,13 @@ impl Expr {
         increment: bool,
         expr: Expr,
         location: Location,
-    ) -> RecoverableResult<Expr, SemanticError> {
+    ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         if !expr.is_modifiable_lval() {
             return Err((
                 Locatable {
                     location: expr.location,
                     data: "expression is not assignable".to_string(),
-                },
+                }.into(),
                 expr,
             ));
         } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
@@ -1346,7 +1342,7 @@ impl Expr {
                         "cannot increment or decrement value of type '{}'",
                         expr.ctype
                     ),
-                },
+                }.into(),
                 expr,
             ));
         }
@@ -1388,7 +1384,7 @@ impl Expr {
     // convenience method for constructing an Expr
     fn default_expr<C>(
         constructor: C,
-    ) -> impl Fn(Expr, Expr, Locatable<Token>) -> RecoverableResult<Expr, SemanticError>
+    ) -> impl Fn(Expr, Expr, Locatable<Token>) -> RecoverableResult<Expr, Locatable<SemanticError>>
     where
         C: Fn(Box<Expr>, Box<Expr>) -> ExprType,
     {
@@ -1407,7 +1403,7 @@ impl Expr {
         mut left: Box<Expr>,
         mut right: Box<Expr>,
         token: Locatable<Token>,
-    ) -> RecoverableResult<Expr, SemanticError> {
+    ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         let token = match token.data {
             Token::Comparison(c) => Locatable::new(c, token.location),
             _ => unreachable!("bad use of relational_expr"),
@@ -1428,13 +1424,13 @@ impl Expr {
                         || (left_expr.ctype.is_pointer() && right_expr.is_null()))))
             {
                 return Err((Locatable {
-                    data: format!(
+                    data: SemanticError::from(format!(
                         "invalid types for '{}' (expected arithmetic types or compatible pointers, got {} {} {}",
                         token.data,
                         left_expr.ctype,
                         token.data,
                         right_expr.ctype
-                    ),
+                    )),
                     location: token.location,
                 }, left_expr));
             }
@@ -1633,7 +1629,7 @@ mod tests {
         if let Some(err) = p.error_handler.pop_front() {
             Err(err)
         } else {
-            exp.map_err(SyntaxError::into)
+            exp.map_err(CompileError::from)
         }
     }
     fn get_location(r: &CompileResult<Expr>) -> Location {
@@ -1657,7 +1653,7 @@ mod tests {
         if let Some(err) = parser.error_handler.pop_front() {
             Err(err)
         } else {
-            exp.map_err(SyntaxError::into)
+            exp.map_err(CompileError::from)
         }
     }
     fn assert_type(input: &str, ctype: Type) {

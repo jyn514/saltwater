@@ -1,13 +1,12 @@
-use super::{Lexeme, Parser};
+use super::{Lexeme, Parser, SyntaxResult};
 use crate::data::prelude::*;
 use crate::data::{lex::Keyword, StorageClass};
-use std::convert::TryFrom;
 use std::iter::Iterator;
 
-type StmtResult = Result<Stmt, SyntaxError>;
+type StmtResult = SyntaxResult<Stmt>;
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
-    pub fn compound_statement(&mut self) -> Result<Option<Stmt>, SyntaxError> {
+    pub fn compound_statement(&mut self) -> SyntaxResult<Option<Stmt>> {
         let start = self
             .expect(Token::LeftBrace)
             .expect("compound_statement should be called with '{' as the next token");
@@ -30,10 +29,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if self.expect(Token::RightBrace).is_err() {
             assert!(self.peek_token().is_none()); // from the 'break' above
             let actual_err = Locatable::new(
-                "unclosed '{' delimeter at end of file".into(),
+                SyntaxError::from("unclosed '{' delimeter at end of file"),
                 self.last_location,
             );
-            pending_errs.push(actual_err.into());
+            pending_errs.push(actual_err);
         }
         if let Some(err) = pending_errs.pop() {
             self.error_handler.extend(pending_errs.into_iter());
@@ -64,7 +63,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// Result: whether there was an error in the program source
     /// Option: empty semicolons still count as a statement (so case labels can work)
-    pub fn statement(&mut self) -> Result<Option<Stmt>, SyntaxError> {
+    pub fn statement(&mut self) -> SyntaxResult<Option<Stmt>> {
         match self.peek_token() {
             Some(Token::LeftBrace) => {
                 self.enter_scope();
@@ -72,7 +71,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let location = match &stmts {
                     Ok(Some(stmt)) => stmt.location,
                     Ok(None) => self.last_location,
-                    Err(err) => err.0.location,
+                    Err(err) => err.location,
                 };
                 self.leave_scope(location);
                 stmts
@@ -203,7 +202,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             _ => self.expression_statement(),
         }
     }
-    fn expression_statement(&mut self) -> Result<Option<Stmt>, SyntaxError> {
+    fn expression_statement(&mut self) -> SyntaxResult<Option<Stmt>> {
         let expr = self.expr()?;
         let end = self.expect(Token::Semicolon)?;
         Ok(Some(Stmt {
@@ -390,11 +389,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 None => None,
             },
             None => {
-                return Err(SyntaxError::try_from(CompileError::new(
-                    Error::EndOfFile("expression or ';'"),
+                return Err(Locatable::new(
+                    SyntaxError::EndOfFile("expression or ';'"),
                     self.last_location,
-                ))
-                .unwrap())
+                ));
             }
         };
         let controlling_expr = self
@@ -452,7 +450,7 @@ mod tests {
         if let Some(err) = p.error_handler.pop_front() {
             Err(err)
         } else {
-            exp.map_err(SyntaxError::into)
+            exp.map_err(CompileError::from)
         }
     }
     #[test]

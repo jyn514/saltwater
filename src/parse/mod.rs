@@ -12,6 +12,9 @@ use crate::data::{prelude::*, Scope};
 type Lexeme = CompileResult<Locatable<Token>>;
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
 
+type SyntaxResult<T = Expr> = Result<T, Locatable<SyntaxError>>;
+
+
 #[derive(Clone, Debug)]
 pub(crate) enum TagEntry {
     Struct(StructRef),
@@ -291,15 +294,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             };
         }
     }
-    fn expect(&mut self, next: Token) -> Result<Locatable<Token>, SyntaxError> {
+    fn expect(&mut self, next: Token) -> SyntaxResult<Locatable<Token>> {
         let token = match self.peek_token() {
             Some(t) => t,
             None => {
                 let err = Err(Locatable {
-                    location: self.last_location, // TODO: we don't actually want this, we want the end of the file
-                    data: format!("expected '{}', got '<end-of-file>'", next),
-                }
-                .into());
+                    data: SyntaxError::from(format!("expected '{}', got '<end-of-file>'", next)),
+                    // TODO: we don't actually want this, we want the end of the file
+                    location: self.last_location,
+                });
                 self.panic();
                 return err;
             }
@@ -308,10 +311,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(self.next_token().unwrap())
         } else {
             let err = Err(Locatable {
-                data: format!("expected '{}', got '{}'", next, token),
+                data: SyntaxError::from(format!("expected '{}', got '{}'", next, token)),
                 location: self.next_location(),
-            }
-            .into());
+            });
             self.panic();
             err
         }

@@ -187,7 +187,7 @@ impl<T: PartialEq> PartialEq for Locatable<T> {
 
 impl<T: Eq> Eq for Locatable<T> {}
 impl<T> Locatable<T> {
-    pub fn new(data: T, location: Location) -> Self {
+    pub const fn new(data: T, location: Location) -> Self {
         Self { data, location }
     }
 }

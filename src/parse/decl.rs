@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use std::iter::{FromIterator, Iterator};
 use std::mem;
 
-use super::{FunctionData, Lexeme, Parser, TagEntry};
+use super::{FunctionData, Lexeme, Parser, TagEntry, SyntaxResult};
 use crate::arch::SIZE_T;
 use crate::data::{
     lex::Keyword,
@@ -29,7 +29,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// where specifier_qualifier_list: (type_specifier | type_qualifier)+
     ///
     /// Used for casts and `sizeof` builtin.
-    pub fn type_name(&mut self) -> Result<Locatable<(Type, Qualifiers)>, SyntaxError> {
+    pub fn type_name(&mut self) -> SyntaxResult<Locatable<(Type, Qualifiers)>> {
         let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
         if sc != None {
             self.semantic_err("type cannot have a storage class", self.last_location);
@@ -64,7 +64,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
-    pub fn declaration(&mut self) -> Result<VecDeque<Locatable<Declaration>>, SyntaxError> {
+    pub fn declaration(&mut self) -> SyntaxResult<VecDeque<Locatable<Declaration>>> {
         let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers()?;
         if self.match_next(&Token::Semicolon).is_some() {
             if !seen_compound_type {
@@ -118,13 +118,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 )?))
             }
             (Type::Function(_), Some(t)) if *t == Token::EQUAL => {
-                return Err(SyntaxError::from(Locatable {
-                    data: format!(
+                return Err(Locatable::new(
+                    SyntaxError::from(format!(
                         "expected '{{', got '=' while parsing function body for {}",
                         symbol.id,
-                    ),
-                    location: id.location,
-                }));
+                    )),
+                    id.location,
+                ));
             }
             (ctype, Some(t)) if *t == Token::EQUAL => {
                 self.next_token();
@@ -201,7 +201,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         first_id: Locatable<InternedStr>,
         first_ctype: Type,
         first_qualifiers: Qualifiers,
-    ) -> Result<(), SyntaxError> {
+    ) -> SyntaxResult<()> {
         self.declare_typedef(first_id, first_ctype.clone(), first_qualifiers);
         if self.match_next(&Token::Semicolon).is_some() {
             return Ok(());
@@ -295,7 +295,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         sc: StorageClass,
         qualifiers: Qualifiers,
         ctype: Type,
-    ) -> Result<Locatable<Declaration>, SyntaxError> {
+    ) -> SyntaxResult<Locatable<Declaration>> {
         // parse declarator
         // declarator: Result<Symbol, SyntaxError>
         let decl = self
@@ -347,7 +347,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     fn declaration_specifiers(
         &mut self,
-    ) -> Result<(Option<StorageClass>, Qualifiers, Type, bool), SyntaxError> {
+    ) -> SyntaxResult<(Option<StorageClass>, Qualifiers, Type, bool)> {
         // TODO: initialization is a mess
         let mut keywords = HashSet::new();
         let mut storage_class = None;
@@ -357,11 +357,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut seen_compound = false;
         let mut seen_typedef = false;
         if self.peek_token().is_none() {
-            return Err(SyntaxError::try_from(Locatable {
-                data: Error::EndOfFile("declaration specifier"),
-                location: self.last_location,
-            })
-            .unwrap());
+            return Err(Locatable::new(
+                SyntaxError::EndOfFile("declaration specifier"),
+                self.last_location,
+            ));
         }
         // unsigned const int
         while let Some(locatable) = self.next_token() {
@@ -480,7 +479,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         kind: Keyword,
         location: Location,
-    ) -> Result<Type, SyntaxError> {
+    ) -> SyntaxResult<Type> {
         use std::rc::Rc;
         let ident = match self.match_next(&Token::Id(Default::default())) {
             Some(Locatable {
@@ -587,7 +586,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         ident: Option<InternedStr>,
         location: Location,
-    ) -> Result<Type, SyntaxError> {
+    ) -> SyntaxResult<Type> {
         let mut current = 0;
         let mut members = vec![];
         loop {
@@ -682,7 +681,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ident: Option<InternedStr>,
         c_struct: bool,
         location: &Location,
-    ) -> Result<Type, SyntaxError> {
+    ) -> SyntaxResult<Type> {
         use std::rc::Rc;
         let mut members = vec![];
         loop {
@@ -735,7 +734,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Ok(constructor(StructType::Anonymous(Rc::new(members))))
         }
     }
-    fn bitfield(&mut self) -> Result<SIZE_T, SyntaxError> {
+    fn bitfield(&mut self) -> SyntaxResult<SIZE_T> {
         Ok(self.constant_expr()?.const_int().unwrap_or_else(|err| {
             self.error_handler.push_back(err);
             1
@@ -749,7 +748,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         | declarator ':' constant_expr
         ;
     */
-    fn struct_declarator_list(&mut self, members: &mut Vec<Symbol>) -> Result<(), SyntaxError> {
+    fn struct_declarator_list(&mut self, members: &mut Vec<Symbol>) -> SyntaxResult<()> {
         let (sc, qualifiers, original_ctype, _) = self.declaration_specifiers()?;
         if let Some(token) = self.match_next(&Token::Semicolon) {
             self.error_handler
@@ -857,7 +856,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      ;
      *
      */
-    fn parameter_type_list(&mut self) -> Result<DeclaratorType, SyntaxError> {
+    fn parameter_type_list(&mut self) -> SyntaxResult<DeclaratorType> {
         self.expect(Token::LeftParen)
             .expect("parameter_type_list should only be called with '(' as the next token");
         let mut params = vec![];
@@ -986,7 +985,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         mut prefix: Option<Declarator>,
         allow_abstract: bool,
         qualifiers: Qualifiers,
-    ) -> Result<Option<Declarator>, SyntaxError> {
+    ) -> SyntaxResult<Option<Declarator>> {
         // postfix
         while let Some(data) = self.peek_token() {
             prefix = match data {
@@ -1089,7 +1088,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         allow_abstract: bool,
         qualifiers: Qualifiers,
-    ) -> Result<Option<Declarator>, SyntaxError> {
+    ) -> SyntaxResult<Option<Declarator>> {
         // we'll pass this to postfix_type in just a second
         // if None, we didn't find an ID
         // should only happen if allow_abstract is true
@@ -1128,20 +1127,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             _ if allow_abstract => None,
             Some(x) => {
-                let err = Err(Locatable {
-                    data: format!("expected variable name or '(', got '{}'", x),
-                    location: self.next_location(),
-                }
-                .into());
+                let err = Err(Locatable::new(
+                    SyntaxError::from(format!("expected variable name or '(', got '{}'", x)),
+                    self.next_location(),
+                ));
                 self.panic();
                 return err;
             }
             None => {
-                return Err(Locatable {
-                    location: self.next_location(),
-                    data: "expected variable name or '(', got <end-of-of-file>".to_string(),
-                }
-                .into());
+                return Err(Locatable::new(
+                    SyntaxError::from("expected variable name or '(', got <end-of-of-file>"),
+                    self.next_location(),
+                ));
             }
         };
 
@@ -1178,7 +1175,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         &mut self,
         allow_abstract: bool,
         qualifiers: Qualifiers,
-    ) -> Result<Option<Declarator>, SyntaxError> {
+    ) -> SyntaxResult<Option<Declarator>> {
         if let Some(data) = self.peek_token() {
             match data {
                 Token::Star => {
@@ -1247,7 +1244,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// Rewritten as
     /// initializer: assignment_expr
     ///     | '{' initializer (',' initializer)* '}'
-    fn initializer(&mut self, ctype: &Type) -> Result<Initializer, SyntaxError> {
+    fn initializer(&mut self, ctype: &Type) -> SyntaxResult<Initializer> {
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
             let mut elements = vec![];
@@ -1301,7 +1298,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         id: InternedStr,
         ftype: FunctionType,
         location: Location,
-    ) -> Result<Vec<Stmt>, SyntaxError> {
+    ) -> SyntaxResult<Vec<Stmt>> {
         // if it's a function, set up state so we know the return type
         // TODO: rework all of this so semantic analysis is done _after_ parsing
         // TODO: that will remove a lot of clones and also make the logic much simpler
@@ -1540,7 +1537,7 @@ impl Declarator {
         mut current: Type,
         is_typedef: bool,
         location: &Location, // only used for abstract parameters
-    ) -> RecoverableResult<(Option<Locatable<InternedStr>>, Type), Vec<SemanticError>> {
+    ) -> RecoverableResult<(Option<Locatable<InternedStr>>, Type), Vec<Locatable<SemanticError>>> {
         use DeclaratorType::*;
         let (mut declarator, mut identifier) = (Some(self), None);
         let mut pending_errs = vec![];
@@ -1624,7 +1621,8 @@ impl Declarator {
         if pending_errs.is_empty() {
             Ok((identifier, current))
         } else {
-            Err((pending_errs, (identifier, current)))
+            let errs = pending_errs.into_iter().map(Into::into).collect();
+            Err((errs, (identifier, current)))
         }
     }
 }

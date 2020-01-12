@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::fmt;
 use thiserror::Error;
 
 use super::{Locatable, Location};
@@ -11,7 +10,6 @@ use super::{Locatable, Location};
 /// [`Recover`]: trait.Recover.html
 pub type RecoverableResult<T, E = CompileError> = Result<T, (E, T)>;
 pub type CompileResult<T> = Result<T, CompileError>;
-pub type SemanticError = Locatable<String>;
 pub type CompileError = Locatable<Error>;
 pub type CompileWarning = Locatable<Warning>;
 
@@ -63,20 +61,35 @@ impl Iterator for ErrorHandler {
     }
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
-/// errors are non-exhaustive and may have new variants added at any time
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum Error {
-    // for compatibility with previous error system
-    #[error("{0}")]
-    GenericLex(String),
-    #[error("{0}")]
-    GenericSyntax(String),
-    #[error("{0}")]
-    GenericSemantic(String),
+    #[error("invalid program: {0}")]
+    Semantic(#[from] SemanticError),
 
-    // specific errors
-    #[error("unterminated /* comment")]
-    UnterminatedComment,
+    #[error("invalid syntax: {0}")]
+    Syntax(#[from] SyntaxError),
+
+    #[error("invalid token: {0}")]
+    Lex(#[from] LexError),
+}
+
+/// Semantic errors are non-exhaustive and may have new variants added at any time
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub enum SemanticError {
+    #[error("{0}")]
+    Generic(String),
+
+    #[doc(hidden)]
+    #[error("internal error: do not construct nonexhaustive variants")]
+    __Nonexhaustive,
+}
+
+/// Syntax errors are non-exhaustive and may have new variants added at any time
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub enum SyntaxError {
+    #[error("{0}")]
+    Generic(String),
+
     #[error("expected {0}, got <end-of-file>")]
     EndOfFile(&'static str),
 
@@ -85,28 +98,18 @@ pub enum Error {
     __Nonexhaustive,
 }
 
-impl Error {
-    pub fn kind(&self) -> ErrorKind {
-        use Error::*;
-        match self {
-            GenericLex(_) => ErrorKind::Lex,
-            GenericSyntax(_) => ErrorKind::Syntax,
-            GenericSemantic(_) => ErrorKind::Semantic,
-            UnterminatedComment => ErrorKind::Lex,
-            EndOfFile(_) => ErrorKind::Syntax,
-            __Nonexhaustive => panic!("do not construct nonexhaustive variants manually"),
-        }
-    }
-}
+/// Lex errors are non-exhaustive and may have new variants added at any time
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub enum LexError {
+    #[error("{0}")]
+    Generic(String),
 
-#[derive(Debug, PartialEq, Eq, Error)]
-pub enum ErrorKind {
-    #[error("invalid token")]
-    Lex,
-    #[error("invalid syntax")]
-    Syntax,
-    #[error("invalid program")]
-    Semantic,
+    #[error("unterminated /* comment")]
+    UnterminatedComment,
+
+    #[doc(hidden)]
+    #[error("internal error: do not construct nonexhaustive variants")]
+    __Nonexhaustive,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -134,53 +137,74 @@ impl CompileError {
     pub fn location(&self) -> Location {
         self.location
     }
+    pub fn is_lex_err(&self) -> bool { self.data.is_lex_err() }
+    pub fn is_syntax_err(&self) -> bool { self.data.is_syntax_err() }
+    pub fn is_semantic_err(&self) -> bool { self.data.is_semantic_err() }
+}
+
+impl Error {
     pub fn is_lex_err(&self) -> bool {
-        self.data.kind() == ErrorKind::Lex
+        if let Error::Lex(_) = self {
+            true
+        } else {
+            false
+        }
     }
     pub fn is_syntax_err(&self) -> bool {
-        self.data.kind() == ErrorKind::Syntax
+        if let Error::Syntax(_) = self {
+            true
+        } else {
+            false
+        }
     }
     pub fn is_semantic_err(&self) -> bool {
-        self.data.kind() == ErrorKind::Semantic
+        if let Error::Semantic(_) = self {
+            true
+        } else {
+            false
+        }
     }
 }
-
-impl fmt::Display for CompileError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.data.kind(), self.data)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Error)]
-#[error("{}", .0.data)]
-pub struct SyntaxError(pub(crate) CompileError);
 
 impl From<Locatable<String>> for CompileError {
     fn from(err: Locatable<String>) -> Self {
-        err.map(Error::GenericSemantic)
+        err.map(|s| SemanticError::Generic(s).into())
     }
 }
 
-impl From<SyntaxError> for CompileError {
-    fn from(err: SyntaxError) -> Self {
-        err.0
+impl From<Locatable<SemanticError>> for CompileError {
+    fn from(err: Locatable<SemanticError>) -> Self {
+        err.map(Error::Semantic)
     }
 }
 
-impl From<Locatable<String>> for SyntaxError {
+impl From<Locatable<SyntaxError>> for CompileError {
+    fn from(err: Locatable<SyntaxError>) -> Self {
+        err.map(Error::Syntax)
+    }
+}
+
+impl From<Locatable<String>> for Locatable<SemanticError> {
     fn from(err: Locatable<String>) -> Self {
-        Self(err.map(Error::GenericSyntax))
+        err.map(SemanticError::Generic)
     }
 }
 
-impl std::convert::TryFrom<Locatable<Error>> for SyntaxError {
-    type Error = Locatable<Error>;
-    fn try_from(err: Locatable<Error>) -> Result<Self, Self::Error> {
-        if err.is_syntax_err() {
-            Ok(Self(err))
-        } else {
-            Err(err)
-        }
+impl<S: Into<String>> From<S> for SemanticError {
+    fn from(err: S) -> Self {
+        SemanticError::Generic(err.into())
+    }
+}
+
+impl<S: Into<String>> From<S> for SyntaxError {
+    fn from(err: S) -> Self {
+        SyntaxError::Generic(err.into())
+    }
+}
+
+impl From<String> for LexError {
+    fn from(err: String) -> Self {
+        LexError::Generic(err)
     }
 }
 
@@ -213,6 +237,13 @@ impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, Vec<E>> {
 mod tests {
     use super::*;
 
+    lazy_static::lazy_static! {
+        static ref DUMMY_ERROR: CompileError = CompileError::new(
+            Error::Lex(LexError::UnterminatedComment),
+            Default::default(),
+        );
+    }
+
     fn new_error(error: Error) -> CompileError {
         CompileError::new(error, Location::default())
     }
@@ -220,12 +251,12 @@ mod tests {
     #[test]
     fn test_error_handler_push_err() {
         let mut error_handler = ErrorHandler::new();
-        error_handler.push_back(new_error(Error::UnterminatedComment));
+        error_handler.push_back(DUMMY_ERROR.clone());
 
         assert_eq!(
             error_handler,
             ErrorHandler {
-                errors: vec_deque![new_error(Error::UnterminatedComment)],
+                errors: vec_deque![DUMMY_ERROR.clone()],
                 warnings: VecDeque::new(),
             }
         );
@@ -234,46 +265,32 @@ mod tests {
     #[test]
     fn test_error_handler_into_iterator() {
         let mut error_handler = ErrorHandler::new();
-        error_handler.push_back(new_error(Error::GenericSemantic("stuff".to_string())));
+        error_handler.push_back(DUMMY_ERROR.clone());
         let errors = error_handler.collect::<Vec<_>>();
         assert_eq!(errors.len(), 1);
     }
 
     #[test]
-    fn test_error_kind() {
-        assert_eq!(Error::GenericLex("".to_string()).kind(), ErrorKind::Lex);
-        assert_eq!(
-            Error::GenericSemantic("".to_string()).kind(),
-            ErrorKind::Semantic
-        );
-        assert_eq!(
-            Error::GenericSyntax("".to_string()).kind(),
-            ErrorKind::Syntax
-        );
-        assert_eq!(Error::UnterminatedComment.kind(), ErrorKind::Lex);
-    }
-
-    #[test]
     fn test_compile_error_semantic() {
         assert_eq!(
-            CompileError::semantic(Locatable::new("".to_string(), Location::default())),
-            new_error(Error::GenericSemantic("".to_string()))
+            CompileError::semantic(Locatable::new("".to_string(), Location::default())).data,
+            Error::Semantic(SemanticError::Generic("".to_string())),
         );
     }
 
     #[test]
     fn test_compile_error_is_kind() {
-        let e = new_error(Error::GenericLex("".to_string()));
+        let e = Error::Lex(LexError::Generic("".to_string()));
         assert!(e.is_lex_err());
         assert!(!e.is_semantic_err());
         assert!(!e.is_syntax_err());
 
-        let e = new_error(Error::GenericSemantic("".to_string()));
+        let e = Error::Semantic(SemanticError::Generic("".to_string()));
         assert!(!e.is_lex_err());
         assert!(e.is_semantic_err());
         assert!(!e.is_syntax_err());
 
-        let e = new_error(Error::GenericSyntax("".to_string()));
+        let e = Error::Syntax(SyntaxError::Generic("".to_string()));
         assert!(!e.is_lex_err());
         assert!(!e.is_semantic_err());
         assert!(e.is_syntax_err());
@@ -282,32 +299,24 @@ mod tests {
     #[test]
     fn test_compile_error_display() {
         assert_eq!(
-            format!("{}", new_error(Error::UnterminatedComment)),
+            DUMMY_ERROR.data.to_string(),
             "invalid token: unterminated /* comment"
         );
 
         assert_eq!(
-            format!(
-                "{}",
-                new_error(Error::GenericSemantic("bad code".to_string()))
-            ),
+            Error::Semantic(SemanticError::Generic("bad code".to_string())).to_string(),
             "invalid program: bad code"
         );
     }
 
     #[test]
     fn test_compile_error_from_locatable_string() {
-        let e = CompileError::from(Locatable::new("apples".to_string(), Location::default()));
-        assert_eq!(e, new_error(Error::GenericSemantic("apples".to_string())));
+        let _ = CompileError::from(Locatable::new("apples".to_string(), Location::default()));
     }
 
     #[test]
     fn test_compile_error_from_syntax_error() {
-        let e = CompileError::from(SyntaxError::from(Locatable::new(
-            "oranges".to_string(),
-            Location::default(),
-        )));
-        assert_eq!(e, new_error(Error::GenericSyntax("oranges".to_string())));
+        let _ = CompileError::new(SyntaxError::from("oranges".to_string()).into(), Location::default());
     }
 
     #[test]
@@ -318,10 +327,10 @@ mod tests {
         assert_eq!(error_handler.pop_front(), None);
 
         let mut error_handler = ErrorHandler::new();
-        let r: RecoverableResult<i32> = Err((new_error(Error::UnterminatedComment), 42));
+        let r: RecoverableResult<i32> = Err((DUMMY_ERROR.clone(), 42));
         assert_eq!(r.recover(&mut error_handler), 42);
         let errors = error_handler.collect::<Vec<_>>();
-        assert_eq!(errors, vec![new_error(Error::UnterminatedComment)]);
+        assert_eq!(errors, vec![DUMMY_ERROR.clone()]);
     }
 
     #[test]
@@ -334,8 +343,8 @@ mod tests {
         let mut error_handler = ErrorHandler::new();
         let r: RecoverableResult<i32, Vec<CompileError>> = Err((
             vec![
-                new_error(Error::UnterminatedComment),
-                new_error(Error::GenericSemantic("pears".to_string())),
+                DUMMY_ERROR.clone(),
+                new_error(Error::Semantic(SemanticError::Generic("pears".to_string()))),
             ],
             42,
         ));
@@ -344,8 +353,8 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                new_error(Error::UnterminatedComment),
-                new_error(Error::GenericSemantic("pears".to_string())),
+                DUMMY_ERROR.clone(),
+                new_error(Error::Semantic(SemanticError::Generic("pears".to_string()))),
             ]
         );
     }

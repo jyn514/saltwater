@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::str::Chars;
 
-use super::data::{lex::*, prelude::*};
+use super::data::{lex::*, prelude::*, error::LexError};
 use super::intern::InternedStr;
 
 /// A Lexer takes the source code and turns it into tokens with location information.
@@ -255,7 +255,7 @@ impl<'a> Lexer<'a> {
         }
         Err(CompileError {
             location: self.location,
-            data: Error::UnterminatedComment,
+            data: LexError::UnterminatedComment.into(),
         })
     }
     /// Parse a number literal, given the starting character and whether floats are allowed.
@@ -847,14 +847,15 @@ impl<'a> Iterator for Lexer<'a> {
             println!("lexeme: {:?}", c);
         }
         // oof
-        c.map(|result| result.map_err(|err| err.map(Error::GenericLex)))
+        c.map(|result| {
+            result.map_err(|err| err.map(|err| LexError::Generic(err).into()))
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{CompileError, CompileResult, Lexer, Literal, Locatable, Location, Token};
-    use crate::data::prelude::*;
+    use super::{LexError, CompileError, CompileResult, Error, Lexer, Literal, Locatable, Location, Token};
     use crate::intern::InternedStr;
 
     type LexType = CompileResult<Locatable<Token>>;
@@ -875,20 +876,20 @@ mod tests {
 
     fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
     where
-        T: FnOnce(Result<&Token, &str>) -> bool,
+        T: FnOnce(Result<&Token, &LexError>) -> bool,
     {
         match_data_ref(&lexed, closure)
     }
     fn match_data_ref<T>(lexed: &Option<LexType>, closure: T) -> bool
     where
-        T: FnOnce(Result<&Token, &str>) -> bool,
+        T: FnOnce(Result<&Token, &LexError>) -> bool,
     {
         match lexed {
             Some(Ok(result)) => closure(Ok(&result.data)),
             Some(Err(CompileError {
-                data: Error::GenericLex(result),
+                data: Error::Lex(err),
                 ..
-            })) => closure(Err(&result)),
+            })) => closure(Err(err)),
             _ => false,
         }
     }

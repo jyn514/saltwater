@@ -259,7 +259,7 @@ pub fn pretty_print<T: std::fmt::Display>(
     location: Location,
     file: &str,
 ) {
-    let (line, column) = location.calculate_line_column(file);
+    let (start, _end) = location.calculate_line_column(file);
     println!(
         "{}:{}:{}: {}: {}",
         STRINGS
@@ -267,8 +267,8 @@ pub fn pretty_print<T: std::fmt::Display>(
             .unwrap()
             .resolve(location.filename.0)
             .unwrap(),
-        line,
-        column,
+        start.0,
+        start.1,
         prefix,
         msg
     );

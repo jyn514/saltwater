@@ -456,16 +456,14 @@ mod tests {
     #[test]
     // NOTE: this seems to be one of the few tests that checks that the location
     // is correct. If it starts failing, maybe look at the lexer first
-    // NOTE: the debug output will be lost in a sea of 'extraneous semicolon' warnings
-    // until I fix the error architecture.
-    // Try `cargo test -- --nocapture 2>&1 | grep -v semicolon` in the meantime
     fn test_expr_stmt() {
         let parsed = parse_stmt("1;");
         let expected = Ok(Some(Stmt {
             data: StmtType::Expr(parser("1").expr().unwrap()),
             location: Location {
                 filename: InternedStr::get_or_intern("<test-suite>"),
-                ..Default::default()
+                // TODO: this should really be 1..2, but I haven't implemented merging spans
+                span: (2..2).into()
             },
         }));
         assert_eq!(dbg!(parsed), dbg!(expected));

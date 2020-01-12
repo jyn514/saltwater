@@ -7,15 +7,6 @@ pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
     process::exit(code);
 }
 
-/// (f, g) => f . g
-pub fn compose<'a, A, B, C, G, F>(f: F, g: G) -> impl Fn(A) -> C + 'a
-where
-    F: 'a + Fn(B) -> C,
-    G: 'a + Fn(A) -> B,
-{
-    move |x| f(g(x))
-}
-
 /// ensure that a condition is true at compile time
 /// thanks to https://nikolaivazquez.com/posts/programming/rust-static-assertions/
 macro_rules! const_assert {

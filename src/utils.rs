@@ -1,24 +1,6 @@
 use std::process;
 
-use ansi_term::{ANSIString, Colour};
-
-use crate::data::lex::Location;
-use crate::intern::STRINGS;
-
-pub fn pretty_print<T: std::fmt::Display>(prefix: ANSIString, msg: T, location: Location) {
-    println!(
-        "{}:{}:{}: {}: {}",
-        STRINGS
-            .read()
-            .unwrap()
-            .resolve(location.filename.0)
-            .unwrap(),
-        location.line,
-        location.column,
-        prefix,
-        msg
-    );
-}
+use ansi_term::Colour;
 
 pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
     eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);

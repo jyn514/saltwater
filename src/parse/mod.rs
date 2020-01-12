@@ -70,14 +70,6 @@ struct FunctionData {
     return_type: Type,
 }
 
-/*
-pub struct CompileItem {
-    Ok(Declaration),
-    Warning(CompileError),
-    Error(CompileError),
-}
-*/
-
 impl<I> Parser<I>
 where
     I: Iterator<Item = Lexeme>,

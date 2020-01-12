@@ -31,7 +31,7 @@ use super::intern::InternedStr;
 /// ```
 #[derive(Debug)]
 pub struct Lexer<'a> {
-    location: Location,
+    location: SingleLocation,
     chars: Chars<'a>,
     // used for 2-character tokens
     current: Option<char>,
@@ -47,6 +47,12 @@ enum CharError {
     Eof,
     Newline,
     Terminator,
+}
+
+#[derive(Debug)]
+struct SingleLocation {
+    offset: usize,
+    filename: InternedStr,
 }
 
 lazy_static! {
@@ -114,7 +120,7 @@ impl<'a> Lexer<'a> {
     /// Creates a Lexer from a filename and the contents of a file
     pub fn new<T: AsRef<str> + Into<String>>(file: T, chars: Chars<'a>, debug: bool) -> Lexer<'a> {
         Lexer {
-            location: Location {
+            location: SingleLocation {
                 offset: 0,
                 filename: InternedStr::get_or_intern(file),
             },
@@ -243,6 +249,14 @@ impl<'a> Lexer<'a> {
             false
         }
     }
+    /// Given the start of a span as an offset,
+    /// return a span lasting until the current location in the file.
+    fn span(&self, start: usize) -> Location {
+        Location {
+            span: (start..self.location.offset).into(),
+            filename: self.location.filename,
+        }
+    }
     /// Remove all consecutive whitespace pending in the stream.
     ///
     /// Before: chars{"    hello   "}
@@ -268,6 +282,7 @@ impl<'a> Lexer<'a> {
     /// Before: chars{"hello this is a lot of text */ int main(){}"}
     /// After:  chars{" int main(){}"}
     fn consume_multi_comment(&mut self) -> CompileResult<()> {
+        let start = self.location.offset - 2;
         while let Some(c) = self.next_char() {
             if c == '*' && self.peek() == Some('/') {
                 self.next_char();
@@ -275,7 +290,7 @@ impl<'a> Lexer<'a> {
             }
         }
         Err(CompileError {
-            location: self.location,
+            location: self.span(start),
             data: LexError::UnterminatedComment.into(),
         })
     }
@@ -294,6 +309,7 @@ impl<'a> Lexer<'a> {
             '0' <= start && start <= '9',
             "main loop should only pass [-.0-9] as start to parse_num"
         );
+        let span_start = self.location.offset;
         let float_literal = |f| Token::Literal(Literal::Float(f));
         let mut buf = String::new();
         buf.push(start);
@@ -301,8 +317,6 @@ impl<'a> Lexer<'a> {
         let radix = if start == '0' {
             match self.next_char() {
                 Some('b') => {
-                    self.error_handler
-                        .warn("binary number literals are an extension", self.location);
                     2
                 }
                 Some('x') => {
@@ -359,6 +373,10 @@ impl<'a> Lexer<'a> {
             self.match_next('l');
         } else if self.match_next('L') {
             self.match_next('L');
+        }
+        if radix == 2 {
+            let span = self.span(span_start);
+            self.error_handler.warn("binary number literals are an extension", span);
         }
         Ok(Token::Literal(literal))
     }
@@ -504,6 +522,7 @@ impl<'a> Lexer<'a> {
     /// Before: chars{"\b'"}
     /// After:  chars{"'"}
     fn parse_single_char(&mut self, string: bool) -> Result<char, CharError> {
+        let span_start = self.location.offset - 1;
         let terminator = if string { '"' } else { '\'' };
         if let Some(c) = self.next_char() {
             if c == '\\' {
@@ -527,7 +546,7 @@ impl<'a> Lexer<'a> {
                         _ => {
                             self.error_handler.warn(
                                 &format!("unknown character escape '\\{}'", c),
-                                self.location,
+                                self.span(span_start),
                             );
                             c
                         }
@@ -673,9 +692,7 @@ impl<'a> Iterator for Lexer<'a> {
             }
         }
         let c = c.and_then(|c| {
-            // this clone is unavoidable, we need to keep self.location
-            // but we also need each token to have a location
-            let location = self.location;
+            let span_start = self.location.offset;
             // this giant switch is most of the logic
             let data = match c {
                 '+' => match self.peek() {
@@ -817,7 +834,7 @@ impl<'a> Iterator for Lexer<'a> {
                         Err(err) => {
                             return Some(Err(Locatable {
                                 data: err,
-                                location,
+                                location: self.span(span_start),
                             }))
                         }
                     },
@@ -838,31 +855,43 @@ impl<'a> Iterator for Lexer<'a> {
                 '?' => Token::Question,
                 '0'..='9' => match self.parse_num(c) {
                     Ok(num) => num,
-                    Err(err) => return Some(Err(Locatable::new(err, location))),
+                    Err(err) => {
+                        let span = self.span(span_start);
+                        return Some(Err(Locatable::new(err, span)));
+                    }
                 },
                 'a'..='z' | 'A'..='Z' | '_' => match self.parse_id(c) {
                     Ok(id) => id,
-                    Err(err) => return Some(Err(Locatable::new(err, location))),
+                    Err(err) => {
+                        let span = self.span(span_start);
+                        return Some(Err(Locatable::new(err, span)))
+                    }
                 },
                 '\'' => match self.parse_char() {
                     Ok(id) => id,
-                    Err(err) => return Some(Err(Locatable::new(err, location))),
+                    Err(err) => {
+                        let span = self.span(span_start);
+                        return Some(Err(Locatable::new(err, span)));
+                    }
                 },
                 '"' => {
                     self.unput(Some('"'));
                     match self.parse_string() {
                         Ok(id) => id,
-                        Err(err) => return Some(Err(Locatable::new(err, location))),
+                        Err(err) => {
+                            let span = self.span(span_start);
+                            return Some(Err(Locatable::new(err, span)));
+                        }
                     }
                 }
                 x => {
                     return Some(Err(Locatable {
                         data: format!("unknown token {:?}", x),
-                        location,
+                        location: self.span(span_start),
                     }))
                 }
             };
-            Some(Ok(Locatable { data, location }))
+            Some(Ok(Locatable { data, location: self.span(span_start) }))
         });
         if self.debug {
             println!("lexeme: {:?}", c);

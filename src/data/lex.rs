@@ -1,23 +1,53 @@
 use crate::intern::InternedStr;
 use std::cmp::Ordering;
+use std::fmt;
+use std::ops::Range;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RangeWrapper {
+    start: usize,
+    end: usize,
+}
+
+impl From<Range<usize>> for RangeWrapper {
+    fn from(range: Range<usize>) -> Self {
+        Self { start: range.start, end: range.end }
+    }
+}
+
+impl fmt::Display for RangeWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}..{}", self.start, self.end)
+    }
+}
 
 // holds where a piece of code came from
 // should almost always be immutable
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Location {
-    pub offset: usize,
+    pub span: RangeWrapper,
     pub filename: InternedStr,
 }
 
 impl Location {
+    /// Calculate a ((start_line, start_column), (end_line, end_column)) tuple
+    /// from the offset.
     // TODO: cache some of this so we don't recalculate every time
     // if there's a 4 GB input file, we have bigger problems
-    pub fn calculate_line_column(self, file: &str) -> (u32, u32) {
+    pub fn calculate_line_column(self, file: &str) -> ((u32, u32), (u32, u32)) {
         // work around bug in lexer: it reports the first character as offset 1
         let (mut line, mut column) = (1, 0);
+        let mut start = None;
         for (i, c) in file.chars().enumerate() {
-            if i == self.offset {
-                break;
+            if start.is_none() {
+                if self.span.start == i {
+                    if self.span.end == i {
+                        return ((line, column), (line, column));
+                    }
+                    start = Some((line, column));
+                }
+            } else if self.span.end == i {
+                return (start.unwrap(), (line, column));
             }
             if c == '\n' {
                 line += 1;
@@ -26,7 +56,7 @@ impl Location {
                 column += 1;
             }
         }
-        (line, column)
+        unreachable!("passed a span not in the file: {}", self.span);
     }
 }
 
@@ -186,9 +216,10 @@ pub enum Token {
 
 /* impls */
 impl PartialOrd for Location {
+    /// NOTE: this only compares the start of the spans, it ignores the end
     fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
         if self.filename == other.filename {
-            Some(self.offset.cmp(&other.offset))
+            Some(self.span.cmp(&other.span))
         } else {
             None
         }
@@ -274,7 +305,7 @@ impl AssignmentToken {
 impl Default for Location {
     fn default() -> Self {
         Self {
-            offset: 0,
+            span: (0..1).into(),
             filename: Default::default(),
         }
     }

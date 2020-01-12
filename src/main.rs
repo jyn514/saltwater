@@ -222,7 +222,7 @@ fn err_exit(err: Error) -> ! {
     match err {
         Source(errs) => {
             for err in errs {
-                error(&err, err.location());
+                error(&err.data, err.location());
             }
             let (num_warnings, num_errors) = (get_warnings(), get_errors());
             print_issues(num_warnings, num_errors);

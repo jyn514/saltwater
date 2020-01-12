@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use std::iter::{FromIterator, Iterator};
 use std::mem;
 
-use super::{FunctionData, Lexeme, Parser, TagEntry, SyntaxResult};
+use super::{FunctionData, Lexeme, Parser, SyntaxResult, TagEntry};
 use crate::arch::SIZE_T;
 use crate::data::{
     lex::Keyword,
@@ -475,11 +475,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         | ENUM identifier
         ;
     */
-    fn compound_specifier(
-        &mut self,
-        kind: Keyword,
-        location: Location,
-    ) -> SyntaxResult<Type> {
+    fn compound_specifier(&mut self, kind: Keyword, location: Location) -> SyntaxResult<Type> {
         use std::rc::Rc;
         let ident = match self.match_next(&Token::Id(Default::default())) {
             Some(Locatable {
@@ -1532,12 +1528,15 @@ impl Declarator {
     /// Explanation of the return type:
     /// `Option<Locatable<InternedStr>>`: the name of the declarator. May not exist for abstract parameters.
     /// `RecoverableResult<...>`: see documentation for why this exists
+    // TODO: this return type is really bad
+    #[allow(clippy::type_complexity)]
     fn parse_type(
         self,
         mut current: Type,
         is_typedef: bool,
         location: &Location, // only used for abstract parameters
-    ) -> RecoverableResult<(Option<Locatable<InternedStr>>, Type), Vec<Locatable<SemanticError>>> {
+    ) -> RecoverableResult<(Option<Locatable<InternedStr>>, Type), Vec<Locatable<SemanticError>>>
+    {
         use DeclaratorType::*;
         let (mut declarator, mut identifier) = (Some(self), None);
         let mut pending_errs = vec![];

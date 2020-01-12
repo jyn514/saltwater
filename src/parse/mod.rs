@@ -14,7 +14,6 @@ pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
 
 type SyntaxResult<T = Expr> = Result<T, Locatable<SyntaxError>>;
 
-
 #[derive(Clone, Debug)]
 pub(crate) enum TagEntry {
     Struct(StructRef),

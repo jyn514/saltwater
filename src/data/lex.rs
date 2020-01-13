@@ -1,53 +1,103 @@
 use crate::intern::InternedStr;
-use ranges::{GenericRange, OperationResult};
 use std::cmp::Ordering;
-use std::ops::{Bound, RangeBounds};
+use std::fmt;
+use std::ops::{Range, RangeInclusive};
 
 // holds where a piece of code came from
 // should almost always be immutable
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Location {
-    pub span: GenericRange<usize>,
+    pub span: Span,
     pub filename: InternedStr,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Span {
+    offset: usize,
+    length: usize,
+}
+
+// because { 0, 5 } means 5 numbers starting at 0: [0, 1, 2, 3, 4] == 0..5
+impl From<Span> for Range<usize> {
+    fn from(span: Span) -> Self {
+        span.offset..(span.offset + span.length)
+    }
+}
+
+impl From<Span> for RangeInclusive<usize> {
+    #[allow(clippy::range_minus_one)]
+    fn from(span: Span) -> Self {
+        span.offset..=(span.offset + span.length - 1)
+    }
+}
+
+impl From<Range<usize>> for Span {
+    /// panics if range.end <= range.start
+    fn from(range: Range<usize>) -> Self {
+        Span {
+            offset: range.start,
+            length: range.end - range.start,
+        }
+    }
+}
+
+impl From<RangeInclusive<usize>> for Span {
+    /// panics if range.end < range.start
+    fn from(range: RangeInclusive<usize>) -> Self {
+        Span {
+            offset: *range.start(),
+            length: range.end() - range.start() + 1,
+        }
+    }
+}
+
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let r: Range<_> = (*self).into();
+        write!(f, "{:?}", r)
+    }
+}
+
+impl Span {
+    pub(crate) fn merge(self, other: Self) -> Self {
+        use std::cmp::min;
+        let (left, right): (Range<_>, Range<_>) = (self.into(), other.into());
+        let min_start = min(left.start, right.start);
+        let (first, last) = if left.end < right.end {
+            // left ends first
+            (left, right)
+        } else {
+            (right, left)
+        };
+        if first.end < last.start {
+            panic!("ranges must overlap if you want to merge them");
+        }
+        (min_start..last.end).into()
+    }
 }
 
 impl Location {
     pub(crate) fn merge(self, other: &Self) -> Self {
-        let span = match self.span.union(other.span) {
-            OperationResult::Empty => unreachable!(),
-            OperationResult::Single(span) => span,
-            OperationResult::Double(_, _) => {
-                unreachable!("it is a logic error to merge two non-contiguous spans")
-            }
-        };
-        Self { span, ..self }
+        Self {
+            span: self.span.merge(other.span),
+            ..self
+        }
     }
     /// Calculate a ((start_line, start_column), (end_line, end_column)) tuple
     /// from the offset.
     // TODO: cache some of this so we don't recalculate every time
-    // if there's a 4 GB input file, we have bigger problems
+    // u32: if there's a 4 GB input file, we have bigger problems
     pub fn calculate_line_column(self, file: &str) -> ((u32, u32), (u32, u32)) {
-        fn bound_to_usize(b: Bound<&usize>, lower: bool) -> usize {
-            match b {
-                Bound::Included(&i) => i,
-                Bound::Excluded(&i) if lower => i + 1,
-                Bound::Excluded(&i) => i - 1,
-                Bound::Unbounded if lower => 0,
-                Bound::Unbounded => std::usize::MAX,
-            }
-        }
-        let span_start = bound_to_usize(self.span.start_bound(), false);
-        let span_end = bound_to_usize(self.span.end_bound(), false);
-
+        let end = self.span.offset + self.span.length - 1;
         let (mut line, mut column) = (1, 1);
         let mut start = None;
         for (i, c) in file.chars().enumerate() {
             if let Some(start) = start {
-                if span_end == i {
+                if end == i {
                     return (start, (line, column));
                 }
-            } else if span_start == i {
-                if span_end == i {
+            } else if self.span.offset == i {
+                if end == i {
                     return ((line, column), (line, column));
                 }
                 start = Some((line, column));
@@ -59,7 +109,11 @@ impl Location {
                 column += 1;
             }
         }
-        unreachable!("passed a span not in the file: {}", self.span);
+        unreachable!(
+            "passed a span not in the file (len: {}): {}",
+            file.len(),
+            self.span
+        );
     }
 }
 
@@ -222,10 +276,7 @@ impl PartialOrd for Location {
     /// NOTE: this only compares the start of the spans, it ignores the end
     fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
         if self.filename == other.filename {
-            Some(GenericRange::cmp_start_start(
-                self.span.start_bound(),
-                other.span.start_bound(),
-            ))
+            Some(self.span.cmp(&other.span))
         } else {
             None
         }
@@ -434,14 +485,24 @@ impl From<ComparisonToken> for Token {
 
 #[cfg(test)]
 mod test {
-    use super::Location;
+    use super::{Location, Span};
     use crate::intern::InternedStr;
-    use ranges::GenericRange;
-    fn loc<R: Into<GenericRange<usize>>>(range: R) -> Location {
+    fn loc<R: Into<Span>>(range: R) -> Location {
         Location {
             filename: InternedStr::get_or_intern("<test-suite>"),
-            span: range.into(),
+            span: dbg!(range.into()),
         }
+    }
+    #[test]
+    fn span_to_from_range() {
+        let span = Span {
+            offset: 0,
+            length: 5,
+        };
+        assert_eq!(0..5, span.into());
+        assert_eq!(0..=4, span.into());
+        assert_eq!(span, (0..5).into());
+        assert_eq!(span, (0..=4).into());
     }
     #[test]
     fn offset_to_line() {

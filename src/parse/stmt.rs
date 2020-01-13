@@ -461,11 +461,16 @@ mod tests {
         let expected = Ok(Some(Stmt {
             data: StmtType::Expr(parser("1").expr().unwrap()),
             location: Location {
-                filename: InternedStr::get_or_intern("<test-suite>"),
-                // TODO: this should really be 1..2, but I haven't implemented merging spans
-                span: (2..2).into()
+                filename: InternedStr::get_or_intern("<test suite>"),
+                // TODO: this should really be 0..2
+                // but I haven't implemented merging spans yet
+                span: (1..2).into(),
             },
         }));
-        assert_eq!(dbg!(parsed), dbg!(expected));
+        assert_eq!(parsed, expected);
+        assert_eq!(
+            parsed.unwrap().unwrap().location,
+            expected.unwrap().unwrap().location
+        );
     }
 }

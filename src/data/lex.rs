@@ -42,15 +42,15 @@ impl Location {
         let (mut line, mut column) = (1, 1);
         let mut start = None;
         for (i, c) in file.chars().enumerate() {
-            if start.is_none() {
-                if span_start == i {
-                    if span_end == i {
-                        return ((line, column), (line, column));
-                    }
-                    start = Some((line, column));
+            if let Some(start) = start {
+                if span_end == i {
+                    return (start, (line, column));
                 }
-            } else if span_end == i {
-                return (start.unwrap(), (line, column));
+            } else if span_start == i {
+                if span_end == i {
+                    return ((line, column), (line, column));
+                }
+                start = Some((line, column));
             }
             if c == '\n' {
                 line += 1;

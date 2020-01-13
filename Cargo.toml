@@ -24,6 +24,7 @@ target-lexicon = "0.10"
 tempfile = "3"
 pico-args = "0.3"
 string-interner = "0.7"
+ranges = { git = "https://gitlab.com/bit-refined/ranges.git" }
 
 [dev-dependencies]
 walkdir = "2"

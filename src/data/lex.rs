@@ -1,52 +1,56 @@
 use crate::intern::InternedStr;
+use ranges::{GenericRange, OperationResult};
 use std::cmp::Ordering;
-use std::fmt;
-use std::ops::Range;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct RangeWrapper {
-    start: usize,
-    end: usize,
-}
-
-impl From<Range<usize>> for RangeWrapper {
-    fn from(range: Range<usize>) -> Self {
-        Self { start: range.start, end: range.end }
-    }
-}
-
-impl fmt::Display for RangeWrapper {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}..{}", self.start, self.end)
-    }
-}
+use std::ops::{Bound, RangeBounds};
 
 // holds where a piece of code came from
 // should almost always be immutable
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Location {
-    pub span: RangeWrapper,
+    pub span: GenericRange<usize>,
     pub filename: InternedStr,
 }
 
 impl Location {
+    pub(crate) fn merge(self, other: &Self) -> Self {
+        let span = match self.span.union(other.span) {
+            OperationResult::Empty => unreachable!(),
+            OperationResult::Single(span) => span,
+            OperationResult::Double(_, _) => {
+                unreachable!("it is a logic error to merge two non-contiguous spans")
+            }
+        };
+        Self { span, ..self }
+    }
     /// Calculate a ((start_line, start_column), (end_line, end_column)) tuple
     /// from the offset.
     // TODO: cache some of this so we don't recalculate every time
     // if there's a 4 GB input file, we have bigger problems
     pub fn calculate_line_column(self, file: &str) -> ((u32, u32), (u32, u32)) {
+        fn bound_to_usize(b: Bound<&usize>, lower: bool) -> usize {
+            match b {
+                Bound::Included(&i) => i,
+                Bound::Excluded(&i) if lower => i + 1,
+                Bound::Excluded(&i) => i - 1,
+                Bound::Unbounded if lower => 0,
+                Bound::Unbounded => std::usize::MAX,
+            }
+        }
+        let span_start = bound_to_usize(self.span.start_bound(), false);
+        let span_end = bound_to_usize(self.span.end_bound(), false);
+
         // work around bug in lexer: it reports the first character as offset 1
         let (mut line, mut column) = (1, 0);
         let mut start = None;
         for (i, c) in file.chars().enumerate() {
             if start.is_none() {
-                if self.span.start == i {
-                    if self.span.end == i {
+                if span_start == i {
+                    if span_end == i {
                         return ((line, column), (line, column));
                     }
                     start = Some((line, column));
                 }
-            } else if self.span.end == i {
+            } else if span_end == i {
                 return (start.unwrap(), (line, column));
             }
             if c == '\n' {
@@ -219,7 +223,10 @@ impl PartialOrd for Location {
     /// NOTE: this only compares the start of the spans, it ignores the end
     fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
         if self.filename == other.filename {
-            Some(self.span.cmp(&other.span))
+            Some(GenericRange::cmp_start_start(
+                self.span.start_bound(),
+                other.span.start_bound(),
+            ))
         } else {
             None
         }

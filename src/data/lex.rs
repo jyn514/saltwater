@@ -39,8 +39,7 @@ impl Location {
         let span_start = bound_to_usize(self.span.start_bound(), false);
         let span_end = bound_to_usize(self.span.end_bound(), false);
 
-        // work around bug in lexer: it reports the first character as offset 1
-        let (mut line, mut column) = (1, 0);
+        let (mut line, mut column) = (1, 1);
         let mut start = None;
         for (i, c) in file.chars().enumerate() {
             if start.is_none() {
@@ -55,7 +54,7 @@ impl Location {
             }
             if c == '\n' {
                 line += 1;
-                column = 0;
+                column = 1;
             } else {
                 column += 1;
             }
@@ -430,5 +429,37 @@ impl From<AssignmentToken> for Token {
 impl From<ComparisonToken> for Token {
     fn from(a: ComparisonToken) -> Self {
         Token::Comparison(a)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::Location;
+    use crate::intern::InternedStr;
+    use ranges::GenericRange;
+    fn loc<R: Into<GenericRange<usize>>>(range: R) -> Location {
+        Location {
+            filename: InternedStr::get_or_intern("<test-suite>"),
+            span: range.into(),
+        }
+    }
+    #[test]
+    fn offset_to_line() {
+        assert_eq!(
+            loc(0..=5).calculate_line_column(&" ".repeat(6)),
+            ((1, 1), (1, 6))
+        );
+        assert_eq!(
+            loc(1..5).calculate_line_column(&" ".repeat(5)),
+            ((1, 2), (1, 5))
+        );
+        assert_eq!(
+            loc(0..5).calculate_line_column(&" \n".repeat(5)),
+            ((1, 1), (3, 1))
+        );
+        assert_eq!(
+            loc(0..5).calculate_line_column(&" \n".repeat(5)),
+            ((1, 1), (3, 1))
+        );
     }
 }

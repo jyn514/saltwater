@@ -183,16 +183,17 @@ impl<'a> Lexer<'a> {
     /// assert!(lexer.next_char() == Some('t'));
     /// assert!(lexer.next_char() == Some(' '));
     /// ```
-    pub fn next_char(&mut self) -> Option<char> {
-        if let Some(c) = self.current {
+    fn next_char(&mut self) -> Option<char> {
+        let next = if let Some(c) = self.current {
             self.current = self.lookahead.take();
             Some(c)
         } else {
-            self.chars.next().map(|x| {
-                self.location.offset += 1;
-                x
-            })
-        }
+            self.chars.next()
+        };
+        next.map(|c| {
+            self.location.offset += 1;
+            c
+        })
     }
     /// Return a character to the stream.
     /// Can be called at most one time before previous characters will be discarded.
@@ -208,7 +209,7 @@ impl<'a> Lexer<'a> {
     /// lexer.unput(first);
     /// assert!(lexer.next_char() == Some('i'));
     /// ```
-    pub fn unput(&mut self, c: Option<char>) {
+    fn unput(&mut self, c: Option<char>) {
         self.current = c;
     }
     /// Return the character that would be returned by `next_char`.
@@ -225,9 +226,16 @@ impl<'a> Lexer<'a> {
     /// assert!(lexer.next_char() == Some('i'));
     /// assert!(lexer.peek() == Some('n'));
     /// ```
-    pub fn peek(&mut self) -> Option<char> {
-        self.current = self.next_char();
+    fn peek(&mut self) -> Option<char> {
+        self.current = self
+            .current
+            .or_else(|| self.lookahead.take())
+            .or_else(|| self.chars.next());
         self.current
+    }
+    fn peek_next(&mut self) -> Option<char> {
+        self.lookahead = self.lookahead.or_else(|| self.chars.next());
+        self.lookahead
     }
     /// If the next character is `item`, consume it and return true.
     /// Otherwise, return false.
@@ -241,7 +249,7 @@ impl<'a> Lexer<'a> {
     /// assert!(lexer.match_next('n'));
     /// assert!(lexer.next_char() == Some('t'));
     /// ```
-    pub fn match_next(&mut self, item: char) -> bool {
+    fn match_next(&mut self, item: char) -> bool {
         if self.peek().map_or(false, |c| c == item) {
             self.next_char();
             true
@@ -309,16 +317,14 @@ impl<'a> Lexer<'a> {
             '0' <= start && start <= '9',
             "main loop should only pass [-.0-9] as start to parse_num"
         );
-        let span_start = self.location.offset;
+        let span_start = self.location.offset - 1; // -1 for `start`
         let float_literal = |f| Token::Literal(Literal::Float(f));
         let mut buf = String::new();
         buf.push(start);
         // check for radix other than 10 - but if we see '.', use 10
         let radix = if start == '0' {
             match self.next_char() {
-                Some('b') => {
-                    2
-                }
+                Some('b') => 2,
                 Some('x') => {
                     buf.push('x');
                     16
@@ -376,7 +382,8 @@ impl<'a> Lexer<'a> {
         }
         if radix == 2 {
             let span = self.span(span_start);
-            self.error_handler.warn("binary number literals are an extension", span);
+            self.error_handler
+                .warn("binary number literals are an extension", span);
         }
         Ok(Token::Literal(literal))
     }
@@ -522,7 +529,6 @@ impl<'a> Lexer<'a> {
     /// Before: chars{"\b'"}
     /// After:  chars{"'"}
     fn parse_single_char(&mut self, string: bool) -> Result<char, CharError> {
-        let span_start = self.location.offset - 1;
         let terminator = if string { '"' } else { '\'' };
         if let Some(c) = self.next_char() {
             if c == '\\' {
@@ -546,7 +552,7 @@ impl<'a> Lexer<'a> {
                         _ => {
                             self.error_handler.warn(
                                 &format!("unknown character escape '\\{}'", c),
-                                self.span(span_start),
+                                self.span(self.location.offset - 1),
                             );
                             c
                         }
@@ -692,7 +698,7 @@ impl<'a> Iterator for Lexer<'a> {
             }
         }
         let c = c.and_then(|c| {
-            let span_start = self.location.offset;
+            let span_start = self.location.offset - 1;
             // this giant switch is most of the logic
             let data = match c {
                 '+' => match self.peek() {
@@ -839,14 +845,11 @@ impl<'a> Iterator for Lexer<'a> {
                         }
                     },
                     Some('.') => {
-                        self.next_char();
-                        if self.peek() == Some('.') {
+                        if self.peek_next() == Some('.') {
+                            self.next_char();
                             self.next_char();
                             Token::Ellipsis
                         } else {
-                            // backtrack two steps
-                            self.current = Some('.');
-                            self.lookahead = Some('.');
                             Token::Dot
                         }
                     }
@@ -864,7 +867,7 @@ impl<'a> Iterator for Lexer<'a> {
                     Ok(id) => id,
                     Err(err) => {
                         let span = self.span(span_start);
-                        return Some(Err(Locatable::new(err, span)))
+                        return Some(Err(Locatable::new(err, span)));
                     }
                 },
                 '\'' => match self.parse_char() {
@@ -891,7 +894,10 @@ impl<'a> Iterator for Lexer<'a> {
                     }))
                 }
             };
-            Some(Ok(Locatable { data, location: self.span(span_start) }))
+            Some(Ok(Locatable {
+                data,
+                location: self.span(span_start),
+            }))
         });
         if self.debug {
             println!("lexeme: {:?}", c);
@@ -1161,5 +1167,11 @@ mod tests {
         )
         .into_iter()
         .all(|x| x.is_ok()))
+    }
+    #[test]
+    fn span() {
+        assert_eq!(lex("12").unwrap().unwrap().location.span, (0..2).into());
+        let span = lex_all("12 abc")[1].as_ref().unwrap().location.span;
+        assert_eq!(span, (3..6).into());
     }
 }

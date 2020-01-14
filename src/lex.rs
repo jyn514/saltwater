@@ -172,17 +172,6 @@ impl<'a> Lexer<'a> {
     ///
     /// All functions should use this instead of `chars` directly.
     /// Using `chars` will not update location information and may discard lookaheads.
-    ///
-    /// Example:
-    /// ```
-    /// use rcc::Lexer;
-    ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
-    /// assert!(lexer.next_char() == Some('i'));
-    /// assert!(lexer.next_char() == Some('n'));
-    /// assert!(lexer.next_char() == Some('t'));
-    /// assert!(lexer.next_char() == Some(' '));
-    /// ```
     fn next_char(&mut self) -> Option<char> {
         let next = if let Some(c) = self.current {
             self.current = self.lookahead.take();
@@ -198,34 +187,11 @@ impl<'a> Lexer<'a> {
     /// Return a character to the stream.
     /// Can be called at most one time before previous characters will be discarded.
     /// Use with caution!
-    ///
-    /// Examples:
-    /// ```
-    /// use rcc::Lexer;
-    ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
-    /// let first = lexer.next_char();
-    /// assert!(first == Some('i'));
-    /// lexer.unput(first);
-    /// assert!(lexer.next_char() == Some('i'));
-    /// ```
     fn unput(&mut self, c: Option<char>) {
         self.current = c;
     }
     /// Return the character that would be returned by `next_char`.
     /// Can be called any number of the times and will still return the same result.
-    ///
-    /// Examples:
-    /// ```
-    /// use rcc::Lexer;
-    ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
-    /// assert!(lexer.peek() == Some('i'));
-    /// assert!(lexer.peek() == Some('i'));
-    /// assert!(lexer.peek() == Some('i'));
-    /// assert!(lexer.next_char() == Some('i'));
-    /// assert!(lexer.peek() == Some('n'));
-    /// ```
     fn peek(&mut self) -> Option<char> {
         self.current = self
             .current
@@ -239,16 +205,6 @@ impl<'a> Lexer<'a> {
     }
     /// If the next character is `item`, consume it and return true.
     /// Otherwise, return false.
-    ///
-    /// Examples:
-    /// ```
-    /// use rcc::Lexer;
-    ///
-    /// let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
-    /// assert!(lexer.match_next('i'));
-    /// assert!(lexer.match_next('n'));
-    /// assert!(lexer.next_char() == Some('t'));
-    /// ```
     fn match_next(&mut self, item: char) -> bool {
         if self.peek().map_or(false, |c| c == item) {
             self.next_char();
@@ -995,6 +951,39 @@ mod tests {
             &lexed,
             s
         );
+    }
+    #[test]
+    fn next_char() {
+        let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
+        assert!(lexer.next_char() == Some('i'));
+        assert!(lexer.next_char() == Some('n'));
+        assert!(lexer.next_char() == Some('t'));
+        assert!(lexer.next_char() == Some(' '));
+    }
+
+    #[test]
+    fn unput() {
+        let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
+        let first = lexer.next_char();
+        assert!(first == Some('i'));
+        lexer.unput(first);
+        assert!(lexer.next_char() == Some('i'));
+    }
+    #[test]
+    fn peek() {
+        let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
+        assert!(lexer.peek() == Some('i'));
+        assert!(lexer.peek() == Some('i'));
+        assert!(lexer.peek() == Some('i'));
+        assert!(lexer.next_char() == Some('i'));
+        assert!(lexer.peek() == Some('n'));
+    }
+    #[test]
+    fn match_next() {
+        let mut lexer = Lexer::new(String::new(), "int main(void) {}".chars(), false);
+        assert!(lexer.match_next('i'));
+        assert!(lexer.match_next('n'));
+        assert!(lexer.next_char() == Some('t'));
     }
 
     #[test]

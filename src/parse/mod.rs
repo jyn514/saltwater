@@ -325,9 +325,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         (decls, errs)
     }
-    /// Return all warnings
-    pub fn warnings(self) -> VecDeque<CompileWarning> {
-        self.error_handler.warnings
+    /// Return all warnings seen so far.
+    ///
+    /// These warnings are consumed and will not be returned if you call
+    /// `warnings()` again.
+    pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
+        std::mem::replace(&mut self.error_handler.warnings, Default::default())
     }
 }
 

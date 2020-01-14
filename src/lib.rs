@@ -77,7 +77,7 @@ pub fn compile(
                     lexer.location(),
                 ));
             }
-            return (Err(Error::Source(errs)), Default::default());
+            return (Err(Error::Source(errs)), lexer.warnings());
         }
     };
 
@@ -91,12 +91,14 @@ pub fn compile(
         ));
     }
 
-    let warnings = parser.warnings();
+    let mut warnings = parser.warnings();
+    warnings.extend(lexer.warnings());
     if !errs.is_empty() {
-        (Err(Error::Source(errs)), warnings)
-    } else {
-        (ir::compile(hir, debug_ir).map_err(Error::from), warnings)
+        return (Err(Error::Source(errs)), warnings);
     }
+    let (result, ir_warnings) = ir::compile(hir, debug_ir);
+    warnings.extend(ir_warnings);
+    (result.map_err(Error::from), warnings)
 }
 
 pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {

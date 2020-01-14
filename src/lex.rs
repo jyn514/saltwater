@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 use std::str::Chars;
 
@@ -128,6 +128,21 @@ impl<'a> Lexer<'a> {
     /// Return the current location of the lexer
     pub fn location(&self) -> Location {
         self.location
+    }
+
+    /// Return the first valid token in the file,
+    /// or None if there are no valid tokens.
+    ///
+    /// In either case, return all invalid tokens found.
+    pub fn first_token(&mut self) -> (Option<Locatable<Token>>, VecDeque<CompileError>) {
+        let mut errs = VecDeque::new();
+        loop {
+            match self.next() {
+                Some(Ok(token)) => return (Some(token), errs),
+                Some(Err(err)) => errs.push_back(err),
+                None => return (None, errs),
+            }
+        }
     }
 
     /// This lexer is somewhat unique - it reads a single character at a time,

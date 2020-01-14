@@ -145,6 +145,14 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Return all warnings found so far.
+    ///
+    /// These warnings are consumed and will not be returned if you call
+    /// `warnings()` again.
+    pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
+        std::mem::replace(&mut self.error_handler.warnings, Default::default())
+    }
+
     /// This lexer is somewhat unique - it reads a single character at a time,
     /// unlike most lexers which read a token at a time (e.g. string literals).
     /// This makes some things harder to do than normal, for example integer and float parsing, because

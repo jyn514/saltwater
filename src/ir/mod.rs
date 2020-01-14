@@ -2,7 +2,7 @@ mod expr;
 mod static_init;
 mod stmt;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
 use cranelift::codegen::{
@@ -53,22 +53,27 @@ struct Compiler {
 pub(crate) fn compile(
     program: Vec<Locatable<Declaration>>,
     debug: bool,
-) -> CompileResult<ObjectProduct> {
+) -> (
+    Result<ObjectProduct, CompileError>,
+    VecDeque<CompileWarning>,
+) {
     let name = program.first().map_or_else(
         || "<empty>".to_string(),
         |decl| decl.location.filename.resolve_and_clone(),
     );
+    // really we'd like to have all errors but that requires a refactor
+    let mut err = None;
     let mut compiler = Compiler::new(name, debug);
     for decl in program {
-        match (decl.data.symbol.ctype.clone(), decl.data.init) {
-            (Type::Function(func_type), None) => {
-                compiler.declare_func(
+        let current = match (decl.data.symbol.ctype.clone(), decl.data.init) {
+            (Type::Function(func_type), None) => compiler
+                .declare_func(
                     decl.data.symbol.id,
                     &func_type.signature(compiler.module.isa()),
                     decl.data.symbol.storage_class,
                     false,
-                )?;
-            }
+                )
+                .map(|_| ()),
             (Type::Void, _) => unreachable!("parser let an incomplete type through"),
             (Type::Function(func_type), Some(Initializer::FunctionBody(stmts))) => compiler
                 .compile_func(
@@ -77,14 +82,23 @@ pub(crate) fn compile(
                     decl.data.symbol.storage_class,
                     stmts,
                     decl.location,
-                )?,
+                ),
             (_, Some(Initializer::FunctionBody(_))) => {
                 unreachable!("only functions should have a function body")
             }
-            (_, init) => compiler.store_static(decl.data.symbol, init, decl.location)?,
+            (_, init) => compiler.store_static(decl.data.symbol, init, decl.location),
+        };
+        if let Err(e) = current {
+            err = Some(e);
+            break;
         }
     }
-    Ok(compiler.module.finish())
+    let warns = compiler.error_handler.warnings;
+    if let Some(err) = err {
+        (Err(err), warns)
+    } else {
+        (Ok(compiler.module.finish()), warns)
+    }
 }
 
 impl Compiler {

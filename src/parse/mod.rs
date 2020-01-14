@@ -76,10 +76,12 @@ impl<I> Parser<I>
 where
     I: Iterator<Item = Lexeme>,
 {
-    /// If the input is not empty,
-    ///     If there is at least one token that is not an error, returns a parser.
-    ///     Otherwise, returns a list of the errors.
-    /// Otherwise, returns None.
+    /// Create a new parser over the tokens.
+    ///
+    /// The `first` token is required for internal invariants;
+    /// I would rather ensure `I` has at least one token,
+    /// but I don't know a good way to do that without requiring users to
+    /// use `std::iter::once`.
     pub fn new(first: Locatable<Token>, tokens: I, debug: bool) -> Self {
         Parser {
             scope: Default::default(),

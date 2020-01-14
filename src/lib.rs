@@ -66,37 +66,34 @@ pub fn compile(
     debug_ir: bool,
 ) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
     let mut lexer = Lexer::new(filename, buf.chars(), debug_lex);
+    let (first, mut errs) = lexer.first_token();
 
-    let mut lex_errs = VecDeque::new();
-    let first = loop {
-        match lexer.next() {
-            Some(Ok(token)) => break token,
-            Some(Err(err)) => lex_errs.push_back(err),
-            None => {
-                if lex_errs.is_empty() {
-                    lex_errs.push_back(CompileError::new(
-                        SemanticError::EmptyProgram.into(),
-                        lexer.location(),
-                    ));
-                }
-                return (Err(Error::Source(lex_errs)), Default::default());
+    let first = match first {
+        Some(token) => token,
+        None => {
+            if errs.is_empty() {
+                errs.push_back(CompileError::new(
+                    SemanticError::EmptyProgram.into(),
+                    lexer.location(),
+                ));
             }
+            return (Err(Error::Source(errs)), Default::default());
         }
     };
-    let mut parser = Parser::new(first, &mut lexer, debug_ast);
-    let (hir, errors) = parser.collect_results();
 
-    lex_errs.extend(errors.into_iter());
-    if hir.is_empty() {
-        lex_errs.push_back(CompileError::new(
+    let mut parser = Parser::new(first, &mut lexer, debug_ast);
+    let (hir, parse_errors) = parser.collect_results();
+    errs.extend(parse_errors.into_iter());
+    if hir.is_empty() && errs.is_empty() {
+        errs.push_back(CompileError::new(
             SemanticError::EmptyProgram.into(),
             parser.location(),
         ));
     }
 
     let warnings = parser.warnings();
-    if !lex_errs.is_empty() {
-        (Err(Error::Source(lex_errs)), warnings)
+    if !errs.is_empty() {
+        (Err(Error::Source(errs)), warnings)
     } else {
         (ir::compile(hir, debug_ir).map_err(Error::from), warnings)
     }
@@ -135,28 +132,30 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::error::ErrorKind;
+    fn compile(src: &str) -> Result<Product, Error> {
+        super::compile(src, "<test-suite>".to_owned(), false, false, false).0
+    }
+    fn compile_err(src: &str) -> VecDeque<CompileError> {
+        match compile(src).err().unwrap() {
+            Error::Source(errs) => errs,
+            _ => unreachable!(),
+        }
+    }
     #[test]
     fn empty() {
-        let err = compile("`", "<test-suite>".to_owned(), false, false, false)
-            .err()
-            .unwrap();
-        match err {
-            Error::Source(mut errs) => {
-                assert!(errs.pop_front().unwrap().data.kind() == ErrorKind::Lex);
-                assert!(errs.is_empty());
-            }
-            _ => unreachable!(),
-        }
-        let err = compile("", "<test-suite>".into(), false, false, false)
-            .err()
-            .unwrap();
-        match err {
-            Error::Source(mut errs) => {
-                assert!(errs.pop_front().unwrap().data.kind() == ErrorKind::Semantic);
-                assert!(errs.is_empty());
-            }
-            _ => unreachable!(),
-        }
+        let mut lex_errs = compile_err("`");
+        assert!(lex_errs.pop_front().unwrap().data.is_lex_err());
+        assert!(lex_errs.is_empty());
+
+        let mut empty_errs = compile_err("");
+        let err = empty_errs.pop_front().unwrap().data;
+        assert_eq!(err, SemanticError::EmptyProgram.into());
+        assert!(err.is_semantic_err());
+        assert!(empty_errs.is_empty());
+
+        let mut parse_err = compile_err("+++");
+        let err = parse_err.pop_front();
+        assert!(parse_err.is_empty());
+        assert!(err.unwrap().data.is_syntax_err());
     }
 }

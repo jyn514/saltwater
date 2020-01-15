@@ -6,12 +6,14 @@ use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 extern crate ansi_term;
+extern crate codespan;
 extern crate env_logger;
 extern crate log;
 extern crate pico_args;
 extern crate rcc;
 
 use ansi_term::{ANSIString, Colour};
+use codespan::{FileId, Files};
 use pico_args::Arguments;
 use rcc::{
     assemble, compile,
@@ -19,7 +21,6 @@ use rcc::{
         error::{CompileWarning, RecoverableResult},
         lex::Location,
     },
-    intern::STRINGS,
     link, utils, Error,
 };
 use std::ffi::OsStr;
@@ -93,16 +94,16 @@ impl Default for Opt {
 
 // TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
-fn real_main(buf: &str, opt: Opt) -> Result<(), Error> {
+fn real_main(file_db: &Files<String>, file_id: FileId, opt: Opt) -> Result<(), Error> {
     env_logger::init();
     let (result, warnings) = compile(
-        buf,
+        file_db.source(file_id),
         opt.filename.to_string_lossy().into_owned(),
         opt.debug_lex,
         opt.debug_ast,
         opt.debug_asm,
     );
-    handle_warnings(warnings, buf);
+    handle_warnings(warnings, file_id, file_db);
 
     let product = result?;
     if opt.no_link {
@@ -113,11 +114,11 @@ fn real_main(buf: &str, opt: Opt) -> Result<(), Error> {
     link(tmp_file.as_ref(), opt.output.as_path()).map_err(io::Error::into)
 }
 
-fn handle_warnings(warnings: VecDeque<CompileWarning>, file: &str) {
+fn handle_warnings(warnings: VecDeque<CompileWarning>, file: FileId, file_db: &Files<String>) {
     WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
     let tag = Colour::Yellow.bold().paint("warning");
     for warning in warnings {
-        pretty_print(tag.clone(), warning.data, warning.location, file);
+        pretty_print(tag.clone(), warning.data, warning.location, file, file_db);
     }
 }
 
@@ -153,19 +154,11 @@ fn main() {
             });
         opt.filename
     };
-    // why a closure instead of err_exit?
-    // from a conversation in discord#rust-usage:
-    //
-    // A ! value can be coerced into any type implicitly
-    // When you take the function directly you have a value of fn(&'static str) -> ! and that can't be coerced
-    // When you call it you get a value of ! which can
-    // It's like &String can be coerced to &str, but it's not a subtype of it
-    // Likewise a fn(T) -> &String should not be allowed to coerce to fn(T) -> &str
-    //
-    // What's happening here is the function has type `fn(...) -> !`,
-    // but when it's called, that's coerced to `!`,
-    // so the closure has type `fn(...) -> i32`
-    real_main(&buf, opt).unwrap_or_else(|err| err_exit(err, &buf));
+
+    let mut file_db = Files::new();
+    // TODO: remove `lossy` call
+    let file_id = file_db.add(opt.filename.to_string_lossy(), buf);
+    real_main(&file_db, file_id, opt).unwrap_or_else(|err| err_exit(err, file_id, &file_db));
 }
 
 fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
@@ -218,12 +211,12 @@ fn parse_args() -> Result<Opt, pico_args::Error> {
     })
 }
 
-fn err_exit(err: Error, file: &str) -> ! {
+fn err_exit(err: Error, file: FileId, file_db: &Files<String>) -> ! {
     use Error::*;
     match err {
         Source(errs) => {
             for err in errs {
-                error(&err.data, err.location(), file);
+                error(&err.data, err.location(), file, file_db);
             }
             let (num_warnings, num_errors) = (get_warnings(), get_errors());
             print_issues(num_warnings, num_errors);
@@ -248,27 +241,32 @@ fn print_issues(warnings: usize, errors: usize) {
     eprintln!("{} generated", msg);
 }
 
-fn error<T: std::fmt::Display>(msg: T, location: Location, file: &str) {
+fn error<T: std::fmt::Display>(msg: T, location: Location, file: FileId, file_db: &Files<String>) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
-    pretty_print(Colour::Red.bold().paint("error"), msg, location, file);
+    pretty_print(
+        Colour::Red.bold().paint("error"),
+        msg,
+        location,
+        file,
+        file_db,
+    );
 }
 
 pub fn pretty_print<T: std::fmt::Display>(
     prefix: ANSIString,
     msg: T,
     location: Location,
-    file: &str,
+    file: FileId,
+    file_db: &Files<String>,
 ) {
-    let (start, _end) = location.calculate_line_column(file);
+    let start = file_db
+        .location(file, location.span.offset)
+        .expect("location should be in bounds");
     println!(
         "{}:{}:{}: {}: {}",
-        STRINGS
-            .read()
-            .unwrap()
-            .resolve(location.filename.0)
-            .unwrap(),
-        start.0,
-        start.1,
+        file_db.name(file),
+        start.line.number(),
+        start.column.number(),
         prefix,
         msg
     );

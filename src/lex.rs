@@ -51,7 +51,7 @@ enum CharError {
 
 #[derive(Debug)]
 struct SingleLocation {
-    offset: usize,
+    offset: u32,
     filename: InternedStr,
 }
 
@@ -218,7 +218,7 @@ impl<'a> Lexer<'a> {
     }
     /// Given the start of a span as an offset,
     /// return a span lasting until the current location in the file.
-    fn span(&self, start: usize) -> Location {
+    fn span(&self, start: u32) -> Location {
         Location {
             span: (start..self.location.offset).into(),
             filename: self.location.filename,

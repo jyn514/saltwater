@@ -210,40 +210,6 @@ impl FunctionType {
     }
 }
 
-/// short-circuiting version of iter.max_by_key
-///
-/// partially taken from https://doc.rust-lang.org/src/core/iter/traits/iterator.rs.html#2591
-///
-/// Example:
-///
-/// ```
-/// use rcc::arch::try_max_by_key;
-/// let list = [[1, 2, 3], [5, 4, 3], [1, 1, 4]];
-/// assert_eq!(try_max_by_key(list.iter(), |vec| vec.last().map(|&x| x).ok_or(())), Some(Ok(&[1, 1, 4])));
-///
-/// let lengths = [vec![], vec![1], vec![1, 2]];
-/// assert_eq!(try_max_by_key(lengths.iter(), |vec| vec.last().map(|&x| x).ok_or(())), Some(Err(())));
-/// ```
-pub fn try_max_by_key<'a, I, T, C, R, F>(mut iter: I, mut f: F) -> Option<Result<&'a T, R>>
-where
-    I: Iterator<Item = &'a T>,
-    C: std::cmp::Ord,
-    F: FnMut(&T) -> Result<C, R>,
-{
-    iter.next().map(|initial| {
-        // if this gives an error, return it immediately
-        // avoids f not being called if there's only one element
-        f(&initial)?;
-        iter.try_fold(initial, |current, next| {
-            if f(current)? >= f(next)? {
-                Ok(current)
-            } else {
-                Ok(next)
-            }
-        })
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

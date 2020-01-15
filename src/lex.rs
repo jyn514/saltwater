@@ -134,7 +134,7 @@ impl<'a> Lexer<'a> {
     /// Return the current location of the lexer
     pub fn location(&self) -> Location {
         Location {
-            span: (self.location.offset..=self.location.offset).into(),
+            span: (self.location.offset..self.location.offset).into(),
             filename: self.location.filename,
         }
     }

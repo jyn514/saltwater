@@ -260,7 +260,7 @@ pub fn pretty_print<T: std::fmt::Display>(
     file_db: &Files<String>,
 ) {
     let start = file_db
-        .location(file, location.span.offset)
+        .location(file, location.span.start())
         .expect("location should be in bounds");
     println!(
         "{}:{}:{}: {}: {}",

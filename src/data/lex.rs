@@ -1,7 +1,8 @@
 use crate::intern::InternedStr;
+
+use codespan::Span;
+
 use std::cmp::Ordering;
-use std::fmt;
-use std::ops::{Range, RangeInclusive};
 
 // holds where a piece of code came from
 // should almost always be immutable
@@ -9,123 +10,6 @@ use std::ops::{Range, RangeInclusive};
 pub struct Location {
     pub span: Span,
     pub filename: InternedStr,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Span {
-    pub offset: u32,
-    pub length: u32,
-}
-
-// because { 0, 5 } means 5 numbers starting at 0: [0, 1, 2, 3, 4] == 0..5
-impl From<Span> for Range<u32> {
-    fn from(span: Span) -> Self {
-        span.offset..(span.offset + span.length)
-    }
-}
-
-impl From<Span> for RangeInclusive<u32> {
-    #[allow(clippy::range_minus_one)]
-    fn from(span: Span) -> Self {
-        span.offset..=(span.offset + span.length - 1)
-    }
-}
-
-impl From<Range<u32>> for Span {
-    /// panics if range.end <= range.start
-    fn from(range: Range<u32>) -> Self {
-        Span {
-            offset: range.start,
-            length: range.end - range.start,
-        }
-    }
-}
-
-impl From<RangeInclusive<u32>> for Span {
-    /// panics if range.end < range.start
-    fn from(range: RangeInclusive<u32>) -> Self {
-        Span {
-            offset: *range.start(),
-            length: range.end() - range.start() + 1,
-        }
-    }
-}
-
-impl fmt::Display for Span {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let r: Range<_> = (*self).into();
-        write!(f, "{:?}", r)
-    }
-}
-
-impl Span {
-    pub(crate) fn merge(self, other: Self) -> Self {
-        use std::cmp::min;
-        let (left, right): (Range<_>, Range<_>) = (self.into(), other.into());
-        let min_start = min(left.start, right.start);
-        let (first, last) = if left.end < right.end {
-            // left ends first
-            (left, right)
-        } else {
-            (right, left)
-        };
-        if first.end < last.start {
-            panic!("ranges must overlap if you want to merge them");
-        }
-        (min_start..last.end).into()
-    }
-}
-
-impl Location {
-    pub(crate) fn merge(self, other: &Self) -> Self {
-        Self {
-            span: self.span.merge(other.span),
-            ..self
-        }
-    }
-    /*
-    /// Calculate a ((start_line, start_column), (end_line, end_column)) tuple
-    /// from the offset.
-    // TODO: cache some of this so we don't recalculate every time
-    // u32: if there's a 4 GB input file, we have bigger problems
-    pub fn calculate_line_column(self, file: &str) -> ((u32, u32), (u32, u32)) {
-        let end = self.span.offset + self.span.length - 1;
-        // avoid panic if file is empty
-        if end == 0 {
-            return ((1, 1), (1, 1));
-        }
-
-        let (mut line, mut column) = (1, 1);
-        let mut start = None;
-        for (i, c) in file.chars().enumerate() {
-            if let Some(start) = start {
-                if end == i {
-                    return (start, (line, column));
-                }
-            } else if self.span.offset == i {
-                if end == i {
-                    return ((line, column), (line, column));
-                }
-                start = Some((line, column));
-            }
-            if c == '\n' {
-                line += 1;
-                column = 1;
-            } else {
-                column += 1;
-            }
-        }
-        // avoid panic at end of file
-        if self.span.offset == file.len() && end == file.len() {
-            return ((line, column), (line, column));
-        }
-        unreachable!(
-            "passed a span not in the file (len: {}): {}",
-            file.len(),
-            self.span
-        );
-    }
-    */
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -370,6 +254,7 @@ impl AssignmentToken {
     }
 }
 
+#[cfg(test)]
 impl Default for Location {
     fn default() -> Self {
         Self {
@@ -491,22 +376,5 @@ impl From<AssignmentToken> for Token {
 impl From<ComparisonToken> for Token {
     fn from(a: ComparisonToken) -> Self {
         Token::Comparison(a)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::{Location, Span};
-    use crate::intern::InternedStr;
-    #[test]
-    fn span_to_from_range() {
-        let span = Span {
-            offset: 0,
-            length: 5,
-        };
-        assert_eq!(0..5, span.into());
-        assert_eq!(0..=4, span.into());
-        assert_eq!(span, (0..5).into());
-        assert_eq!(span, (0..=4).into());
     }
 }

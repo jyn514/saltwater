@@ -133,7 +133,10 @@ impl<'a> Lexer<'a> {
     }
     /// Return the current location of the lexer
     pub fn location(&self) -> Location {
-        self.location
+        Location {
+            span: (self.location.offset..=self.location.offset).into(),
+            filename: self.location.filename,
+        }
     }
 
     /// Return the first valid token in the file,

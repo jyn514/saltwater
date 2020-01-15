@@ -89,6 +89,11 @@ impl Location {
     // u32: if there's a 4 GB input file, we have bigger problems
     pub fn calculate_line_column(self, file: &str) -> ((u32, u32), (u32, u32)) {
         let end = self.span.offset + self.span.length - 1;
+        // avoid panic if file is empty
+        if end == 0 {
+            return ((1, 1), (1, 1));
+        }
+
         let (mut line, mut column) = (1, 1);
         let mut start = None;
         for (i, c) in file.chars().enumerate() {
@@ -108,6 +113,10 @@ impl Location {
             } else {
                 column += 1;
             }
+        }
+        // avoid panic at end of file
+        if self.span.offset == file.len() && end == file.len() {
+            return ((line, column), (line, column));
         }
         unreachable!(
             "passed a span not in the file (len: {}): {}",
@@ -522,5 +531,7 @@ mod test {
             loc(0..5).calculate_line_column(&" \n".repeat(5)),
             ((1, 1), (3, 1))
         );
+        assert_eq!(loc(0..1).calculate_line_column(""), ((1, 1), (1, 1)));
+        assert_eq!(loc(1..2).calculate_line_column(" "), ((1, 2), (1, 2)));
     }
 }

@@ -13,27 +13,27 @@ pub struct Location {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
-    offset: usize,
-    length: usize,
+    pub offset: u32,
+    pub length: u32,
 }
 
 // because { 0, 5 } means 5 numbers starting at 0: [0, 1, 2, 3, 4] == 0..5
-impl From<Span> for Range<usize> {
+impl From<Span> for Range<u32> {
     fn from(span: Span) -> Self {
         span.offset..(span.offset + span.length)
     }
 }
 
-impl From<Span> for RangeInclusive<usize> {
+impl From<Span> for RangeInclusive<u32> {
     #[allow(clippy::range_minus_one)]
     fn from(span: Span) -> Self {
         span.offset..=(span.offset + span.length - 1)
     }
 }
 
-impl From<Range<usize>> for Span {
+impl From<Range<u32>> for Span {
     /// panics if range.end <= range.start
-    fn from(range: Range<usize>) -> Self {
+    fn from(range: Range<u32>) -> Self {
         Span {
             offset: range.start,
             length: range.end - range.start,
@@ -41,9 +41,9 @@ impl From<Range<usize>> for Span {
     }
 }
 
-impl From<RangeInclusive<usize>> for Span {
+impl From<RangeInclusive<u32>> for Span {
     /// panics if range.end < range.start
-    fn from(range: RangeInclusive<usize>) -> Self {
+    fn from(range: RangeInclusive<u32>) -> Self {
         Span {
             offset: *range.start(),
             length: range.end() - range.start() + 1,
@@ -83,6 +83,7 @@ impl Location {
             ..self
         }
     }
+    /*
     /// Calculate a ((start_line, start_column), (end_line, end_column)) tuple
     /// from the offset.
     // TODO: cache some of this so we don't recalculate every time
@@ -124,6 +125,7 @@ impl Location {
             self.span
         );
     }
+    */
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -496,12 +498,6 @@ impl From<ComparisonToken> for Token {
 mod test {
     use super::{Location, Span};
     use crate::intern::InternedStr;
-    fn loc<R: Into<Span>>(range: R) -> Location {
-        Location {
-            filename: InternedStr::get_or_intern("<test-suite>"),
-            span: dbg!(range.into()),
-        }
-    }
     #[test]
     fn span_to_from_range() {
         let span = Span {
@@ -512,26 +508,5 @@ mod test {
         assert_eq!(0..=4, span.into());
         assert_eq!(span, (0..5).into());
         assert_eq!(span, (0..=4).into());
-    }
-    #[test]
-    fn offset_to_line() {
-        assert_eq!(
-            loc(0..=5).calculate_line_column(&" ".repeat(6)),
-            ((1, 1), (1, 6))
-        );
-        assert_eq!(
-            loc(1..5).calculate_line_column(&" ".repeat(5)),
-            ((1, 2), (1, 5))
-        );
-        assert_eq!(
-            loc(0..5).calculate_line_column(&" \n".repeat(5)),
-            ((1, 1), (3, 1))
-        );
-        assert_eq!(
-            loc(0..5).calculate_line_column(&" \n".repeat(5)),
-            ((1, 1), (3, 1))
-        );
-        assert_eq!(loc(0..1).calculate_line_column(""), ((1, 1), (1, 1)));
-        assert_eq!(loc(1..2).calculate_line_column(" "), ((1, 2), (1, 2)));
     }
 }

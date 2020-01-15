@@ -24,6 +24,7 @@ target-lexicon = "0.10"
 tempfile = "3"
 pico-args = "0.3"
 string-interner = "0.7"
+codespan = "0.7"
 
 [dev-dependencies]
 walkdir = "2"

@@ -89,9 +89,8 @@ fn test_plus() {
         Some(Ok(Locatable {
             data: Token::Plus,
             location: Location {
-                file: InternedStr::get_or_intern("<stdin>"),
-                line: 1,
-                column: 1
+                filename: InternedStr::get_or_intern("<stdin>"),
+                span: (0..1).into(),
             }
         }))
     )

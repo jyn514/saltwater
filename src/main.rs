@@ -118,7 +118,10 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>, file: FileId, file_db: &F
     WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
     let tag = Colour::Yellow.bold().paint("warning");
     for warning in warnings {
-        pretty_print(tag.clone(), warning.data, warning.location, file, file_db);
+        print!(
+            "{}",
+            pretty_print(tag.clone(), warning.data, warning.location, file, file_db)
+        );
     }
 }
 
@@ -243,35 +246,40 @@ fn print_issues(warnings: usize, errors: usize) {
 
 fn error<T: std::fmt::Display>(msg: T, location: Location, file: FileId, file_db: &Files<String>) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
-    pretty_print(
-        Colour::Red.bold().paint("error"),
-        msg,
-        location,
-        file,
-        file_db,
+    print!(
+        "{}",
+        pretty_print(
+            Colour::Red.bold().paint("error"),
+            msg,
+            location,
+            file,
+            file_db,
+        )
     );
 }
 
-pub fn pretty_print<T: std::fmt::Display>(
+#[must_use]
+pub fn pretty_print<T: std::fmt::Display, S: AsRef<str>>(
     prefix: ANSIString,
     msg: T,
     location: Location,
     file: FileId,
-    file_db: &Files<String>,
-) {
+    file_db: &Files<S>,
+) -> String {
     let start = file_db
         .location(file, location.span.start())
         .expect("start location should be in bounds");
-    println!(
-        "{}:{}:{}: {}: {}",
+    let buf = format!(
+        "{}:{}:{}: {}: {}\n",
         PathBuf::from(file_db.name(file)).display(),
         start.line.number(),
         start.column.number(),
         prefix,
         msg
     );
+    // avoid printing spurious newline for errors and EOF
     if location.span.end() == 0.into() {
-        return;
+        return buf;
     }
     let end = file_db
         .location(file, location.span.end())
@@ -280,12 +288,15 @@ pub fn pretty_print<T: std::fmt::Display>(
         let line = file_db
             .line_span(file, start.line)
             .expect("line should be in bounds");
-        print!("{}", file_db.source_slice(file, line).unwrap());
-        println!(
-            "{}{}",
+        format!(
+            "{}{}{}{}\n",
+            buf,
+            file_db.source_slice(file, line).unwrap(),
             " ".repeat(start.column.0 as usize),
             "^".repeat((end.column - start.column).0 as usize)
-        );
+        )
+    } else {
+        buf
     }
 }
 
@@ -297,4 +308,31 @@ fn get_warnings() -> usize {
 #[inline]
 fn get_errors() -> usize {
     ERRORS.load(Ordering::SeqCst)
+}
+
+#[cfg(test)]
+mod test {
+    use super::{Files, Location};
+    use ansi_term::Style;
+    use codespan::Span;
+    use rcc::intern::InternedStr;
+
+    fn pp<S: Into<Span>>(span: S, source: &str) -> String {
+        let location = Location {
+            filename: InternedStr::get_or_intern("<test-suite>"),
+            span: span.into(),
+        };
+        let mut file_db = Files::new();
+        let file = file_db.add("<test-suite>", source);
+        let ansi_str = Style::new().paint("");
+        super::pretty_print(ansi_str, "", location, file, &file_db)
+    }
+    #[test]
+    fn pretty_print() {
+        assert_eq!(
+            dbg!(pp(8..15, "int i = \"hello\";\n")).lines().nth(2),
+            Some("        ^^^^^^^")
+        );
+        pp(0..0, "");
+    }
 }

@@ -65,17 +65,19 @@ pub fn compile(
     debug_ast: bool,
     debug_ir: bool,
 ) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
+    let filename_ref = InternedStr::get_or_intern(&filename);
     let mut lexer = Lexer::new(filename, buf.chars(), debug_lex);
     let (first, mut errs) = lexer.first_token();
+    let eof = || Location {
+        span: (buf.len() as u32..buf.len() as u32).into(),
+        filename: filename_ref,
+    };
 
     let first = match first {
         Some(token) => token,
         None => {
             if errs.is_empty() {
-                errs.push_back(CompileError::new(
-                    SemanticError::EmptyProgram.into(),
-                    lexer.location(),
-                ));
+                errs.push_back(CompileError::new(SemanticError::EmptyProgram.into(), eof()));
             }
             return (Err(Error::Source(errs)), lexer.warnings());
         }
@@ -85,10 +87,7 @@ pub fn compile(
     let (hir, parse_errors) = parser.collect_results();
     errs.extend(parse_errors.into_iter());
     if hir.is_empty() && errs.is_empty() {
-        errs.push_back(CompileError::new(
-            SemanticError::EmptyProgram.into(),
-            parser.location(),
-        ));
+        errs.push_back(CompileError::new(SemanticError::EmptyProgram.into(), eof()));
     }
 
     let mut warnings = parser.warnings();

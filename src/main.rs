@@ -261,7 +261,7 @@ pub fn pretty_print<T: std::fmt::Display>(
 ) {
     let start = file_db
         .location(file, location.span.start())
-        .expect("location should be in bounds");
+        .expect("start location should be in bounds");
     println!(
         "{}:{}:{}: {}: {}",
         PathBuf::from(file_db.name(file)).display(),
@@ -270,6 +270,23 @@ pub fn pretty_print<T: std::fmt::Display>(
         prefix,
         msg
     );
+    if location.span.end() == 0.into() {
+        return;
+    }
+    let end = file_db
+        .location(file, location.span.end())
+        .expect("end location should be in bounds");
+    if start.line == end.line {
+        let line = file_db
+            .line_span(file, start.line)
+            .expect("line should be in bounds");
+        print!("{}", file_db.source_slice(file, line).unwrap());
+        println!(
+            "{}{}",
+            " ".repeat(start.column.0 as usize),
+            "^".repeat((end.column - start.column).0 as usize)
+        );
+    }
 }
 
 #[inline]

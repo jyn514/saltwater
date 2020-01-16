@@ -175,6 +175,8 @@ impl<'a> Lexer<'a> {
     ///
     /// All functions should use this instead of `chars` directly.
     /// Using `chars` will not update location information and may discard lookaheads.
+    ///
+    /// This function should never set `self.location.offset` to an out-of-bounds location
     fn next_char(&mut self) -> Option<char> {
         let next = if let Some(c) = self.current {
             self.current = self.lookahead.take();
@@ -191,6 +193,8 @@ impl<'a> Lexer<'a> {
     /// Can be called at most one time before previous characters will be discarded.
     /// Use with caution!
     fn unput(&mut self, c: Option<char>) {
+        self.location.offset -= 1;
+        self.lookahead = self.current;
         self.current = c;
     }
     /// Return the character that would be returned by `next_char`.
@@ -684,10 +688,7 @@ impl<'a> Iterator for Lexer<'a> {
                         self.next_char();
                         Token::StructDeref
                     }
-                    c => {
-                        self.unput(c);
-                        Token::Minus
-                    }
+                    _ => Token::Minus,
                 },
                 '*' => match self.peek() {
                     Some('=') => {

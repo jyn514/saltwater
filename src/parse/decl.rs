@@ -2127,4 +2127,19 @@ mod tests {
         assert!(parse("struct { int a:5, b:6; } c;").unwrap().is_ok());
         assert!(parse("struct { extern int a:5; } d;").unwrap().is_err());
     }
+    #[test]
+    fn lol() {
+        let lol = "
+int *jynelson(int(*fp)(int)) {
+  return 0;
+}
+int f(int i) {
+  return 0;
+}
+int main() {
+	return *((int*(*)(int(*)(int)))jynelson)(&f);
+}
+";
+        assert!(parse_all(lol).iter().all(Result::is_ok));
+    }
 }

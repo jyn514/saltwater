@@ -81,8 +81,8 @@ pub enum SemanticError {
     #[error("cannot have empty program")]
     EmptyProgram,
 
-    #[error("overflow in expresson: {0}")]
-    ConstOverflow(Expr),
+    #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
+    ConstOverflow { is_positive: bool },
 
     #[error("not a constant expression: {0}")]
     NotConstant(Expr),

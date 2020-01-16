@@ -561,7 +561,7 @@ impl Eq for Symbol {}
 
 #[cfg(test)]
 mod tests {
-    use crate::{Lexer, Parser};
+    use crate::{PreProcessor, Parser};
 
     #[test]
     fn type_display() {
@@ -575,7 +575,7 @@ mod tests {
             "struct s",
         ];
         for ty in types.iter() {
-            let mut lexer = Lexer::new("<integration-test>", ty.chars(), false);
+            let mut lexer = PreProcessor::new("<integration-test>", ty.chars(), false);
             let first = lexer.next().unwrap().unwrap();
             let mut parser = Parser::new(first, &mut lexer, false);
 

@@ -3,10 +3,10 @@ use lazy_static::lazy_static;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
-use super::{Lexer, Token, SingleLocation};
+use super::{Lexer, SingleLocation, Token};
+use crate::data::error::CppError;
 use crate::data::lex::{Keyword, Literal};
 use crate::data::prelude::{CompileError, Error, *};
-use crate::data::error::CppError;
 use crate::get_str;
 
 pub struct PreProcessor<'a> {
@@ -95,7 +95,11 @@ impl<'a> PreProcessor<'a> {
         std::mem::replace(&mut self.error_handler.warnings, Default::default())
     }
 
-    fn add_location<T>(&self, option: Option<Result<T, CompileError>>, location: Location) -> Option<CppResult<T>> {
+    fn add_location<T>(
+        &self,
+        option: Option<Result<T, CompileError>>,
+        location: Location,
+    ) -> Option<CppResult<T>> {
         Some(match option? {
             Ok(data) => Ok(Locatable::new(data, location)),
             Err(err) => Err(err),
@@ -113,7 +117,9 @@ impl<'a> PreProcessor<'a> {
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
         let next_token = self.lexer.next();
         let is_hash = match next_token {
-            Some(Ok(Locatable { data: Token::Hash, .. })) => true,
+            Some(Ok(Locatable {
+                data: Token::Hash, ..
+            })) => true,
             _ => false,
         };
         if is_hash && !self.lexer.seen_line_token {
@@ -150,7 +156,9 @@ impl<'a> PreProcessor<'a> {
                     location,
                 })) => Ok(Locatable::new(name, location)),
                 Some(Err(err)) => Err(err),
-                Some(Ok(other)) => Err(other.map(|tok| CppError::UnexpectedToken("identifier", tok).into())),
+                Some(Ok(other)) => {
+                    Err(other.map(|tok| CppError::UnexpectedToken("identifier", tok).into()))
+                }
                 None => Err(CompileError {
                     data: CppError::EndOfFile("identifier").into(),
                     location,
@@ -188,24 +196,35 @@ impl<'a> PreProcessor<'a> {
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn const_expr(&mut self) -> Result<Literal, CompileError> {
         let mut tokens = vec![];
-        let line = self.lexer.location.line;
+        let (line, start) = (self.lexer.line, self.lexer.location.offset);
         loop {
             self.lexer.consume_whitespace();
-            if self.lexer.location.line != line {
+            if self.lexer.line != line {
                 break;
             }
             match self.lexer.next() {
-                Some(Ok(token @ Locatable { data: Token::Id(_), .. })) => {
+                Some(Ok(
+                    token @ Locatable {
+                        data: Token::Id(_), ..
+                    },
+                )) => {
                     tokens.push(Ok(token.map(|_| Token::Literal(Literal::Int(0)))));
                 }
                 Some(token) => tokens.push(token),
-                None => return Err(CompileError::new(
-                    Error::UnterminatedDirective("#if"),
-                    self.lexer.location,
-                )),
+                None => {
+                    return Err(CompileError::new(
+                        CppError::UnterminatedDirective("#if").into(),
+                        self.lexer.span(start),
+                    ))
+                }
             };
         }
-        let mut parser = crate::Parser::new(tokens.into_iter(), self.debug)?;
+        // NOTE: This only returns the first error because anything else requires a refactor
+        let first = tokens.pop().unwrap_or(Err(CompileError::new(
+            CppError::EmptyExpression.into(),
+            self.lexer.span(start),
+        )))?;
+        let mut parser = crate::Parser::new(first, tokens.into_iter(), self.debug);
         Ok(parser.expr()?.constexpr().unwrap().data.0)
     }
     fn if_directive(&mut self, condition: bool, start: u32) -> Option<CppResult<Token>> {

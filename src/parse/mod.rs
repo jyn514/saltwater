@@ -96,10 +96,6 @@ where
             error_handler: ErrorHandler::new(),
         }
     }
-    /// Return the current location of the parser.
-    pub fn location(&self) -> Location {
-        self.last_location
-    }
 }
 
 impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {

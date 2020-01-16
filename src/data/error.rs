@@ -243,11 +243,11 @@ impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, Vec<E>> {
 mod tests {
     use super::*;
 
-    lazy_static::lazy_static! {
-        static ref DUMMY_ERROR: CompileError = CompileError::new(
+    fn dummy_error() -> CompileError {
+        CompileError::new(
             Error::Lex(LexError::UnterminatedComment),
             Default::default(),
-        );
+        )
     }
 
     fn new_error(error: Error) -> CompileError {
@@ -257,12 +257,12 @@ mod tests {
     #[test]
     fn test_error_handler_push_err() {
         let mut error_handler = ErrorHandler::new();
-        error_handler.push_back(DUMMY_ERROR.clone());
+        error_handler.push_back(dummy_error());
 
         assert_eq!(
             error_handler,
             ErrorHandler {
-                errors: vec_deque![DUMMY_ERROR.clone()],
+                errors: vec_deque![dummy_error()],
                 warnings: VecDeque::new(),
             }
         );
@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn test_error_handler_into_iterator() {
         let mut error_handler = ErrorHandler::new();
-        error_handler.push_back(DUMMY_ERROR.clone());
+        error_handler.push_back(dummy_error());
         let errors = error_handler.collect::<Vec<_>>();
         assert_eq!(errors.len(), 1);
     }
@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn test_compile_error_display() {
         assert_eq!(
-            DUMMY_ERROR.data.to_string(),
+            dummy_error().data.to_string(),
             "invalid token: unterminated /* comment"
         );
 
@@ -336,10 +336,10 @@ mod tests {
         assert_eq!(error_handler.pop_front(), None);
 
         let mut error_handler = ErrorHandler::new();
-        let r: RecoverableResult<i32> = Err((DUMMY_ERROR.clone(), 42));
+        let r: RecoverableResult<i32> = Err((dummy_error(), 42));
         assert_eq!(r.recover(&mut error_handler), 42);
         let errors = error_handler.collect::<Vec<_>>();
-        assert_eq!(errors, vec![DUMMY_ERROR.clone()]);
+        assert_eq!(errors, vec![dummy_error()]);
     }
 
     #[test]
@@ -352,7 +352,7 @@ mod tests {
         let mut error_handler = ErrorHandler::new();
         let r: RecoverableResult<i32, Vec<CompileError>> = Err((
             vec![
-                DUMMY_ERROR.clone(),
+                dummy_error(),
                 new_error(Error::Semantic(SemanticError::Generic("pears".to_string()))),
             ],
             42,
@@ -362,7 +362,7 @@ mod tests {
         assert_eq!(
             errors,
             vec![
-                DUMMY_ERROR.clone(),
+                dummy_error(),
                 new_error(Error::Semantic(SemanticError::Generic("pears".to_string()))),
             ]
         );

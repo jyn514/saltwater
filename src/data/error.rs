@@ -82,6 +82,9 @@ pub enum SemanticError {
     #[error("cannot have empty program")]
     EmptyProgram,
 
+    #[error("overflow in expresson: {0}")]
+    ConstOverflow(super::Expr),
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

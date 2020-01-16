@@ -148,9 +148,37 @@ impl Expr {
                 }
                 ExprType::Deref(Box::new(folded))
             }
-            ExprType::Add(left, right) => {
-                left.literal_bin_op(*right, &location, fold_scalar_bin_op!(+), ExprType::Add)?
-            }
+            ExprType::Add(left, right) => left.literal_bin_op(
+                *right,
+                &location,
+                |a, b, ctype| match (a, b) {
+                    (Int(a), Int(b)) => {
+                        let (value, overflowed) = a.overflowing_add(*b);
+
+                        if overflowed {
+                            Err(SemanticError::ConstOverflow {
+                                // Negative value means a positive overflow and vice versa
+
+                                // 32 bit integers don't negetive overflow properly+
+                                is_positive: value.is_negative()
+                            }.into())
+                        } else {
+                            Ok(Some(Int(value)))
+                        }
+                    }
+                    (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a.wrapping_add(*b)))),
+                    (Float(a), Float(b)) => Ok(Some(Float(a + b))),
+                    (Char(a), Char(b)) => {
+                        if ctype.is_signed() {
+                            Ok(Some(Char(a + b)))
+                        } else {
+                            Ok(Some(Char(a.wrapping_add(*b))))
+                        }
+                    }
+                    (_, _) => Ok(None),
+                },
+                ExprType::Add,
+            )?,
             ExprType::Sub(left, right) => left.literal_bin_op(
                 *right,
                 &location,
@@ -295,6 +323,14 @@ impl Expr {
             ..self
         })
     }
+    ///
+    ///
+    ///
+    /// fold_func return values:
+    /// `Ok(Some(_))`: Successfuly folded
+    /// `Ok(None)`: Non-folable expression
+    /// `Err(_)`: Error while folding
+    ///
     fn literal_bin_op<F, C>(
         self,
         other: Expr,
@@ -303,14 +339,16 @@ impl Expr {
         constructor: C,
     ) -> CompileResult<ExprType>
     where
-        F: FnOnce(&Literal, &Literal, &Type) -> Result<Option<Literal>, String>,
+        F: FnOnce(&Literal, &Literal, &Type) -> Result<Option<Literal>, Error>,
         C: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
     {
         let (left, right) = (self.const_fold()?, other.const_fold()?);
-        let literal = match (&left.expr, &right.expr) {
+        let literal: Option<ExprType> = match (&left.expr, &right.expr) {
             (ExprType::Literal(left_token), ExprType::Literal(right_token)) => {
                 match fold_func(left_token, right_token, &left.ctype) {
-                    Err(data) => semantic_err!(data, *location),
+                    Err(err) => {
+                        return Err(CompileError::new(err, *location));
+                    }
                     Ok(token) => token.map(ExprType::Literal),
                 }
             }

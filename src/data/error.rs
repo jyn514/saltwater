@@ -88,7 +88,7 @@ pub enum SemanticError {
 }
 
 /// Syntax errors are non-exhaustive and may have new variants added at any time
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum SyntaxError {
     #[error("{0}")]
     Generic(String),
@@ -102,7 +102,7 @@ pub enum SyntaxError {
 }
 
 /// Lex errors are non-exhaustive and may have new variants added at any time
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum LexError {
     #[error("{0}")]
     Generic(String),

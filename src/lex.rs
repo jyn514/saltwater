@@ -131,14 +131,6 @@ impl<'a> Lexer<'a> {
             error_handler: ErrorHandler::new(),
         }
     }
-    /// Return the current location of the lexer
-    pub fn location(&self) -> Location {
-        Location {
-            span: (self.location.offset..self.location.offset).into(),
-            filename: self.location.filename,
-        }
-    }
-
     /// Return the first valid token in the file,
     /// or None if there are no valid tokens.
     ///

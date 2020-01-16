@@ -61,7 +61,7 @@ impl Iterator for ErrorHandler {
     }
 }
 
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum Error {
     #[error("invalid program: {0}")]
     Semantic(#[from] SemanticError),
@@ -74,7 +74,7 @@ pub enum Error {
 }
 
 /// Semantic errors are non-exhaustive and may have new variants added at any time
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum SemanticError {
     #[error("{0}")]
     Generic(String),
@@ -87,7 +87,7 @@ pub enum SemanticError {
 }
 
 /// Syntax errors are non-exhaustive and may have new variants added at any time
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum SyntaxError {
     #[error("{0}")]
     Generic(String),
@@ -101,7 +101,7 @@ pub enum SyntaxError {
 }
 
 /// Lex errors are non-exhaustive and may have new variants added at any time
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum LexError {
     #[error("{0}")]
     Generic(String),

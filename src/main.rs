@@ -160,7 +160,7 @@ fn main() {
 
     let mut file_db = Files::new();
     // TODO: remove `lossy` call
-    let file_id = file_db.add(&opt.filename, buf);
+    let file_id = file_db.add(opt.filename.to_string_lossy(), buf);
     real_main(&file_db, file_id, opt).unwrap_or_else(|err| err_exit(err, file_id, &file_db));
 }
 
@@ -271,7 +271,7 @@ pub fn pretty_print<T: std::fmt::Display, S: AsRef<str>>(
         .expect("start location should be in bounds");
     let buf = format!(
         "{}:{}:{}: {}: {}\n",
-        PathBuf::from(file_db.name(file)).display(),
+        file_db.name(file),
         start.line.number(),
         start.column.number(),
         prefix,

@@ -78,6 +78,7 @@ pub enum Error {
 pub enum SemanticError {
     #[error("{0}")]
     Generic(String),
+
     #[error("cannot have empty program")]
     EmptyProgram,
 

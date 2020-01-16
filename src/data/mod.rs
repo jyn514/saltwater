@@ -279,10 +279,6 @@ impl<K: Hash + Eq, V> Scope<K, V> {
     pub fn get_all_immediate(&mut self) -> &mut HashMap<K, V> {
         self.0.last_mut().unwrap()
     }
-    #[inline]
-    pub fn depth(&self) -> usize {
-        self.0.len()
-    }
     pub fn is_global(&self) -> bool {
         self.0.len() == 1
     }
@@ -292,9 +288,6 @@ impl<K: Hash + Eq, V> Scope<K, V> {
     }
     pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
         self.0.iter().rev().flatten()
-    }
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&K, &mut V)> {
-        self.0.iter_mut().rev().flatten()
     }
 }
 

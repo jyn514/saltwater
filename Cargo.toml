@@ -26,6 +26,7 @@ pico-args = "0.3"
 string-interner = "0.7"
 codespan = "0.7"
 color-backtrace = { version = "0.3", default-features = false }
+honggfuzz = "0.5"
 
 [dev-dependencies]
 walkdir = "2"
@@ -35,3 +36,7 @@ lto = true
 
 [profile.test]
 debug = false  # speeds up link time
+
+[[bin]]
+name = "hfuzz"
+path = "fuzz/hfuzz.rs"

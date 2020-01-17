@@ -1119,13 +1119,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             _ if allow_abstract => None,
             Some(x) => {
-                // Construct and store the error so that the mutable borrow of
-                // self through x ends.
-                let error =
-                    SyntaxError::from(format!("expected variable name or '(', got '{}'", x));
-
-                // self can now be immutably borrowed to get the next location.
-                let err = Err(self.next_location().with(error));
+                let err = Err(Locatable::new(
+                    SyntaxError::from(format!("expected variable name or '(', got '{}'", x)),
+                    self.next_location(),
+                ));
                 self.panic();
                 return err;
             }

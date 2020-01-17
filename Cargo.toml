@@ -25,6 +25,7 @@ tempfile = "3"
 pico-args = "0.3"
 string-interner = "0.7"
 codespan = "0.7"
+honggfuzz = "0.5"
 
 [dev-dependencies]
 walkdir = "2"
@@ -37,3 +38,7 @@ debug = false  # speeds up link time
 
 [profile.test]
 debug = false
+
+[[bin]]
+name = "hfuzz"
+path = "fuzz/hfuzz.rs"

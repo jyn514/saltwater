@@ -19,6 +19,8 @@ pub struct PreProcessor<'a> {
     error_handler: ErrorHandler,
     /// Whether or not to display each token as it is processed
     debug: bool,
+    /// Keeps track of the _start_ of all `#if` directives
+    nested_ifs: Vec<u32>,
 }
 
 type CppResult<T> = Result<Locatable<T>, CompileError>;
@@ -70,6 +72,7 @@ impl<'a> PreProcessor<'a> {
             definitions: Default::default(),
             debug,
             error_handler: Default::default(),
+            nested_ifs: Default::default(),
         }
     }
     /// Return the first valid token in the file,
@@ -171,6 +174,10 @@ impl<'a> PreProcessor<'a> {
                 let name = ret_err!(self.expect_id());
                 self.if_directive(self.definitions.contains_key(&name.data), start)
             }
+            EndIf => {
+                self.nested_ifs.pop();
+                self.next()
+            }
             _ => unimplemented!("preprocessing directives besides if/ifdef"),
         }
     }
@@ -232,11 +239,11 @@ impl<'a> PreProcessor<'a> {
     /// #if
     fn if_directive(&mut self, condition: bool, start: u32) -> Option<CppResult<Token>> {
         if condition {
-            unimplemented!()
+            self.nested_ifs.push(start);
         } else {
             ret_err!(self.consume_if_directive(start));
-            self.next()
         }
+        self.next()
     }
     /// Assuming we've just seen `#if 0`, keep consuming tokens until `#endif`
     /// This has to take into account nesting of #if directives.

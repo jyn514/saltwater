@@ -164,7 +164,7 @@ impl<'a> PreProcessor<'a> {
         let start = self.lexer.location.offset;
         match kind {
             If => {
-                let condition = ret_err!(self.const_expr()).truthy();
+                let condition = ret_err!(self.boolean_expr());
                 self.if_directive(condition, start)
             }
             IfDef => {
@@ -179,11 +179,19 @@ impl<'a> PreProcessor<'a> {
         // TODO: actually implement #define
         Some(Ok(Locatable::new(Token::Id(name), self.lexer.span(start))))
     }
+    // convienience function around cpp_expr
+    fn boolean_expr(&mut self) -> Result<bool, CompileError> {
+        // TODO: is this unwrap safe? there should only be scalar types in a cpp directive...
+        match self.cpp_expr()?.truthy().unwrap().constexpr()?.data {
+            (Literal::Int(i), Type::Bool) => Ok(i != 0),
+            _ => unreachable!("bug in const_fold or parser: cpp cond should be boolean"),
+        }
+    }
     /// A C expression on a single line. Used for `#if` directives.
     ///
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
-    fn const_expr(&mut self) -> Result<Literal, CompileError> {
+    fn cpp_expr(&mut self) -> Result<Expr, CompileError> {
         let mut tokens = vec![];
         let (line, start) = (self.lexer.line, self.lexer.location.offset);
         loop {
@@ -216,8 +224,12 @@ impl<'a> PreProcessor<'a> {
             ))
         })?;
         let mut parser = crate::Parser::new(first, tokens.into_iter(), self.debug);
-        Ok(parser.expr()?.constexpr().unwrap().data.0)
+        // TODO: catch expressions that aren't allowed
+        // (see https://github.com/jyn514/rcc/issues/5#issuecomment-575339427)
+        // TODO: can semantic errors happen here? should we check?
+        parser.expr().map_err(CompileError::from)
     }
+    /// #if
     fn if_directive(&mut self, condition: bool, start: u32) -> Option<CppResult<Token>> {
         if condition {
             unimplemented!()
@@ -272,12 +284,6 @@ impl<'a> PreProcessor<'a> {
             }
         }
         Ok(())
-    }
-}
-
-impl Literal {
-    fn truthy(&self) -> bool {
-        unimplemented!()
     }
 }
 

@@ -1655,6 +1655,7 @@ impl Type {
                     .map(|m| m.ctype.clone())
                     .unwrap_or(Type::Error))
             }
+            Type::Error => Ok(Type::Error),
             _ => unimplemented!("type checking for aggregate initializers of type {}", self),
         }
     }

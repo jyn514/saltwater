@@ -129,7 +129,6 @@ impl<'a> PreProcessor<'a> {
             _ => false,
         };
         if is_hash && !self.lexer.seen_line_token {
-            println!("saw directive start");
             let line = self.lexer.line;
             Some(match self.lexer.next()? {
                 Ok(Locatable {
@@ -289,9 +288,8 @@ impl<'a> PreProcessor<'a> {
             }
         }
         let mut depth = 1;
-        while dbg!(depth) > 0 {
-            println!("in loop");
-            let token = match dbg!(self.next_cpp_token()) {
+        while depth > 0 {
+            let token = match self.next_cpp_token() {
                 Some(token) => token,
                 None => {
                     return Err(Locatable::new(

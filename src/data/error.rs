@@ -83,6 +83,7 @@ pub enum SemanticError {
 
     #[error("cannot have empty program")]
     EmptyProgram,
+
     #[error("use of undeclared identifier '{0}'")]
     UndeclaredVar(crate::intern::InternedStr),
 
@@ -129,14 +130,18 @@ pub enum CppError {
 
     #[error("invalid preprocessing directive")]
     InvalidDirective,
+
     // valid token in the wrong position
     #[error("expected {0}, got {1}")]
     UnexpectedToken(&'static str, Token),
+
     #[error("expected {0}, got <end-of-file>")]
     EndOfFile(&'static str),
+
     // invalid token
     #[error("invalid preprocessor token {0}")]
     InvalidCppToken(Token),
+
     #[error("{0} is never terminated")]
     UnterminatedDirective(&'static str),
 

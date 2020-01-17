@@ -41,7 +41,10 @@ impl Iterator for PreProcessor<'_> {
         let next_token = match self.next_cpp_token()? {
             Err(err) => return Some(Err(err)),
             Ok(loc) => match loc.data {
-                CppToken::Directive(directive) => self.directive(directive),
+                CppToken::Directive(directive) => {
+                    let start = loc.location.span.start().to_usize() as u32;
+                    self.directive(directive, start)
+                }
                 CppToken::Token(mut token) => {
                     if let Token::Id(id) = token {
                         token = ret_err!(self.replace_id(id)?).data;
@@ -162,9 +165,8 @@ impl<'a> PreProcessor<'a> {
         let actual = self.replace_id(name.data);
         err_handler(actual, name.location)
     }
-    fn directive(&mut self, kind: DirectiveKind) -> Option<CppResult<Token>> {
+    fn directive(&mut self, kind: DirectiveKind, start: u32) -> Option<CppResult<Token>> {
         use DirectiveKind::*;
-        let start = self.lexer.location.offset;
         match kind {
             If => {
                 let condition = ret_err!(self.boolean_expr());
@@ -175,8 +177,14 @@ impl<'a> PreProcessor<'a> {
                 self.if_directive(self.definitions.contains_key(&name.data), start)
             }
             EndIf => {
-                self.nested_ifs.pop();
-                self.next()
+                if self.nested_ifs.pop().is_none() {
+                    Some(Err(CompileError::new(
+                        CppError::UnexpectedEndIf.into(),
+                        self.lexer.span(start),
+                    )))
+                } else {
+                    self.next()
+                }
             }
             _ => unimplemented!("preprocessing directives besides if/ifdef"),
         }
@@ -431,9 +439,12 @@ mod tests {
         whatever, doesn't matter
         #endif";
         assert_eq!(cpp(code).next(), None);
+
         let code = "#ifdef a\n#endif";
         assert_eq!(cpp(code).next(), None);
+
         assert!(cpp("#ifdef").next().unwrap().is_err());
+
         let nested = "#ifdef a
         #ifdef b
         int main() {}
@@ -444,5 +455,7 @@ mod tests {
             cpp(nested).next().unwrap().unwrap().data,
             Token::Keyword(Keyword::Char)
         );
+
+        assert!(cpp("#endif").next().unwrap().is_err());
     }
 }

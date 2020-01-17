@@ -3,10 +3,10 @@ use lazy_static::lazy_static;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
-use super::{Lexer, SingleLocation, Token};
+use super::{Lexer, Token};
 use crate::data::error::CppError;
 use crate::data::lex::{Keyword, Literal};
-use crate::data::prelude::{CompileError, Error, *};
+use crate::data::prelude::*;
 use crate::get_str;
 
 pub struct PreProcessor<'a> {
@@ -93,17 +93,6 @@ impl<'a> PreProcessor<'a> {
     /// `warnings()` again.
     pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
         std::mem::replace(&mut self.error_handler.warnings, Default::default())
-    }
-
-    fn add_location<T>(
-        &self,
-        option: Option<Result<T, CompileError>>,
-        location: Location,
-    ) -> Option<CppResult<T>> {
-        Some(match option? {
-            Ok(data) => Ok(Locatable::new(data, location)),
-            Err(err) => Err(err),
-        })
     }
 
     #[inline]
@@ -220,10 +209,12 @@ impl<'a> PreProcessor<'a> {
             };
         }
         // NOTE: This only returns the first error because anything else requires a refactor
-        let first = tokens.pop().unwrap_or(Err(CompileError::new(
-            CppError::EmptyExpression.into(),
-            self.lexer.span(start),
-        )))?;
+        let first = tokens.pop().unwrap_or_else(|| {
+            Err(CompileError::new(
+                CppError::EmptyExpression.into(),
+                self.lexer.span(start),
+            ))
+        })?;
         let mut parser = crate::Parser::new(first, tokens.into_iter(), self.debug);
         Ok(parser.expr()?.constexpr().unwrap().data.0)
     }

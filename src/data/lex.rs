@@ -288,10 +288,10 @@ impl std::fmt::Display for Keyword {
             | Keyword::Complex
             | Keyword::Imaginary
             | Keyword::Atomic
-            | Keyword::ThreadLocal
-            | Keyword::NoReturn
-            | Keyword::Generic
-            | Keyword::StaticAssert => write!(f, "_{:?}", self),
+            | Keyword::Generic => write!(f, "_{:?}", self),
+            Keyword::NoReturn => write!(f, "_Noreturn"),
+            Keyword::ThreadLocal => write!(f, "_Thread_local"),
+            Keyword::StaticAssert => write!(f, "_Static_assert"),
             Keyword::VaList => write!(f, "va_list"),
             _ => write!(f, "{}", &format!("{:?}", self).to_lowercase()),
         }

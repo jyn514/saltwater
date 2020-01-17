@@ -44,8 +44,7 @@ impl ErrorHandler {
     ///
     /// TODO: Remove this method
     pub(crate) fn warn<W: Into<Warning>>(&mut self, warning: W, location: Location) {
-        self.warnings
-            .push_back(Locatable::new(warning.into(), location));
+        self.warnings.push_back(location.with(warning.into()));
     }
     /// Add an iterator of errors to the error queue
     pub(crate) fn extend<E: Into<CompileError>>(&mut self, iter: impl Iterator<Item = E>) {
@@ -244,14 +243,11 @@ mod tests {
     use super::*;
 
     fn dummy_error() -> CompileError {
-        CompileError::new(
-            Error::Lex(LexError::UnterminatedComment),
-            Default::default(),
-        )
+        Location::default().with(Error::Lex(LexError::UnterminatedComment))
     }
 
     fn new_error(error: Error) -> CompileError {
-        CompileError::new(error, Location::default())
+        Location::default().with(error)
     }
 
     #[test]
@@ -279,7 +275,7 @@ mod tests {
     #[test]
     fn test_compile_error_semantic() {
         assert_eq!(
-            CompileError::semantic(Locatable::new("".to_string(), Location::default())).data,
+            CompileError::semantic(Location::default().with("".to_string())).data,
             Error::Semantic(SemanticError::Generic("".to_string())),
         );
     }
@@ -317,15 +313,12 @@ mod tests {
 
     #[test]
     fn test_compile_error_from_locatable_string() {
-        let _ = CompileError::from(Locatable::new("apples".to_string(), Location::default()));
+        let _ = CompileError::from(Location::default().with("apples".to_string()));
     }
 
     #[test]
     fn test_compile_error_from_syntax_error() {
-        let _ = CompileError::new(
-            SyntaxError::from("oranges".to_string()).into(),
-            Location::default(),
-        );
+        let _ = Location::default().error(SyntaxError::from("oranges".to_string()));
     }
 
     #[test]

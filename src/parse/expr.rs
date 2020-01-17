@@ -99,7 +99,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(Locatable {
                 data: Token::Assignment(a),
                 location,
-            }) => Locatable::new(a, location),
+            }) => location.with(a),
             x => {
                 self.unput(x);
                 return Ok(lval);
@@ -365,16 +365,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     // not sure what type to use here, C11 standard doesn't mention it
                     (left.ctype.clone(), true)
                 } else {
-                    return Err((Locatable::new(
+                    return Err((token.location.with(
                         SemanticError::from(format!(
                             "invalid operators for '{}' (expected either arithmetic types or pointer operation, got '{} {} {}'",
                             token.data,
                             left.ctype,
                             token.data,
                             right.ctype
-                        )),
-                        token.location
-                    ), *left));
+                        ))), *left));
                 };
                 Ok(Expr {
                     ctype,
@@ -405,21 +403,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if token.data == Token::Mod
                     && !(left.ctype.is_integral() && right.ctype.is_integral())
                 {
-                    return Err((Locatable::new(
+                    return Err((token.location.with(
                         SemanticError::from(format!(
                             "expected integers for both operators of %, got '{}' and '{}'",
                             left.ctype, right.ctype
-                        )),
-                        token.location,
-                    ), *left));
+                        ))), *left));
                 } else if !(left.ctype.is_arithmetic() && right.ctype.is_arithmetic()) {
-                    return Err((Locatable::new(
+                    return Err((token.location.with(
                         SemanticError::from(format!(
                             "expected float or integer types for both operands of {}, got '{}' and '{}'",
                             token.data, left.ctype, right.ctype
-                        )),
-                        token.location,
-                    ), *left));
+                        ))), *left));
                 }
                 let (p_left, right) = Expr::binary_promote(*left, *right).map_err(flatten)?;
                 Ok(Expr {
@@ -1419,7 +1413,7 @@ impl Expr {
         token: Locatable<Token>,
     ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         let token = match token.data {
-            Token::Comparison(c) => Locatable::new(c, token.location),
+            Token::Comparison(c) => token.location.with(c),
             _ => unreachable!("bad use of relational_expr"),
         };
         if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {

@@ -561,7 +561,7 @@ impl Eq for Symbol {}
 
 #[cfg(test)]
 mod tests {
-    use crate::{PreProcessor, Parser};
+    use crate::{Parser, PreProcessor};
 
     #[test]
     fn type_display() {

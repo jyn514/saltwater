@@ -209,8 +209,10 @@ impl Expr {
         match literal.data.0 {
             Literal::UnsignedInt(u) => Ok(u),
             Literal::Int(x) => x.try_into().map_err(|_| {
-                // This is disgusting
-                CompileError::semantic(literal.location.with(LengthError::Negative.into()))
+                CompileError::semantic(Locatable::new(
+                    LengthError::Negative.into(),
+                    literal.location,
+                ))
             }),
             Literal::Char(c) => Ok(u64::from(c)),
             x => unreachable!("should have been caught already: {:?}", x),

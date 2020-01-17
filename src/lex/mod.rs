@@ -18,18 +18,6 @@ pub use cpp::PreProcessor;
 /// You may also find the `warn` and `error` functions in `utils.rs` to be useful.
 ///
 /// Lexer implements iterator, so you can loop over the tokens.
-///
-/// Examples:
-///
-/// ```
-/// use rcc::Lexer;
-///
-/// let lexer = Lexer::new("<stdin>".to_string(),
-///                        "int main(void) { char *hello = \"hi\"; }".chars(),
-///                         false);
-/// for token in lexer {
-///     assert!(token.is_ok());
-/// }
 /// ```
 #[derive(Debug)]
 struct Lexer<'a> {

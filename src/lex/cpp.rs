@@ -9,6 +9,17 @@ use crate::data::lex::{Keyword, Literal};
 use crate::data::prelude::*;
 use crate::get_str;
 
+/// Examples:
+///
+/// ```
+/// use rcc::PreProcessor;
+///
+/// let cpp = PreProcessor::new("<stdin>".to_string(),
+///                        "int main(void) { char *hello = \"hi\"; }".chars(),
+///                         false);
+/// for token in cpp {
+///     assert!(token.is_ok());
+/// }
 pub struct PreProcessor<'a> {
     /// The preprocessor collaborates extremely closely with the lexer,
     /// since it sometimes needs to know if a token is followed by whitespace.

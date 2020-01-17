@@ -233,7 +233,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         self.next.as_ref().map(|x| &x.data)
     }
-    fn next_location(&mut self) -> Location {
+    fn next_location(&self) -> Location {
         if let Some(token) = &self.current {
             token.location
         } else {

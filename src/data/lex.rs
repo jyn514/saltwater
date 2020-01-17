@@ -200,6 +200,12 @@ impl<T: PartialEq> PartialEq for Locatable<T> {
 
 impl<T: Eq> Eq for Locatable<T> {}
 
+impl<T> Locatable<T> {
+    pub fn new(data: T, location: Location) -> Locatable<T> {
+        location.with(data)
+    }
+}
+
 impl Token {
     pub const EQUAL: Token = Token::Assignment(AssignmentToken::Equal);
 }

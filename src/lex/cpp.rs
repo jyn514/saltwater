@@ -376,7 +376,6 @@ lazy_static! {
         "goto" => Keyword::Goto,
 
         // types
-        "va_list" => Keyword::VaList,
         "__builtin_va_list" => Keyword::VaList,
         "_Bool" => Keyword::Bool,
         "char" => Keyword::Char,
@@ -440,8 +439,12 @@ mod tests {
     #[test]
     fn keywords() {
         for keyword in KEYWORDS.values() {
-            println!("{}", keyword);
-            assert_keyword(cpp(&keyword.to_string()).next(), *keyword);
+            // va_list is usually a typedef to `__builtin_va_list`
+            // and making it a keyword messes up parsing
+            if *keyword != Keyword::VaList {
+                println!("{}", keyword);
+                assert_keyword(cpp(&keyword.to_string()).next(), *keyword);
+            }
         }
     }
     #[test]

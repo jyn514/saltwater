@@ -170,7 +170,10 @@ pub enum Token {
 
 impl Location {
     pub fn with<T>(self, data: T) -> Locatable<T> {
-        Locatable { data, location: self }
+        Locatable {
+            data,
+            location: self,
+        }
     }
 
     pub fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError {
@@ -196,11 +199,6 @@ impl<T: PartialEq> PartialEq for Locatable<T> {
 }
 
 impl<T: Eq> Eq for Locatable<T> {}
-impl<T> Locatable<T> {
-    pub const fn new(data: T, location: Location) -> Self {
-        Self { data, location }
-    }
-}
 
 impl Token {
     pub const EQUAL: Token = Token::Assignment(AssignmentToken::Equal);

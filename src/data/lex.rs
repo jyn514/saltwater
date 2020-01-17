@@ -167,6 +167,17 @@ pub enum Token {
 }
 
 /* impls */
+
+impl Location {
+    pub fn with<T>(self, data: T) -> Locatable<T> {
+        Locatable { data, location: self }
+    }
+
+    pub fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError {
+        self.with(error.into())
+    }
+}
+
 impl PartialOrd for Location {
     /// NOTE: this only compares the start of the spans, it ignores the end
     fn partial_cmp(&self, other: &Location) -> Option<Ordering> {

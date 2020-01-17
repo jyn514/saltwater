@@ -530,9 +530,7 @@ impl Compiler {
                 unreachable!("struct should not have a valid complex assignment");
             }
             use std::convert::TryInto;
-            let size = ctype
-                .sizeof()
-                .map_err(|e| Locatable::new(e.to_string(), location))?;
+            let size = ctype.sizeof().map_err(|e| location.with(e.to_string()))?;
             let align = ctype
                 .alignof()
                 .expect("if sizeof() succeeds so should alignof()")

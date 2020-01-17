@@ -812,21 +812,21 @@ impl<'a> Iterator for Lexer<'a> {
                     Ok(num) => num,
                     Err(err) => {
                         let span = self.span(span_start);
-                        return Some(Err(Locatable::new(err, span)));
+                        return Some(Err(span.with(err)));
                     }
                 },
                 'a'..='z' | 'A'..='Z' | '_' => match self.parse_id(c) {
                     Ok(id) => id,
                     Err(err) => {
                         let span = self.span(span_start);
-                        return Some(Err(Locatable::new(err, span)));
+                        return Some(Err(span.with(err)));
                     }
                 },
                 '\'' => match self.parse_char() {
                     Ok(id) => id,
                     Err(err) => {
                         let span = self.span(span_start);
-                        return Some(Err(Locatable::new(err, span)));
+                        return Some(Err(span.with(err)));
                     }
                 },
                 '"' => {
@@ -835,7 +835,7 @@ impl<'a> Iterator for Lexer<'a> {
                         Ok(id) => id,
                         Err(err) => {
                             let span = self.span(span_start);
-                            return Some(Err(Locatable::new(err, span)));
+                            return Some(Err(span.with(err)));
                         }
                     }
                 }

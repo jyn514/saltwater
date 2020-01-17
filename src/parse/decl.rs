@@ -118,13 +118,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 )?))
             }
             (Type::Function(_), Some(t)) if *t == Token::EQUAL => {
-                return Err(Locatable::new(
-                    SyntaxError::from(format!(
-                        "expected '{{', got '=' while parsing function body for {}",
-                        symbol.id,
-                    )),
-                    id.location,
-                ));
+                return Err(id.location.with(SyntaxError::from(format!(
+                    "expected '{{', got '=' while parsing function body for {}",
+                    symbol.id,
+                ))));
             }
             (ctype, Some(t)) if *t == Token::EQUAL => {
                 self.next_token();
@@ -357,10 +354,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut seen_compound = false;
         let mut seen_typedef = false;
         if self.peek_token().is_none() {
-            return Err(Locatable::new(
-                SyntaxError::EndOfFile("declaration specifier"),
-                self.last_location,
-            ));
+            return Err(self
+                .last_location
+                .with(SyntaxError::EndOfFile("declaration specifier")));
         }
         // unsigned const int
         while let Some(locatable) = self.next_token() {
@@ -595,7 +591,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let constant = self.constant_expr()?.constexpr().unwrap_or_else(|err| {
                     let location = err.location();
                     self.error_handler.push_back(err);
-                    Locatable::new((Literal::Int(-1), Type::Error), location)
+                    location.with((Literal::Int(-1), Type::Error))
                 });
                 current = match constant.data.0 {
                     Literal::Int(i) => i,
@@ -1123,18 +1119,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             _ if allow_abstract => None,
             Some(x) => {
-                let err = Err(Locatable::new(
-                    SyntaxError::from(format!("expected variable name or '(', got '{}'", x)),
-                    self.next_location(),
-                ));
+                // Construct and store the error so that the mutable borrow of
+                // self through x ends.
+                let error =
+                    SyntaxError::from(format!("expected variable name or '(', got '{}'", x));
+
+                // self can now be immutably borrowed to get the next location.
+                let err = Err(self.next_location().with(error));
                 self.panic();
                 return err;
             }
             None => {
-                return Err(Locatable::new(
-                    SyntaxError::from("expected variable name or '(', got <end-of-of-file>"),
-                    self.next_location(),
-                ));
+                return Err(self.next_location().with(SyntaxError::from(
+                    "expected variable name or '(', got <end-of-of-file>",
+                )));
             }
         };
 
@@ -1556,14 +1554,11 @@ impl Declarator {
                             location: *location,
                             data: InternedStr::get_or_intern("a"),
                         });
-                        pending_errs.push(Locatable::new(
-                            format!(
-                                "array cannot contain function type '{}'. \
-                                 help: try array of pointer to function: (*{}[])()",
-                                current, name
-                            ),
-                            location,
-                        ));
+                        pending_errs.push(location.with(format!(
+                            "array cannot contain function type '{}'. \
+                             help: try array of pointer to function: (*{}[])()",
+                            current, name
+                        )));
                         Type::Array(Box::new(current), arr_type)
                     }
                     _ => Type::Array(Box::new(current), arr_type),

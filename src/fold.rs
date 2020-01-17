@@ -91,9 +91,10 @@ impl Expr {
                 data: (token, folded.ctype),
                 location: folded.location,
             }),
-            _expr => {
-                Err(Locatable::new("not a constant expression".to_string(), folded.location).into())
-            }
+            _expr => Err(folded
+                .location
+                .with("not a constant expression".to_string())
+                .into()),
         }
     }
     pub fn const_fold(self) -> CompileResult<Expr> {

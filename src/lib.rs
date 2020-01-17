@@ -77,7 +77,7 @@ pub fn compile(
         Some(token) => token,
         None => {
             if errs.is_empty() {
-                errs.push_back(CompileError::new(SemanticError::EmptyProgram.into(), eof()));
+                errs.push_back(eof().error(SemanticError::EmptyProgram));
             }
             return (Err(Error::Source(errs)), lexer.warnings());
         }
@@ -87,7 +87,7 @@ pub fn compile(
     let (hir, parse_errors) = parser.collect_results();
     errs.extend(parse_errors.into_iter());
     if hir.is_empty() && errs.is_empty() {
-        errs.push_back(CompileError::new(SemanticError::EmptyProgram.into(), eof()));
+        errs.push_back(eof().error(SemanticError::EmptyProgram));
     }
 
     let mut warnings = parser.warnings();

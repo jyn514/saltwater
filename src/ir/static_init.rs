@@ -232,9 +232,7 @@ impl Compiler {
                         let size_host: usize = member
                             .ctype
                             .sizeof()
-                            .map_err(|err| {
-                                CompileError::semantic(Locatable::new(err.into(), *location))
-                            })?
+                            .map_err(|err| CompileError::semantic(location.with(err.to_string())))?
                             .try_into()
                             .expect("cannot initialize struct larger than u32");
                         let size: u32 = size_host

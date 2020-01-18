@@ -158,10 +158,9 @@ impl Expr {
                         if overflowed {
                             Err(SemanticError::ConstOverflow {
                                 // Negative value means a positive overflow and vice versa
-
-                                // 32 bit integers don't negetive overflow properly+
-                                is_positive: value.is_negative()
-                            }.into())
+                                is_positive: value.is_negative(),
+                            }
+                            .into())
                         } else {
                             Ok(Some(Int(value)))
                         }
@@ -183,7 +182,18 @@ impl Expr {
                 *right,
                 &location,
                 |a, b, ctype| match (a, b) {
-                    (Int(a), Int(b)) => Ok(Some(Int(a - b))),
+                    (Int(a), Int(b)) => {
+                        let (value, overflowed) = a.overflowing_sub(*b);
+
+                        if overflowed {
+                            Err(SemanticError::ConstOverflow {
+                                is_positive: value.is_negative(),
+                            }
+                            .into())
+                        } else {
+                            Ok(Some(Int(value)))
+                        }
+                    }
                     (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a.wrapping_sub(*b)))),
                     #[allow(clippy::float_cmp)]
                     (Float(a), Float(b)) => Ok(Some(Float(a - b))),
@@ -198,9 +208,35 @@ impl Expr {
                 },
                 ExprType::Sub,
             )?,
-            ExprType::Mul(left, right) => {
-                left.literal_bin_op(*right, &location, fold_scalar_bin_op!(*), ExprType::Mul)?
-            }
+            ExprType::Mul(left, right) => left.literal_bin_op(
+                *right,
+                &location,
+                |a, b, ctype| match (a, b) {
+                    (Int(a), Int(b)) => {
+                        let (value, overflowed) = a.overflowing_mul(*b);
+
+                        if overflowed {
+                            Err(SemanticError::ConstOverflow {
+                                is_positive: value.is_negative(),
+                            }
+                            .into())
+                        } else {
+                            Ok(Some(Int(value)))
+                        }
+                    }
+                    (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a.wrapping_mul(*b)))),
+                    (Float(a), Float(b)) => Ok(Some(Float(a * b))),
+                    (Char(a), Char(b)) => {
+                        if ctype.is_signed() {
+                            Ok(Some(Char(a * b)))
+                        } else {
+                            Ok(Some(Char(a.wrapping_mul(*b))))
+                        }
+                    }
+                    (_, _) => Ok(None),
+                },
+                ExprType::Mul,
+            )?,
             ExprType::Div(left, right) => {
                 let right = right.const_fold()?;
                 if right.is_zero() {

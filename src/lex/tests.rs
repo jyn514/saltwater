@@ -270,27 +270,3 @@ fn test_for_loop() {
     .into_iter()
     .all(|x| x.is_ok()))
 }
-    #[test]
-fn keywords() {
-    fn assert_keyword(
-        token: Option<Result<Locatable<Token>, CompileError>>,
-        expected: Keyword,
-    ) {
-        match token {
-            Some(Ok(Locatable {
-                data: Token::Keyword(actual),
-                ..
-            })) => assert_eq!(actual, expected),
-            Some(Ok(t)) => panic!("not a keyword: {}", t.data),
-            Some(Err(err)) => panic!("not a keyword: {}", err.data),
-            None => unreachable!(),
-        }
-    }
-    for keyword in KEYWORDS.values() {
-        // this one is still up in the air
-        if *keyword != Keyword::VaList {
-            assert_keyword(lex(&keyword.to_string()), *keyword);
-        }
-    }
-}
-

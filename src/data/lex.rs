@@ -403,8 +403,8 @@ impl From<ComparisonToken> for Token {
 #[cfg(test)]
 mod test {
     use crate::*;
-    fn lexer(s: &str) -> Lexer {
-        Lexer::new("<integration-test>", s.chars(), false)
+    fn cpp(s: &str) -> PreProcessor {
+        PreProcessor::new("<integration-test>", s.chars(), false)
     }
     #[test]
     fn assignment_display() {
@@ -412,7 +412,7 @@ mod test {
             "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", ">>=", "<<=", "^=",
         ];
         for token in &tokens {
-            let mut lexer = lexer(token);
+            let mut lexer = cpp(token);
             let first = lexer.next().unwrap().unwrap().data;
             assert_eq!(&first.to_string(), *token);
         }

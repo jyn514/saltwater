@@ -369,7 +369,6 @@ impl<'a> Lexer<'a> {
     }
     // should only be called at the end of a number. mostly error handling
     fn parse_exponent(&mut self, hex: bool, mut buf: String) -> Result<f64, String> {
-        use std::error::Error;
         let is_digit =
             |c: Option<char>| c.map_or(false, |c| c.is_digit(10) || c == '+' || c == '-');
         if hex {
@@ -395,7 +394,7 @@ impl<'a> Lexer<'a> {
             self.next_char();
         }
         let float = if hex {
-            hexf_parse::parse_hexf64(&buf, false).map_err(|err| err.description().into())
+            hexf_parse::parse_hexf64(&buf, false).map_err(|err| err.to_string())
         } else {
             buf.parse()
                 .map_err(|err: std::num::ParseFloatError| err.to_string())

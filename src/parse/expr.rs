@@ -69,7 +69,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     pub fn constant_expr(&mut self) -> SyntaxResult {
         let expr = self.conditional_expr()?;
         if !expr.constexpr {
-            self.semantic_err("not a constant expression".to_string(), expr.location)
+            self.error_handler.push_back(
+                expr.location
+                    .error(SemanticError::NotConstant(expr.clone())),
+            );
         }
         Ok(expr)
     }

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use thiserror::Error;
 
-use super::{Locatable, Location};
+use super::{Expr, Locatable, Location};
 
 /// RecoverableResult is a type that represents a Result that can be recovered from.
 ///
@@ -82,7 +82,10 @@ pub enum SemanticError {
     EmptyProgram,
 
     #[error("overflow in expresson: {0}")]
-    ConstOverflow(super::Expr),
+    ConstOverflow(Expr),
+
+    #[error("not a constant expression: {0}")]
+    NotConstant(Expr),
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

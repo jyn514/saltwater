@@ -1120,7 +1120,8 @@ impl Expr {
                 _ => panic!("only pointers can be dereferenced"),
             },
             ExprType::Member(_, _) => true,
-            _ => unimplemented!("what's an lval but not a pointer or id?"),
+            ExprType::Noop(inner) => inner.is_modifiable_lval(),
+            _ => unimplemented!("what's an lval but not a pointer or id? {}", self),
         }
     }
     // ensure an expression has a value. convert

@@ -1304,6 +1304,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 location,
             );
         }
+        let existing = self.current_function.take();
         // add parameters to scope
         self.enter_scope();
         let len = ftype.params.len();
@@ -1342,7 +1343,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ),
             Err(e) => Err(e),
         };
-        self.current_function = None;
+        self.current_function = existing;
         self.leave_scope(self.last_location);
         body
     }

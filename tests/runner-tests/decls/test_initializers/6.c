@@ -1,3 +1,4 @@
+// ignore: https://github.com/lifthrasiir/hexf/issues/6
 // output: index.html
 int puts(const char *s);
 

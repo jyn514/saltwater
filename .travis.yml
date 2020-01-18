@@ -1,6 +1,7 @@
 language: rust
 
 jobs:
+    fast_finish: true
     include:
         - rust: stable
           install:

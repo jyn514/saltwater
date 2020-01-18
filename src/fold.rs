@@ -242,9 +242,39 @@ impl Expr {
                 if right.is_zero() {
                     return Err(location.error(SemanticError::DivideByZero));
                 }
-                left.literal_bin_op(right, &location, fold_scalar_bin_op!(/), ExprType::Div)?
-            }
+                left.literal_bin_op(
+                    right,
+                    &location,
+                    |a, b, ctype| match (a, b) {
+                        (Int(a), Int(b)) => {
+                            let (value, overflowed) = a.overflowing_div(*b);
 
+                            if overflowed {
+                                Err(SemanticError::ConstOverflow {
+                                    // Negative value means a positive overflow and vice versa
+                                    is_positive: value.is_negative(),
+                                }
+                                .into())
+                            } else {
+                                Ok(Some(Int(value)))
+                            }
+                        }
+                        (UnsignedInt(a), UnsignedInt(b)) => {
+                            Ok(Some(UnsignedInt(a.wrapping_div(*b))))
+                        }
+                        (Float(a), Float(b)) => Ok(Some(Float(a / b))),
+                        (Char(a), Char(b)) => {
+                            if ctype.is_signed() {
+                                Ok(Some(Char(a / b)))
+                            } else {
+                                Ok(Some(Char(a.wrapping_div(*b))))
+                            }
+                        }
+                        (_, _) => Ok(None),
+                    },
+                    ExprType::Div,
+                )?
+            }
             ExprType::Mod(left, right) => {
                 let right = right.const_fold()?;
                 if right.is_zero() {

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use thiserror::Error;
 
-use super::{lex::Token, Locatable, Location};
+use super::{lex::Token, Expr, Locatable, Location};
 
 /// RecoverableResult is a type that represents a Result that can be recovered from.
 ///

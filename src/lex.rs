@@ -861,9 +861,7 @@ impl<'a> Iterator for Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        CompileError, CompileResult, Error, LexError, Lexer, Literal, Locatable, Location, Token,
-    };
+    use super::*;
     use crate::intern::InternedStr;
 
     type LexType = CompileResult<Locatable<Token>>;
@@ -1158,5 +1156,28 @@ mod tests {
         assert_eq!(lex("12").unwrap().unwrap().location.span, (0..2).into());
         let span = lex_all("12 abc")[1].as_ref().unwrap().location.span;
         assert_eq!(span, (3..6).into());
+    }
+    #[test]
+    fn keywords() {
+        fn assert_keyword(
+            token: Option<Result<Locatable<Token>, CompileError>>,
+            expected: Keyword,
+        ) {
+            match token {
+                Some(Ok(Locatable {
+                    data: Token::Keyword(actual),
+                    ..
+                })) => assert_eq!(actual, expected),
+                Some(Ok(t)) => panic!("not a keyword: {}", t.data),
+                Some(Err(err)) => panic!("not a keyword: {}", err.data),
+                None => unreachable!(),
+            }
+        }
+        for keyword in KEYWORDS.values() {
+            // this one is still up in the air
+            if *keyword != Keyword::VaList {
+                assert_keyword(lex(&keyword.to_string()), *keyword);
+            }
+        }
     }
 }

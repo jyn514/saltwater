@@ -91,9 +91,9 @@ impl Expr {
                 data: (token, folded.ctype),
                 location: folded.location,
             }),
-            _expr => Err(folded
+            _ => Err(folded
                 .location
-                .with("not a constant expression".to_string())
+                .error(SemanticError::NotConstant(folded))
                 .into()),
         }
     }

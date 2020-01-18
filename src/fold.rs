@@ -91,10 +91,7 @@ impl Expr {
                 data: (token, folded.ctype),
                 location: folded.location,
             }),
-            _ => Err(folded
-                .location
-                .error(SemanticError::NotConstant(folded))
-                .into()),
+            _ => Err(folded.location.error(SemanticError::NotConstant(folded))),
         }
     }
     pub fn const_fold(self) -> CompileResult<Expr> {

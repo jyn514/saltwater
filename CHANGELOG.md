@@ -5,6 +5,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2020-01-18
+
+### Added
+
+- Add spans and pretty-printing for errors. Now you actually know where the error is coming from!
+- `impl PartialOrd for Location`
+
+### Changed
+
+- The `Parser::new()` API is now simpler and yet harder to use. The `Lexer::first_token()` API has been added to make up for it.
+- Redo errors again, hopefully for the last time
+- Updated to Cranelift 0.54
+
+### Fixed
+
+- Fix stack overflow when printing an error with a '='
+- Fix several ICEs on invalid inputs thanks to `cargo fuzz`
+- Fix deadlock in single-threaded process. This is exactly as bad as it sounds, see https://github.com/jyn514/rcc/commit/2b6bc7e349b6c880325d65cea6097d7f6876ed2f for details.
+- Fix incorrect printing for keywords
+
+### Removed
+
+- Removed unnecessary dependency on `hexf`; now we only use `hexf_parse`
+
 ## [0.3.0] - 2020-01-10
 
 ### Changed

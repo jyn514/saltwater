@@ -36,10 +36,11 @@ jobs:
           # sometimes rustfmt changes its mind about formatting between releases
           script: cargo test
 
-    allow_failures:
         - rust: nightly
           # afl needs nightly
           script:
             - cargo test
           after_success:
             - tests/fuzz.sh
+    allow_failures:
+        - rust: nightly

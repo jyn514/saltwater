@@ -208,7 +208,7 @@ impl Expr {
             ExprType::Mod(left, right) => {
                 let right = right.const_fold()?;
                 if right.is_zero() {
-                    semantic_err!("cannot take remainder of division by zero".into(), location,);
+                    return Err(location.error(SemanticError::DivideByZero));
                 }
                 left.literal_bin_op(
                     right,

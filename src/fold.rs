@@ -641,4 +641,24 @@ mod tests {
             SemanticError::ConstOverflow { is_positive: true }.into()
         );
     }
+
+    #[test]
+    fn test_modulo() {
+        assert_eq!(
+            test_const_fold("5 % 3").unwrap().expr,
+            parse_expr("2").unwrap().expr
+        );
+        assert_eq!(
+            test_const_fold("-7 % 2").unwrap().expr,
+            test_const_fold("-1").unwrap().expr
+        );
+        assert_eq!(
+            test_const_fold("1%0").unwrap_err().data,
+            SemanticError::DivideByZero.into()
+        );
+        assert_eq!(
+            test_const_fold("(-0x7fffffffffffffffL - 1) % -1").unwrap_err().data,
+            SemanticError::ConstOverflow { is_positive: false }.into()
+        );
+    }
 }

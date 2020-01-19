@@ -1122,20 +1122,24 @@ impl Expr {
     /// does not  have an incomplete type, does not have a const-qualified type,
     /// and if it is a structure or union, does not have any member with a const-qualified type"
     fn is_modifiable_lval(&self) -> bool {
-        if !self.lval {
+        // rval or incomplete type
+        if !self.lval || !self.ctype.is_complete() {
             return false;
         }
-        match &self.expr {
-            // p = 5;
-            ExprType::Id(sym) => !sym.qualifiers.c_const,
-            // *p = 1;
-            ExprType::Deref(_) => match &self.ctype {
-                Type::Pointer(_) => true,
-                _ => panic!("only pointers can be dereferenced"),
-            },
-            ExprType::Member(_, _) => true,
-            ExprType::Noop(inner) => inner.is_modifiable_lval(),
-            _ => unimplemented!("what's an lval but not a pointer or id? {}", self),
+        // const-qualified type
+        if let ExprType::Id(sym) = &self.expr {
+            if sym.qualifiers.c_const {
+                return false;
+            }
+        }
+        match &self.ctype {
+            // array type
+            Type::Array(_, _) => false,
+            // member with const-qualified type
+            Type::Struct(stype) | Type::Union(stype) => {
+                !stype.members().iter().map(|sym| sym.qualifiers.c_const).any(|x| x)
+            }
+            _ => true,
         }
     }
     // ensure an expression has a value. convert

@@ -517,10 +517,6 @@ impl Compiler {
     ) -> IrResult {
         let ctype = lval.ctype.clone();
         let location = lval.location;
-        let is_id = match lval.expr {
-            ExprType::Id(_) => true,
-            _ => false,
-        };
         let (target, value) = (
             self.compile_expr(lval, builder)?,
             self.compile_expr(rval, builder)?,
@@ -548,23 +544,17 @@ impl Compiler {
         }
         // scalar assignment
         let target_val = target.ir_val;
-        let (mut target, mut value) = (target, value);
+        let mut value = value;
         if token != AssignmentToken::Equal {
             // need to deref explicitly to get an rval, the frontend didn't do it for us
-            if is_id {
-                let ctype = match target.ctype {
-                    Type::Pointer(t) => *t,
-                    _ => unreachable!("parser should only allow lvals to be assigned"),
-                };
-                let ir_type = ctype.as_ir_type();
-                target = Value {
-                    ir_val: builder
-                        .ins()
-                        .load(ir_type, MemFlags::new(), target.ir_val, 0),
-                    ir_type,
-                    ctype,
-                };
-            }
+            let ir_type = ctype.as_ir_type();
+            let target = Value {
+                ir_val: builder
+                    .ins()
+                    .load(ir_type, MemFlags::new(), target.ir_val, 0),
+                ir_type,
+                ctype: ctype.clone(),
+            };
             if value.ir_type != target.ir_type {
                 unimplemented!(
                     "binary promotion for complex assignment ({} -> {})",

@@ -1649,11 +1649,11 @@ impl Type {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::data::{prelude::*, types, Scope, StorageClass};
     use crate::intern::InternedStr;
     use crate::parse::tests::*;
-    fn parse_expr(input: &str) -> CompileResult<Expr> {
+    pub(crate) fn parse_expr(input: &str) -> CompileResult<Expr> {
         // because we're a child module of parse, we can skip straight to `expr()`
         let mut p = parser(input);
         let exp = p.expr();

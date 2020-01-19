@@ -354,10 +354,12 @@ impl Token {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::Parser;
     use crate::data::prelude::*;
     use crate::lex::Lexer;
+
+    pub(crate) use super::expr::tests::parse_expr;
 
     pub(crate) type ParseType = CompileResult<Locatable<Declaration>>;
     pub(crate) fn parse(input: &str) -> Option<ParseType> {

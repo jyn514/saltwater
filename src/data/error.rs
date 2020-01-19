@@ -87,6 +87,9 @@ pub enum SemanticError {
     #[error("not a constant expression: {0}")]
     NotConstant(Expr),
 
+    #[error("cannot take address of {0}")]
+    InvalidAddressOf(&'static str),
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

@@ -564,6 +564,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 })
             }
             Some(op) if op.is_unary_operator() => {
+                use crate::data::StorageClass;
                 let Locatable { location, data: op } = self.next_token().unwrap();
                 let expr = self.cast_expr()?;
                 match op {
@@ -571,6 +572,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Token::Ampersand => match expr.expr {
                         // parse &*p as p
                         ExprType::Deref(inner) => Ok(*inner),
+                        ExprType::Id(ref sym) if sym.storage_class == StorageClass::Register => {
+                            self.error_handler.push_back(location.error(
+                                SemanticError::InvalidAddressOf(
+                                    "variable declared with `register`",
+                                ),
+                            ));
+                            Ok(expr)
+                        }
                         _ if expr.lval => Ok(Expr {
                             constexpr: false,
                             lval: false,
@@ -579,7 +588,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             expr: expr.expr,
                         }),
                         _ => {
-                            self.semantic_err("cannot take address of a value", location);
+                            self.error_handler.push_back(
+                                location.error(SemanticError::InvalidAddressOf("value")),
+                            );
                             Ok(expr)
                         }
                     },

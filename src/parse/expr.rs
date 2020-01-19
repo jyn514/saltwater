@@ -109,7 +109,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         };
         let mut rval = self.assignment_expr()?.rval();
-        if !lval.lval {
+        if !lval.is_modifiable_lval() {
             self.semantic_err(
                 "expression is not assignable".to_string(),
                 assign_op.location,
@@ -1136,9 +1136,11 @@ impl Expr {
             // array type
             Type::Array(_, _) => false,
             // member with const-qualified type
-            Type::Struct(stype) | Type::Union(stype) => {
-                !stype.members().iter().map(|sym| sym.qualifiers.c_const).any(|x| x)
-            }
+            Type::Struct(stype) | Type::Union(stype) => !stype
+                .members()
+                .iter()
+                .map(|sym| sym.qualifiers.c_const)
+                .any(|x| x),
             _ => true,
         }
     }

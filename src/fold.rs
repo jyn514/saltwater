@@ -216,16 +216,19 @@ impl Expr {
                     |a: &Literal, b: &Literal, _| match (a, b) {
                         (Int(a), Int(b)) => {
                             let (value, overflowed) = a.overflowing_rem(*b);
-                            
+
                             if overflowed {
                                 Err(SemanticError::ConstOverflow {
-                                    is_positive: value.is_negative()
-                                }.into())
+                                    is_positive: value.is_negative(),
+                                }
+                                .into())
                             } else {
                                 Ok(Some(Int(value)))
                             }
-                        },
-                        (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a % b))),
+                        }
+                        (UnsignedInt(a), UnsignedInt(b)) => {
+                            Ok(Some(UnsignedInt(a.wrapping_rem(*b))))
+                        }
                         (Char(a), Char(b)) => Ok(Some(Char(a % b))),
                         (_, _) => Ok(None),
                     },

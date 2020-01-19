@@ -109,11 +109,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
         };
         let mut rval = self.assignment_expr()?.rval();
-        if !lval.is_modifiable_lval() {
-            self.semantic_err(
-                "expression is not assignable".to_string(),
-                assign_op.location,
-            );
+        if let Err(err) = lval.modifiable_lval() {
+            self.error_handler.push_back(assign_op.location.error(err));
             Ok(lval)
         } else {
             if rval.ctype != lval.ctype {
@@ -1121,27 +1118,39 @@ impl Expr {
     /// "A modifiable lvalue is an lvalue that does not have array type,
     /// does not  have an incomplete type, does not have a const-qualified type,
     /// and if it is a structure or union, does not have any member with a const-qualified type"
-    fn is_modifiable_lval(&self) -> bool {
-        // rval or incomplete type
-        if !self.lval || !self.ctype.is_complete() {
-            return false;
+    fn modifiable_lval(&self) -> Result<(), SemanticError> {
+        let err = |e| Err(SemanticError::NotAssignable(e));
+        // rval
+        if !self.lval {
+            return err("rvalue".to_string());
+        }
+        // incomplete type
+        if !self.ctype.is_complete() {
+            return err(format!("expression with incomplete type '{}'", self.ctype));
         }
         // const-qualified type
         if let ExprType::Id(sym) = &self.expr {
             if sym.qualifiers.c_const {
-                return false;
+                return err(format!("variable '{}' with `const` qualifier", sym.id));
             }
         }
         match &self.ctype {
             // array type
-            Type::Array(_, _) => false,
+            Type::Array(_, _) => err("array".to_string()),
             // member with const-qualified type
-            Type::Struct(stype) | Type::Union(stype) => !stype
-                .members()
-                .iter()
-                .map(|sym| sym.qualifiers.c_const)
-                .any(|x| x),
-            _ => true,
+            Type::Struct(stype) | Type::Union(stype) => {
+                if stype
+                    .members()
+                    .iter()
+                    .map(|sym| sym.qualifiers.c_const)
+                    .any(|x| x)
+                {
+                    err("struct or union with `const` qualified member".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Ok(()),
         }
     }
     // ensure an expression has a value. convert
@@ -1353,15 +1362,8 @@ impl Expr {
         expr: Expr,
         location: Location,
     ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
-        if !expr.is_modifiable_lval() {
-            return Err((
-                Locatable {
-                    location: expr.location,
-                    data: "expression is not assignable".to_string(),
-                }
-                .into(),
-                expr,
-            ));
+        if let Err(err) = expr.modifiable_lval() {
+            return Err((expr.location.with(err), expr));
         } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
             return Err((
                 Locatable {

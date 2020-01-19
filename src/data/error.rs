@@ -87,6 +87,10 @@ pub enum SemanticError {
     #[error("not a constant expression: {0}")]
     NotConstant(Expr),
 
+    // String is the reason it couldn't be assigned
+    #[error("cannot assign to {0}")]
+    NotAssignable(String),
+
     #[error("cannot take address of {0}")]
     InvalidAddressOf(&'static str),
 

@@ -490,5 +490,8 @@ mod tests {
         );
 
         assert!(cpp("#endif").next().unwrap().is_err());
+
+        let same_line = "#ifdef a #endif\nint main() {}";
+        assert!(cpp(same_line).next().unwrap().is_err());
     }
 }

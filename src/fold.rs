@@ -6,10 +6,10 @@ use Literal::*;
 macro_rules! fold_int_unary_op {
     ($($op: tt)*) => {
         |token| match token {
-            Int(i) => Int($($op)*(i)),
-            UnsignedInt(u) => UnsignedInt($($op)*(u)),
-            Char(c) => Char($($op)*(c)),
-            _ => token,
+            Int(i) => Ok(Int($($op)*(i))),
+            UnsignedInt(u) => Ok(UnsignedInt($($op)*(u))),
+            Char(c) => Ok(Char($($op)*(c))),
+            _ => Ok(token),
         }
     };
 }
@@ -126,19 +126,32 @@ impl Expr {
                 ExprType::Literal(UnsignedInt(sizeof))
             }
             ExprType::Negate(expr) => expr.const_fold()?.map_literal(
+                &location,
                 |token| match token {
-                    Int(i) => Int(-i),
-                    UnsignedInt(u) => UnsignedInt(0u64.wrapping_sub(u)),
-                    Char(c) => Char(0u8.wrapping_sub(c)),
-                    Float(f) => Float(-f),
-                    _ => token,
+                    Int(i) => {
+                        let (value, overflowed) = i.overflowing_neg();
+                        if overflowed {
+                            Err(SemanticError::ConstOverflow {
+                                is_positive: value.is_negative(),
+                            }
+                            .into())
+                        } else {
+                            Ok(Int(value))
+                        }
+                    }
+                    UnsignedInt(u) => Ok(UnsignedInt(u.wrapping_neg())),
+                    Char(c) => Ok(Char(c.wrapping_neg())),
+                    Float(f) => Ok(Float(-f)),
+                    _ => Ok(token),
                 },
                 ExprType::Negate,
-            ),
+            )?,
             ExprType::LogicalNot(expr) => lnot_fold(expr.const_fold()?),
-            ExprType::BitwiseNot(expr) => expr
-                .const_fold()?
-                .map_literal(fold_int_unary_op!(!), ExprType::BitwiseNot),
+            ExprType::BitwiseNot(expr) => expr.const_fold()?.map_literal(
+                &location,
+                fold_int_unary_op!(!),
+                ExprType::BitwiseNot,
+            )?,
             ExprType::Comma(left, right) => {
                 let (left, right) = (left.const_fold()?, right.const_fold()?);
                 // check if we can ignore left or it has side effects
@@ -372,14 +385,22 @@ impl Expr {
         };
         Ok(literal.unwrap_or_else(|| constructor(Box::new(left), Box::new(right))))
     }
-    fn map_literal<F, C>(self, literal_func: F, constructor: C) -> ExprType
+    fn map_literal<F, C>(
+        self,
+        location: &Location,
+        literal_func: F,
+        constructor: C,
+    ) -> CompileResult<ExprType>
     where
-        F: FnOnce(Literal) -> Literal,
+        F: FnOnce(Literal) -> Result<Literal, Error>,
         C: FnOnce(Box<Expr>) -> ExprType,
     {
         match self.expr {
-            ExprType::Literal(token) => ExprType::Literal(literal_func(token)),
-            _ => constructor(Box::new(self)),
+            ExprType::Literal(token) => match literal_func(token) {
+                Ok(literal) => Ok(ExprType::Literal(literal)),
+                Err(error) => Err(location.error(error)),
+            },
+            _ => Ok(constructor(Box::new(self))),
         }
     }
 }
@@ -658,6 +679,21 @@ mod tests {
                 .unwrap_err()
                 .data,
             SemanticError::ConstOverflow { is_positive: false }.into()
+        );
+    }
+
+    #[test]
+    fn test_negation() {
+        assert_eq!(
+            test_const_fold("-0").unwrap().expr,
+            parse_expr("0").unwrap().expr
+        );
+
+        assert_eq!(
+            test_const_fold("-(-0x7fffffffffffffffL - 1L)")
+                .unwrap_err()
+                .data,
+            SemanticError::ConstOverflow { is_positive: true }.into()
         );
     }
 }

@@ -210,7 +210,27 @@ impl Expr {
                 if right.is_zero() {
                     semantic_err!("cannot take remainder of division by zero".into(), location,);
                 }
-                left.literal_bin_op(right, &location, fold_int_bin_op!(%), ExprType::Mod)?
+                left.literal_bin_op(
+                    right,
+                    &location,
+                    |a: &Literal, b: &Literal, _| match (a, b) {
+                        (Int(a), Int(b)) => {
+                            let (value, overflowed) = a.overflowing_rem(*b);
+                            
+                            if overflowed {
+                                Err(SemanticError::ConstOverflow {
+                                    is_positive: value.is_negative()
+                                }.into())
+                            } else {
+                                Ok(Some(Int(value)))
+                            }
+                        },
+                        (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a % b))),
+                        (Char(a), Char(b)) => Ok(Some(Char(a % b))),
+                        (_, _) => Ok(None),
+                    },
+                    ExprType::Mod,
+                )?
             }
             ExprType::Xor(left, right) => {
                 left.literal_bin_op(*right, &location, fold_int_bin_op!(^), ExprType::Xor)?

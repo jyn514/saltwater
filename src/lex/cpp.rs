@@ -133,6 +133,23 @@ impl<'a> PreProcessor<'a> {
         std::mem::replace(&mut self.error_handler.warnings, Default::default())
     }
 
+    /* internal functions */
+    fn tokens_until_newline(&mut self) -> impl Iterator<Item = CompileResult<Locatable<Token>>> {
+        let mut tokens = Vec::new();
+        let line = self.lexer.line;
+        loop {
+            self.lexer.consume_whitespace();
+            if self.lexer.line != line {
+                break;
+            }
+            match self.lexer.next() {
+                Some(token) => tokens.push(token),
+                None => break,
+            }
+        }
+        tokens.into_iter()
+    }
+
     #[inline]
     fn replace_keywords(token: &mut Token) {
         if let Token::Id(name) = token {
@@ -238,38 +255,22 @@ impl<'a> PreProcessor<'a> {
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn cpp_expr(&mut self) -> Result<Expr, CompileError> {
-        let mut tokens = vec![];
-        let (line, start) = (self.lexer.line, self.lexer.location.offset);
-        loop {
-            self.lexer.consume_whitespace();
-            if self.lexer.line != line {
-                break;
-            }
-            match self.lexer.next() {
-                Some(Ok(
-                    token @ Locatable {
-                        data: Token::Id(_), ..
-                    },
-                )) => {
-                    tokens.push(Ok(token.map(|_| Token::Literal(Literal::Int(0)))));
-                }
-                Some(token) => tokens.push(token),
-                None => {
-                    return Err(CompileError::new(
-                        CppError::UnterminatedDirective("#if").into(),
-                        self.lexer.span(start),
-                    ))
-                }
-            };
-        }
+        let start = self.lexer.location.offset;
+        let mut line_tokens = self.tokens_until_newline().map(|result| match result {
+            Ok(Locatable {
+                data: Token::Id(_),
+                location,
+            }) => Ok(location.with(Token::Literal(Literal::Int(0)))),
+            _ => result,
+        });
         // NOTE: This only returns the first error because anything else requires a refactor
-        let first = tokens.pop().unwrap_or_else(|| {
+        let first = line_tokens.next().unwrap_or_else(|| {
             Err(CompileError::new(
                 CppError::EmptyExpression.into(),
                 self.lexer.span(start),
             ))
         })?;
-        let mut parser = crate::Parser::new(first, tokens.into_iter(), self.debug);
+        let mut parser = crate::Parser::new(first, line_tokens, self.debug);
         // TODO: catch expressions that aren't allowed
         // (see https://github.com/jyn514/rcc/issues/5#issuecomment-575339427)
         // TODO: can semantic errors happen here? should we check?

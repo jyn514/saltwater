@@ -343,13 +343,10 @@ impl Expr {
         })
     }
     ///
-    ///
-    ///
     /// fold_func return values:
     /// `Ok(Some(_))`: Successfuly folded
     /// `Ok(None)`: Non-folable expression
     /// `Err(_)`: Error while folding
-    ///
     fn literal_bin_op<F, C>(
         self,
         other: Expr,
@@ -657,7 +654,9 @@ mod tests {
             SemanticError::DivideByZero.into()
         );
         assert_eq!(
-            test_const_fold("(-0x7fffffffffffffffL - 1) % -1").unwrap_err().data,
+            test_const_fold("(-0x7fffffffffffffffL - 1) % -1")
+                .unwrap_err()
+                .data,
             SemanticError::ConstOverflow { is_positive: false }.into()
         );
     }

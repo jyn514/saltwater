@@ -9,6 +9,27 @@ use crate::data::lex::{Keyword, Literal};
 use crate::data::prelude::*;
 use crate::get_str;
 
+/// A preprocessor does textual substitution and deletion on a C source file.
+///
+/// The C preprocessor, or `cpp`, is tightly tied to C tokenization.
+/// Rules for tokenizing identifiers, operators, and literals are all the same,
+/// so you can't use it to preprocess e.g. Haskell, where `a'` is a valid identifier.
+///
+/// The preprocessor is further tied to the lexer because it is whitespace dependent:
+/// `#define a() b` is _not_ the same as `#define a () b`.
+/// The first is a function-like macro; the second is an object-like macro.
+///
+/// The preprocessor has no concept of scope: everything is either defined or not defined.
+/// Variables can only be defined as strings, or more accurately, token sequences.
+///
+/// It is possible to tell the difference between an undefined variable
+/// and a variable defined to be empty using
+/// `#if defined(var)` (not currently implemented) and `#if var`.
+///
+/// Currently, the only implemented directives are `#if`, `#ifdef`, and `#endif`.
+/// Since `#define` is not implemented, `#ifdef var` is currently exactly the same
+/// as `#if 0`.
+///
 /// Examples:
 ///
 /// ```

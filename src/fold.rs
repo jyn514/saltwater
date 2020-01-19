@@ -1,3 +1,4 @@
+use std::ops;
 use crate::arch::CHAR_BIT;
 use crate::data::prelude::*;
 use Literal::*;
@@ -24,16 +25,27 @@ macro_rules! fold_int_bin_op {
     }
 }
 
-macro_rules! fold_scalar_bin_op {
-    ($op: tt) => {
-        |a: &Literal, b: &Literal, _| match (a, b) {
-            (Int(a), Int(b)) => Ok(Some(Int(a $op b))),
-            (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a $op b))),
-            (Float(a), Float(b)) => Ok(Some(Float(a $op b))),
-            (Char(a), Char(b)) => Ok(Some(Char(a $op b))),
-            // TODO: find a way to do this that allows `"hello" + 2 - 1`
-            //(Str(s), Int(i)) | (Int(i), Str(s)) => {
-            (_, _) => Ok(None),
+#[inline]
+fn fold_scalar_bin_op(
+    simple: fn(f64, f64) -> f64,
+    overflowing: fn(i64, i64) -> (i64, bool),
+    wrapping: fn(u64, u64) -> u64,
+) -> impl Fn(&Literal, &Literal, &Type) -> Result<Option<Literal>, Error> {
+    move |a: &Literal, b: &Literal, _ctype| {
+        match (a, b) {
+            (Int(a), Int(b)) => {
+                let (value, overflowed) = overflowing(*a, *b);
+                if overflowed {
+                    Err(SemanticError::ConstOverflow {
+                        is_positive: value.is_negative()
+                    }.into())
+                } else {
+                    Ok(Some(Int(value)))
+                }
+            },
+            (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(wrapping(*a, *b)))),
+            (Float(a), Float(b)) => Ok(Some(Float(simple(*a, *b)))),
+            (_, _) => Ok(None)
         }
     }
 }
@@ -151,90 +163,19 @@ impl Expr {
             ExprType::Add(left, right) => left.literal_bin_op(
                 *right,
                 &location,
-                |a, b, ctype| match (a, b) {
-                    (Int(a), Int(b)) => {
-                        let (value, overflowed) = a.overflowing_add(*b);
-
-                        if overflowed {
-                            Err(SemanticError::ConstOverflow {
-                                // Negative value means a positive overflow and vice versa
-                                is_positive: value.is_negative(),
-                            }
-                            .into())
-                        } else {
-                            Ok(Some(Int(value)))
-                        }
-                    }
-                    (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a.wrapping_add(*b)))),
-                    (Float(a), Float(b)) => Ok(Some(Float(a + b))),
-                    (Char(a), Char(b)) => {
-                        if ctype.is_signed() {
-                            Ok(Some(Char(a + b)))
-                        } else {
-                            Ok(Some(Char(a.wrapping_add(*b))))
-                        }
-                    }
-                    (_, _) => Ok(None),
-                },
+                fold_scalar_bin_op(<f64 as ops::Add<f64>>::add, i64::overflowing_add, u64::wrapping_add),
                 ExprType::Add,
             )?,
             ExprType::Sub(left, right) => left.literal_bin_op(
                 *right,
                 &location,
-                |a, b, ctype| match (a, b) {
-                    (Int(a), Int(b)) => {
-                        let (value, overflowed) = a.overflowing_sub(*b);
-
-                        if overflowed {
-                            Err(SemanticError::ConstOverflow {
-                                is_positive: value.is_negative(),
-                            }
-                            .into())
-                        } else {
-                            Ok(Some(Int(value)))
-                        }
-                    }
-                    (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a.wrapping_sub(*b)))),
-                    #[allow(clippy::float_cmp)]
-                    (Float(a), Float(b)) => Ok(Some(Float(a - b))),
-                    (Char(a), Char(b)) => {
-                        if ctype.is_signed() {
-                            Ok(Some(Char(a - b)))
-                        } else {
-                            Ok(Some(Char(a.wrapping_sub(*b))))
-                        }
-                    }
-                    (_, _) => Ok(None),
-                },
+                fold_scalar_bin_op(<f64 as ops::Sub<f64>>::sub, i64::overflowing_sub, u64::wrapping_sub),
                 ExprType::Sub,
             )?,
             ExprType::Mul(left, right) => left.literal_bin_op(
                 *right,
                 &location,
-                |a, b, ctype| match (a, b) {
-                    (Int(a), Int(b)) => {
-                        let (value, overflowed) = a.overflowing_mul(*b);
-
-                        if overflowed {
-                            Err(SemanticError::ConstOverflow {
-                                is_positive: value.is_negative(),
-                            }
-                            .into())
-                        } else {
-                            Ok(Some(Int(value)))
-                        }
-                    }
-                    (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a.wrapping_mul(*b)))),
-                    (Float(a), Float(b)) => Ok(Some(Float(a * b))),
-                    (Char(a), Char(b)) => {
-                        if ctype.is_signed() {
-                            Ok(Some(Char(a * b)))
-                        } else {
-                            Ok(Some(Char(a.wrapping_mul(*b))))
-                        }
-                    }
-                    (_, _) => Ok(None),
-                },
+                fold_scalar_bin_op(<f64 as ops::Mul<f64>>::mul, i64::overflowing_mul, u64::wrapping_mul),
                 ExprType::Mul,
             )?,
             ExprType::Div(left, right) => {
@@ -245,33 +186,7 @@ impl Expr {
                 left.literal_bin_op(
                     right,
                     &location,
-                    |a, b, ctype| match (a, b) {
-                        (Int(a), Int(b)) => {
-                            let (value, overflowed) = a.overflowing_div(*b);
-
-                            if overflowed {
-                                Err(SemanticError::ConstOverflow {
-                                    // Negative value means a positive overflow and vice versa
-                                    is_positive: value.is_negative(),
-                                }
-                                .into())
-                            } else {
-                                Ok(Some(Int(value)))
-                            }
-                        }
-                        (UnsignedInt(a), UnsignedInt(b)) => {
-                            Ok(Some(UnsignedInt(a.wrapping_div(*b))))
-                        }
-                        (Float(a), Float(b)) => Ok(Some(Float(a / b))),
-                        (Char(a), Char(b)) => {
-                            if ctype.is_signed() {
-                                Ok(Some(Char(a / b)))
-                            } else {
-                                Ok(Some(Char(a.wrapping_div(*b))))
-                            }
-                        }
-                        (_, _) => Ok(None),
-                    },
+                    fold_scalar_bin_op(<f64 as ops::Div<f64>>::div, i64::overflowing_div, u64::wrapping_div),
                     ExprType::Div,
                 )?
             }

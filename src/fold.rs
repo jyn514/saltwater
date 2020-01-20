@@ -1,6 +1,6 @@
 use crate::arch::CHAR_BIT;
 use crate::data::prelude::*;
-use std::ops::{Add, Sub, Div, Mul};
+use std::ops::{Add, Div, Mul, Sub};
 use Literal::*;
 
 macro_rules! fold_int_unary_op {
@@ -175,31 +175,19 @@ impl Expr {
             ExprType::Add(left, right) => left.literal_bin_op(
                 *right,
                 &location,
-                fold_scalar_bin_op(
-                    f64::add,
-                    i64::overflowing_add,
-                    u64::wrapping_add,
-                ),
+                fold_scalar_bin_op(f64::add, i64::overflowing_add, u64::wrapping_add),
                 ExprType::Add,
             )?,
             ExprType::Sub(left, right) => left.literal_bin_op(
                 *right,
                 &location,
-                fold_scalar_bin_op(
-                    f64::sub,
-                    i64::overflowing_sub,
-                    u64::wrapping_sub,
-                ),
+                fold_scalar_bin_op(f64::sub, i64::overflowing_sub, u64::wrapping_sub),
                 ExprType::Sub,
             )?,
             ExprType::Mul(left, right) => left.literal_bin_op(
                 *right,
                 &location,
-                fold_scalar_bin_op(
-                    f64::mul,
-                    i64::overflowing_mul,
-                    u64::wrapping_mul,
-                ),
+                fold_scalar_bin_op(f64::mul, i64::overflowing_mul, u64::wrapping_mul),
                 ExprType::Mul,
             )?,
             ExprType::Div(left, right) => {
@@ -210,11 +198,7 @@ impl Expr {
                 left.literal_bin_op(
                     right,
                     &location,
-                    fold_scalar_bin_op(
-                        f64::div,
-                        i64::overflowing_div,
-                        u64::wrapping_div,
-                    ),
+                    fold_scalar_bin_op(f64::div, i64::overflowing_div, u64::wrapping_div),
                     ExprType::Div,
                 )?
             }
@@ -711,4 +695,5 @@ mod tests {
             .data
             .is_semantic_err())
     }
+    
 }

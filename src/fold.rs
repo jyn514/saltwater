@@ -219,8 +219,7 @@ impl Expr {
                             if overflowed {
                                 Err(SemanticError::ConstOverflow {
                                     is_positive: value.is_negative(),
-                                }
-                                .into())
+                                })
                             } else {
                                 Ok(Some(Int(value)))
                             }

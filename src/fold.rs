@@ -696,5 +696,4 @@ mod tests {
             .data
             .is_semantic_err())
     }
-
 }

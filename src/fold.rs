@@ -33,6 +33,8 @@ fn fold_scalar_bin_op(
 ) -> impl Fn(&Literal, &Literal, &Type) -> Result<Option<Literal>, Error> {
     move |a: &Literal, b: &Literal, _ctype| match (a, b) {
         (Int(a), Int(b)) => {
+            // overflowing returns the wrapped value, so if we had a negative
+            // value, it would be a positive overflow.
             let (value, overflowed) = overflowing(*a, *b);
             if overflowed {
                 Err(SemanticError::ConstOverflow {

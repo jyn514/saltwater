@@ -226,7 +226,6 @@ impl Expr {
                         (UnsignedInt(a), UnsignedInt(b)) => {
                             Ok(Some(UnsignedInt(a.wrapping_rem(*b))))
                         }
-                        (Char(a), Char(b)) => Ok(Some(Char(a % b))),
                         (_, _) => Ok(None),
                     },
                     ExprType::Mod,
@@ -695,5 +694,5 @@ mod tests {
             .data
             .is_semantic_err())
     }
-    
+
 }

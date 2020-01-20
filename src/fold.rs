@@ -1,6 +1,6 @@
 use crate::arch::CHAR_BIT;
 use crate::data::prelude::*;
-use std::ops;
+use std::ops::{Add, Sub, Div, Mul};
 use Literal::*;
 
 macro_rules! fold_int_unary_op {
@@ -176,7 +176,7 @@ impl Expr {
                 *right,
                 &location,
                 fold_scalar_bin_op(
-                    <f64 as ops::Add<f64>>::add,
+                    f64::add,
                     i64::overflowing_add,
                     u64::wrapping_add,
                 ),
@@ -186,7 +186,7 @@ impl Expr {
                 *right,
                 &location,
                 fold_scalar_bin_op(
-                    <f64 as ops::Sub<f64>>::sub,
+                    f64::sub,
                     i64::overflowing_sub,
                     u64::wrapping_sub,
                 ),
@@ -196,7 +196,7 @@ impl Expr {
                 *right,
                 &location,
                 fold_scalar_bin_op(
-                    <f64 as ops::Mul<f64>>::mul,
+                    f64::mul,
                     i64::overflowing_mul,
                     u64::wrapping_mul,
                 ),
@@ -211,7 +211,7 @@ impl Expr {
                     right,
                     &location,
                     fold_scalar_bin_op(
-                        <f64 as ops::Div<f64>>::div,
+                        f64::div,
                         i64::overflowing_div,
                         u64::wrapping_div,
                     ),

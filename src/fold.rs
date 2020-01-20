@@ -30,7 +30,7 @@ fn fold_scalar_bin_op(
     simple: fn(f64, f64) -> f64,
     overflowing: fn(i64, i64) -> (i64, bool),
     wrapping: fn(u64, u64) -> u64,
-) -> impl Fn(&Literal, &Literal, &Type) -> Result<Option<Literal>, Error> {
+) -> impl Fn(&Literal, &Literal, &Type) -> Result<Option<Literal>, SemanticError> {
     move |a: &Literal, b: &Literal, _ctype| match (a, b) {
         (Int(a), Int(b)) => {
             // overflowing returns the wrapped value, so if we had a negative
@@ -39,8 +39,7 @@ fn fold_scalar_bin_op(
             if overflowed {
                 Err(SemanticError::ConstOverflow {
                     is_positive: value.is_negative(),
-                }
-                .into())
+                })
             } else {
                 Ok(Some(Int(value)))
             }
@@ -137,8 +136,7 @@ impl Expr {
                         if overflowed {
                             Err(SemanticError::ConstOverflow {
                                 is_positive: value.is_negative(),
-                            }
-                            .into())
+                            })
                         } else {
                             Ok(Int(value))
                         }
@@ -355,7 +353,7 @@ impl Expr {
         constructor: C,
     ) -> CompileResult<ExprType>
     where
-        F: FnOnce(&Literal, &Literal, &Type) -> Result<Option<Literal>, Error>,
+        F: FnOnce(&Literal, &Literal, &Type) -> Result<Option<Literal>, SemanticError>,
         C: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
     {
         let (left, right) = (self.const_fold()?, other.const_fold()?);
@@ -363,7 +361,7 @@ impl Expr {
             (ExprType::Literal(left_token), ExprType::Literal(right_token)) => {
                 match fold_func(left_token, right_token, &left.ctype) {
                     Err(err) => {
-                        return Err(CompileError::new(err, *location));
+                        return Err(location.error(err));
                     }
                     Ok(token) => token.map(ExprType::Literal),
                 }
@@ -379,7 +377,7 @@ impl Expr {
         constructor: C,
     ) -> CompileResult<ExprType>
     where
-        F: FnOnce(Literal) -> Result<Literal, Error>,
+        F: FnOnce(Literal) -> Result<Literal, SemanticError>,
         C: FnOnce(Box<Expr>) -> ExprType,
     {
         match self.expr {

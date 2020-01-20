@@ -47,6 +47,8 @@ fn fold_scalar_bin_op(
         }
         (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(wrapping(*a, *b)))),
         (Float(a), Float(b)) => Ok(Some(Float(simple(*a, *b)))),
+        // TODO: find a way to do this that allows `"hello" + 2 - 1`
+        //(Str(s), Int(i)) | (Int(i), Str(s)) => {
         (_, _) => Ok(None),
     }
 }

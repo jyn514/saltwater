@@ -696,4 +696,19 @@ mod tests {
             SemanticError::ConstOverflow { is_positive: true }.into()
         );
     }
+
+    #[test]
+    fn test_left_shift() {
+        assert_eq!(
+            test_const_fold("1 << 4").unwrap().expr,
+            parse_expr("16").unwrap().expr
+        );
+
+        // This doesn't use a specific error yet, so I can't ensure that it is
+        // the right error.
+        assert!(test_const_fold("1 << 65")
+            .unwrap_err()
+            .data
+            .is_semantic_err())
+    }
 }

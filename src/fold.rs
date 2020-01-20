@@ -341,7 +341,7 @@ impl Expr {
     ///
     /// fold_func return values:
     /// `Ok(Some(_))`: Successfuly folded
-    /// `Ok(None)`: Non-folable expression
+    /// `Ok(None)`: Non-foldable expression
     /// `Err(_)`: Error while folding
     fn literal_bin_op<F, C>(
         self,

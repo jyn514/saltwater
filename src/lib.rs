@@ -13,7 +13,7 @@ use std::path::Path;
 use std::process::Command;
 
 use cranelift_module::Backend;
-use cranelift_object::ObjectBackend;
+use cranelift_faerie::FaerieBackend as ObjectBackend;
 
 pub type Product = <ObjectBackend as Backend>::Product;
 
@@ -35,7 +35,7 @@ mod parse;
 #[derive(Debug)]
 pub enum Error {
     Source(VecDeque<CompileError>),
-    Platform(String),
+    Platform(anyhow::Error),
     IO(io::Error),
 }
 

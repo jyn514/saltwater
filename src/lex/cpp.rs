@@ -47,7 +47,7 @@ pub struct PreProcessor<'a> {
     lexer: Lexer<'a>,
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
-    definitions: HashMap<InternedStr, InternedStr>,
+    definitions: HashMap<InternedStr, Vec<Token>>,
     error_handler: ErrorHandler,
     /// Whether or not to display each token as it is processed
     debug: bool,
@@ -234,6 +234,10 @@ impl<'a> PreProcessor<'a> {
                     self.next()
                 }
             }
+            Define => {
+                ret_err!(self.define(start));
+                self.next()
+            }
             _ => unimplemented!("preprocessing directives besides if/ifdef"),
         }
     }
@@ -330,6 +334,26 @@ impl<'a> PreProcessor<'a> {
             }
         }
         Ok(())
+    }
+    fn define(&mut self, start: u32) -> Result<(), Locatable<Error>> {
+        let line = self.lexer.line;
+        self.lexer.consume_whitespace();
+        if self.lexer.line != line {
+            return Err(self.lexer.span(start).error(CppError::EmptyDefine));
+        }
+        let id = self.expect_id()?;
+        if self.lexer.peek() == Some('(') {
+            // function macro
+            unimplemented!("function macros")
+        } else {
+            // object macro
+            let tokens = self
+                .tokens_until_newline()
+                .map(|res| res.map(|loc| loc.data))
+                .collect::<Result<_, Locatable<Error>>>()?;
+            self.definitions.insert(id.data, tokens);
+            Ok(())
+        }
     }
 }
 

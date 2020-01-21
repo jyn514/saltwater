@@ -22,10 +22,7 @@ impl Compiler {
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         if builder.is_filled() && !stmt.data.is_jump_target() {
-            return Err(CompileError::semantic(Locatable {
-                data: "unreachable statement".into(),
-                location: stmt.location,
-            }));
+            return Err(stmt.location.error(SemanticError::UnreachableStatement));
         }
         match stmt.data {
             StmtType::Compound(stmts) => self.compile_all(stmts, builder),
@@ -73,10 +70,7 @@ impl Compiler {
                 Self::jump_to_block(new_block, builder);
                 builder.switch_to_block(new_block);
                 if let Some(previous) = self.labels.insert(name, new_block) {
-                    Err(CompileError::semantic(Locatable {
-                        data: format!("redeclaration of label {}", previous),
-                        location: stmt.location,
-                    }))
+                    Err(stmt.location.error(SemanticError::LabelRedeclaration(previous)))
                 } else {
                     Ok(())
                 }
@@ -86,10 +80,7 @@ impl Compiler {
                     Self::jump_to_block(*ebb, builder);
                     Ok(())
                 }
-                None => Err(CompileError::semantic(Locatable {
-                    data: format!("use of undeclared label {}", name),
-                    location: stmt.location,
-                })),
+                None => Err(stmt.location.error(SemanticError::UndeclaredLabel(name)))
             },
             StmtType::Case(constexpr, inner) => self.case(constexpr, inner, stmt.location, builder),
             StmtType::Default(inner) => self.default(inner, stmt.location, builder),
@@ -283,10 +274,7 @@ impl Compiler {
         let (switch, _, _) = match self.switches.last_mut() {
             Some(x) => x,
             None => {
-                return Err(CompileError::semantic(Locatable {
-                    data: "case outside of switch statement".into(),
-                    location,
-                }))
+                return Err(location.error(SemanticError::CaseOutsideSwitch { is_default: false }))
             }
         };
         if builder.is_pristine() {
@@ -313,17 +301,11 @@ impl Compiler {
         let (_, default, _) = match self.switches.last_mut() {
             Some(x) => x,
             None => {
-                return Err(CompileError::semantic(Locatable {
-                    data: "default case outside of switch statement".into(),
-                    location,
-                }))
+                return Err(location.error(SemanticError::CaseOutsideSwitch { is_default: true }));
             }
         };
         if default.is_some() {
-            Err(CompileError::semantic(Locatable {
-                data: "cannot have multiple default cases in a switch statement".into(),
-                location,
-            }))
+            Err(location.error(SemanticError::MultipleDefaultCase))
         } else {
             let default_ebb = if builder.is_pristine() {
                 builder.cursor().current_ebb().unwrap()
@@ -357,16 +339,10 @@ impl Compiler {
                 }
                 Ok(())
             } else {
-                semantic_err!(
-                    format!(
-                        "'{}' statement not in loop or switch statement",
-                        if is_break { "break" } else { "continue" }
-                    ),
-                    location
-                );
+                Err(location.error(SemanticError::LoopExitOutsideLoopOrSwitch { is_break }))
             }
         } else if !is_break {
-            semantic_err!("'continue' not in loop".into(), location);
+            Err(location.error(SemanticError::ContinueNotInLoop))
         } else {
             // break from switch
             let (_, _, end_block) = self

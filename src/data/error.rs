@@ -114,6 +114,27 @@ pub enum SemanticError {
         current: u64,
     },
 
+    #[error("unreachable statement")]
+    UnreachableStatement,
+
+    #[error("redeclaration of label {0}")]
+    LabelRedeclaration(cranelift::prelude::Ebb),
+
+    #[error("use of undeclared label {0}")]
+    UndeclaredLabel(crate::intern::InternedStr),
+
+    #[error("{}case outside of switch statement", if *(.is_default) { "default " } else { "" })]
+    CaseOutsideSwitch { is_default: bool },
+
+    #[error("cannot have multiple default cases in a switch statement")]
+    MultipleDefaultCase,
+
+    #[error("'{}' statement not in loop or switch statement", if *(.is_break) { "break" } else { "continue" })]
+    LoopExitOutsideLoopOrSwitch { is_break: bool },
+
+    #[error("'continue' not in loop")]
+    ContinueNotInLoop,
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

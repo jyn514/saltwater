@@ -341,10 +341,16 @@ impl Compiler {
                 }
                 Ok(())
             } else {
-                Err(location.error(SemanticError::LoopExitOutsideLoopOrSwitch { is_break }))
+                semantic_err!(
+                    format!(
+                        "'{}' statement not in loop or switch statement",
+                        if is_break { "break" } else { "continue" }
+                    ),
+                    location
+                );
             }
         } else if !is_break {
-            Err(location.error(SemanticError::ContinueNotInLoop))
+            semantic_err!("'continue' not in loop".into(), location);
         } else {
             // break from switch
             let (_, _, end_block) = self

@@ -502,7 +502,7 @@ fn shift_right(
 fn shift_left(
     left: Expr,
     right: Expr,
-    _ctype: &Type,
+    ctype: &Type,
     location: &Location,
 ) -> CompileResult<ExprType> {
     let (left, right) = (left.const_fold()?, right.const_fold()?);
@@ -524,6 +524,7 @@ fn shift_left(
                 return Err(location.error(SemanticError::TooManyShiftBits {
                     is_left: true,
                     current: shift,
+                    ctype: ctype.clone(),
                     maximum: max_shift,
                 }));
             }
@@ -701,6 +702,7 @@ mod tests {
             SemanticError::TooManyShiftBits {
                 is_left: true,
                 current: 65,
+                ctype: Type::Long(true),
                 maximum: 64
             }
             .into()

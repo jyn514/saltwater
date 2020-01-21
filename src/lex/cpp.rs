@@ -244,6 +244,9 @@ impl<'a> PreProcessor<'a> {
     fn replace_id(&mut self, name: InternedStr) -> Option<CppResult<Token>> {
         let start = self.lexer.location.offset;
         // TODO: actually implement #define
+        self.lexer.chars = self.lexer.current.take().into_iter()
+            .chain(self.lexer.lookahead.take().into_iter())
+            .chain(self.lexer.chars);
         Some(Ok(Locatable::new(Token::Id(name), self.lexer.span(start))))
     }
     // convienience function around cpp_expr

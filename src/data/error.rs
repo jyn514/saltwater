@@ -103,6 +103,16 @@ pub enum SemanticError {
     #[error("cannot divide by zero")]
     DivideByZero,
 
+    #[error("cannot shift {} by a negative amount", if *(.is_left) { "left" } else { "right" })]
+    NegativeShift { is_left: bool },
+
+    #[error("cannot shift {} by {maximum} or more bits (got {current})", if *(.is_left) { "left" } else { "right" })]
+    TooManyShiftBits {
+        is_left: bool,
+        maximum: u64,
+        current: u64,
+    },
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

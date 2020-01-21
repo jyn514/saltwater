@@ -462,7 +462,9 @@ fn shift_right(
     if let ExprType::Literal(token) = right.expr {
         let shift = match token.non_negative_int() {
             Ok(u) => u,
-            Err(_) => semantic_err!("cannot shift left by a negative amount".into(), *location),
+            Err(_) => {
+                return Err(location.error(SemanticError::NegativeShift { is_left: false }));
+            }
         };
         let sizeof = ctype.sizeof().map_err(|err| Locatable {
             data: err.to_string(),
@@ -500,15 +502,18 @@ fn shift_right(
 fn shift_left(
     left: Expr,
     right: Expr,
-    ctype: &Type,
+    _ctype: &Type,
     location: &Location,
 ) -> CompileResult<ExprType> {
     let (left, right) = (left.const_fold()?, right.const_fold()?);
     if let ExprType::Literal(token) = right.expr {
         let shift = match token.non_negative_int() {
             Ok(u) => u,
-            Err(_) => semantic_err!("cannot shift left by a negative amount".into(), *location),
+            Err(_) => {
+                return Err(location.error(SemanticError::NegativeShift { is_left: true }));
+            }
         };
+
         if left.ctype.is_signed() {
             let size = match left.ctype.sizeof() {
                 Ok(s) => s,
@@ -516,23 +521,18 @@ fn shift_left(
             };
             let max_shift = u64::from(CHAR_BIT) * size;
             if shift >= max_shift {
-                semantic_err!(
-                    format!(
-                        "cannot shift left by {} or more bits for type '{}' (got {})",
-                        max_shift, ctype, shift
-                    ),
-                    *location,
-                );
+                return Err(location.error(SemanticError::TooManyShiftBits {
+                    is_left: true,
+                    current: shift,
+                    maximum: max_shift,
+                }));
             }
         }
         Ok(match left.expr {
             ExprType::Literal(Int(i)) => {
                 let (result, overflow) = i.overflowing_shl(shift as u32);
                 if overflow {
-                    semantic_err!(
-                        "overflow in shift left during constant folding".into(),
-                        *location
-                    );
+                    return Err(location.error(SemanticError::ConstOverflow { is_positive: true }));
                 }
                 ExprType::Literal(Int(result))
             }
@@ -687,15 +687,46 @@ mod tests {
     #[test]
     fn test_left_shift() {
         assert_eq!(
+            test_const_fold("8 << 0").unwrap().expr,
+            parse_expr("8").unwrap().expr
+        );
+
+        assert_eq!(
             test_const_fold("1 << 4").unwrap().expr,
             parse_expr("16").unwrap().expr
         );
 
-        // This doesn't use a specific error yet, so I can't ensure that it is
-        // the right error.
-        assert!(test_const_fold("1 << 65")
-            .unwrap_err()
-            .data
-            .is_semantic_err())
+        assert_eq!(
+            test_const_fold("1 << 65").unwrap_err().data,
+            SemanticError::TooManyShiftBits {
+                is_left: true,
+                current: 65,
+                maximum: 64
+            }
+            .into()
+        );
+
+        assert_eq!(
+            test_const_fold("8 << -1").unwrap_err().data,
+            SemanticError::NegativeShift { is_left: true }.into()
+        );
+    }
+
+    #[test]
+    fn test_right_shift() {
+        assert_eq!(
+            test_const_fold("8 >> 0").unwrap().expr,
+            parse_expr("8").unwrap().expr
+        );
+
+        assert_eq!(
+            test_const_fold("32 >> 5").unwrap().expr,
+            parse_expr("1").unwrap().expr
+        );
+
+        assert_eq!(
+            test_const_fold("8 >> -1").unwrap_err().data,
+            SemanticError::NegativeShift { is_left: false }.into()
+        );
     }
 }

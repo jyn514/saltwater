@@ -70,7 +70,9 @@ impl Compiler {
                 Self::jump_to_block(new_block, builder);
                 builder.switch_to_block(new_block);
                 if let Some(previous) = self.labels.insert(name, new_block) {
-                    Err(stmt.location.error(SemanticError::LabelRedeclaration(previous)))
+                    Err(stmt
+                        .location
+                        .error(SemanticError::LabelRedeclaration(previous)))
                 } else {
                     Ok(())
                 }
@@ -80,7 +82,7 @@ impl Compiler {
                     Self::jump_to_block(*ebb, builder);
                     Ok(())
                 }
-                None => Err(stmt.location.error(SemanticError::UndeclaredLabel(name)))
+                None => Err(stmt.location.error(SemanticError::UndeclaredLabel(name))),
             },
             StmtType::Case(constexpr, inner) => self.case(constexpr, inner, stmt.location, builder),
             StmtType::Default(inner) => self.default(inner, stmt.location, builder),

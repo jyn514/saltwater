@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use thiserror::Error;
 
-use super::{lex::Token, Expr, Locatable, Location};
+use super::{lex::Token, Expr, Locatable, Location, Type};
 
 /// RecoverableResult is a type that represents a Result that can be recovered from.
 ///
@@ -106,10 +106,11 @@ pub enum SemanticError {
     #[error("cannot shift {} by a negative amount", if *(.is_left) { "left" } else { "right" })]
     NegativeShift { is_left: bool },
 
-    #[error("cannot shift {} by {maximum} or more bits (got {current})", if *(.is_left) { "left" } else { "right" })]
+    #[error("cannot shift {} by {maximum} or more bits for type '{ctype}' (got {current})", if *(.is_left) { "left" } else { "right" })]
     TooManyShiftBits {
         is_left: bool,
         maximum: u64,
+        ctype: Type,
         current: u64,
     },
 

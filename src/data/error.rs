@@ -129,12 +129,6 @@ pub enum SemanticError {
     #[error("cannot have multiple default cases in a switch statement")]
     MultipleDefaultCase,
 
-    #[error("'{}' statement not in loop or switch statement", if *(.is_break) { "break" } else { "continue" })]
-    LoopExitOutsideLoopOrSwitch { is_break: bool },
-
-    #[error("'continue' not in loop")]
-    ContinueNotInLoop,
-
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

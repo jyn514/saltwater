@@ -172,7 +172,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 };
                 if self.match_next(&Token::Colon).is_some() {
                     return Ok(Some(Stmt {
-                        data: StmtType::Label(id.data),
+                        data: StmtType::Label(id.data, self.statement()?.map(Box::new)),
                         location: id.location,
                     }));
                 }

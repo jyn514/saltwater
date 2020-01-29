@@ -65,7 +65,7 @@ impl Compiler {
             ),
             StmtType::Do(body, condition) => self.do_loop(*body, condition, builder),
             StmtType::Switch(condition, body) => self.switch(condition, *body, builder),
-            StmtType::Label(name) => {
+            StmtType::Label(name, inner) => {
                 let new_block = builder.create_ebb();
                 Self::jump_to_block(new_block, builder);
                 builder.switch_to_block(new_block);
@@ -73,6 +73,8 @@ impl Compiler {
                     Err(stmt
                         .location
                         .error(SemanticError::LabelRedeclaration(previous)))
+                } else if let Some(stmt) = inner {
+                    self.compile_stmt(*stmt, builder)
                 } else {
                     Ok(())
                 }
@@ -377,7 +379,7 @@ impl Compiler {
 impl StmtType {
     fn is_jump_target(&self) -> bool {
         match self {
-            StmtType::Case(_, _) | StmtType::Default(_) | StmtType::Label(_) => true,
+            StmtType::Case(_, _) | StmtType::Default(_) | StmtType::Label(_, _) => true,
             _ => false,
         }
     }

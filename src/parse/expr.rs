@@ -488,6 +488,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             } else if expr.ctype.is_struct() {
                 // not implemented: galaga (https://github.com/jyn514/rcc/issues/98)
                 self.semantic_err("cannot cast a struct to any type", location);
+            } else if expr.ctype == Type::Void {
+                self.semantic_err("cannot cast void to any type", location);
             }
             Ok(Expr {
                 lval: false,

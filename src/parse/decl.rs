@@ -764,7 +764,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 .recover(&mut self.error_handler);
             // TODO: Declarator needs to be redesigned so there's only one unwrap
             let Locatable { data: id, location } = declarator.unwrap();
-            let symbol = Symbol {
+            let mut symbol = Symbol {
                 storage_class: StorageClass::Auto,
                 qualifiers,
                 ctype,
@@ -793,9 +793,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 );
             };
             match symbol.ctype {
-                Type::Struct(StructType::Named(_, members))
-                | Type::Union(StructType::Named(_, members))
-                    if members.get().is_empty() =>
+                Type::Struct(StructType::Named(_, inner_members))
+                | Type::Union(StructType::Named(_, inner_members))
+                    if inner_members.get().is_empty() =>
                 {
                     self.semantic_err(
                         format!(
@@ -804,6 +804,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         ),
                         location,
                     );
+                    // add this as a member anyway because
+                    // later code depends on structs being non-empty
+                    symbol.ctype = Type::Error;
+                    members.push(symbol);
                 }
                 _ => members.push(symbol),
             }

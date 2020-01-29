@@ -534,6 +534,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             let ty = self.type_name()?;
                             (ty.location, ty.data.0)
                         }
+                        Some(Token::Id(s)) => {
+                            let s = *s;
+                            if is_typedef(s, &self.scope) {
+                                let ty = self.type_name()?;
+                                (ty.location, ty.data.0)
+                            } else {
+                                let expr = self.expr()?;
+                                (expr.location, expr.ctype)
+                            }
+                        }
                         _ => {
                             let expr = self.expr()?;
                             (expr.location, expr.ctype)
@@ -1657,6 +1667,15 @@ impl Type {
     }
     pub fn for_string_literal(len: SIZE_T) -> Type {
         Type::Array(Box::new(Type::Char(true)), ArrayType::Fixed(len))
+    }
+}
+
+fn is_typedef(s: InternedStr, scope: &crate::data::Scope<InternedStr, Symbol>) -> bool {
+    use crate::data::StorageClass;
+    if let Some(symbol) = scope.get(&s) {
+        symbol.storage_class == StorageClass::Typedef
+    } else {
+        false
     }
 }
 

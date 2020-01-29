@@ -894,13 +894,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     self.last_location,
                 );
             }
-            if param_type == Type::Void && !params.is_empty()
-                || params.len() == 1 && params[0].data.ctype == Type::Void
-            {
+            // int f(void, int);
+            if params.len() == 1 && params[0].data.ctype == Type::Void {
                 self.error_handler.push_back(
                     self.last_location
                         .error(SemanticError::InvalidVoidParameter),
-                );
+                )
             } else if let Some(decl) = declarator {
                 let (id, mut ctype) = decl
                     .parse_type(param_type, false, &self.last_location)
@@ -937,6 +936,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         init: true,
                     },
                 });
+            // int f(int, void);
+            } else if param_type == Type::Void && !params.is_empty() {
+                self.error_handler.push_back(
+                    self.last_location
+                        .error(SemanticError::InvalidVoidParameter),
+                );
             } else {
                 // abstract param
                 params.push(Locatable {

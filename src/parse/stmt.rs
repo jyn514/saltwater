@@ -155,7 +155,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         location,
                     }))
                 }
-                other => unreachable!("unrecognized keyword '{}' while parsing statement", other),
+                other => {
+                    let err = SyntaxError::NotAStatement(*other);
+                    Err(self.next_location().with(err))
+                }
             },
             Some(Token::Semicolon) => {
                 self.next_token();

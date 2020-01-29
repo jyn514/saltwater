@@ -149,6 +149,9 @@ pub enum SyntaxError {
     #[error("expected {0}, got <end-of-file>")]
     EndOfFile(&'static str),
 
+    #[error("expected statement, got {0}")]
+    NotAStatement(super::Keyword),
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

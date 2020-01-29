@@ -930,18 +930,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         init: true,
                     },
                 });
+            } else if param_type == Type::Void && !params.is_empty() {
+                let loc = self.last_location;
+                self.semantic_err(
+                    "void must be the first and only parameter if specified",
+                    loc,
+                );
             } else {
-                if param_type == Type::Void && !params.is_empty() {
-                    let loc = self.next_location();
-                    self.semantic_err(
-                        "void must be the first and only parameter if specified",
-                        loc,
-                    );
-                    continue;
-                }
                 // abstract param
                 params.push(Locatable {
-                    location: self.next_location(),
+                    location: self.last_location,
                     data: Symbol {
                         id: Default::default(),
                         ctype: param_type,
@@ -1322,7 +1320,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location,
                 );
             }
-            self.scope.insert(param.id.clone(), param);
+            self.scope.insert(param.id, param);
         }
         self.current_function = Some(FunctionData {
             return_type: *ftype.return_type,

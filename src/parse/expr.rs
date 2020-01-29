@@ -660,7 +660,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             })
                         }
                     }
-                    Token::LogicalNot => Ok(expr.logical_not(location)),
+                    Token::LogicalNot => Ok(expr.logical_not().recover(&mut self.error_handler)),
                     x => unreachable!("didn't expect '{}' to be an unary operand", x),
                 }
             }
@@ -1228,20 +1228,17 @@ impl Expr {
     // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
     //
     // if (expr)
-    pub fn truthy(mut self) -> RecoverableResult<Expr, CompileError> {
+    pub fn truthy(mut self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         self = self.rval();
         if self.ctype == Type::Bool {
             return Ok(self);
         }
         if !self.ctype.is_scalar() {
             Err((
-                CompileError::semantic(Locatable {
-                    location: self.location,
-                    data: format!(
-                        "expression of type '{}' cannot be converted to bool",
-                        self.ctype
-                    ),
-                }),
+                self.location.with(SemanticError::Generic(format!(
+                    "expression of type '{}' cannot be converted to bool",
+                    self.ctype
+                ))),
                 self,
             ))
         } else {
@@ -1255,14 +1252,20 @@ impl Expr {
             })
         }
     }
-    pub fn logical_not(self, location: Location) -> Expr {
-        Expr {
-            location,
-            ctype: Type::Bool,
-            constexpr: self.constexpr,
+    pub fn logical_not(self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
+        let boolean = self.truthy()?;
+        let zero = Expr::zero(boolean.location).cast(&Type::Bool).unwrap();
+        Ok(Expr {
+            constexpr: boolean.constexpr,
             lval: false,
-            expr: ExprType::LogicalNot(Box::new(self)),
-        }
+            location: boolean.location,
+            ctype: Type::Bool,
+            expr: ExprType::Compare(
+                Box::new(boolean),
+                Box::new(zero),
+                ComparisonToken::EqualEqual,
+            ),
+        })
     }
     // Simple assignment rules, section 6.5.16.1 of the C standard
     // the funky return type is so we don't consume the original expression in case of an error

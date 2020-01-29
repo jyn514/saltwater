@@ -274,8 +274,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 StmtType::Expr(condition)
             }
             (None, Some(body)) => {
-                let location = condition.location;
-                StmtType::If(condition.logical_not(location), Box::new(body), None)
+                let not = condition.logical_not().recover(&mut self.error_handler);
+                StmtType::If(not, Box::new(body), None)
             }
             (Some(body), maybe_else) => {
                 StmtType::If(condition, Box::new(body), maybe_else.map(Box::new))

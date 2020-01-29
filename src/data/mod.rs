@@ -111,7 +111,6 @@ pub enum ExprType {
     Deref(Box<Expr>),
     Negate(Box<Expr>),
     // getting rid of this is https://github.com/jyn514/rcc/issues/10
-    LogicalNot(Box<Expr>),
     BitwiseNot(Box<Expr>),
     LogicalOr(Box<Expr>, Box<Expr>),
     BitwiseOr(Box<Expr>, Box<Expr>),
@@ -356,7 +355,6 @@ impl Display for Expr {
             ExprType::BitwiseNot(expr) => write!(f, "(~{})", expr),
             ExprType::Deref(expr) => write!(f, "*({})", expr),
             ExprType::Negate(expr) => write!(f, "-({})", expr),
-            ExprType::LogicalNot(expr) => write!(f, "!({})", expr),
             ExprType::LogicalOr(left, right) => write!(f, "({}) || ({})", left, right),
             ExprType::LogicalAnd(left, right) => write!(f, "({}) && ({})", left, right),
             ExprType::Shift(val, by, left) => {

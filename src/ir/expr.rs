@@ -63,8 +63,6 @@ impl Compiler {
                     _ => unreachable!("parser should catch illegal types"),
                 },
             ),
-            ExprType::LogicalNot(expr) => self.logical_not(*expr, builder),
-
             // binary operators
             ExprType::Add(left, right) => {
                 self.binary_assign_op(*left, *right, expr.ctype, Token::Plus, builder)
@@ -425,34 +423,6 @@ impl Compiler {
             }
             _ => unreachable!("cast from {} to {}", from, to),
         }
-    }
-    fn logical_not(&mut self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
-        let Value {
-            ir_type, ir_val, ..
-        } = self.compile_expr(expr, builder)?;
-        let ir_bool = match ir_type {
-            types::F32 => {
-                let zero = builder.ins().f32const(0.0);
-                builder.ins().fcmp(condcodes::FloatCC::Equal, ir_val, zero)
-            }
-            types::F64 => {
-                let zero = builder.ins().f64const(0.0);
-                builder.ins().fcmp(condcodes::FloatCC::Equal, ir_val, zero)
-            }
-            ty if ty.is_int() => builder.ins().icmp_imm(condcodes::IntCC::Equal, ir_val, 0),
-            ty if ty.is_bool() => {
-                // TODO: change this if Cranelift ever implements boolean negation on x86
-                // see https://github.com/CraneStation/cranelift/issues/922
-                let int = Self::cast_ir(ir_type, types::I32, ir_val, false, true, builder);
-                builder.ins().icmp_imm(condcodes::IntCC::Equal, int, 0)
-            }
-            _ => unreachable!("all scalars should be float, int, or bool"),
-        };
-        Ok(Value {
-            ir_val: ir_bool,
-            ir_type: types::B1,
-            ctype: Type::Bool,
-        })
     }
     fn negate(&mut self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         self.unary_op(expr, builder, |ir_val, ir_type, _, builder| match ir_type {

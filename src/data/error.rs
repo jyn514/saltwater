@@ -129,6 +129,9 @@ pub enum SemanticError {
     #[error("cannot have multiple default cases in a switch statement")]
     MultipleDefaultCase,
 
+    #[error("void must be the first and only parameter if specified")]
+    InvalidVoidParameter,
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

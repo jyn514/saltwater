@@ -148,7 +148,6 @@ impl Expr {
                 },
                 ExprType::Negate,
             )?,
-            ExprType::LogicalNot(expr) => lnot_fold(expr.const_fold()?),
             ExprType::BitwiseNot(expr) => expr.const_fold()?.map_literal(
                 &location,
                 fold_int_unary_op!(!),
@@ -437,16 +436,6 @@ fn const_cast(token: &Literal, ctype: &Type) -> Option<Literal> {
         _ => return None,
     };
     Some(token)
-}
-
-fn lnot_fold(expr: Expr) -> ExprType {
-    match expr.expr {
-        ExprType::Literal(Int(i)) => ExprType::Literal(Int((i == 0) as i64)),
-        ExprType::Literal(Float(f)) => ExprType::Literal(Int((f == 0.0) as i64)),
-        ExprType::Literal(Char(c)) => ExprType::Literal(Int((c == 0) as i64)),
-        ExprType::Literal(Str(_)) => ExprType::Literal(Int(0)),
-        _ => ExprType::LogicalNot(Box::new(expr)),
-    }
 }
 
 fn shift_right(

@@ -467,6 +467,11 @@ impl Compiler {
         let ir_val = if left.ir_type.is_int() {
             let code = token.to_int_compare(left.ctype.is_signed());
             builder.ins().icmp(code, left.ir_val, right.ir_val)
+        } else if left.ir_type.is_bool() {
+            let left = builder.ins().bint(types::I8, left.ir_val);
+            let right = builder.ins().bint(types::I8, right.ir_val);
+            let code = token.to_int_compare(false);
+            builder.ins().icmp(code, left, right)
         } else {
             assert!(left.ir_type.is_float());
             let code = token.to_float_compare();

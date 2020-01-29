@@ -42,7 +42,7 @@ pub enum StmtType {
         Option<Box<Stmt>>,
     ),
     Switch(Expr, Box<Stmt>),
-    Label(InternedStr),
+    Label(InternedStr, Option<Box<Stmt>>),
     Case(u64, Option<Box<Stmt>>),
     Default(Option<Box<Stmt>>),
     Expr(Expr),
@@ -443,7 +443,12 @@ impl StmtType {
                 }
             ),
             StmtType::Goto(id) => write!(f, "goto {};", id),
-            StmtType::Label(id) => write!(f, "{}: ", id),
+            StmtType::Label(id, inner) => {
+                let stmt = inner
+                    .as_ref()
+                    .map_or(";".to_owned(), |s| s.data.to_string());
+                write!(f, "{}: {}", id, stmt)
+            }
             StmtType::While(condition, None) => write!(f, "while ({}) {{}}", condition),
             StmtType::While(condition, Some(body)) => {
                 write!(f, "while ({}) {}", condition, body.data)

@@ -132,6 +132,9 @@ pub enum SemanticError {
     #[error("void must be the first and only parameter if specified")]
     InvalidVoidParameter,
 
+    #[error("expected expression, got typedef")]
+    TypedefInExpressionContext,
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

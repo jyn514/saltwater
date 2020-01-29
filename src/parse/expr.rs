@@ -848,6 +848,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | '(' expr ')'
     /// ;
     fn primary_expr(&mut self) -> SyntaxResult {
+        use crate::data::StorageClass;
+        let mut pretend_zero = Expr::zero(self.next_location());
+        pretend_zero.ctype = Type::Error;
         if let Some(Locatable { location, data }) = self.next_token() {
             match data {
                 Token::Id(name) => match self.scope.get(&name) {
@@ -856,11 +859,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             SemanticError::UndeclaredVar(name).into(),
                             location,
                         ));
-                        let mut pretend_zero = Expr::zero(location);
-                        pretend_zero.ctype = Type::Error;
                         Ok(pretend_zero)
                     }
                     Some(symbol) => {
+                        if symbol.storage_class == StorageClass::Typedef {
+                            self.error_handler.push_back(
+                                location.error(SemanticError::TypedefInExpressionContext),
+                            );
+                            return Ok(pretend_zero);
+                        }
                         if let Type::Enum(ident, members) = &symbol.ctype {
                             let enumerator = members.iter().find_map(|(member, value)| {
                                 if name == *member {

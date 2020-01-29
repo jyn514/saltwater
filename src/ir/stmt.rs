@@ -187,6 +187,11 @@ impl Compiler {
         let (loop_body, end_body, old_saw_loop) = self.enter_loop(builder);
 
         self.compile_stmt(body, builder)?;
+        if builder.is_filled() {
+            return Err(condition
+                .location
+                .error(SemanticError::UnreachableStatement));
+        }
         let condition = self.compile_expr(condition, builder)?;
         builder.ins().brz(condition.ir_val, end_body, &[]);
         Self::jump_to_block(loop_body, builder);

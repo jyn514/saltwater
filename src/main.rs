@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 extern crate ansi_term;
 extern crate codespan;
+#[cfg(debug_assertions)]
+extern crate color_backtrace;
 extern crate env_logger;
 extern crate log;
 extern crate pico_args;
@@ -126,6 +128,9 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>, file: FileId, file_db: &F
 }
 
 fn main() {
+    #[cfg(debug_assertions)]
+    color_backtrace::install();
+
     let mut opt = match parse_args() {
         Ok(opt) => opt,
         Err(err) => {

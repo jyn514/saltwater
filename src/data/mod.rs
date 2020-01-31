@@ -66,6 +66,15 @@ pub enum Initializer {
     FunctionBody(Vec<Stmt>),           // int f() { return 0; }
 }
 
+impl Initializer {
+    pub fn is_scalar(&self) -> bool {
+        match self {
+            Self::Scalar(_) => true,
+            _ => false,
+        }
+    }
+}
+
 /// Holds the metadata for an expression.
 ///
 /// This should be the datatype you use in APIs, etc.

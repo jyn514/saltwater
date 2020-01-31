@@ -1251,23 +1251,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn initializer(&mut self, ctype: &Type) -> SyntaxResult<Initializer> {
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
-            let mut elements = vec![];
-            if let Some(token) = self.match_next(&Token::RightBrace) {
-                self.semantic_err("initializers cannot be empty", token.location);
-            }
-            while self.match_next(&Token::RightBrace).is_none() {
-                let elem_type = ctype.type_at(elements.len()).unwrap_or_else(|err| {
-                    let loc = self.next_location();
-                    self.semantic_err(err, loc);
-                    Type::Error
-                });
-                elements.push(self.initializer(&elem_type)?);
-                if self.match_next(&Token::RightBrace).is_some() {
-                    break;
-                }
-                self.expect(Token::Comma)?;
-            }
-            return Ok(Initializer::InitializerList(elements));
+            let ret = self.aggregate_initializer(ctype);
+            self.expect(Token::RightBrace)?;
+            return ret;
         }
         let mut expr = self.assignment_expr()?;
         // The only time (that I know of) that an expression will initialize a non-scalar
@@ -1297,6 +1283,63 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         Ok(Initializer::Scalar(Box::new(expr)))
     }
+
+    // handle char[][3] = {{1,2,3}}, but also = {1,2,3} and {{1}, 2, 3}
+    // NOTE: this does NOT consume {} except for sub-elements
+    fn aggregate_initializer(&mut self, elem_type: &Type) -> SyntaxResult<Initializer> {
+        let mut elems = vec![];
+        if let Some(token) = self.match_next(&Token::RightBrace) {
+            self.semantic_err("initializers cannot be empty", token.location);
+            return Ok(Initializer::InitializerList(elems));
+        }
+        // char [][3] = {1};
+        loop {
+            let inner = elem_type.type_at(elems.len()).unwrap_or_else(|err| {
+                let loc = self.next_location();
+                self.semantic_err(err, loc);
+                Type::Error
+            });
+            // int a[][3] = {{1,2,3}}
+            //               ^
+            // initializer is aggregate, type errors will be caught later
+
+            // If the initializer of a subaggregate or contained union begins with a left brace,
+            // the initializers enclosed by that brace and its matching right brace initialize
+            // the elements or members of the subaggregate or the contained union.
+            let next = if self.match_next(&Token::LeftBrace).is_some() {
+                let t = self.aggregate_initializer(&inner)?;
+                self.expect(Token::RightBrace)?;
+                t
+            // int a[][3] = {1,2,3}
+            //               ^
+            // type is aggregate and initializer is scalar
+            // see if we can short circuit int[][3] -> int[3]
+            } else if inner != Type::Error && !inner.is_scalar() {
+                self.aggregate_initializer(&inner)?
+            // type is scalar and initializer is scalar
+            // int a[][3] = {{1,2,3}}
+            } else {
+                // scalar
+                self.initializer(&inner)?
+            };
+            elems.push(next);
+            // NOTE: this allows trailing commas
+            self.match_next(&Token::Comma);
+            if self.peek_token() == Some(&Token::RightBrace) ||
+                // Otherwise, only enough initializers from the list are taken
+                // to account for the elements or members of the subaggregate
+                // or the first member of the contained union;
+                // any remaining initializers are left to initialize the next
+                // element or member of the aggregate of which the current
+                // subaggregate or contained union is a part.
+                elems.len() == elem_type.type_len()
+            {
+                break;
+            }
+        }
+        Ok(Initializer::InitializerList(elems))
+    }
+
     fn function_body(
         &mut self,
         id: InternedStr,
@@ -1633,6 +1676,16 @@ impl Declarator {
 }
 
 impl Type {
+    fn type_len(&self) -> usize {
+        match self {
+            ty if ty.is_scalar() => 1,
+            Type::Array(_, ArrayType::Fixed(size)) => *size as usize,
+            Type::Array(_, ArrayType::Unbounded) => 0, // TODO: is this reasonable?
+            Type::Struct(st) | Type::Union(st) => st.members().len(),
+            Type::Error => 1, // TODO: is this reasonable?
+            _ => unimplemented!("type checking for {}", self),
+        }
+    }
     fn type_at(&self, index: usize) -> Result<Type, String> {
         match self {
             ty if ty.is_scalar() => {
@@ -2078,20 +2131,32 @@ mod tests {
             // possibly with trailing commas
             parse("int a[] = {1, 2, 3,};"),
             parse("int a[3] = {1, 2, 3,};"),
+            // or nested
+            parse("int a[][3] = {{1, 2, 3}};"),
+            parse("int a[][3] = {{1, 2, 3,}};"),
+            parse("int a[][3] = {{1, 2, 3,},};"),
+            parse("int a[1][3] = {{1, 2, 3,},};"),
+            // with misleading braces
+            parse("int a[][3] = {1, 2, 3};"),
+            parse("int a[][3] = {1, 2, 3,};"),
         ];
         for res in &parsed {
-            let matches = match res {
-                Some(Ok(Locatable {
+            match res.as_ref().unwrap() {
+                Ok(Locatable {
                     data:
                         Declaration {
                             init: Some(Initializer::InitializerList(_)),
                             ..
                         },
                     ..
-                })) => true,
-                _ => false,
+                }) => {}
+                Ok(Locatable { data, .. }) => {
+                    panic!("expected initializer list, got declaration: {}", data)
+                }
+                Err(Locatable { data, .. }) => {
+                    panic!("expected initializer list, got error: {}", data)
+                }
             };
-            assert!(matches);
         }
     }
     #[test]

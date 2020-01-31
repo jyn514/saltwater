@@ -25,6 +25,7 @@ tempfile = "3"
 pico-args = "0.3"
 string-interner = "0.7"
 codespan = "0.7"
+color-backtrace = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 walkdir = "2"
@@ -32,8 +33,5 @@ walkdir = "2"
 [profile.release]
 lto = true
 
-[profile.dev]
-debug = false  # speeds up link time
-
 [profile.test]
-debug = false
+debug = false  # speeds up link time

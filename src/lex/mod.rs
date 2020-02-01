@@ -88,7 +88,7 @@ impl<'a> Lexer<'a> {
             self.chars.next()
         };
         next.map(|c| {
-            self.location.offset += 1;
+            self.location.offset += c.len_utf8() as u32;
             if c == '\n' {
                 self.seen_line_token = false;
                 self.line += 1;
@@ -559,7 +559,7 @@ impl<'a> Iterator for Lexer<'a> {
             }
         }
         let c = c.and_then(|c| {
-            let span_start = self.location.offset - 1;
+            let span_start = self.location.offset - c.len_utf8() as u32;
             // this giant switch is most of the logic
             let data = match c {
                 '#' => Token::Hash,

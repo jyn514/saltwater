@@ -9,6 +9,7 @@ readme = "README.md"
 categories = ["development-tools", "parser-implementations"]
 license = "BSD-3-Clause"
 keywords = ["C", "compiler", "recursive-descent", "cranelift"]
+default-run = "rcc"
 
 [dependencies]
 lazy_static = "1"

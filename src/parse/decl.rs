@@ -1693,6 +1693,7 @@ impl Declarator {
 }
 
 impl Type {
+    /// Given a type, return the maximum number of initializers for that type
     fn type_len(&self) -> usize {
         match self {
             ty if ty.is_scalar() => 1,
@@ -1703,6 +1704,11 @@ impl Type {
             _ => unimplemented!("type checking for {}", self),
         }
     }
+    /// Given a type and an index,
+    /// return the type expected at that index in the initializer.
+    ///
+    /// e.g. if `struct s { int i; float f; };` is in scope,
+    /// `type_at(s, 0)` will be `int` and `type_at(s, 1)` will be `float`
     fn type_at(&self, index: usize) -> Result<Type, String> {
         match self {
             ty if ty.is_scalar() => {

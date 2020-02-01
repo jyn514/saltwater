@@ -289,6 +289,10 @@ impl Compiler {
             let current = builder.cursor().current_block().unwrap();
             switch.set_entry(constexpr, current);
         } else {
+            let existing = switch.entries();
+            if existing.contains_key(&constexpr) {
+                return Err(location.error(SemanticError::DuplicateCase { is_default: false }));
+            }
             let new = builder.create_block();
             switch.set_entry(constexpr, new);
             Self::jump_to_block(new, builder);
@@ -309,7 +313,7 @@ impl Compiler {
             }
         };
         if default.is_some() {
-            Err(location.error(SemanticError::MultipleDefaultCase))
+            Err(location.error(SemanticError::DuplicateCase { is_default: true }))
         } else {
             let default_block = if builder.is_pristine() {
                 builder.cursor().current_block().unwrap()

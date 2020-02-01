@@ -28,6 +28,7 @@ tempfile = { version = "3", optional = true }
 pico-args = { version = "0.3", optional = true }
 string-interner = "0.7"
 codespan = "0.8"
+codespan-reporting = "0.8"
 color-backtrace = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]

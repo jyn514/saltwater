@@ -7,17 +7,16 @@ use std::process;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-extern crate ansi_term;
 extern crate codespan;
-#[cfg(debug_assertions)]
 extern crate color_backtrace;
+extern crate codespan_reporting;
 extern crate env_logger;
 extern crate log;
 extern crate pico_args;
 extern crate rcc;
 
-use ansi_term::{ANSIString, Colour};
 use codespan::FileId;
+use codespan_reporting::diagnostic::{Diagnostic, Label};
 use pico_args::Arguments;
 use rcc::{
     assemble, compile,
@@ -152,13 +151,25 @@ fn aot_main(
 
 fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files) {
     WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
-    let tag = Colour::Yellow.bold().paint("warning");
     for warning in warnings {
-        print!(
-            "{}",
-            pretty_print(tag.clone(), warning.data, warning.location, file_db)
-        );
+        let label = Label::new(warning.location.file, warning.location.span, "");
+        let pretty_warn = Diagnostic::new_warning(warning.data.to_string(), label);
+        pretty_print(&pretty_warn, file_db);
     }
+}
+
+fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files) {
+    ERRORS.fetch_add(1, Ordering::Relaxed);
+    let label = Label::new(location.file, location.span, "");
+    let diagnostic = Diagnostic::new_error(msg.to_string(), label);
+    pretty_print(&diagnostic, file_db);
+}
+
+fn pretty_print(diagnostic: &Diagnostic, file_db: &Files) {
+    use codespan_reporting::term::{self, termcolor};
+    let mut term = termcolor::Ansi::new(std::io::stdout());
+    term::emit(&mut term, &term::Config::default(), file_db, diagnostic)
+        .expect("failed to emit warning");
 }
 
 fn main() {
@@ -317,56 +328,6 @@ fn print_issues(warnings: usize, errors: usize) {
     eprintln!("{} generated", msg);
 }
 
-fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files) {
-    ERRORS.fetch_add(1, Ordering::Relaxed);
-    print!(
-        "{}",
-        pretty_print(Colour::Red.bold().paint("error"), msg, location, file_db,)
-    );
-}
-
-#[must_use]
-fn pretty_print<T: std::fmt::Display>(
-    prefix: ANSIString,
-    msg: T,
-    location: Location,
-    file_db: &Files,
-) -> String {
-    let file = location.file;
-    let start = file_db
-        .location(file, location.span.start())
-        .expect("start location should be in bounds");
-    let buf = format!(
-        "{}:{}:{} {}: {}\n",
-        file_db.name(file).to_string_lossy(),
-        start.line.number(),
-        start.column.number(),
-        prefix,
-        msg
-    );
-    // avoid printing spurious newline for errors and EOF
-    if location.span.end() == 0.into() {
-        return buf;
-    }
-    let end = file_db
-        .location(file, location.span.end())
-        .expect("end location should be in bounds");
-    if start.line == end.line {
-        let line = file_db
-            .line_span(file, start.line)
-            .expect("line should be in bounds");
-        format!(
-            "{}{}{}{}\n",
-            buf,
-            file_db.source_slice(file, line).unwrap(),
-            " ".repeat(start.column.0 as usize),
-            "^".repeat((end.column - start.column).0 as usize)
-        )
-    } else {
-        buf
-    }
-}
-
 #[inline]
 fn get_warnings() -> usize {
     ERRORS.load(Ordering::SeqCst)
@@ -378,33 +339,6 @@ fn get_errors() -> usize {
 }
 
 fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
-    eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
+    eprintln!("{}: {}", ansi_term::Colour::Black.bold().paint("fatal"), msg);
     process::exit(code);
-}
-
-#[cfg(test)]
-mod test {
-    use super::{Files, Location};
-    use ansi_term::Style;
-    use codespan::Span;
-
-    fn pp<S: Into<Span>>(span: S, source: &str) -> String {
-        let mut file_db = Files::new();
-        let source = String::from(source).into();
-        let file = file_db.add("<test-suite>", source);
-        let location = Location {
-            file,
-            span: span.into(),
-        };
-        let ansi_str = Style::new().paint("");
-        super::pretty_print(ansi_str, "", location, &file_db)
-    }
-    #[test]
-    fn pretty_print() {
-        assert_eq!(
-            dbg!(pp(8..15, "int i = \"hello\";\n")).lines().nth(2),
-            Some("        ^^^^^^^")
-        );
-        pp(0..0, "");
-    }
 }

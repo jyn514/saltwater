@@ -582,7 +582,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut current = 0;
         let mut members = vec![];
         loop {
-            let member = self.expect(Token::Id(Default::default()))?;
+            let error_name = InternedStr::get_or_intern("identifier");
+            let member = self.expect(Token::Id(error_name))?;
             let name = match member.data {
                 Token::Id(id) => id,
                 _ => unreachable!("expect is broken"),

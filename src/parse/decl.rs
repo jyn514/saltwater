@@ -1682,7 +1682,7 @@ impl Type {
         match self {
             ty if ty.is_scalar() => 1,
             Type::Array(_, ArrayType::Fixed(size)) => *size as usize,
-            Type::Array(_, ArrayType::Unbounded) => 0, // TODO: is this reasonable?
+            Type::Array(_, ArrayType::Unbounded) => 0,
             Type::Struct(st) | Type::Union(st) => st.members().len(),
             Type::Error => 1, // TODO: is this reasonable?
             _ => unimplemented!("type checking for {}", self),

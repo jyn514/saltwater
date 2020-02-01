@@ -138,6 +138,9 @@ pub enum SemanticError {
     #[error("overflow in enumeration constant")]
     EnumOverflow,
 
+    #[error("initializers cannot be empty")]
+    EmptyInitializer,
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

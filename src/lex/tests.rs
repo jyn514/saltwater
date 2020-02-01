@@ -161,6 +161,7 @@ fn test_float_literals() {
     // TODO: change this whenever https://github.com/rust-lang/rust/issues/31407 is closed
     assert_float(
         "1.797693134862315708e+308L",
+        #[allow(clippy::excessive_precision)]
         1.797_693_134_862_315_730_8e+308,
     );
     assert_float("9.88131291682e-324L", 9.881_312_916_82e-324);

@@ -1304,8 +1304,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // NOTE: this does NOT consume {} except for sub-elements
     fn aggregate_initializer(&mut self, elem_type: &Type) -> SyntaxResult<Initializer> {
         let mut elems = vec![];
-        if let Some(token) = self.match_next(&Token::RightBrace) {
-            self.semantic_err("initializers cannot be empty", token.location);
+        if self.peek_token() == Some(&Token::RightBrace) {
+            self.error_handler
+                .push_back(self.next_location().with(SemanticError::EmptyInitializer));
             return Ok(Initializer::InitializerList(elems));
         }
         // char [][3] = {1};
@@ -2173,6 +2174,9 @@ mod tests {
                     panic!("expected initializer list, got error: {}", data)
                 }
             };
+        }
+        for err in &["int i = {};", "int a[] = {};", "int a[][3] = {{}};"] {
+            assert!(parse(err).unwrap().is_err());
         }
     }
     #[test]

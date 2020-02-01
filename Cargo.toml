@@ -16,7 +16,7 @@ ansi_term = "0.12"
 cranelift = "0.56"
 cranelift-module = "0.56"
 cranelift-object = "0.56"
-env_logger = "0.7"
+env_logger = { version = "0.7", default-features = false }
 hexf-parse = "0.1"
 thiserror = ">=1.0.9"
 log = "0.4"

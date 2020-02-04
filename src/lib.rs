@@ -73,6 +73,10 @@ pub struct Opt {
 
     /// If set, compile and assemble but do not link. Object file is machine-dependent.
     pub no_link: bool,
+
+    /// The maximum number of errors to allow before giving up.
+    /// If None, allows an unlimited number of errors.
+    pub max_errors: Option<std::num::NonZeroUsize>,
 }
 
 impl Default for Opt {
@@ -83,6 +87,7 @@ impl Default for Opt {
             debug_ast: false,
             debug_asm: false,
             no_link: false,
+            max_errors: None,
         }
     }
 }

@@ -9,7 +9,7 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cranelift_module::Backend;
@@ -54,6 +54,36 @@ impl From<CompileError> for Error {
 impl From<VecDeque<CompileError>> for Error {
     fn from(errs: VecDeque<CompileError>) -> Self {
         Error::Source(errs)
+    }
+}
+
+#[derive(Debug)]
+pub struct Opt {
+    /// The file where the C source came from
+    pub filename: PathBuf,
+
+    /// If set, print all tokens found by the lexer in addition to compiling.
+    pub debug_lex: bool,
+
+    /// If set, print the parsed abstract syntax tree in addition to compiling
+    pub debug_ast: bool,
+
+    /// If set, print the intermediate representation of the program in addition to compiling
+    pub debug_asm: bool,
+
+    /// If set, compile and assemble but do not link. Object file is machine-dependent.
+    pub no_link: bool,
+}
+
+impl Default for Opt {
+    fn default() -> Self {
+        Opt {
+            filename: "<default>".into(),
+            debug_lex: false,
+            debug_ast: false,
+            debug_asm: false,
+            no_link: false,
+        }
     }
 }
 

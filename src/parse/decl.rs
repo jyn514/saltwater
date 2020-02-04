@@ -599,13 +599,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         Ok(i) => i,
                         Err(_) => {
                             self.semantic_err(
-                                "values between INT_MAX and UINT_MAX are not supported for enums",
+                                "enumeration constants must be representable in `int`",
                                 constant.location,
                             );
                             std::i64::MAX
                         }
                     },
-                    Literal::Char(c) => i64::from(c),
+                    Literal::Char(c) => c.into(),
                     _ => {
                         self.semantic_err(
                             "expression is not an integer constant",
@@ -631,7 +631,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             {
                 break;
             }
-            current += 1;
+            current = current.checked_add(1).unwrap_or_else(|| {
+                self.error_handler
+                    .push_back(self.last_location.error(SemanticError::EnumOverflow));
+                0
+            });
         }
         for (name, _) in &members {
             self.scope._remove(name);

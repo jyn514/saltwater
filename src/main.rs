@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -23,7 +23,7 @@ use rcc::{
         error::{CompileWarning, RecoverableResult},
         lex::Location,
     },
-    link, utils, Error,
+    link, utils, Error, Opt,
 };
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
@@ -58,45 +58,14 @@ const USAGE: &str = "\
 usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
            [--debug-lex] [--no-link | -c] [<file>]";
 
-#[derive(Debug)]
-struct Opt {
-    /// The file to read C source from.
-    /// "-" means stdin (use ./- to read a file called '-').
-    /// Only one file at a time is currently accepted.
-    filename: PathBuf,
-
-    /// If set, print all tokens found by the lexer in addition to compiling.
-    debug_lex: bool,
-
-    /// If set, print the parsed abstract syntax tree in addition to compiling
-    debug_ast: bool,
-
-    /// If set, print the intermediate representation of the program in addition to compiling
-    debug_asm: bool,
-
-    /// If set, compile and assemble but do not link. Object file is machine-dependent.
-    no_link: bool,
-
-    /// The output file to use.
-    output: PathBuf,
-}
-
-impl Default for Opt {
-    fn default() -> Self {
-        Opt {
-            filename: "<default>".into(),
-            debug_lex: false,
-            debug_ast: false,
-            debug_asm: false,
-            no_link: false,
-            output: PathBuf::from("a.out"),
-        }
-    }
-}
-
 // TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
-fn real_main(file_db: &Files<String>, file_id: FileId, opt: Opt) -> Result<(), Error> {
+fn real_main(
+    file_db: &Files<String>,
+    file_id: FileId,
+    opt: Opt,
+    output: &Path,
+) -> Result<(), Error> {
     env_logger::init();
     let (result, warnings) = compile(
         file_db.source(file_id),
@@ -109,11 +78,11 @@ fn real_main(file_db: &Files<String>, file_id: FileId, opt: Opt) -> Result<(), E
 
     let product = result?;
     if opt.no_link {
-        return assemble(product, opt.output.as_path());
+        return assemble(product, output);
     }
     let tmp_file = NamedTempFile::new()?;
     assemble(product, tmp_file.as_ref())?;
-    link(tmp_file.as_ref(), opt.output.as_path()).map_err(io::Error::into)
+    link(tmp_file.as_ref(), output).map_err(io::Error::into)
 }
 
 fn handle_warnings(warnings: VecDeque<CompileWarning>, file: FileId, file_db: &Files<String>) {
@@ -131,7 +100,7 @@ fn main() {
     #[cfg(debug_assertions)]
     color_backtrace::install();
 
-    let mut opt = match parse_args() {
+    let (mut opt, output) = match parse_args() {
         Ok(opt) => opt,
         Err(err) => {
             println!(
@@ -166,7 +135,8 @@ fn main() {
     let mut file_db = Files::new();
     // TODO: remove `lossy` call
     let file_id = file_db.add(opt.filename.to_string_lossy(), buf);
-    real_main(&file_db, file_id, opt).unwrap_or_else(|err| err_exit(err, file_id, &file_db));
+    real_main(&file_db, file_id, opt, &output)
+        .unwrap_or_else(|err| err_exit(err, file_id, &file_db));
 }
 
 fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
@@ -178,7 +148,7 @@ macro_rules! type_sizes {
         $(println!("{}: {}", stringify!($type), std::mem::size_of::<$type>());)*
     };
 }
-fn parse_args() -> Result<Opt, pico_args::Error> {
+fn parse_args() -> Result<(Opt, PathBuf), pico_args::Error> {
     let mut input = Arguments::from_env();
     if input.contains(["-h", "--help"]) {
         println!("{}", HELP);
@@ -205,18 +175,21 @@ fn parse_args() -> Result<Opt, pico_args::Error> {
             RecoverableResult<Expr>
         );
     }
-    Ok(Opt {
-        debug_lex: input.contains("--debug-lex"),
-        debug_asm: input.contains("--debug-asm"),
-        debug_ast: input.contains(["-a", "--debug-ast"]),
-        no_link: input.contains(["-c", "--no-link"]),
-        output: input
-            .opt_value_from_os_str(["-o", "--output"], os_str_to_path_buf)?
-            .unwrap_or_else(|| "a.out".into()),
-        filename: input
-            .free_from_os_str(os_str_to_path_buf)?
-            .unwrap_or_else(|| "-".into()),
-    })
+    let output = input
+        .opt_value_from_os_str(["-o", "--output"], os_str_to_path_buf)?
+        .unwrap_or_else(|| "a.out".into());
+    Ok((
+        Opt {
+            debug_lex: input.contains("--debug-lex"),
+            debug_asm: input.contains("--debug-asm"),
+            debug_ast: input.contains(["-a", "--debug-ast"]),
+            no_link: input.contains(["-c", "--no-link"]),
+            filename: input
+                .free_from_os_str(os_str_to_path_buf)?
+                .unwrap_or_else(|| "-".into()),
+        },
+        output,
+    ))
 }
 
 fn err_exit(err: Error, file: FileId, file_db: &Files<String>) -> ! {

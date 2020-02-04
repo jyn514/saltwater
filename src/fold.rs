@@ -19,6 +19,7 @@ fn fold_scalar_bin_op(
     simple: fn(f64, f64) -> f64,
     overflowing: fn(i64, i64) -> (i64, bool),
     wrapping: fn(u64, u64) -> u64,
+    wrapping_byte: fn(u8, u8) -> u8,
 ) -> impl Fn(&Literal, &Literal, &Type) -> Result<Option<Literal>, SemanticError> {
     move |a: &Literal, b: &Literal, _ctype| match (a, b) {
         (Int(a), Int(b)) => {
@@ -34,6 +35,7 @@ fn fold_scalar_bin_op(
             }
         }
         (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(wrapping(*a, *b)))),
+        (Char(a), Char(b)) => Ok(Some(Char(wrapping_byte(*a, *b)))),
         (Float(a), Float(b)) => Ok(Some(Float(simple(*a, *b)))),
         // TODO: find a way to do this that allows `"hello" + 2 - 1`
         //(Str(s), Int(i)) | (Int(i), Str(s)) => {
@@ -170,19 +172,34 @@ impl Expr {
             ExprType::Add(left, right) => left.literal_bin_op(
                 *right,
                 &location,
-                fold_scalar_bin_op(f64::add, i64::overflowing_add, u64::wrapping_add),
+                fold_scalar_bin_op(
+                    f64::add,
+                    i64::overflowing_add,
+                    u64::wrapping_add,
+                    u8::wrapping_add,
+                ),
                 ExprType::Add,
             )?,
             ExprType::Sub(left, right) => left.literal_bin_op(
                 *right,
                 &location,
-                fold_scalar_bin_op(f64::sub, i64::overflowing_sub, u64::wrapping_sub),
+                fold_scalar_bin_op(
+                    f64::sub,
+                    i64::overflowing_sub,
+                    u64::wrapping_sub,
+                    u8::wrapping_sub,
+                ),
                 ExprType::Sub,
             )?,
             ExprType::Mul(left, right) => left.literal_bin_op(
                 *right,
                 &location,
-                fold_scalar_bin_op(f64::mul, i64::overflowing_mul, u64::wrapping_mul),
+                fold_scalar_bin_op(
+                    f64::mul,
+                    i64::overflowing_mul,
+                    u64::wrapping_mul,
+                    u8::wrapping_mul,
+                ),
                 ExprType::Mul,
             )?,
             ExprType::Div(left, right) => {
@@ -193,7 +210,12 @@ impl Expr {
                 left.literal_bin_op(
                     right,
                     &location,
-                    fold_scalar_bin_op(f64::div, i64::overflowing_div, u64::wrapping_div),
+                    fold_scalar_bin_op(
+                        f64::div,
+                        i64::overflowing_div,
+                        u64::wrapping_div,
+                        u8::wrapping_div,
+                    ),
                     ExprType::Div,
                 )?
             }
@@ -412,21 +434,29 @@ fn cast(expr: Expr, ctype: &Type) -> CompileResult<ExprType> {
 /// and we can use that to store the new type
 fn const_cast(token: &Literal, ctype: &Type) -> Option<Literal> {
     let token = match (token, ctype) {
-        (Int(i), Type::Bool) => Int((*i != 0) as i64),
+        (Int(i), Type::Bool) => Int((*i != 0).into()),
         (Int(i), Type::Double) | (Int(i), Type::Float) => Float(*i as f64),
         (Int(i), ty) if ty.is_integral() && ty.is_signed() => Int(*i),
         (Int(i), ty) if ty.is_integral() => UnsignedInt(*i as u64),
-        (UnsignedInt(u), Type::Bool) => Int((*u != 0) as i64),
+
+        (UnsignedInt(u), Type::Bool) => Int((*u != 0).into()),
         (UnsignedInt(u), Type::Double) | (UnsignedInt(u), Type::Float) => Float(*u as f64),
         (UnsignedInt(u), ty) if ty.is_integral() && ty.is_signed() => Int(*u as i64),
         (UnsignedInt(u), ty) if ty.is_integral() => UnsignedInt(*u),
+
         (Float(f), Type::Bool) => Int((*f != 0.0) as i64),
         (Float(f), Type::Double) | (Float(f), Type::Float) => Float(*f),
         (Float(f), ty) if ty.is_integral() && ty.is_signed() => Int(*f as i64),
         (Float(f), ty) if ty.is_integral() => UnsignedInt(*f as u64),
+
+        (&Char(c), Type::Bool) => Int(c.into()),
+        (&Char(c), Type::Double) | (&Char(c), Type::Float) => Float(c.into()),
+        (&Char(c), ty) if ty.is_integral() && ty.is_signed() => Int(c.into()),
+        (&Char(c), ty) if ty.is_integral() => UnsignedInt(c.into()),
+
         (Int(i), _) if ctype.is_pointer() && *i >= 0 => UnsignedInt(*i as u64),
         (UnsignedInt(u), _) if ctype.is_pointer() => UnsignedInt(*u),
-        (Char(c), _) if ctype.is_pointer() => UnsignedInt(u64::from(*c)),
+        (&Char(c), _) if ctype.is_pointer() => UnsignedInt(c.into()),
         _ => return None,
     };
     Some(token)
@@ -709,6 +739,21 @@ mod tests {
         assert_eq!(
             test_const_fold("8 >> -1").unwrap_err().data,
             SemanticError::NegativeShift { is_left: false }.into()
+        );
+    }
+    #[test]
+    fn test_char() {
+        assert_eq!(
+            test_const_fold("'1' + '1'").unwrap().expr,
+            parse_expr("98").unwrap().expr,
+        );
+        assert_eq!(
+            test_const_fold("'1' % '1'").unwrap().expr,
+            parse_expr("0").unwrap().expr,
+        );
+        assert_eq!(
+            test_const_fold("'1' - 1.0").unwrap().expr,
+            parse_expr("48.0").unwrap().expr,
         );
     }
 }

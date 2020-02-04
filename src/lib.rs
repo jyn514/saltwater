@@ -88,15 +88,10 @@ impl Default for Opt {
 }
 
 /// Compile and return the declarations and warnings.
-pub fn compile(
-    buf: &str,
-    filename: String,
-    debug_lex: bool,
-    debug_ast: bool,
-    debug_ir: bool,
-) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
-    let filename_ref = InternedStr::get_or_intern(&filename);
-    let mut cpp = PreProcessor::new(filename, buf.chars(), debug_lex);
+pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
+    let filename = opt.filename.to_string_lossy();
+    let filename_ref = InternedStr::get_or_intern(filename.as_ref());
+    let mut cpp = PreProcessor::new(filename, buf.chars(), opt.debug_lex);
     let (first, mut errs) = cpp.first_token();
     let eof = || Location {
         span: (buf.len() as u32..buf.len() as u32).into(),
@@ -113,7 +108,7 @@ pub fn compile(
         }
     };
 
-    let mut parser = Parser::new(first, &mut cpp, debug_ast);
+    let mut parser = Parser::new(first, &mut cpp, opt.debug_ast);
     let (hir, parse_errors) = parser.collect_results();
     errs.extend(parse_errors.into_iter());
     if hir.is_empty() && errs.is_empty() {
@@ -125,7 +120,7 @@ pub fn compile(
     if !errs.is_empty() {
         return (Err(Error::Source(errs)), warnings);
     }
-    let (result, ir_warnings) = ir::compile(hir, debug_ir);
+    let (result, ir_warnings) = ir::compile(hir, opt.debug_asm);
     warnings.extend(ir_warnings);
     (result.map_err(Error::from), warnings)
 }
@@ -164,7 +159,11 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
 mod tests {
     use super::*;
     fn compile(src: &str) -> Result<Product, Error> {
-        super::compile(src, "<test-suite>".to_owned(), false, false, false).0
+        let options = Opt {
+            filename: "<test-suite>".into(),
+            ..Default::default()
+        };
+        super::compile(src, &options).0
     }
     fn compile_err(src: &str) -> VecDeque<CompileError> {
         match compile(src).err().unwrap() {

@@ -41,13 +41,11 @@ pub fn compile_and_run(program: &str, args: &[&str]) -> Result<Output, Error> {
 }
 
 pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, Error> {
-    let (result, _warnings) = rcc::compile(
-        program,
-        "<integration-test>".to_string(),
-        false,
-        false,
-        false,
-    );
+    let opts = rcc::Opt {
+        filename: "<integration-test>".into(),
+        ..Default::default()
+    };
+    let (result, _warnings) = rcc::compile(program, &opts);
     let module = result?;
     let output = tempfile::NamedTempFile::new()
         .expect("cannot create tempfile")

@@ -45,7 +45,7 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
     let test_func = match first_line.as_str() {
         "// compile" => utils::assert_compiles,
         "// no-main" => utils::assert_compiles_no_main,
-        "// fail" | "// compile-fail" => utils::assert_compile_error,
+        "// fail" | "// compile-fail" | "// compile-error" => utils::assert_compile_error,
         "// succeeds" => utils::assert_succeeds,
         "// crash" => utils::assert_crash,
         "// ignore" => panic!("ignored tests should have an associated issue"),

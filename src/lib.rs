@@ -140,7 +140,6 @@ pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<Compil
             Err(err) => handle_err!(err),
         }
     }
-    //let (hir, parse_errors) = parser.collect_results();
     if hir.is_empty() && errs.is_empty() {
         errs.push_back(eof().error(SemanticError::EmptyProgram));
     }

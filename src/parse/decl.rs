@@ -456,6 +456,22 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
         Ok((storage_class, qualifiers, ctype, seen_compound))
     }
+    fn compound_error(kind: Keyword) -> SyntaxResult<Type> {
+        use std::rc::Rc;
+        let bad = Symbol {
+            ctype: Type::Error,
+            id: Default::default(),
+            init: Default::default(),
+            qualifiers: Default::default(),
+            storage_class: Default::default(),
+        };
+        Ok(match kind {
+            Keyword::Struct => Type::Struct(StructType::Anonymous(Rc::new(vec![bad]))),
+            Keyword::Union => Type::Union(StructType::Anonymous(Rc::new(vec![bad]))),
+            Keyword::Enum => Type::Enum(None, vec![]),
+            _ => unreachable!(),
+        })
+    }
     /*
     rewritten grammar:
 
@@ -472,7 +488,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ;
     */
     fn compound_specifier(&mut self, kind: Keyword, location: Location) -> SyntaxResult<Type> {
-        use std::rc::Rc;
         let ident = match self.match_next(&Token::Id(Default::default())) {
             Some(Locatable {
                 data: Token::Id(data),
@@ -490,12 +505,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         format!("bare {} as type specifier is not allowed", kind),
                         location,
                     );
-                    return Ok(match kind {
-                        Keyword::Struct => Type::Struct(StructType::Anonymous(Rc::new(vec![]))),
-                        Keyword::Union => Type::Union(StructType::Anonymous(Rc::new(vec![]))),
-                        Keyword::Enum => Type::Enum(None, vec![]),
-                        _ => unreachable!(),
-                    });
+                    return Self::compound_error(kind);
                 }
             };
             let has_semicolon = self.peek_token() == Some(&Token::Semicolon);
@@ -534,10 +544,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
             };
         }
+        let ident = ident.map(|loc| loc.data);
         if let Some(locatable) = self.match_next(&Token::RightBrace) {
             self.semantic_err(format!("cannot have an empty {}", kind), locatable.location);
+            return Self::compound_error(kind);
         }
-        let ident = ident.map(|loc| loc.data);
         let ctype = if kind == Keyword::Enum {
             self.enumerators(ident, location)
         } else {
@@ -697,6 +708,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if members.is_empty() {
             let loc = self.next_location();
             self.semantic_err("cannot have empty struct", loc);
+            return if c_struct {
+                Self::compound_error(Keyword::Struct)
+            } else {
+                Self::compound_error(Keyword::Union)
+            };
         }
         let constructor = if c_struct { Type::Struct } else { Type::Union };
         if let Some(id) = ident {

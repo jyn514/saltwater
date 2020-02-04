@@ -3,17 +3,6 @@ use crate::data::prelude::*;
 use std::ops::{Add, Div, Mul, Sub};
 use Literal::*;
 
-macro_rules! fold_int_unary_op {
-    ($($op: tt)*) => {
-        |token| match token {
-            Int(i) => Ok(Int($($op)*(i))),
-            UnsignedInt(u) => Ok(UnsignedInt($($op)*(u))),
-            Char(c) => Ok(Char($($op)*(c))),
-            _ => Ok(token),
-        }
-    };
-}
-
 macro_rules! fold_int_bin_op {
     ($op: tt) => {
         |a: &Literal, b: &Literal, _| match (a, b) {
@@ -150,7 +139,12 @@ impl Expr {
             )?,
             ExprType::BitwiseNot(expr) => expr.const_fold()?.map_literal(
                 &location,
-                fold_int_unary_op!(!),
+                |token| match token {
+                    Int(i) => Ok(Int(!i)),
+                    UnsignedInt(u) => Ok(UnsignedInt(!u)),
+                    Char(c) => Ok(Char(!c)),
+                    _ => Ok(token),
+                },
                 ExprType::BitwiseNot,
             )?,
             ExprType::Comma(left, right) => {

@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Read};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -65,7 +66,7 @@ usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
 fn real_main(
     file_db: &Files<String>,
     file_id: FileId,
-    opt: Opt,
+    opt: &Opt,
     output: &Path,
 ) -> Result<(), Error> {
     env_logger::init();
@@ -131,8 +132,8 @@ fn main() {
     let mut file_db = Files::new();
     // TODO: remove `lossy` call
     let file_id = file_db.add(opt.filename.to_string_lossy(), buf);
-    real_main(&file_db, file_id, opt, &output)
-        .unwrap_or_else(|err| err_exit(err, file_id, &file_db));
+    real_main(&file_db, file_id, &opt, &output)
+        .unwrap_or_else(|err| err_exit(err, opt.max_errors, file_id, &file_db));
 }
 
 fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
@@ -145,7 +146,6 @@ macro_rules! type_sizes {
     };
 }
 fn parse_args() -> Result<(Opt, PathBuf), pico_args::Error> {
-    use std::num::NonZeroUsize;
     let mut input = Arguments::from_env();
     if input.contains(["-h", "--help"]) {
         println!("{}", HELP);
@@ -200,12 +200,25 @@ fn parse_args() -> Result<(Opt, PathBuf), pico_args::Error> {
     ))
 }
 
-fn err_exit(err: Error, file: FileId, file_db: &Files<String>) -> ! {
+fn err_exit(
+    err: Error,
+    max_errors: Option<NonZeroUsize>,
+    file: FileId,
+    file_db: &Files<String>,
+) -> ! {
     use Error::*;
     match err {
         Source(errs) => {
-            for err in errs {
+            for err in &errs {
                 error(&err.data, err.location(), file, file_db);
+            }
+            if let Some(max) = max_errors {
+                if usize::from(max) <= errs.len() {
+                    println!(
+                        "fatal: too many errors (--max-errors {}), stopping now",
+                        max
+                    );
+                }
             }
             let (num_warnings, num_errors) = (get_warnings(), get_errors());
             print_issues(num_warnings, num_errors);

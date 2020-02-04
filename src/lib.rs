@@ -97,7 +97,26 @@ pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<Compil
     let filename = opt.filename.to_string_lossy();
     let filename_ref = InternedStr::get_or_intern(filename.as_ref());
     let mut cpp = PreProcessor::new(filename, buf.chars(), opt.debug_lex);
-    let (first, mut errs) = cpp.first_token();
+
+    let mut errs = VecDeque::new();
+
+    macro_rules! handle_err {
+        ($err: expr) => {{
+            errs.push_back($err);
+            if let Some(max) = opt.max_errors {
+                if errs.len() >= max.into() {
+                    return (Err(Error::Source(errs)), cpp.warnings());
+                }
+            }
+        }};
+    }
+    let first = loop {
+        match cpp.next() {
+            Some(Ok(token)) => break Some(token),
+            Some(Err(err)) => handle_err!(err),
+            None => break None,
+        }
+    };
     let eof = || Location {
         span: (buf.len() as u32..buf.len() as u32).into(),
         filename: filename_ref,
@@ -113,9 +132,15 @@ pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<Compil
         }
     };
 
+    let mut hir = vec![];
     let mut parser = Parser::new(first, &mut cpp, opt.debug_ast);
-    let (hir, parse_errors) = parser.collect_results();
-    errs.extend(parse_errors.into_iter());
+    for res in &mut parser {
+        match res {
+            Ok(decl) => hir.push(decl),
+            Err(err) => handle_err!(err),
+        }
+    }
+    //let (hir, parse_errors) = parser.collect_results();
     if hir.is_empty() && errs.is_empty() {
         errs.push_back(eof().error(SemanticError::EmptyProgram));
     }

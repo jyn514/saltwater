@@ -49,6 +49,8 @@ FLAGS:
 
 OPTIONS:
     -o, --output <output>    The output file to use. [default: a.out]
+        --max-errors <max>   The maximum number of errors to allow before giving up.
+                             Use 0 to allow unlimited errors. [default: 10]
 
 ARGS:
     <file>    The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
@@ -143,6 +145,7 @@ macro_rules! type_sizes {
     };
 }
 fn parse_args() -> Result<(Opt, PathBuf), pico_args::Error> {
+    use std::num::NonZeroUsize;
     let mut input = Arguments::from_env();
     if input.contains(["-h", "--help"]) {
         println!("{}", HELP);
@@ -172,12 +175,23 @@ fn parse_args() -> Result<(Opt, PathBuf), pico_args::Error> {
     let output = input
         .opt_value_from_os_str(["-o", "--output"], os_str_to_path_buf)?
         .unwrap_or_else(|| "a.out".into());
+    let max_errors = input
+        .opt_value_from_fn("--max-errors", |s| {
+            // TODO: make this nicer when ParseIntError::kind() is stable
+            match usize::from_str_radix(s, 10) {
+                Ok(0) => Ok(None),
+                Ok(i) => Ok(Some(NonZeroUsize::new(i).unwrap())),
+                Err(e) => Err(e),
+            }
+        })?
+        .unwrap_or_else(|| Some(NonZeroUsize::new(10).unwrap()));
     Ok((
         Opt {
             debug_lex: input.contains("--debug-lex"),
             debug_asm: input.contains("--debug-asm"),
             debug_ast: input.contains(["-a", "--debug-ast"]),
             no_link: input.contains(["-c", "--no-link"]),
+            max_errors,
             filename: input
                 .free_from_os_str(os_str_to_path_buf)?
                 .unwrap_or_else(|| "-".into()),

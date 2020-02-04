@@ -1614,7 +1614,7 @@ impl Declarator {
                              help: try array of pointer to function: (*{}[])()",
                             current, name
                         )));
-                        Type::Array(Box::new(current), arr_type)
+                        Type::Array(Box::new(Type::Error), arr_type)
                     }
                     _ => Type::Array(Box::new(current), arr_type),
                 },
@@ -1647,7 +1647,7 @@ impl Declarator {
                             location,
                         });
                         Type::Function(FunctionType {
-                            return_type: Box::new(current),
+                            return_type: Box::new(Type::Error),
                             params: func_decl.params.into_iter().map(|x| x.data).collect(),
                             varargs: func_decl.varargs,
                         })
@@ -1666,6 +1666,7 @@ impl Declarator {
                 data: "variables cannot have type 'void'".to_string(),
                 location: identifier.map_or_else(|| *location, |l| l.location),
             });
+            current = Type::Error;
         }
         if pending_errs.is_empty() {
             Ok((identifier, current))
@@ -1684,7 +1685,7 @@ impl Type {
             Type::Array(_, ArrayType::Fixed(size)) => *size as usize,
             Type::Array(_, ArrayType::Unbounded) => 0,
             Type::Struct(st) | Type::Union(st) => st.members().len(),
-            Type::Error => 1, // TODO: is this reasonable?
+            Type::Error => 1,
             _ => unimplemented!("type checking for {}", self),
         }
     }

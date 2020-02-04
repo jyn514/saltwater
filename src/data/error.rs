@@ -135,6 +135,9 @@ pub enum SemanticError {
     #[error("expected expression, got typedef")]
     TypedefInExpressionContext,
 
+    #[error("overflow in enumeration constant")]
+    EnumOverflow,
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

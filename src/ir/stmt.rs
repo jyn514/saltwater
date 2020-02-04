@@ -252,12 +252,14 @@ impl Compiler {
 
         let start_block = builder.create_ebb();
         builder.switch_to_block(start_block);
+        let old_saw_loop = self.last_saw_loop;
         self.last_saw_loop = false;
 
         self.switches
             .push((Switch::new(), None, builder.create_ebb()));
         self.compile_stmt(body, builder)?;
         let (switch, default, end) = self.switches.pop().unwrap();
+        self.last_saw_loop = old_saw_loop;
 
         Self::jump_to_block(end, builder);
         builder.switch_to_block(dummy_block);

@@ -67,13 +67,7 @@ fn real_main(
     output: &Path,
 ) -> Result<(), Error> {
     env_logger::init();
-    let (result, warnings) = compile(
-        file_db.source(file_id),
-        opt.filename.to_string_lossy().into_owned(),
-        opt.debug_lex,
-        opt.debug_ast,
-        opt.debug_asm,
-    );
+    let (result, warnings) = compile(file_db.source(file_id), &opt);
     handle_warnings(warnings, file_id, file_db);
 
     let product = result?;

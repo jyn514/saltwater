@@ -712,4 +712,33 @@ mod tests {
         assert_fold("'1' % '1'", "0");
         assert_fold("'1' - 1.0", "48.0");
     }
+    #[test]
+    fn test_cast() {
+        assert_fold("!5", "0");
+        assert_fold("!!5", "1");
+        assert_fold("1 + .1", "1.1");
+        assert_fold("1 + (float).1", "1.1");
+        assert_fold("(int)1", "1");
+        assert_fold("(unsigned)1", "1u");
+
+        assert_fold("!5u", "0");
+        assert_fold("!!5u", "1");
+        assert_fold("1u + .1", "1.1");
+        assert_fold("1u+ (float).1", "1.1");
+        assert_fold("(short)1u", "1");
+        assert_fold("(unsigned long)1u", "1u");
+
+        assert_fold("!5.0", "0");
+        assert_fold("!!5.0", "1");
+        assert_fold("(float)1.0 + .1", "1.1");
+        assert_fold("1.0 + (float).1", "1.1");
+        assert_fold("(long)1.0", "1");
+        assert_fold("(unsigned short)1u", "1u");
+
+        assert_fold("!'1'", "0");
+        assert_fold("!!'1'", "1");
+        assert_fold("'0' + .1", "48.1");
+        assert_fold("(long)'0'", "48");
+        assert_fold("(unsigned short)'0'", "48u");
+    }
 }

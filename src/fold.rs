@@ -435,21 +435,24 @@ fn cast(expr: Expr, ctype: &Type) -> CompileResult<ExprType> {
 fn const_cast(token: &Literal, ctype: &Type) -> Option<Literal> {
     let token = match (token, ctype) {
         (Int(i), Type::Bool) => Int((*i != 0).into()),
+        (Int(i), Type::Char(_)) => Char(*i as u8),
         (Int(i), Type::Double) | (Int(i), Type::Float) => Float(*i as f64),
         (Int(i), ty) if ty.is_integral() && ty.is_signed() => Int(*i),
         (Int(i), ty) if ty.is_integral() => UnsignedInt(*i as u64),
 
         (UnsignedInt(u), Type::Bool) => Int((*u != 0).into()),
+        (UnsignedInt(u), Type::Char(_)) => Char(*u as u8),
         (UnsignedInt(u), Type::Double) | (UnsignedInt(u), Type::Float) => Float(*u as f64),
         (UnsignedInt(u), ty) if ty.is_integral() && ty.is_signed() => Int(*u as i64),
         (UnsignedInt(u), ty) if ty.is_integral() => UnsignedInt(*u),
 
         (Float(f), Type::Bool) => Int((*f != 0.0) as i64),
+        (Float(f), Type::Char(_)) => Char(*f as u8),
         (Float(f), Type::Double) | (Float(f), Type::Float) => Float(*f),
         (Float(f), ty) if ty.is_integral() && ty.is_signed() => Int(*f as i64),
         (Float(f), ty) if ty.is_integral() => UnsignedInt(*f as u64),
 
-        (&Char(c), Type::Bool) => Int(c.into()),
+        (&Char(c), Type::Bool) => Int((c != 0).into()),
         (&Char(c), Type::Double) | (&Char(c), Type::Float) => Float(c.into()),
         (&Char(c), ty) if ty.is_integral() && ty.is_signed() => Int(c.into()),
         (&Char(c), ty) if ty.is_integral() => UnsignedInt(c.into()),

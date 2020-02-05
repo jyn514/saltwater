@@ -743,6 +743,8 @@ mod tests {
         assert_fold("(long)1.0", "1");
         assert_fold("(unsigned short)1u", "1u");
 
+        assert_fold("'1' == 0", "0");
+        assert_fold("'1' != 0", "1");
         assert_fold("!'1'", "0");
         assert_fold("!!'1'", "1");
         assert_fold("'0' + .1", "48.1");

@@ -1255,6 +1255,7 @@ impl Expr {
             ))
         } else {
             let zero = Expr::zero(self.location).cast(&self.ctype).unwrap();
+            debug_assert!(zero.ctype == self.ctype);
             Ok(Expr {
                 constexpr: self.constexpr,
                 lval: false,
@@ -1264,8 +1265,10 @@ impl Expr {
             })
         }
     }
+    // !expr
     pub fn logical_not(self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         let boolean = self.truthy()?;
+        debug_assert!(boolean.ctype == Type::Bool);
         let zero = Expr::zero(boolean.location).cast(&Type::Bool).unwrap();
         Ok(Expr {
             constexpr: boolean.constexpr,

@@ -352,7 +352,7 @@ impl std::fmt::Display for Literal {
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
             Str(s) => write!(f, "\"{}\"", s),
-            Char(c) => write!(f, "{}", c),
+            Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
         }
     }
 }

@@ -576,9 +576,14 @@ mod tests {
         parse_expr(s).unwrap().const_fold()
     }
     fn assert_fold(original: &str, expected: &str) {
+        let (folded_a, folded_b) = (
+            test_const_fold(original).unwrap(),
+            test_const_fold(expected).unwrap(),
+        );
         assert_eq!(
-            test_const_fold(original).unwrap().expr,
-            test_const_fold(expected).unwrap().expr
+            folded_a.expr, folded_b.expr,
+            "({}) is not ({}) (folding {})",
+            folded_a, folded_b, original,
         )
     }
 

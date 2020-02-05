@@ -572,16 +572,19 @@ mod tests {
     fn test_const_fold(s: &str) -> CompileResult<Expr> {
         parse_expr(s).unwrap().const_fold()
     }
+    fn assert_fold(original: &str, expected: &str) {
+        assert_eq!(
+            test_const_fold(original).unwrap().expr,
+            test_const_fold(expected).unwrap().expr
+        )
+    }
 
     // I will be including the test cases from https://github.com/jyn514/rcc/issues/38#issue-491407941
     // as well as a working case for each operator
 
     #[test]
     fn test_addition() {
-        assert_eq!(
-            test_const_fold("3 + 4").unwrap().expr,
-            parse_expr("7").unwrap().expr
-        );
+        assert_fold("3 + 4", "7");
         assert_eq!(
             test_const_fold("0x7fffffffffffffffL + 1").unwrap_err().data,
             SemanticError::ConstOverflow { is_positive: true }.into()
@@ -596,10 +599,7 @@ mod tests {
 
     #[test]
     fn test_subtraction() {
-        assert_eq!(
-            test_const_fold("9 - 3").unwrap().expr,
-            parse_expr("6").unwrap().expr
-        );
+        assert_fold("9 - 3", "6");
         assert_eq!(
             test_const_fold("-0x7fffffffffffffffL - 2")
                 .unwrap_err()
@@ -616,10 +616,7 @@ mod tests {
 
     #[test]
     fn test_multiplication() {
-        assert_eq!(
-            test_const_fold("3 * 5").unwrap().expr,
-            parse_expr("15").unwrap().expr
-        );
+        assert_fold("3 * 5", "15");
         assert_eq!(
             test_const_fold("0x7fffffffffffffffL * 2").unwrap_err().data,
             SemanticError::ConstOverflow { is_positive: true }.into()
@@ -634,14 +631,8 @@ mod tests {
 
     #[test]
     fn test_division() {
-        assert_eq!(
-            test_const_fold("6 / 3").unwrap().expr,
-            parse_expr("2").unwrap().expr
-        );
-        assert_eq!(
-            test_const_fold("6 / -3").unwrap().expr,
-            test_const_fold("-2").unwrap().expr
-        );
+        assert_fold("6 / 3", "2");
+        assert_fold("6 / -3", "-2");
         assert_eq!(
             test_const_fold("1 / 0").unwrap_err().data,
             SemanticError::DivideByZero.into()
@@ -660,14 +651,8 @@ mod tests {
 
     #[test]
     fn test_modulo() {
-        assert_eq!(
-            test_const_fold("5 % 3").unwrap().expr,
-            parse_expr("2").unwrap().expr
-        );
-        assert_eq!(
-            test_const_fold("-7 % 2").unwrap().expr,
-            test_const_fold("-1").unwrap().expr
-        );
+        assert_fold("5 % 3", "2");
+        assert_fold("-7 % 2", "-1");
         assert_eq!(
             test_const_fold("1%0").unwrap_err().data,
             SemanticError::DivideByZero.into()
@@ -682,11 +667,7 @@ mod tests {
 
     #[test]
     fn test_negation() {
-        assert_eq!(
-            test_const_fold("-0").unwrap().expr,
-            parse_expr("0").unwrap().expr
-        );
-
+        assert_fold("-0", "0");
         assert_eq!(
             test_const_fold("-(-0x7fffffffffffffffL - 1L)")
                 .unwrap_err()
@@ -697,16 +678,8 @@ mod tests {
 
     #[test]
     fn test_left_shift() {
-        assert_eq!(
-            test_const_fold("8 << 0").unwrap().expr,
-            parse_expr("8").unwrap().expr
-        );
-
-        assert_eq!(
-            test_const_fold("1 << 4").unwrap().expr,
-            parse_expr("16").unwrap().expr
-        );
-
+        assert_fold("8 << 0", "8");
+        assert_fold("1 << 4", "16");
         assert_eq!(
             test_const_fold("1 << 65").unwrap_err().data,
             SemanticError::TooManyShiftBits {
@@ -726,16 +699,8 @@ mod tests {
 
     #[test]
     fn test_right_shift() {
-        assert_eq!(
-            test_const_fold("8 >> 0").unwrap().expr,
-            parse_expr("8").unwrap().expr
-        );
-
-        assert_eq!(
-            test_const_fold("32 >> 5").unwrap().expr,
-            parse_expr("1").unwrap().expr
-        );
-
+        assert_fold("8 >> 0", "8");
+        assert_fold("32 >> 5", "1");
         assert_eq!(
             test_const_fold("8 >> -1").unwrap_err().data,
             SemanticError::NegativeShift { is_left: false }.into()
@@ -743,17 +708,8 @@ mod tests {
     }
     #[test]
     fn test_char() {
-        assert_eq!(
-            test_const_fold("'1' + '1'").unwrap().expr,
-            parse_expr("98").unwrap().expr,
-        );
-        assert_eq!(
-            test_const_fold("'1' % '1'").unwrap().expr,
-            parse_expr("0").unwrap().expr,
-        );
-        assert_eq!(
-            test_const_fold("'1' - 1.0").unwrap().expr,
-            parse_expr("48.0").unwrap().expr,
-        );
+        assert_fold("'1' + '1'", "98");
+        assert_fold("'1' % '1'", "0");
+        assert_fold("'1' - 1.0", "48.0");
     }
 }

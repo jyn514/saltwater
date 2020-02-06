@@ -1,3 +1,4 @@
+use core::cell::RefCell;
 use std::process;
 
 use ansi_term::Colour;
@@ -5,6 +6,35 @@ use ansi_term::Colour;
 pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
     eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
     process::exit(code);
+}
+
+// this is just a guesstimate, it should probably be configurable
+const MAX_DEPTH: usize = 1000;
+thread_local!(static RECURSION_DEPTH: RefCell<usize> = RefCell::new(0));
+
+// make sure we don't crash on highly nested expressions
+// or rather, crash in a controlled way
+pub(crate) fn recursion_check() {
+    RECURSION_DEPTH.with(|depth| {
+        let d = *depth.borrow();
+        if d > MAX_DEPTH {
+            eprintln!(
+                "fatal: maximum recursion depth exceeded ({} > {})",
+                d, MAX_DEPTH
+            );
+            std::process::exit(102);
+        } else {
+            *depth.borrow_mut() = d + 1;
+        }
+        println!("{}", *depth.borrow());
+    })
+}
+
+pub(crate) fn recursion_done() {
+    RECURSION_DEPTH.with(|depth| {
+        let d = *depth.borrow();
+        *depth.borrow_mut() = d - 1;
+    });
 }
 
 /// ensure that a condition is true at compile time

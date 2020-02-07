@@ -1309,6 +1309,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // handle char[][3] = {{1,2,3}}, but also = {1,2,3} and {{1}, 2, 3}
     // NOTE: this does NOT consume {} except for sub-elements
     fn aggregate_initializer(&mut self, elem_type: &Type) -> SyntaxResult<Initializer> {
+        recursion_check();
         let mut elems = vec![];
         if self.peek_token() == Some(&Token::RightBrace) {
             self.error_handler
@@ -1360,6 +1361,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 break;
             }
         }
+        recursion_done();
         Ok(Initializer::InitializerList(elems))
     }
 

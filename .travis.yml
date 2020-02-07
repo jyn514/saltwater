@@ -54,6 +54,7 @@ deploy:
       on:
           tags: true
           branch: master
+          condition: $TRAVIS_RUST_VERSION = stable
       file: target/release/rcc
       skip_cleanup: true
       api_key:
@@ -62,5 +63,6 @@ deploy:
       on:
           tags: true
           branch: master
+          condition: $TRAVIS_RUST_VERSION = stable
       token:
           secure: Phpz1ZGy/HzDX9v/0GVv+ZDn6vZ5zxg51svj3tSZZjq5InZFJka14xG4cSCkzx/CI2knY8T0ATxHcr7zuTfAPpoa9LcSFg7PSHf/Zm44tseSOnrc20aENhc5Kn4UCqpARK9TcQvTMs8RvfD/TPhKvrYpFgWnRKhNJ0Tcb3Y4iXYAU0PjWNupvvkymt5KMDuDJnOFE/QV+9XpfV99dPijFfz2Gdn4YfV0uRH2a+MEhL7uD+iLikNd2CRBHhBqsQrmr76chwYspKe5/CKC1zLl9gwW4e8qGKYJxoA18m8fFgGTuDT+Xafy6RgE0WQ0GCnrHWuDm3MXWzAYv992yCKKFior9DvdNHQ1WFZXCim/IjgEMQ58E2FPCfkPd4BWOqA4qJ+w7tr2jyixbIVS1qnczoozO9x3c5FZrrZobAt082L1hdwj6H32ze0ckplo4Zk1CfipGz9CXiE2gQ+eRR3I/RcDjMvihnLnBNp69ul2xWTlj7/jxRwkoFBYFdNGG6N9JcXR3L5Xcs6ovVoZHCtz9x/WUb0igdzoWBpP+3/ISt2Wg7bjrpRe0rq8P1xhI8mpnYr+VloM7jHy8J8+rqr1PsIFOqAxm5vXlte7pfYJk44Fwa6g2Cus6ImfMUyzEoeWj4Y9kNb8rH3QXc2PmmQfGS45TBNdJApWPqbGxVidgPw=

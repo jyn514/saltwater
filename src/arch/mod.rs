@@ -31,7 +31,7 @@ lazy_static! {
 mod x64;
 pub use x64::*;
 
-/// Calculate the size of a union.
+/// Calculate the size of a union: the max of all member sizes
 pub fn union_size(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
     let symbols = &struct_type.members();
     symbols
@@ -41,7 +41,7 @@ pub fn union_size(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
         .try_fold(1, |n, size| Ok(max(n, size?)))
 }
 
-/// Calculate the size of a struct.
+/// Calculate the size of a struct: the sum of all member sizes 
 pub fn struct_size(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
     let symbols = &struct_type.members();
     symbols.iter().try_fold(0, |offset, symbol| {

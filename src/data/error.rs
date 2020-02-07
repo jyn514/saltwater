@@ -158,8 +158,8 @@ pub enum SyntaxError {
     #[error("expected statement, got {0}")]
     NotAStatement(super::Keyword),
 
-    #[error("maximum recursion depth exceeded ({0} > {1})")]
-    RecursionLimit(usize, usize),
+    #[error("maximum recursion depth exceeded ({0} > {})", crate::parse::MAX_RECURSION_DEPTH)]
+    RecursionLimit(usize),
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

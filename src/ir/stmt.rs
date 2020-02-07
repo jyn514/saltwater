@@ -49,17 +49,15 @@ impl Compiler {
             StmtType::If(condition, body, otherwise) => {
                 self.if_stmt(condition, *body, otherwise, builder)
             }
-            StmtType::While(condition, maybe_body) => {
-                self.while_stmt(Some(condition), maybe_body.map(|b| *b), builder)
-            }
+            StmtType::While(condition, body) => self.while_stmt(Some(condition), *body, builder),
             StmtType::Break | StmtType::Continue => {
                 self.loop_exit(stmt.data == StmtType::Break, stmt.location, builder)
             }
             StmtType::For(init, condition, post_loop, body) => self.for_loop(
-                init,
+                *init,
                 condition.map(|e| *e),
                 post_loop.map(|e| *e),
-                body,
+                *body,
                 stmt.location,
                 builder,
             ),
@@ -73,10 +71,8 @@ impl Compiler {
                     Err(stmt
                         .location
                         .error(SemanticError::LabelRedeclaration(previous)))
-                } else if let Some(stmt) = inner {
-                    self.compile_stmt(*stmt, builder)
                 } else {
-                    Ok(())
+                    self.compile_stmt(*inner, builder)
                 }
             }
             StmtType::Goto(name) => match self.labels.get(&name) {
@@ -86,8 +82,10 @@ impl Compiler {
                 }
                 None => Err(stmt.location.error(SemanticError::UndeclaredLabel(name))),
             },
-            StmtType::Case(constexpr, inner) => self.case(constexpr, inner, stmt.location, builder),
-            StmtType::Default(inner) => self.default(inner, stmt.location, builder),
+            StmtType::Case(constexpr, inner) => {
+                self.case(constexpr, *inner, stmt.location, builder)
+            }
+            StmtType::Default(inner) => self.default(*inner, stmt.location, builder),
         }
     }
     fn if_stmt(
@@ -160,7 +158,7 @@ impl Compiler {
     fn while_stmt(
         &mut self,
         maybe_condition: Option<Expr>,
-        maybe_body: Option<Stmt>,
+        body: Stmt,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         let (loop_body, end_body, old_saw_loop) = self.enter_loop(builder);
@@ -171,9 +169,7 @@ impl Compiler {
             builder.ins().brz(condition.ir_val, end_body, &[]);
         }
 
-        if let Some(body) = maybe_body {
-            self.compile_stmt(body, builder)?;
-        }
+        self.compile_stmt(body, builder)?;
         Self::jump_to_block(loop_body, builder);
 
         builder.switch_to_block(end_body);
@@ -204,35 +200,30 @@ impl Compiler {
     }
     fn for_loop(
         &mut self,
-        init: Option<Box<Stmt>>,
+        init: Stmt,
         condition: Option<Expr>,
         post_loop: Option<Expr>,
-        body: Option<Box<Stmt>>,
+        mut body: Stmt,
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
-        if let Some(init) = init {
-            self.compile_stmt(*init, builder)?;
-        }
-        let mut body = body.map(|x| *x);
+        self.compile_stmt(init, builder)?;
         if let Some(post_loop) = post_loop {
             let post_loop = Stmt {
                 data: StmtType::Expr(post_loop),
                 location,
             };
-            if let Some(Stmt {
+            if let Stmt {
                 data: StmtType::Compound(stmts),
                 ..
-            }) = &mut body
+            } = &mut body
             {
                 stmts.push(post_loop);
-            } else if let Some(other) = body {
-                body = Some(Stmt {
-                    data: StmtType::Compound(vec![other, post_loop]),
-                    location,
-                });
             } else {
-                body = Some(post_loop);
+                body = Stmt {
+                    data: StmtType::Compound(vec![body, post_loop]),
+                    location,
+                };
             };
         }
         self.while_stmt(condition, body, builder)
@@ -278,7 +269,7 @@ impl Compiler {
     fn case(
         &mut self,
         constexpr: u64,
-        stmt: Option<Box<Stmt>>,
+        stmt: Stmt,
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
@@ -297,15 +288,11 @@ impl Compiler {
             Self::jump_to_block(new, builder);
             builder.switch_to_block(new);
         };
-        if let Some(stmt) = stmt {
-            self.compile_stmt(*stmt, builder)
-        } else {
-            Ok(())
-        }
+        self.compile_stmt(stmt, builder)
     }
     fn default(
         &mut self,
-        inner: Option<Box<Stmt>>,
+        inner: Stmt,
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
@@ -327,11 +314,7 @@ impl Compiler {
                 new
             };
             *default = Some(default_ebb);
-            if let Some(stmt) = inner {
-                self.compile_stmt(*stmt, builder)
-            } else {
-                Ok(())
-            }
+            self.compile_stmt(inner, builder)
         }
     }
     fn loop_exit(

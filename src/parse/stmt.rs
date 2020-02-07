@@ -6,7 +6,7 @@ use std::iter::Iterator;
 type StmtResult = SyntaxResult<Stmt>;
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
-    pub fn compound_statement(&mut self) -> SyntaxResult<Option<Stmt>> {
+    pub fn compound_statement(&mut self) -> SyntaxResult<Stmt> {
         let start = self
             .expect(Token::LeftBrace)
             .expect("compound_statement should be called with '{' as the next token");
@@ -14,8 +14,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut pending_errs = vec![];
         while self.peek_token() != Some(&Token::RightBrace) {
             match self.statement() {
-                Ok(Some(stmt)) => stmts.push(stmt),
-                Ok(None) => {}
+                Ok(stmt) => stmts.push(stmt),
                 Err(err) => {
                     self.panic();
                     pending_errs.push(err);
@@ -37,13 +36,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             self.error_handler.extend(pending_errs.into_iter());
             return Err(err);
         }
-        Ok(if stmts.is_empty() {
-            None
-        } else {
-            Some(Stmt {
-                data: StmtType::Compound(stmts),
-                location: start.location,
-            })
+        Ok(Stmt {
+            data: StmtType::Compound(stmts),
+            location: start.location,
         })
     }
     /// statement
@@ -62,15 +57,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// Result: whether there was an error in the program source
     /// Option: empty semicolons still count as a statement (so case labels can work)
-    pub fn statement(&mut self) -> SyntaxResult<Option<Stmt>> {
+    pub fn statement(&mut self) -> SyntaxResult<Stmt> {
         let _guard = self.recursion_check();
         match self.peek_token() {
             Some(Token::LeftBrace) => {
                 self.enter_scope();
                 let stmts = self.compound_statement();
                 let location = match &stmts {
-                    Ok(Some(stmt)) => stmt.location,
-                    Ok(None) => self.last_location,
+                    Ok(stmt) => stmt.location,
                     Err(err) => err.location,
                 };
                 self.leave_scope(location);
@@ -94,50 +88,50 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             0
                         }
                     };
-                    let inner = self.statement()?.map(Box::new);
-                    Ok(Some(Stmt {
+                    let inner = Box::new(self.statement()?);
+                    Ok(Stmt {
                         data: StmtType::Case(int, inner),
                         location: kw.location,
-                    }))
+                    })
                 }
                 Keyword::Default => {
                     let kw = self.next_token().unwrap();
                     self.expect(Token::Colon)?;
-                    let inner = self.statement()?.map(Box::new);
-                    Ok(Some(Stmt {
-                        data: StmtType::Default(inner),
+                    let inner = self.statement()?;
+                    Ok(Stmt {
+                        data: StmtType::Default(Box::new(inner)),
                         location: kw.location,
-                    }))
+                    })
                 }
 
                 // selection_statement
-                Keyword::If => Ok(Some(self.if_statement()?)),
-                Keyword::Switch => Ok(Some(self.switch_statement()?)),
+                Keyword::If => Ok(self.if_statement()?),
+                Keyword::Switch => Ok(self.switch_statement()?),
 
                 // iteration_statement
-                Keyword::While => Ok(Some(self.while_statement()?)),
-                Keyword::Do => Ok(Some(self.do_while_statement()?)),
-                Keyword::For => Ok(Some(self.for_statement()?)),
+                Keyword::While => Ok(self.while_statement()?),
+                Keyword::Do => Ok(self.do_while_statement()?),
+                Keyword::For => Ok(self.for_statement()?),
 
                 // jump_statement
-                Keyword::Goto => Ok(Some(self.goto_statement()?)),
+                Keyword::Goto => Ok(self.goto_statement()?),
                 Keyword::Continue => {
                     let kw = self.next_token().unwrap();
                     self.expect(Token::Semicolon)?;
-                    Ok(Some(Stmt {
+                    Ok(Stmt {
                         data: StmtType::Continue,
                         location: kw.location,
-                    }))
+                    })
                 }
                 Keyword::Break => {
                     let kw = self.next_token().unwrap();
                     self.expect(Token::Semicolon)?;
-                    Ok(Some(Stmt {
+                    Ok(Stmt {
                         data: StmtType::Break,
                         location: kw.location,
-                    }))
+                    })
                 }
-                Keyword::Return => Ok(Some(self.return_statement()?)),
+                Keyword::Return => Ok(self.return_statement()?),
 
                 // start of an expression statement
                 Keyword::Sizeof
@@ -149,12 +143,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let decls = self.declaration()?;
                     let location = match decls.front() {
                         Some(decl) => decl.location,
-                        None => return Ok(None),
+                        None => {
+                            return Ok(Stmt {
+                                data: Default::default(),
+                                location: self.last_location,
+                            })
+                        }
                     };
-                    Ok(Some(Stmt {
+                    Ok(Stmt {
                         data: StmtType::Decl(decls),
                         location,
-                    }))
+                    })
                 }
                 other => {
                     let err = SyntaxError::NotAStatement(*other);
@@ -162,8 +161,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
             },
             Some(Token::Semicolon) => {
-                self.next_token();
-                Ok(None)
+                let Locatable { location, .. } = self.next_token().expect("peek is broken");
+                Ok(Stmt {
+                    data: Default::default(),
+                    location,
+                })
             }
             Some(Token::Id(_)) => {
                 let locatable = self.next_token().unwrap();
@@ -175,10 +177,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     _ => unreachable!("peek should always be the same as next"),
                 };
                 if self.match_next(&Token::Colon).is_some() {
-                    return Ok(Some(Stmt {
-                        data: StmtType::Label(id.data, self.statement()?.map(Box::new)),
+                    return Ok(Stmt {
+                        data: StmtType::Label(id.data, Box::new(self.statement()?)),
                         location: id.location,
-                    }));
+                    });
                 }
                 let is_typedef = match self.scope.get(&id.data) {
                     Some(typedef) => typedef.storage_class == StorageClass::Typedef,
@@ -192,12 +194,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let decls = self.declaration()?;
                     let location = match decls.front() {
                         Some(decl) => decl.location,
-                        None => return Ok(None),
+                        None => {
+                            return Ok(Stmt {
+                                data: Default::default(),
+                                location: self.last_location,
+                            })
+                        }
                     };
-                    Ok(Some(Stmt {
+                    Ok(Stmt {
                         data: StmtType::Decl(decls),
                         location,
-                    }))
+                    })
                 } else {
                     self.expression_statement()
                 }
@@ -205,14 +212,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             _ => self.expression_statement(),
         }
     }
-    fn expression_statement(&mut self) -> SyntaxResult<Option<Stmt>> {
+    // expr ;
+    fn expression_statement(&mut self) -> SyntaxResult<Stmt> {
         let expr = self.expr()?;
         let end = self.expect(Token::Semicolon)?;
-        Ok(Some(Stmt {
+        Ok(Stmt {
             data: StmtType::Expr(expr),
             location: end.location,
-        }))
+        })
     }
+    // return (expr)? ;
     fn return_statement(&mut self) -> StmtResult {
         let ret_token = self.expect(Token::Keyword(Keyword::Return)).unwrap();
         let expr = self.expr_opt(Token::Semicolon)?;
@@ -263,28 +272,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let body = self.statement()?;
         let otherwise = if self.match_next(&Token::Keyword(Keyword::Else)).is_some() {
             // NOTE: `if (1) ; else ;` is legal!
-            self.statement()?
+            Some(Box::new(self.statement()?))
         } else {
             None
         };
-        let stmt = match (body, otherwise) {
-            (None, None) => {
-                self.not_executed_warning(
-                    "missing both if body and else body",
-                    "if (expr) {}",
-                    "expr;",
-                    condition.location,
-                );
-                StmtType::Expr(condition)
-            }
-            (None, Some(body)) => {
-                let not = condition.logical_not().recover(&mut self.error_handler);
-                StmtType::If(not, Box::new(body), None)
-            }
-            (Some(body), maybe_else) => {
-                StmtType::If(condition, Box::new(body), maybe_else.map(Box::new))
-            }
-        };
+        let stmt = StmtType::If(condition, Box::new(body), otherwise);
         Ok(Stmt {
             data: stmt,
             location: start.location,
@@ -297,17 +289,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let expr = self.expr()?.rval();
         self.expect(Token::RightParen)?;
         let body = self.statement()?;
-        let stmt = if let Some(body) = body {
-            StmtType::Switch(expr, Box::new(body))
-        } else {
-            self.not_executed_warning(
-                "empty switch body is never executed",
-                "switch (expr) {}",
-                "expr;",
-                expr.location,
-            );
-            StmtType::Expr(expr)
-        };
+        let stmt = StmtType::Switch(expr, Box::new(body));
         Ok(Stmt {
             data: stmt,
             location: start.location,
@@ -321,7 +303,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.expect(Token::RightParen)?;
         let body = self.statement()?;
         Ok(Stmt {
-            data: StmtType::While(condition, body.map(Box::new)),
+            data: StmtType::While(condition, Box::new(body)),
             location: start.location,
         })
     }
@@ -338,17 +320,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let condition = self.expr()?.truthy().recover(&mut self.error_handler);
         self.expect(Token::RightParen)?;
         self.expect(Token::Semicolon)?;
-        let stmt = if let Some(body) = body {
-            StmtType::Do(Box::new(body), condition)
-        } else {
-            self.not_executed_warning(
-                "empty body for do-while statement",
-                "do {} while (expr)",
-                "while (expr) {}",
-                start.location,
-            );
-            StmtType::While(condition, None)
-        };
+        let stmt = StmtType::Do(Box::new(body), condition);
         Ok(Stmt {
             data: stmt,
             location: start.location,
@@ -361,35 +333,23 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let start = self.expect(Token::Keyword(Keyword::For))?;
         let paren = self.expect(Token::LeftParen)?;
         self.enter_scope();
-        let decl = match self.peek_token() {
-            Some(Token::Keyword(k)) if k.is_decl_specifier() => Some(Box::new(Stmt {
-                data: StmtType::Decl(self.declaration()?),
-                location: paren.location,
-            })),
+        let decl_stmt = match self.peek_token() {
+            Some(Token::Keyword(k)) if k.is_decl_specifier() => StmtType::Decl(self.declaration()?),
             Some(Token::Id(id)) => {
                 let id = *id;
                 match self.scope.get(&id) {
                     Some(symbol) if symbol.storage_class == StorageClass::Typedef => {
-                        Some(Box::new(Stmt {
-                            data: StmtType::Decl(self.declaration()?),
-                            location: paren.location,
-                        }))
+                        StmtType::Decl(self.declaration()?)
                     }
                     _ => match self.expr_opt(Token::Semicolon)? {
-                        Some(expr) => Some(Box::new(Stmt {
-                            data: StmtType::Expr(expr),
-                            location: paren.location,
-                        })),
-                        None => None,
+                        Some(expr) => StmtType::Expr(expr),
+                        None => Default::default(),
                     },
                 }
             }
             Some(_) => match self.expr_opt(Token::Semicolon)? {
-                Some(expr) => Some(Box::new(Stmt {
-                    data: StmtType::Expr(expr),
-                    location: paren.location,
-                })),
-                None => None,
+                Some(expr) => StmtType::Expr(expr),
+                None => Default::default(),
             },
             None => {
                 return Err(self
@@ -397,11 +357,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     .with(SyntaxError::EndOfFile("expression or ';'")));
             }
         };
+        let decl = Box::new(Stmt {
+            data: decl_stmt,
+            location: paren.location,
+        });
         let controlling_expr = self
             .expr_opt(Token::Semicolon)?
             .map(|expr| Expr::truthy(expr).recover(&mut self.error_handler));
         let iter_expr = self.expr_opt(Token::RightParen)?;
-        let body = self.statement()?.map(Box::new);
+        let body = Box::new(self.statement()?);
         self.leave_scope(self.last_location);
         Ok(Stmt {
             data: StmtType::For(
@@ -426,19 +390,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             location: start.location,
         })
     }
-    fn not_executed_warning(
-        &mut self,
-        description: &str,
-        from: &str,
-        to: &str,
-        location: Location,
-    ) {
-        let warning = format!(
-            "{} will be rewritten internally. help: to silence this warning, rewrite it yourself: `{}` => `{}`",
-            description, from, to
-        );
-        self.error_handler.warn(&warning, location);
-    }
 }
 
 #[cfg(test)]
@@ -446,7 +397,7 @@ mod tests {
     use super::super::tests::*;
     use crate::data::prelude::*;
     use crate::intern::InternedStr;
-    fn parse_stmt(stmt: &str) -> CompileResult<Option<Stmt>> {
+    fn parse_stmt(stmt: &str) -> CompileResult<Stmt> {
         let mut p = parser(stmt);
         let exp = p.statement();
         if let Some(err) = p.error_handler.pop_front() {
@@ -460,7 +411,7 @@ mod tests {
     // is correct. If it starts failing, maybe look at the lexer first
     fn test_expr_stmt() {
         let parsed = parse_stmt("1;");
-        let expected = Ok(Some(Stmt {
+        let expected = Ok(Stmt {
             data: StmtType::Expr(parser("1").expr().unwrap()),
             location: Location {
                 filename: InternedStr::get_or_intern("<test suite>"),
@@ -468,11 +419,8 @@ mod tests {
                 // but I haven't implemented merging spans yet
                 span: (1..2).into(),
             },
-        }));
+        });
         assert_eq!(parsed, expected);
-        assert_eq!(
-            parsed.unwrap().unwrap().location,
-            expected.unwrap().unwrap().location
-        );
+        assert_eq!(parsed.unwrap().location, expected.unwrap().location);
     }
 }

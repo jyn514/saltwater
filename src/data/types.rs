@@ -152,7 +152,7 @@ mod struct_ref {
             }
             Ok(current_offset + ctype.sizeof()?)
         }
-        /// Calculate the size of a struct.
+        /// Calculate the size of a struct: the sum of all member sizes
         pub fn struct_size(&self) -> Result<super::SIZE_T, &'static str> {
             let symbols = &self.members();
 

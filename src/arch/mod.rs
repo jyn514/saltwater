@@ -33,7 +33,7 @@ pub use x64::*;
 
 impl StructType {
     /// Get the offset of the given struct member.
-    pub(crate) fn offset(&self, member: super::InternedStr) -> u64 {
+    pub(crate) fn offset(&self, member: InternedStr) -> u64 {
         let members = self.members();
         let mut current_offset = 0;
         for formal in members.iter() {

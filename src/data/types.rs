@@ -295,7 +295,7 @@ impl Type {
     }
     pub fn member_offset(&self, member: InternedStr) -> Result<u64, ()> {
         match self {
-            Type::Struct(stype) => Ok(stype.struct_offset(member)),
+            Type::Struct(stype) => Ok(stype.offset(member)),
             Type::Union(_) => Ok(0),
             _ => Err(()),
         }

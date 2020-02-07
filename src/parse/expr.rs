@@ -143,7 +143,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// It does not specify what happens if this is not the case.
     /// Clang and GCC give a warning; we are more strict and emit an error.
     fn conditional_expr(&mut self) -> SyntaxResult {
-        let _guard = self.recursion_check();
+        let _guard = self.recursion_check()?;
 
         let condition = self.logical_or_expr()?;
         if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {

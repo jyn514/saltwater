@@ -58,7 +58,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// Result: whether there was an error in the program source
     /// Option: empty semicolons still count as a statement (so case labels can work)
     pub fn statement(&mut self) -> SyntaxResult<Stmt> {
-        let _guard = self.recursion_check();
+        let _guard = self.recursion_check()?;
         match self.peek_token() {
             Some(Token::LeftBrace) => {
                 self.enter_scope();

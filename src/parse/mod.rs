@@ -170,7 +170,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // make sure we don't crash on highly nested expressions
     // or rather, crash in a controlled way
-    fn recursion_check(&self) -> RecursionGuard {
+    fn recursion_check(&self) -> SyntaxResult<RecursionGuard> {
         // this is just a guesstimate, it should probably be configurable
         #[cfg(debug_assertions)]
         const MAX_DEPTH: usize = 50;
@@ -180,13 +180,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let guard = self.recursion_guard.clone();
         let depth = Rc::strong_count(&guard.0);
         if depth > MAX_DEPTH {
-            eprintln!(
-                "fatal: maximum recursion depth exceeded ({} > {})",
-                depth, MAX_DEPTH
-            );
-            std::process::exit(102);
+            return Err(self.last_location.with(SyntaxError::RecursionLimit(depth, MAX_DEPTH)));
         }
-        guard
+        Ok(guard)
     }
     /* utility functions */
     #[inline]

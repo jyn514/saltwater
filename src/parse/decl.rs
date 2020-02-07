@@ -1196,7 +1196,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         allow_abstract: bool,
         qualifiers: Qualifiers,
     ) -> SyntaxResult<Option<Declarator>> {
-        let _guard = self.recursion_check();
+        let _guard = self.recursion_check()?;
         if let Some(data) = self.peek_token() {
             match data {
                 Token::Star => {
@@ -1266,7 +1266,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// initializer: assignment_expr
     ///     | '{' initializer (',' initializer)* '}'
     fn initializer(&mut self, ctype: &Type) -> SyntaxResult<Initializer> {
-        let _guard = self.recursion_check();
+        let _guard = self.recursion_check()?;
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
             let ret = self.aggregate_initializer(ctype);
@@ -1305,7 +1305,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // handle char[][3] = {{1,2,3}}, but also = {1,2,3} and {{1}, 2, 3}
     // NOTE: this does NOT consume {} except for sub-elements
     fn aggregate_initializer(&mut self, elem_type: &Type) -> SyntaxResult<Initializer> {
-        let _guard = self.recursion_check();
+        let _guard = self.recursion_check()?;
         let mut elems = vec![];
         if self.peek_token() == Some(&Token::RightBrace) {
             self.error_handler

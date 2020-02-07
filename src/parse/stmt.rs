@@ -1,6 +1,7 @@
 use super::{Lexeme, Parser, SyntaxResult};
 use crate::data::prelude::*;
 use crate::data::{lex::Keyword, StorageClass};
+use crate::utils::{recursion_check, recursion_done};
 use std::iter::Iterator;
 
 type StmtResult = SyntaxResult<Stmt>;
@@ -63,7 +64,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// Result: whether there was an error in the program source
     /// Option: empty semicolons still count as a statement (so case labels can work)
     pub fn statement(&mut self) -> SyntaxResult<Option<Stmt>> {
-        match self.peek_token() {
+        recursion_check();
+        let res = match self.peek_token() {
             Some(Token::LeftBrace) => {
                 self.enter_scope();
                 let stmts = self.compound_statement();
@@ -202,7 +204,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
             }
             _ => self.expression_statement(),
-        }
+        };
+        recursion_done();
+        res
     }
     fn expression_statement(&mut self) -> SyntaxResult<Option<Stmt>> {
         let expr = self.expr()?;

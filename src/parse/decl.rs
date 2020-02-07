@@ -11,6 +11,7 @@ use crate::data::{
     types::{ArrayType, FunctionType},
     Initializer, Qualifiers, StorageClass,
 };
+use crate::utils::{recursion_check, recursion_done};
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* grammar functions
@@ -1196,7 +1197,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         allow_abstract: bool,
         qualifiers: Qualifiers,
     ) -> SyntaxResult<Option<Declarator>> {
-        if let Some(data) = self.peek_token() {
+        recursion_check();
+        let res = if let Some(data) = self.peek_token() {
             match data {
                 Token::Star => {
                     self.next_token();
@@ -1249,7 +1251,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             // this is useful for integration tests, even though there's no scenario
             // where a type followed by EOF is legal in a real program
             self.direct_declarator(allow_abstract, qualifiers)
-        }
+        };
+        recursion_done();
+        res
     }
     /// initializer
     ///     : assignment_expr
@@ -1265,6 +1269,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// initializer: assignment_expr
     ///     | '{' initializer (',' initializer)* '}'
     fn initializer(&mut self, ctype: &Type) -> SyntaxResult<Initializer> {
+        recursion_check();
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
             let ret = self.aggregate_initializer(ctype);
@@ -1297,6 +1302,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 expr: ExprType::StaticRef(Box::new(expr)),
             };
         }
+        recursion_done();
         Ok(Initializer::Scalar(Box::new(expr)))
     }
 

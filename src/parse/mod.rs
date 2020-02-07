@@ -23,20 +23,8 @@ pub(crate) enum TagEntry {
     Enum(Vec<(InternedStr, i64)>),
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct RecursionGuard(Rc<()>);
-
-impl Clone for RecursionGuard {
-    fn clone(&self) -> Self {
-        Self(Rc::clone(&self.0))
-    }
-}
-
-// this is just a guesstimate, it should probably be configurable
-#[cfg(debug_assertions)]
-const MAX_DEPTH: usize = 50;
-#[cfg(not(debug_assertions))]
-const MAX_DEPTH: usize = 200;
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
@@ -183,6 +171,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // make sure we don't crash on highly nested expressions
     // or rather, crash in a controlled way
     fn recursion_check(&self) -> RecursionGuard {
+        // this is just a guesstimate, it should probably be configurable
+        #[cfg(debug_assertions)]
+        const MAX_DEPTH: usize = 50;
+        #[cfg(not(debug_assertions))]
+        const MAX_DEPTH: usize = 200;
+
         let guard = self.recursion_guard.clone();
         let depth = Rc::strong_count(&guard.0);
         if depth > MAX_DEPTH {

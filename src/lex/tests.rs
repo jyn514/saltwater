@@ -258,6 +258,7 @@ fn test_strings() {
         "consecutive strings"
     ));
     assert!(match_str(lex("\"string with \\0\""), "string with \0"));
+    assert_eq!(lex("\"").unwrap().unwrap_err().location.span, (0..1).into());
 }
 
 // Integration tests

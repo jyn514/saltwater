@@ -6,7 +6,6 @@ use crate::data::{
     types::ArrayType,
     StorageClass::Typedef,
 };
-use crate::utils::{recursion_check, recursion_done};
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// expr_opt: expr ';' | ';'
@@ -144,10 +143,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// It does not specify what happens if this is not the case.
     /// Clang and GCC give a warning; we are more strict and emit an error.
     fn conditional_expr(&mut self) -> SyntaxResult {
-        recursion_check();
+        let _guard = self.recursion_check();
 
         let condition = self.logical_or_expr()?;
-        let res = if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {
+        if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {
             let condition = condition.truthy().recover(&mut self.error_handler);
             let mut then = self.expr()?.rval();
             self.expect(Token::Colon)?;
@@ -177,10 +176,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             })
         } else {
             Ok(condition)
-        };
-
-        recursion_done();
-        res
+        }
     }
 
     /// Original:

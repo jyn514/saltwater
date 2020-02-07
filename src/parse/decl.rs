@@ -11,7 +11,6 @@ use crate::data::{
     types::{ArrayType, FunctionType},
     Initializer, Qualifiers, StorageClass,
 };
-use crate::utils::{recursion_check, recursion_done};
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* grammar functions
@@ -1197,8 +1196,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         allow_abstract: bool,
         qualifiers: Qualifiers,
     ) -> SyntaxResult<Option<Declarator>> {
-        recursion_check();
-        let res = if let Some(data) = self.peek_token() {
+        let _guard = self.recursion_check();
+        if let Some(data) = self.peek_token() {
             match data {
                 Token::Star => {
                     self.next_token();
@@ -1251,9 +1250,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             // this is useful for integration tests, even though there's no scenario
             // where a type followed by EOF is legal in a real program
             self.direct_declarator(allow_abstract, qualifiers)
-        };
-        recursion_done();
-        res
+        }
     }
     /// initializer
     ///     : assignment_expr
@@ -1269,7 +1266,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// initializer: assignment_expr
     ///     | '{' initializer (',' initializer)* '}'
     fn initializer(&mut self, ctype: &Type) -> SyntaxResult<Initializer> {
-        recursion_check();
+        let _guard = self.recursion_check();
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
             let ret = self.aggregate_initializer(ctype);
@@ -1302,14 +1299,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 expr: ExprType::StaticRef(Box::new(expr)),
             };
         }
-        recursion_done();
         Ok(Initializer::Scalar(Box::new(expr)))
     }
 
     // handle char[][3] = {{1,2,3}}, but also = {1,2,3} and {{1}, 2, 3}
     // NOTE: this does NOT consume {} except for sub-elements
     fn aggregate_initializer(&mut self, elem_type: &Type) -> SyntaxResult<Initializer> {
-        recursion_check();
+        let _guard = self.recursion_check();
         let mut elems = vec![];
         if self.peek_token() == Some(&Token::RightBrace) {
             self.error_handler
@@ -1361,7 +1357,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 break;
             }
         }
-        recursion_done();
         Ok(Initializer::InitializerList(elems))
     }
 

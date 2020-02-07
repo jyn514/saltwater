@@ -45,3 +45,24 @@ jobs:
             - tests/fuzz.sh
     allow_failures:
         - rust: nightly
+
+before_deploy:
+    - cargo build --release
+
+deploy:
+    - provider: releases
+      on:
+          tags: true
+          branch: master
+          condition: $TRAVIS_RUST_VERSION = stable
+      file: target/release/rcc
+      skip_cleanup: true
+      api_key:
+          secure: ioFdF6noWh8DuG5lIGCuMoAcTrum6gsqvDKe+9kjR+tRYnZ6J4cPJ16WUq4qWlp1AnrcB7HRwKuShg8Eu7PPojRKdxNA2fnblJHViNQa8gN3kyr1sfgCo6EEp0qL+eh9qNjx0O4nglMVPUFyg81fyhsX3B6UaQGYK6idxhYvM3e6DvZu5yE8o/FXn1vh9NfDP9RwwuZQTmPYitL2No07GEmeMhCbveXwpFqx9mq1sj51posEAsGFEf3wy+1GwZv0h3jGiYYsyWVLKDKPBRdImA784hnY9L5LqiZOUdpeULzogTNky510rzNI/Uy1vi/IMaTNoCUKo7BVjvtlga9a95Vwz7s7Xav5bUrMqMhwCbBp0WDyEJPkkWx14MzGyIOc2y2bx0PMrxS/tpl0Fzb+QJUai0J1LNBJQbs+B71I/E/Qq7kY5ytMYjboeA3IrqUT3takjEUuuZmMt+AOKN8rl9X81jMqCnVm9VVi+jDJuhhKUVwCfIVzFeVtv7/oQGBiZwTTF6pIk/dL50KUZg3gXjUTBo884+JZYaPC9GuEW/x+5fHHbObetvDQziIBCUABSNU+Votzgbk2CWoJLOUaSmZIYBac4LxnCDT9GZI6Y075uHhDXrzAgNTrUphKqwsK1aBQVy2+EeWrNB+5IKxWT60/ToWprHHx3aoLNGC7qDM=
+    - provider: cargo
+      on:
+          tags: true
+          branch: master
+          condition: $TRAVIS_RUST_VERSION = stable
+      token:
+          secure: Phpz1ZGy/HzDX9v/0GVv+ZDn6vZ5zxg51svj3tSZZjq5InZFJka14xG4cSCkzx/CI2knY8T0ATxHcr7zuTfAPpoa9LcSFg7PSHf/Zm44tseSOnrc20aENhc5Kn4UCqpARK9TcQvTMs8RvfD/TPhKvrYpFgWnRKhNJ0Tcb3Y4iXYAU0PjWNupvvkymt5KMDuDJnOFE/QV+9XpfV99dPijFfz2Gdn4YfV0uRH2a+MEhL7uD+iLikNd2CRBHhBqsQrmr76chwYspKe5/CKC1zLl9gwW4e8qGKYJxoA18m8fFgGTuDT+Xafy6RgE0WQ0GCnrHWuDm3MXWzAYv992yCKKFior9DvdNHQ1WFZXCim/IjgEMQ58E2FPCfkPd4BWOqA4qJ+w7tr2jyixbIVS1qnczoozO9x3c5FZrrZobAt082L1hdwj6H32ze0ckplo4Zk1CfipGz9CXiE2gQ+eRR3I/RcDjMvihnLnBNp69ul2xWTlj7/jxRwkoFBYFdNGG6N9JcXR3L5Xcs6ovVoZHCtz9x/WUb0igdzoWBpP+3/ISt2Wg7bjrpRe0rq8P1xhI8mpnYr+VloM7jHy8J8+rqr1PsIFOqAxm5vXlte7pfYJk44Fwa6g2Cus6ImfMUyzEoeWj4Y9kNb8rH3QXc2PmmQfGS45TBNdJApWPqbGxVidgPw=

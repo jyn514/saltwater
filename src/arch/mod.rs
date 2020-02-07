@@ -31,22 +31,55 @@ lazy_static! {
 mod x64;
 pub use x64::*;
 
-/// Calculate the size of a union: the max of all member sizes
-pub fn union_size(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
-    let symbols = &struct_type.members();
-    symbols
-        .iter()
-        .map(|symbol| symbol.ctype.sizeof())
-        // max of member sizes
-        .try_fold(1, |n, size| Ok(max(n, size?)))
-}
+impl StructType {
+    /// Get the offset of the given struct member.
+    pub fn struct_offset(&self, member: super::InternedStr) -> u64 {
+        let members = self.members();
+        let mut current_offset = 0;
+        for formal in members.iter() {
+            if formal.id == member {
+                return current_offset;
+            }
+            current_offset = Self::next_offset(current_offset, &formal.ctype)
+                .expect("structs should have valid size and alignment");
+        }
+        unreachable!("cannot call struct_offset for member not in struct");
+    }
+    /// Get the offset of the next truct member given the current offset.
+    fn next_offset(mut current_offset: u64, ctype: &super::Type) -> Result<u64, &'static str> {
+        let align = ctype.alignof()?;
+        // round up to the nearest multiple of align
+        let rem = current_offset % align;
+        if rem != 0 {
+            // for example: 7%4 == 3; 7 + ((4 - 3) = 1) == 8; 8 % 4 == 0
+            current_offset += align - rem;
+        }
+        Ok(current_offset + ctype.sizeof()?)
+    }
+    /// Calculate the size of a struct: the sum of all member sizes
+    pub fn struct_size(&self) -> Result<SIZE_T, &'static str> {
+        let symbols = &self.members();
 
-/// Calculate the alignment of a struct.
-pub fn struct_align(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
-    let members = &struct_type.members();
-    members.iter().try_fold(0, |max, member| {
-        Ok(std::cmp::max(member.ctype.alignof()?, max))
-    })
+        symbols.iter().try_fold(0, |offset, symbol| {
+            Ok(StructType::next_offset(offset, &symbol.ctype)?)
+        })
+    }
+    /// Calculate the size of a union: the max of all member sizes
+    pub fn union_size(&self) -> Result<SIZE_T, &'static str> {
+        let symbols = &self.members();
+        symbols
+            .iter()
+            .map(|symbol| symbol.ctype.sizeof())
+            // max of member sizes
+            .try_fold(1, |n, size| Ok(max(n, size?)))
+    }
+    /// Calculate the alignment of a struct.
+    pub fn struct_align(&self) -> Result<SIZE_T, &'static str> {
+        let members = &self.members();
+        members.iter().try_fold(0, |max, member| {
+            Ok(std::cmp::max(member.ctype.alignof()?, max))
+        })
+    }
 }
 
 impl Type {
@@ -83,7 +116,7 @@ impl Type {
                     _ => return Err("enum cannot be represented in SIZE_T bits"),
                 })
             }
-            Union(struct_type) => union_size(&struct_type),
+            Union(struct_type) => struct_type.union_size(),
             Struct(struct_type) => struct_type.struct_size(),
             Bitfield(_) => unimplemented!("sizeof(bitfield)"),
             // illegal operations
@@ -108,7 +141,7 @@ impl Type {
             // Clang uses the largest alignment of any element as the alignment of the whole
             // Not sure why, but who am I to argue
             // Anyway, Faerie panics if the alignment isn't a power of two so it's probably for the best
-            Union(struct_type) | Struct(struct_type) => struct_align(&struct_type),
+            Union(struct_type) | Struct(struct_type) => struct_type.struct_align(),
             Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),

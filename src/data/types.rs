@@ -128,38 +128,6 @@ mod struct_ref {
                 StructType::Named(_, struct_ref) => struct_ref.get().is_empty(),
             }
         }
-        /// Get the offset of the given struct member.
-        pub fn struct_offset(&self, member: super::InternedStr) -> u64 {
-            let members = self.members();
-            let mut current_offset = 0;
-            for formal in members.iter() {
-                if formal.id == member {
-                    return current_offset;
-                }
-                current_offset = Self::next_offset(current_offset, &formal.ctype)
-                    .expect("structs should have valid size and alignment");
-            }
-            unreachable!("cannot call struct_offset for member not in struct");
-        }
-        /// Get the offset of the next truct member given the current offset.
-        fn next_offset(mut current_offset: u64, ctype: &super::Type) -> Result<u64, &'static str> {
-            let align = ctype.alignof()?;
-            // round up to the nearest multiple of align
-            let rem = current_offset % align;
-            if rem != 0 {
-                // for example: 7%4 == 3; 7 + ((4 - 3) = 1) == 8; 8 % 4 == 0
-                current_offset += align - rem;
-            }
-            Ok(current_offset + ctype.sizeof()?)
-        }
-        /// Calculate the size of a struct: the sum of all member sizes
-        pub fn struct_size(&self) -> Result<super::SIZE_T, &'static str> {
-            let symbols = &self.members();
-
-            symbols.iter().try_fold(0, |offset, symbol| {
-                Ok(StructType::next_offset(offset, &symbol.ctype)?)
-            })
-        }
     }
 }
 

@@ -13,7 +13,7 @@ use target_lexicon::Triple;
 
 use crate::data::{
     prelude::*,
-    types::{ArrayType, FunctionType},
+    types::{ArrayType, FunctionType, StructType},
 };
 use Type::*;
 
@@ -31,7 +31,9 @@ lazy_static! {
 mod x64;
 pub use x64::*;
 
-pub fn union_size(symbols: &[Symbol]) -> Result<SIZE_T, &'static str> {
+/// Calculate the size of a union.
+pub fn union_size(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
+    let symbols = &struct_type.members();
     symbols
         .iter()
         .map(|symbol| symbol.ctype.sizeof())
@@ -39,13 +41,17 @@ pub fn union_size(symbols: &[Symbol]) -> Result<SIZE_T, &'static str> {
         .try_fold(1, |n, size| Ok(max(n, size?)))
 }
 
-pub fn struct_size(symbols: &[Symbol]) -> Result<SIZE_T, &'static str> {
+/// Calculate the size of a struct.
+pub fn struct_size(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
+    let symbols = &struct_type.members();
     symbols.iter().try_fold(0, |offset, symbol| {
         Ok(Type::next_offset(offset, &symbol.ctype)?)
     })
 }
 
-pub fn struct_align(members: &[Symbol]) -> Result<SIZE_T, &'static str> {
+/// Calculate the alignment of a struct.
+pub fn struct_align(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
+    let members = &struct_type.members();
     members.iter().try_fold(0, |max, member| {
         Ok(std::cmp::max(member.ctype.alignof()?, max))
     })
@@ -85,8 +91,8 @@ impl Type {
                     _ => return Err("enum cannot be represented in SIZE_T bits"),
                 })
             }
-            Union(struct_type) => union_size(&struct_type.members()),
-            Struct(struct_type) => struct_size(&struct_type.members()),
+            Union(struct_type) => union_size(&struct_type),
+            Struct(struct_type) => struct_size(&struct_type),
             Bitfield(_) => unimplemented!("sizeof(bitfield)"),
             // illegal operations
             Function(_) => Err("cannot take `sizeof` a function"),
@@ -110,7 +116,7 @@ impl Type {
             // Clang uses the largest alignment of any element as the alignment of the whole
             // Not sure why, but who am I to argue
             // Anyway, Faerie panics if the alignment isn't a power of two so it's probably for the best
-            Union(struct_type) | Struct(struct_type) => struct_align(&struct_type.members()),
+            Union(struct_type) | Struct(struct_type) => struct_align(&struct_type),
             Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),
@@ -121,9 +127,11 @@ impl Type {
     pub fn ptr_type() -> IrType {
         IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
     }
-    pub fn struct_offset(&self, members: &[Symbol], member: InternedStr) -> u64 {
+    /// Get the offset of the given struct member.
+    pub fn struct_offset(&self, struct_type: &StructType, member: InternedStr) -> u64 {
+        let members = struct_type.members();
         let mut current_offset = 0;
-        for formal in members {
+        for formal in members.iter() {
             if formal.id == member {
                 return current_offset;
             }
@@ -274,14 +282,14 @@ mod tests {
         Type::Struct(StructType::Anonymous(std::rc::Rc::new(members)))
     }
     fn assert_offset(types: Vec<Type>, member_index: usize, offset: u64) {
-        let struct_type = struct_for_types(types);
-        let members = if let Type::Struct(StructType::Anonymous(m)) = &struct_type {
-            m
+        let c_type = struct_for_types(types);
+        let struct_type = if let Type::Struct(s) = &c_type {
+            s
         } else {
             unreachable!()
         };
-        let member = members[member_index].id;
-        assert_eq!(struct_type.struct_offset(members, member), offset);
+        let member = (struct_type.members())[member_index].id;
+        assert_eq!(c_type.struct_offset(&struct_type, member), offset);
     }
     #[test]
     fn first_member() {

@@ -738,6 +738,7 @@ impl<'a> Iterator for Lexer<'a> {
                 },
                 '"' => {
                     self.current = Some('"');
+                    self.location.offset -= 1;
                     match self.parse_string() {
                         Ok(id) => id,
                         Err(err) => {

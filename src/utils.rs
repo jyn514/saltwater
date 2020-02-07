@@ -9,7 +9,11 @@ pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
 }
 
 // this is just a guesstimate, it should probably be configurable
-const MAX_DEPTH: usize = 1000;
+#[cfg(debug_assertions)]
+const MAX_DEPTH: usize = 50;
+#[cfg(not(debug_assertions))]
+const MAX_DEPTH: usize = 200;
+
 thread_local!(static RECURSION_DEPTH: RefCell<usize> = RefCell::new(0));
 
 // make sure we don't crash on highly nested expressions
@@ -26,7 +30,6 @@ pub(crate) fn recursion_check() {
         } else {
             *depth.borrow_mut() = d + 1;
         }
-        println!("{}", *depth.borrow());
     })
 }
 

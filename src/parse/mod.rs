@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::iter::Iterator;
 use std::mem;
+use std::rc::Rc;
 
 use crate::data::{prelude::*, Scope};
 
@@ -21,6 +22,21 @@ pub(crate) enum TagEntry {
     // list of (name, value)s
     Enum(Vec<(InternedStr, i64)>),
 }
+
+#[derive(Debug, Default)]
+struct RecursionGuard(Rc<()>);
+
+impl Clone for RecursionGuard {
+    fn clone(&self) -> Self {
+        Self(Rc::clone(&self.0))
+    }
+}
+
+// this is just a guesstimate, it should probably be configurable
+#[cfg(debug_assertions)]
+const MAX_DEPTH: usize = 50;
+#[cfg(not(debug_assertions))]
+const MAX_DEPTH: usize = 200;
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme>> {
@@ -58,6 +74,8 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     debug: bool,
     /// Internal API which makes it easier to return errors lazily
     error_handler: ErrorHandler,
+    /// Internal API which prevents segfaults due to stack overflow
+    recursion_guard: RecursionGuard,
 }
 
 #[derive(Debug)]
@@ -94,6 +112,7 @@ where
             current_function: None,
             debug,
             error_handler: ErrorHandler::new(),
+            recursion_guard: Default::default(),
         }
     }
 }
@@ -161,6 +180,20 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 }
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
+    // make sure we don't crash on highly nested expressions
+    // or rather, crash in a controlled way
+    fn recursion_check(&self) -> RecursionGuard {
+        let guard = self.recursion_guard.clone();
+        let depth = Rc::strong_count(&guard.0);
+        if depth > MAX_DEPTH {
+            eprintln!(
+                "fatal: maximum recursion depth exceeded ({} > {})",
+                depth, MAX_DEPTH
+            );
+            std::process::exit(102);
+        }
+        guard
+    }
     /* utility functions */
     #[inline]
     fn enter_scope(&mut self) {

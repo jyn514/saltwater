@@ -41,14 +41,6 @@ pub fn union_size(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
         .try_fold(1, |n, size| Ok(max(n, size?)))
 }
 
-/// Calculate the size of a struct.
-pub fn struct_size(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
-    let symbols = &struct_type.members();
-    symbols.iter().try_fold(0, |offset, symbol| {
-        Ok(Type::next_offset(offset, &symbol.ctype)?)
-    })
-}
-
 /// Calculate the alignment of a struct.
 pub fn struct_align(struct_type: &StructType) -> Result<SIZE_T, &'static str> {
     let members = &struct_type.members();
@@ -92,7 +84,7 @@ impl Type {
                 })
             }
             Union(struct_type) => union_size(&struct_type),
-            Struct(struct_type) => struct_size(&struct_type),
+            Struct(struct_type) => struct_type.struct_size(),
             Bitfield(_) => unimplemented!("sizeof(bitfield)"),
             // illegal operations
             Function(_) => Err("cannot take `sizeof` a function"),
@@ -126,29 +118,6 @@ impl Type {
     }
     pub fn ptr_type() -> IrType {
         IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
-    }
-    /// Get the offset of the given struct member.
-    pub fn struct_offset(&self, struct_type: &StructType, member: InternedStr) -> u64 {
-        let members = struct_type.members();
-        let mut current_offset = 0;
-        for formal in members.iter() {
-            if formal.id == member {
-                return current_offset;
-            }
-            current_offset = Self::next_offset(current_offset, &formal.ctype)
-                .expect("structs should have valid size and alignment");
-        }
-        unreachable!("cannot call struct_offset for member not in struct");
-    }
-    fn next_offset(mut current_offset: u64, ctype: &Type) -> Result<u64, &'static str> {
-        let align = ctype.alignof()?;
-        // round up to the nearest multiple of align
-        let rem = current_offset % align;
-        if rem != 0 {
-            // for example: 7%4 == 3; 7 + ((4 - 3) = 1) == 8; 8 % 4 == 0
-            current_offset += align - rem;
-        }
-        Ok(current_offset + ctype.sizeof()?)
     }
     pub fn as_ir_type(&self) -> IrType {
         match self {
@@ -289,7 +258,7 @@ mod tests {
             unreachable!()
         };
         let member = (struct_type.members())[member_index].id;
-        assert_eq!(c_type.struct_offset(&struct_type, member), offset);
+        assert_eq!(struct_type.struct_offset(member), offset);
     }
     #[test]
     fn first_member() {

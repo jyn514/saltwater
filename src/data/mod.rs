@@ -31,26 +31,27 @@ pub enum StmtType {
     Compound(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     Do(Box<Stmt>, Expr),
-    While(Expr, Option<Box<Stmt>>),
+    While(Expr, Box<Stmt>),
     // for(int i = 1, j = 2; i < 4; ++i) body
     // for(i = 1; ; ++i) body
     // for (;;) ;
-    For(
-        Option<Box<Stmt>>,
-        Option<Box<Expr>>,
-        Option<Box<Expr>>,
-        Option<Box<Stmt>>,
-    ),
+    For(Box<Stmt>, Option<Box<Expr>>, Option<Box<Expr>>, Box<Stmt>),
     Switch(Expr, Box<Stmt>),
-    Label(InternedStr, Option<Box<Stmt>>),
-    Case(u64, Option<Box<Stmt>>),
-    Default(Option<Box<Stmt>>),
+    Label(InternedStr, Box<Stmt>),
+    Case(u64, Box<Stmt>),
+    Default(Box<Stmt>),
     Expr(Expr),
     Goto(InternedStr),
     Continue,
     Break,
     Return(Option<Expr>),
     Decl(VecDeque<Locatable<Declaration>>),
+}
+
+impl Default for StmtType {
+    fn default() -> Self {
+        StmtType::Compound(Vec::new())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -430,36 +431,11 @@ impl StmtType {
             StmtType::Return(Some(expr)) => write!(f, "return {};", expr),
             StmtType::Break => write!(f, "break;"),
             StmtType::Continue => write!(f, "continue;"),
-            StmtType::Default(stmt) => write!(
-                f,
-                "default:{}",
-                if let Some(stmt) = stmt {
-                    format!("\n{}", stmt.data)
-                } else {
-                    " ;".into()
-                }
-            ),
-            StmtType::Case(expr, stmt) => write!(
-                f,
-                "case {}:{}",
-                expr,
-                if let Some(stmt) = stmt {
-                    format!("\n{}", stmt.data)
-                } else {
-                    " ;".into()
-                }
-            ),
+            StmtType::Default(stmt) => write!(f, "default:{}", format!("\n{}", stmt.data)),
+            StmtType::Case(expr, stmt) => write!(f, "case {}:{}", expr, format!("\n{}", stmt.data)),
             StmtType::Goto(id) => write!(f, "goto {};", id),
-            StmtType::Label(id, inner) => {
-                let stmt = inner
-                    .as_ref()
-                    .map_or(";".to_owned(), |s| s.data.to_string());
-                write!(f, "{}: {}", id, stmt)
-            }
-            StmtType::While(condition, None) => write!(f, "while ({}) {{}}", condition),
-            StmtType::While(condition, Some(body)) => {
-                write!(f, "while ({}) {}", condition, body.data)
-            }
+            StmtType::Label(id, inner) => write!(f, "{}: {}", id, inner.data),
+            StmtType::While(condition, body) => write!(f, "while ({}) {}", condition, body.data),
             StmtType::If(condition, body, None) => write!(f, "if ({}) {}", condition, body.data),
             StmtType::If(condition, body, Some(otherwise)) => write!(
                 f,
@@ -471,20 +447,18 @@ impl StmtType {
             }
             StmtType::For(decls, condition, post_loop, body) => {
                 write!(f, "for (")?;
-                if let Some(init) = decls {
-                    match &init.data {
-                        StmtType::Decl(decls) => {
-                            let len = decls.len();
-                            for (i, decl) in decls.iter().enumerate() {
-                                write!(f, "{}", decl.data)?;
-                                if i != len - 1 {
-                                    write!(f, ", ")?;
-                                }
+                match &decls.data {
+                    StmtType::Decl(decls) => {
+                        let len = decls.len();
+                        for (i, decl) in decls.iter().enumerate() {
+                            write!(f, "{}", decl.data)?;
+                            if i != len - 1 {
+                                write!(f, ", ")?;
                             }
                         }
-                        StmtType::Expr(expr) => write!(f, "{}", expr)?,
-                        _ => unreachable!("for loop initialization other than decl or expr"),
                     }
+                    StmtType::Expr(expr) => write!(f, "{}", expr)?,
+                    _ => unreachable!("for loop initialization other than decl or expr"),
                 }
                 match condition {
                     Some(condition) => write!(f, "; {}; ", condition)?,
@@ -494,15 +468,7 @@ impl StmtType {
                     Some(condition) => write!(f, " {})", condition)?,
                     None => write!(f, ")")?,
                 };
-                write!(
-                    f,
-                    " {}",
-                    if let Some(body) = body {
-                        format!("{}", body.data)
-                    } else {
-                        ";".into()
-                    }
-                )
+                write!(f, " {}", body.data)
             }
             StmtType::Decl(decls) => {
                 for decl in decls {

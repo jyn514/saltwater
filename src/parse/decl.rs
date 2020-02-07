@@ -1408,11 +1408,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
         // function body
         let body = match self.compound_statement() {
-            Ok(Some(Stmt {
+            Ok(Stmt {
                 data: StmtType::Compound(stmts),
                 ..
-            })) => Ok(stmts),
-            Ok(None) => Ok(vec![]),
+            }) => Ok(stmts),
             Ok(x) => unreachable!(
                 "expected compound_statement to return compound statement, got '{:#?}' instead",
                 x

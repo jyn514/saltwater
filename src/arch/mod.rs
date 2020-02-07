@@ -17,14 +17,18 @@ use crate::data::{
 };
 use Type::*;
 
-// NOTE: this is required by the standard to always be one
+/// Size of a `char` in bytes;
+/// 
+/// Note: The standard requires this to always be one.
 const CHAR_SIZE: u16 = 1;
 
 // TODO: allow this to be configured at runtime
+/// The target triple for the configured target.
 pub(crate) const TARGET: Triple = Triple::host();
 // TODO: make this const when const_if_match is stabilized
 // TODO: see https://github.com/rust-lang/rust/issues/49146
 lazy_static! {
+    /// The calling convention for the current target.
     pub(crate) static ref CALLING_CONVENTION: CallConv = CallConv::triple_default(&TARGET);
 }
 

@@ -177,12 +177,7 @@ fn parse_args() -> Result<(Opt, PathBuf), pico_args::Error> {
         .unwrap_or_else(|| "a.out".into());
     let max_errors = input
         .opt_value_from_fn("--max-errors", |s| {
-            // TODO: make this nicer when ParseIntError::kind() is stable
-            match usize::from_str_radix(s, 10) {
-                Ok(0) => Ok(None),
-                Ok(i) => Ok(Some(NonZeroUsize::new(i).unwrap())),
-                Err(e) => Err(e),
-            }
+            usize::from_str_radix(s, 10).map(NonZeroUsize::new)
         })?
         .unwrap_or_else(|| Some(NonZeroUsize::new(10).unwrap()));
     Ok((

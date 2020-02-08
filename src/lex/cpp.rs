@@ -24,11 +24,8 @@ use crate::get_str;
 ///
 /// It is possible to tell the difference between an undefined variable
 /// and a variable defined to be empty using
-/// `#if defined(var)` (not currently implemented) and `#if var`.
-///
-/// Currently, the only implemented directives are `#if`, `#ifdef`, and `#endif`.
-/// Since `#define` is not implemented, `#ifdef var` is currently exactly the same
-/// as `#if 0`.
+/// `#ifdef var` and `#if var`.
+/// Note that `#if defined(...)` is not currently implemented.
 ///
 /// Examples:
 ///
@@ -188,7 +185,7 @@ impl<'a> PreProcessor<'a> {
                 Ok(Locatable {
                     data: Token::Id(id),
                     location,
-                }) => {
+                }) if self.lexer.line == line => {
                     if let Ok(directive) = DirectiveKind::try_from(get_str!(id)) {
                         Ok(Locatable::new(CppToken::Directive(directive), location))
                     } else {

@@ -196,6 +196,9 @@ pub enum CppError {
     #[error("#endif without #if")]
     UnexpectedEndIf,
 
+    #[error("#else after #else or #else without #if")]
+    UnexpectedElse,
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

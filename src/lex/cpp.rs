@@ -574,4 +574,15 @@ mod tests {
 A";
         assert!(cpp(src).next().is_none());
     }
+    #[test]
+    fn object_macros() {
+        let src = "
+#define a b
+int a() { return 1; }";
+        let cpp_src = "int b() { return 1; }";
+        assert_eq!(
+            cpp(src).collect::<Vec<_>>(),
+            cpp(cpp_src).collect::<Vec<_>>()
+        );
+    }
 }

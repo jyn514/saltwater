@@ -17,7 +17,7 @@ use cranelift::codegen::{
     settings::{self, Configurable},
 };
 use cranelift::frontend::Switch;
-use cranelift::prelude::{Ebb, FunctionBuilder, FunctionBuilderContext, Signature};
+use cranelift::prelude::{Block, FunctionBuilder, FunctionBuilderContext, Signature};
 use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct, ObjectTrapCollection};
 
@@ -40,12 +40,12 @@ struct Compiler {
     // if false, we last saw a switch
     last_saw_loop: bool,
     strings: HashMap<InternedStr, DataId>,
-    loops: Vec<(Ebb, Ebb)>,
+    loops: Vec<(Block, Block)>,
     // switch, default, end
     // if default is empty once we get to the end of a switch body,
     // we didn't see a default case
-    switches: Vec<(Switch, Option<Ebb>, Ebb)>,
-    labels: HashMap<InternedStr, Ebb>,
+    switches: Vec<(Switch, Option<Block>, Block)>,
+    labels: HashMap<InternedStr, Block>,
     error_handler: ErrorHandler,
 }
 
@@ -251,7 +251,7 @@ impl Compiler {
     fn store_stack_params(
         &mut self,
         params: Vec<Symbol>,
-        func_start: Ebb,
+        func_start: Block,
         location: &Location,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
@@ -260,7 +260,7 @@ impl Compiler {
             .iter()
             .map(|param| {
                 let ir_type = param.ctype.as_ir_type();
-                Ok(builder.append_ebb_param(func_start, ir_type))
+                Ok(builder.append_block_param(func_start, ir_type))
             })
             .collect::<CompileResult<_>>()?;
         for (param, ir_val) in params.into_iter().zip(ir_vals) {
@@ -312,7 +312,7 @@ impl Compiler {
         let mut ctx = FunctionBuilderContext::new();
         let mut builder = FunctionBuilder::new(&mut func, &mut ctx);
 
-        let func_start = builder.create_ebb();
+        let func_start = builder.create_block();
         builder.switch_to_block(func_start);
 
         let should_ret = func_type.should_return();

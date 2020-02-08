@@ -1,6 +1,6 @@
 use cranelift::codegen::cursor::Cursor;
 use cranelift::frontend::Switch;
-use cranelift::prelude::{Ebb, FunctionBuilder, InstBuilder};
+use cranelift::prelude::{Block, FunctionBuilder, InstBuilder};
 
 use super::Compiler;
 use crate::data::prelude::*;
@@ -64,7 +64,7 @@ impl Compiler {
             StmtType::Do(body, condition) => self.do_loop(*body, condition, builder),
             StmtType::Switch(condition, body) => self.switch(condition, *body, builder),
             StmtType::Label(name, inner) => {
-                let new_block = builder.create_ebb();
+                let new_block = builder.create_block();
                 Self::jump_to_block(new_block, builder);
                 builder.switch_to_block(new_block);
                 if let Some(previous) = self.labels.insert(name, new_block) {
@@ -103,9 +103,9 @@ impl Compiler {
         //      If else_block exists, jump to end_block + compile_all
         //      Otherwise, fallthrough to end_block
         let condition = self.compile_expr(condition, builder)?;
-        let (if_body, end_body) = (builder.create_ebb(), builder.create_ebb());
+        let (if_body, end_body) = (builder.create_block(), builder.create_block());
         if let Some(other) = otherwise {
-            let else_body = builder.create_ebb();
+            let else_body = builder.create_block();
             builder.ins().brz(condition.ir_val, else_body, &[]);
             builder.ins().jump(if_body, &[]);
 
@@ -140,8 +140,8 @@ impl Compiler {
     /// - Create a new start and end EBB
     /// - Switch to the start EBB
     /// - Return (start, end, previous_last_saw_loop)
-    fn enter_loop(&mut self, builder: &mut FunctionBuilder) -> (Ebb, Ebb, bool) {
-        let (loop_body, end_body) = (builder.create_ebb(), builder.create_ebb());
+    fn enter_loop(&mut self, builder: &mut FunctionBuilder) -> (Block, Block, bool) {
+        let (loop_body, end_body) = (builder.create_block(), builder.create_block());
         self.loops.push((loop_body, end_body));
         let old_saw_loop = self.last_saw_loop;
         self.last_saw_loop = true;
@@ -167,6 +167,7 @@ impl Compiler {
         if let Some(condition) = maybe_condition {
             let condition = self.compile_expr(condition, builder)?;
             builder.ins().brz(condition.ir_val, end_body, &[]);
+            self.fallthrough(builder);
         }
 
         self.compile_stmt(body, builder)?;
@@ -175,6 +176,11 @@ impl Compiler {
         builder.switch_to_block(end_body);
         self.exit_loop(old_saw_loop);
         Ok(())
+    }
+    pub(super) fn fallthrough(&self, builder: &mut FunctionBuilder) {
+        let bb = builder.create_block();
+        builder.ins().jump(bb, &[]);
+        builder.switch_to_block(bb);
     }
     fn do_loop(
         &mut self,
@@ -238,16 +244,16 @@ impl Compiler {
         // works around https://github.com/CraneStation/cranelift/issues/1057
         // instead of switching to back to the current block to emit the Switch,
         // fill a new dummy block
-        let dummy_block = builder.create_ebb();
+        let dummy_block = builder.create_block();
         Self::jump_to_block(dummy_block, builder);
 
-        let start_block = builder.create_ebb();
+        let start_block = builder.create_block();
         builder.switch_to_block(start_block);
         let old_saw_loop = self.last_saw_loop;
         self.last_saw_loop = false;
 
         self.switches
-            .push((Switch::new(), None, builder.create_ebb()));
+            .push((Switch::new(), None, builder.create_block()));
         self.compile_stmt(body, builder)?;
         let (switch, default, end) = self.switches.pop().unwrap();
         self.last_saw_loop = old_saw_loop;
@@ -280,10 +286,10 @@ impl Compiler {
             }
         };
         if builder.is_pristine() {
-            let current = builder.cursor().current_ebb().unwrap();
+            let current = builder.cursor().current_block().unwrap();
             switch.set_entry(constexpr, current);
         } else {
-            let new = builder.create_ebb();
+            let new = builder.create_block();
             switch.set_entry(constexpr, new);
             Self::jump_to_block(new, builder);
             builder.switch_to_block(new);
@@ -306,9 +312,9 @@ impl Compiler {
             Err(location.error(SemanticError::MultipleDefaultCase))
         } else {
             let default_ebb = if builder.is_pristine() {
-                builder.cursor().current_ebb().unwrap()
+                builder.cursor().current_block().unwrap()
             } else {
-                let new = builder.create_ebb();
+                let new = builder.create_block();
                 Self::jump_to_block(new, builder);
                 builder.switch_to_block(new);
                 new
@@ -354,7 +360,7 @@ impl Compiler {
         }
     }
     #[inline]
-    fn jump_to_block(ebb: Ebb, builder: &mut FunctionBuilder) {
+    fn jump_to_block(ebb: Block, builder: &mut FunctionBuilder) {
         if !builder.is_filled() {
             builder.ins().jump(ebb, &[]);
         }

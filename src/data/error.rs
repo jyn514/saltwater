@@ -225,6 +225,9 @@ pub enum Warning {
     #[error("{0}")]
     Generic(String),
 
+    #[error("rcc does not support #pragma")]
+    IgnoredPragma,
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

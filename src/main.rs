@@ -24,7 +24,7 @@ use rcc::{
         error::{CompileWarning, RecoverableResult},
         lex::Location,
     },
-    link, utils, Error, Opt,
+    link, preprocess, utils, Error, Opt,
 };
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
@@ -41,12 +41,15 @@ const HELP: &str = concat!(
 "usage: ", env!("CARGO_PKG_NAME"), " [FLAGS] [OPTIONS] [<file>]
 
 FLAGS:
-        --debug-asm    If set, print the intermediate representation of the program in addition to compiling
-    -a, --debug-ast    If set, print the parsed abstract syntax tree in addition to compiling
-        --debug-lex    If set, print all tokens found by the lexer in addition to compiling.
-    -h, --help         Prints help information
-    -c, --no-link      If set, compile and assemble but do not link. Object file is machine-dependent.
-    -V, --version      Prints version information
+        --debug-asm        If set, print the intermediate representation of the program in addition to compiling
+    -a, --debug-ast        If set, print the parsed abstract syntax tree in addition to compiling
+        --debug-lex        If set, print all tokens found by the lexer in addition to compiling.
+    -h, --help             Prints help information
+    -c, --no-link          If set, compile and assemble but do not link. Object file is machine-dependent.
+    -E, --preprocess-only  If set, preprocess only, but do not do anything else.
+                            Note that preprocessing discards whitespace and comments.
+                            There is not currently a way to disable this behavior.
+    -V, --version          Prints version information
 
 OPTIONS:
     -o, --output <output>    The output file to use. [default: a.out]
@@ -61,16 +64,45 @@ const USAGE: &str = "\
 usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
            [--debug-lex] [--no-link | -c] [<file>]";
 
+struct BinOpt {
+    /// The options that will be passed to `compile()`
+    opt: Opt,
+    /// If set, preprocess only, but do not do anything else.
+    ///
+    /// Note that preprocessing discards whitespace and comments.
+    /// There is not currently a way to disable this behavior.
+    preprocess_only: bool,
+}
+
 // TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
 fn real_main(
     file_db: &Files<String>,
     file_id: FileId,
-    opt: &Opt,
+    opt: &BinOpt,
     output: &Path,
 ) -> Result<(), Error> {
     env_logger::init();
-    let (result, warnings) = compile(file_db.source(file_id), &opt);
+
+    let buf = file_db.source(file_id);
+    let opt = if opt.preprocess_only {
+        use std::io::{BufWriter, Write};
+
+        let (tokens, warnings) = preprocess(buf, &opt.opt);
+        handle_warnings(warnings, file_id, file_db);
+
+        let stdout = io::stdout();
+        let mut stdout_buf = BufWriter::new(stdout.lock());
+        for token in tokens.map_err(Error::Source)? {
+            write!(stdout_buf, "{} ", token.data).expect("failed to write to stdout");
+        }
+        writeln!(stdout_buf).expect("failed to write to stdout");
+
+        return Ok(());
+    } else {
+        &opt.opt
+    };
+    let (result, warnings) = compile(buf, &opt);
     handle_warnings(warnings, file_id, file_db);
 
     let product = result?;
@@ -113,27 +145,31 @@ fn main() {
     };
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
-    opt.filename = if opt.filename == PathBuf::from("-") {
+    opt.opt.filename = if opt.opt.filename == PathBuf::from("-") {
         io::stdin().read_to_string(&mut buf).unwrap_or_else(|err| {
             eprintln!("Failed to read stdin: {}", err);
             process::exit(1);
         });
         PathBuf::from("<stdin>")
     } else {
-        File::open(opt.filename.as_path())
+        File::open(opt.opt.filename.as_path())
             .and_then(|mut file| file.read_to_string(&mut buf))
             .unwrap_or_else(|err| {
-                eprintln!("Failed to read {}: {}", opt.filename.to_string_lossy(), err);
+                eprintln!(
+                    "Failed to read {}: {}",
+                    opt.opt.filename.to_string_lossy(),
+                    err
+                );
                 process::exit(1);
             });
-        opt.filename
+        opt.opt.filename
     };
 
     let mut file_db = Files::new();
     // TODO: remove `lossy` call
-    let file_id = file_db.add(opt.filename.to_string_lossy(), buf);
+    let file_id = file_db.add(opt.opt.filename.to_string_lossy(), buf);
     real_main(&file_db, file_id, &opt, &output)
-        .unwrap_or_else(|err| err_exit(err, opt.max_errors, file_id, &file_db));
+        .unwrap_or_else(|err| err_exit(err, opt.opt.max_errors, file_id, &file_db));
 }
 
 fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
@@ -145,7 +181,7 @@ macro_rules! type_sizes {
         $(println!("{}: {}", stringify!($type), std::mem::size_of::<$type>());)*
     };
 }
-fn parse_args() -> Result<(Opt, PathBuf), pico_args::Error> {
+fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
     let mut input = Arguments::from_env();
     if input.contains(["-h", "--help"]) {
         println!("{}", HELP);
@@ -181,15 +217,18 @@ fn parse_args() -> Result<(Opt, PathBuf), pico_args::Error> {
         })?
         .unwrap_or_else(|| Some(NonZeroUsize::new(10).unwrap()));
     Ok((
-        Opt {
-            debug_lex: input.contains("--debug-lex"),
-            debug_asm: input.contains("--debug-asm"),
-            debug_ast: input.contains(["-a", "--debug-ast"]),
-            no_link: input.contains(["-c", "--no-link"]),
-            max_errors,
-            filename: input
-                .free_from_os_str(os_str_to_path_buf)?
-                .unwrap_or_else(|| "-".into()),
+        BinOpt {
+            preprocess_only: input.contains(["-E", "--preprocess-only"]),
+            opt: Opt {
+                debug_lex: input.contains("--debug-lex"),
+                debug_asm: input.contains("--debug-asm"),
+                debug_ast: input.contains(["-a", "--debug-ast"]),
+                no_link: input.contains(["-c", "--no-link"]),
+                max_errors,
+                filename: input
+                    .free_from_os_str(os_str_to_path_buf)?
+                    .unwrap_or_else(|| "-".into()),
+            },
         },
         output,
     ))

@@ -54,6 +54,12 @@ impl ErrorHandler {
     pub(crate) fn extend<E: Into<CompileError>>(&mut self, iter: impl Iterator<Item = E>) {
         self.errors.extend(iter.map(Into::into));
     }
+
+    /// Move another `ErrorHandler`'s errors and warnings into this one.
+    pub(crate) fn append(&mut self, other: &mut Self) {
+        self.errors.append(&mut other.errors);
+        self.warnings.append(&mut other.warnings);
+    }
 }
 
 impl Iterator for ErrorHandler {

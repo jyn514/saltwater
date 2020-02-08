@@ -41,7 +41,8 @@ use crate::get_str;
 pub struct PreProcessor<'a> {
     /// The preprocessor collaborates extremely closely with the lexer,
     /// since it sometimes needs to know if a token is followed by whitespace.
-    lexer: Lexer<'a>,
+    /// Each lexer represents a separate source file.
+    lexers: Vec<Lexer<'a>>,
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
     definitions: HashMap<InternedStr, Vec<Token>>,
@@ -96,6 +97,33 @@ impl Iterator for PreProcessor<'_> {
 }
 
 impl<'a> PreProcessor<'a> {
+    fn lexer(&self) -> &Lexer<'a> {
+        self.lexers.last().unwrap()
+    }
+    fn lexer_mut(&mut self) -> &mut Lexer<'a> {
+        self.lexers.last_mut().unwrap()
+    }
+    fn line(&self) -> usize {
+        self.lexer().line
+    }
+    fn next_token(&mut self) -> Option<CppResult<Token>> {
+        self.lexer_mut().next()
+    }
+    fn peek_token(&mut self) -> Option<char> {
+        self.lexer_mut().peek()
+    }
+    fn span(&self, start: u32) -> Location {
+        self.lexer().span(start)
+    }
+    fn consume_whitespace(&mut self) {
+        self.lexer_mut().consume_whitespace()
+    }
+    fn seen_line_token(&self) -> bool {
+        self.lexer().seen_line_token
+    }
+    fn offset(&self) -> u32 {
+        self.lexer().location.offset
+    }
     // possibly recursively replace tokens
     fn handle_token(&mut self, token: Token, location: Location) -> Option<CppResult<Token>> {
         if let Token::Id(id) = token {
@@ -123,7 +151,7 @@ impl<'a> PreProcessor<'a> {
         debug: bool,
     ) -> Self {
         Self {
-            lexer: Lexer::new(file, chars),
+            lexers: vec![Lexer::new(file, chars)],
             definitions: Default::default(),
             debug,
             error_handler: Default::default(),
@@ -157,13 +185,13 @@ impl<'a> PreProcessor<'a> {
     /* internal functions */
     fn tokens_until_newline(&mut self) -> Vec<CompileResult<Locatable<Token>>> {
         let mut tokens = Vec::new();
-        let line = self.lexer.line;
+        let line = self.line();
         loop {
-            self.lexer.consume_whitespace();
-            if self.lexer.line != line {
+            self.consume_whitespace();
+            if self.line() != line {
                 break;
             }
-            match self.lexer.next() {
+            match self.next_token() {
                 Some(token) => tokens.push(token),
                 None => break,
             }
@@ -172,38 +200,52 @@ impl<'a> PreProcessor<'a> {
     }
 
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
-        let next_token = self.lexer.next();
+        let next_token = loop {
+            let lexer = self.lexers.last_mut().unwrap();
+            match lexer.next() {
+                Some(token) => break token,
+                None => {
+                    self.error_handler.append(&mut lexer.error_handler);
+                    // this is the original source file
+                    if self.lexers.len() == 1 {
+                        return None;
+                    } else {
+                        self.lexers.pop();
+                    }
+                }
+            }
+        };
         let is_hash = match next_token {
-            Some(Ok(Locatable {
+            Ok(Locatable {
                 data: Token::Hash, ..
-            })) => true,
+            }) => true,
             _ => false,
         };
-        if is_hash && !self.lexer.seen_line_token {
-            let line = self.lexer.line;
-            Some(match self.lexer.next()? {
+        Some(if is_hash && !self.seen_line_token() {
+            let line = self.line();
+            match self.next_token()? {
                 Ok(Locatable {
                     data: Token::Id(id),
                     location,
-                }) if self.lexer.line == line => {
+                }) if self.line() == line => {
                     if let Ok(directive) = DirectiveKind::try_from(get_str!(id)) {
                         Ok(Locatable::new(CppToken::Directive(directive), location))
                     } else {
                         Err(Locatable::new(CppError::InvalidDirective.into(), location))
                     }
                 }
-                Ok(other) if self.lexer.line == line => {
+                Ok(other) if self.line() == line => {
                     Err(other.map(|tok| CppError::UnexpectedToken("directive", tok).into()))
                 }
                 other => other.map(Locatable::from),
-            })
+            }
         } else {
-            next_token.map(|maybe_err| maybe_err.map(Locatable::from))
-        }
+            next_token.map(Locatable::from)
+        })
     }
     fn expect_id(&mut self) -> CppResult<InternedStr> {
-        let location = self.lexer.span(self.lexer.location.offset);
-        match self.lexer.next() {
+        let location = self.span(self.offset());
+        match self.next_token() {
             Some(Ok(Locatable {
                 data: Token::Id(name),
                 location,
@@ -236,7 +278,7 @@ impl<'a> PreProcessor<'a> {
             Else => match self.nested_ifs.last() {
                 None => Some(Err(CompileError::new(
                     CppError::UnexpectedElse.into(),
-                    self.lexer.span(start),
+                    self.span(start),
                 ))),
                 // we already took the `#if` condition,
                 // `#else` should just be ignored
@@ -247,14 +289,14 @@ impl<'a> PreProcessor<'a> {
                 // we saw an `#else` before, seeing it again is an error
                 Some(false) => Some(Err(CompileError::new(
                     CppError::UnexpectedElse.into(),
-                    self.lexer.span(start),
+                    self.span(start),
                 ))),
             },
             EndIf => {
                 if self.nested_ifs.pop().is_none() {
                     Some(Err(CompileError::new(
                         CppError::UnexpectedEndIf.into(),
-                        self.lexer.span(start),
+                        self.span(start),
                     )))
                 } else {
                     self.next()
@@ -265,13 +307,13 @@ impl<'a> PreProcessor<'a> {
                 self.next()
             }
             Undef => {
-                let name = ret_err!(self.expect_id());
+                let name = dbg!(ret_err!(self.expect_id()));
                 self.definitions.remove(&name.data);
                 self.next()
             }
             Pragma => {
                 self.error_handler
-                    .warn(Warning::IgnoredPragma, self.lexer.span(start));
+                    .warn(Warning::IgnoredPragma, self.span(start));
                 drop(self.tokens_until_newline());
                 self.next()
             }
@@ -282,13 +324,13 @@ impl<'a> PreProcessor<'a> {
                     .map(|res| res.map(|l| l.data))
                     .collect());
                 self.error_handler
-                    .error(CppError::User(tokens), self.lexer.span(start));
+                    .error(CppError::User(tokens), self.span(start));
                 self.next()
             }
             Line => {
                 self.error_handler.warn(
                     Warning::Generic("#line is not yet implemented".into()),
-                    self.lexer.span(start),
+                    self.span(start),
                 );
                 drop(self.tokens_until_newline());
                 self.next()
@@ -301,7 +343,7 @@ impl<'a> PreProcessor<'a> {
         mut name: InternedStr,
         location: Location,
     ) -> Option<CppResult<Token>> {
-        let start = self.lexer.location.offset;
+        let start = self.offset();
         while let Some(def) = self.definitions.get(&name) {
             if def.is_empty() {
                 // TODO: recursion is bad and I should feel bad
@@ -323,10 +365,10 @@ impl<'a> PreProcessor<'a> {
             if let Token::Id(new_name) = first {
                 name = *new_name;
             } else {
-                return Some(Ok(Locatable::new(first.clone(), self.lexer.span(start))));
+                return Some(Ok(Locatable::new(first.clone(), self.span(start))));
             }
         }
-        Some(Ok(Locatable::new(Token::Id(name), self.lexer.span(start))))
+        Some(Ok(Locatable::new(Token::Id(name), self.span(start))))
     }
     // convienience function around cpp_expr
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
@@ -341,7 +383,7 @@ impl<'a> PreProcessor<'a> {
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn cpp_expr(&mut self) -> Result<Expr, CompileError> {
-        let start = self.lexer.location.offset;
+        let start = self.offset();
         let mut line_tokens = self
             .tokens_until_newline()
             .into_iter()
@@ -356,7 +398,7 @@ impl<'a> PreProcessor<'a> {
         let first = line_tokens.next().unwrap_or_else(|| {
             Err(CompileError::new(
                 CppError::EmptyExpression.into(),
-                self.lexer.span(start),
+                self.span(start),
             ))
         })?;
         let mut parser = crate::Parser::new(first, line_tokens, self.debug);
@@ -416,7 +458,7 @@ impl<'a> PreProcessor<'a> {
                         CppError::UnterminatedIf {
                             ifdef: kind == DirectiveKind::IfDef,
                         },
-                        self.lexer.span(start),
+                        self.span(start),
                     )
                     .into())
                 }
@@ -444,13 +486,13 @@ impl<'a> PreProcessor<'a> {
         Ok(())
     }
     fn define(&mut self, start: u32) -> Result<(), Locatable<Error>> {
-        let line = self.lexer.line;
-        self.lexer.consume_whitespace();
-        if self.lexer.line != line {
-            return Err(self.lexer.span(start).error(CppError::EmptyDefine));
+        let line = self.line();
+        self.consume_whitespace();
+        if self.line() != line {
+            return Err(self.span(start).error(CppError::EmptyDefine));
         }
         let id = self.expect_id()?;
-        if self.lexer.peek() == Some('(') {
+        if self.peek_token() == Some('(') {
             // function macro
             unimplemented!("function macros")
         } else {

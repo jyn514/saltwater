@@ -28,7 +28,10 @@ fn is_exotic_keyword(s: &str) -> bool {
 
 fn main() {
     use rcc::Opt;
-    let opt = Opt { filename: "<fuzz test>".into(), ..Opt::default() };
+    let opt = Opt {
+        filename: "<fuzz test>".into(),
+        ..Opt::default()
+    };
     loop {
         fuzz!(|s: &[u8]| {
             if let Ok(s) = std::str::from_utf8(s) {

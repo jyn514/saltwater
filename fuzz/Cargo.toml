@@ -15,6 +15,9 @@ git = "https://github.com/rust-fuzz/libfuzzer-sys.git"
 [dependencies.afl]
 version = "0.4"
 
+[dependencies]
+honggfuzz = "0.5"
+
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
@@ -26,3 +29,7 @@ path = "afl/garbage.rs"
 [[bin]]
 name = "libfuzzer"
 path = "fuzz_targets/garbage.rs"
+
+[[bin]]
+name = "hfuzz"
+path = "fuzz_targets/hfuzz.rs"

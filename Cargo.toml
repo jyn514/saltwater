@@ -30,7 +30,6 @@ color-backtrace = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 walkdir = "2"
-honggfuzz = "0.5"
 
 [profile.release]
 lto = true

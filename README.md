@@ -36,7 +36,16 @@ Other than that, it should work exactly the same as on Linux.
 cargo test
 # optionally, you can fuzz the compiler
 # it may be more helpful to just `grep -R unimplemented src`, though
+
+# libFuzzer/AFL
 tests/fuzz.sh
+
+# Honggfuzz:
+# Running Honggfuzz locally requires some parameters to use it at its full potential,
+# so it is probably a good idea to have a look here: https://github.com/rust-fuzz/honggfuzz-rs/blob/master/README.md
+# and here: https://github.com/google/honggfuzz/blob/master/docs/USAGE.md
+# we suggest the following:
+HFUZZ_RUN_ARGS="--tmout_sigvtalrm --exit_upon_crash" tests/hfuzz.sh
 ```
 
 ## FAQ

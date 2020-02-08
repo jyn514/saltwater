@@ -52,7 +52,8 @@ pub struct PreProcessor<'a> {
     /// Whether or not to display each token as it is processed
     debug: bool,
     /// Keeps track of the _start_ of all `#if` directives
-    nested_ifs: Vec<u32>,
+    /// bool: whether we've seen an `else`
+    nested_ifs: Vec<bool>,
     /// The tokens that have been `#define`d and are currently being substituted
     pending: VecDeque<Locatable<Token>>,
 }
@@ -233,6 +234,23 @@ impl<'a> PreProcessor<'a> {
                 let name = ret_err!(self.expect_id());
                 self.if_directive(self.definitions.contains_key(&name.data), start)
             }
+            Else => match self.nested_ifs.last() {
+                None => Some(Err(CompileError::new(
+                    CppError::UnexpectedElse.into(),
+                    self.lexer.span(start),
+                ))),
+                // we already took the `#if` condition,
+                // `#else` should just be ignored
+                Some(true) => {
+                    ret_err!(self.consume_directive(start, DirectiveKind::Else));
+                    self.next()
+                }
+                // we saw an `#else` before, seeing it again is an error
+                Some(false) => Some(Err(CompileError::new(
+                    CppError::UnexpectedElse.into(),
+                    self.lexer.span(start),
+                ))),
+            },
             EndIf => {
                 if self.nested_ifs.pop().is_none() {
                     Some(Err(CompileError::new(
@@ -252,7 +270,7 @@ impl<'a> PreProcessor<'a> {
                 self.definitions.remove(&name.data);
                 self.next()
             }
-            _ => unimplemented!("preprocessing directives besides if/ifdef"),
+            _ => unimplemented!("#include, #line, #error, #pragma"),
         }
     }
     fn replace_id(
@@ -324,9 +342,9 @@ impl<'a> PreProcessor<'a> {
     /// #if
     fn if_directive(&mut self, condition: bool, start: u32) -> Option<CppResult<Token>> {
         if condition {
-            self.nested_ifs.push(start);
+            self.nested_ifs.push(true);
         } else {
-            ret_err!(self.consume_if_directive(start));
+            ret_err!(self.consume_directive(start, DirectiveKind::If));
         }
         self.next()
     }
@@ -344,14 +362,23 @@ impl<'a> PreProcessor<'a> {
     /// int g() { return 0; }
     /// ```
     /// should yield `int` as the next token, not `void`.
-    fn consume_if_directive(&mut self, start: u32) -> Result<(), CompileError> {
-        fn match_directive(token: &CppResult<CppToken>, expected: DirectiveKind) -> bool {
+    fn consume_directive(&mut self, start: u32, kind: DirectiveKind) -> Result<(), CompileError> {
+        fn match_directive(
+            token: &CppResult<CppToken>,
+            expected: DirectiveKind,
+        ) -> Option<Location> {
             match token {
                 Ok(Locatable {
                     data: CppToken::Directive(directive),
-                    ..
-                }) => *directive == expected,
-                _ => false,
+                    location,
+                }) => {
+                    if *directive == expected {
+                        Some(*location)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
             }
         }
         let mut depth = 1;
@@ -366,12 +393,24 @@ impl<'a> PreProcessor<'a> {
                     .into())
                 }
             };
-            if match_directive(&token, DirectiveKind::If)
-                || match_directive(&token, DirectiveKind::IfDef)
+            if match_directive(&token, DirectiveKind::If).is_some()
+                || match_directive(&token, DirectiveKind::IfDef).is_some()
             {
                 depth += 1;
-            } else if match_directive(&token, DirectiveKind::EndIf) {
+            } else if match_directive(&token, DirectiveKind::EndIf).is_some() {
                 depth -= 1;
+            } else if let Some(location) = match_directive(&token, DirectiveKind::Else) {
+                if kind == DirectiveKind::If {
+                    if depth == 1 {
+                        self.nested_ifs.push(false);
+                        break;
+                    }
+                } else {
+                    assert_eq!(kind, DirectiveKind::Else);
+                    self.nested_ifs.pop();
+                    return Err(CompileError::new(CppError::UnexpectedElse.into(), location));
+                }
+                // otherwise, discard #else
             }
         }
         Ok(())
@@ -603,5 +642,26 @@ a";
 b
 a";
         assert_same(src, cpp_src);
+    }
+    #[test]
+    fn else_directive() {
+        use super::CppError;
+        let src = "
+#if 1
+#if 0
+b
+#else
+// this should be an error
+#else
+d
+#endif
+";
+        assert!(match cpp(src).next() {
+            Some(Err(CompileError {
+                data: Error::PreProcessor(CppError::UnexpectedElse),
+                ..
+            })) => true,
+            _ => false,
+        });
     }
 }

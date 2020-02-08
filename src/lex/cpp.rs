@@ -202,29 +202,21 @@ impl<'a> PreProcessor<'a> {
         }
     }
     fn expect_id(&mut self) -> CppResult<InternedStr> {
-        fn err_handler(
-            value: Option<CppResult<Token>>,
-            location: Location,
-        ) -> CppResult<InternedStr> {
-            match value {
-                Some(Ok(Locatable {
-                    data: Token::Id(name),
-                    location,
-                })) => Ok(Locatable::new(name, location)),
-                Some(Err(err)) => Err(err),
-                Some(Ok(other)) => {
-                    Err(other.map(|tok| CppError::UnexpectedToken("identifier", tok).into()))
-                }
-                None => Err(CompileError {
-                    data: CppError::EndOfFile("identifier").into(),
-                    location,
-                }),
-            }
-        }
         let location = self.lexer.span(self.lexer.location.offset);
-        let name = err_handler(self.lexer.next(), location)?;
-        let actual = self.replace_id(name.data, name.location);
-        err_handler(actual, name.location)
+        match self.lexer.next() {
+            Some(Ok(Locatable {
+                data: Token::Id(name),
+                location,
+            })) => Ok(Locatable::new(name, location)),
+            Some(Err(err)) => Err(err),
+            Some(Ok(other)) => {
+                Err(other.map(|tok| CppError::UnexpectedToken("identifier", tok).into()))
+            }
+            None => Err(CompileError {
+                data: CppError::EndOfFile("identifier").into(),
+                location,
+            }),
+        }
     }
     fn directive(&mut self, kind: DirectiveKind, start: u32) -> Option<CppResult<Token>> {
         use DirectiveKind::*;

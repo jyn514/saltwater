@@ -255,7 +255,7 @@ impl Compiler {
         location: &Location,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
-        // Cranelift requires that all EBB params are declared up front
+        // Cranelift requires that all block params are declared up front
         let ir_vals: Vec<_> = params
             .iter()
             .map(|param| {

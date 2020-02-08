@@ -285,6 +285,9 @@ impl Compiler {
                 return Err(location.error(SemanticError::CaseOutsideSwitch { is_default: false }))
             }
         };
+        if switch.entries().contains_key(&constexpr) {
+            return Err(location.error(SemanticError::DuplicateCase { is_default: false }));
+        }
         if builder.is_pristine() {
             let current = builder.cursor().current_block().unwrap();
             switch.set_entry(constexpr, current);
@@ -309,7 +312,7 @@ impl Compiler {
             }
         };
         if default.is_some() {
-            Err(location.error(SemanticError::MultipleDefaultCase))
+            Err(location.error(SemanticError::DuplicateCase { is_default: true }))
         } else {
             let default_block = if builder.is_pristine() {
                 builder.cursor().current_block().unwrap()

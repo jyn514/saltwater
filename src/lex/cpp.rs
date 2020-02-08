@@ -233,6 +233,10 @@ impl<'a> PreProcessor<'a> {
                 let condition = ret_err!(self.boolean_expr());
                 self.if_directive(condition, start)
             }
+            IfNDef => {
+                let name = ret_err!(self.expect_id());
+                self.if_directive(!self.definitions.contains_key(&name.data), start)
+            }
             IfDef => {
                 let name = ret_err!(self.expect_id());
                 self.if_directive(self.definitions.contains_key(&name.data), start)
@@ -403,6 +407,7 @@ enum DirectiveKind {
     EndIf,
     Else,
     IfDef,
+    IfNDef,
     Include,
     Define,
     Undef,
@@ -432,6 +437,7 @@ impl TryFrom<&str> for DirectiveKind {
             "endif" => EndIf,
             "else" => Else,
             "ifdef" => IfDef,
+            "ifndef" => IfNDef,
             "include" => Include,
             "define" => Define,
             "undef" => Undef,
@@ -558,5 +564,14 @@ mod tests {
 
         let same_line = "#ifdef a #endif\nint main() {}";
         assert!(cpp(same_line).next().unwrap().is_err());
+    }
+    #[test]
+    fn ifndef() {
+        let src = "
+#ifndef A
+#define A
+#endif
+A";
+        assert!(cpp(src).next().is_none());
     }
 }

@@ -393,7 +393,9 @@ impl<'a> PreProcessor<'a> {
                 Some(token) => token,
                 None => {
                     return Err(Locatable::new(
-                        CppError::UnterminatedDirective("#if or #ifdef"),
+                        CppError::UnterminatedIf {
+                            ifdef: kind == DirectiveKind::IfDef,
+                        },
                         self.lexer.span(start),
                     )
                     .into())

@@ -170,32 +170,48 @@ pub enum CppError {
     #[error("{0}")]
     Generic(String),
 
+    /// An invalid directive was present, such as `#invalid`
     #[error("invalid preprocessing directive")]
     InvalidDirective,
 
-    // valid token in the wrong position
+    /// A valid token was present in an invalid position, such as `#if *`
+    ///
+    /// The `&str` describes the expected token;
+    /// the `Token` is the actual token found.
     #[error("expected {0}, got {1}")]
     UnexpectedToken(&'static str, Token),
 
+    /// The file ended unexpectedly.
+    ///
+    /// This error is separate from an unterminated `#if`:
+    /// it occurs if the file ends in the middle of a directive,
+    /// such as `#define`.
+    ///
+    /// The `&str` describes what token was expected.
     #[error("expected {0}, got <end-of-file>")]
     EndOfFile(&'static str),
 
-    // invalid token
-    #[error("invalid preprocessor token {0}")]
-    InvalidCppToken(Token),
+    /// The file ended before an `#if` or `#ifdef` was closed.
+    ///
+    /// The `ifdef` boolean represents which of the two directives was open.
+    #[error("#{} is never terminated", if *(.ifdef) { "ifdef"} else { "if" })]
+    UnterminatedIf { ifdef: bool },
 
-    #[error("{0} is never terminated")]
-    UnterminatedDirective(&'static str),
-
+    /// An `#if` occurred without an expression following.
     #[error("expected expression for #if")]
     EmptyExpression,
 
+    /// A `#define` occured without an identifier following.
     #[error("macro name missing")]
     EmptyDefine,
 
+    /// A `#endif` was present, but no `#if` was currently open
     #[error("#endif without #if")]
     UnexpectedEndIf,
 
+    /// An `#else` was present, but either
+    /// a) no `#if` was currently open, or
+    /// b) an `#else` has already been seen.
     #[error("#else after #else or #else without #if")]
     UnexpectedElse,
 

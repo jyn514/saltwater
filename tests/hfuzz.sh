@@ -1,5 +1,4 @@
 #!/bin/sh
-cd "$(git rev-parse --show-toplevel)"/examples
-cargo install hfuzz
+cargo install honggfuzz
 cargo hfuzz build
 cargo hfuzz run hfuzz

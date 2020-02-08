@@ -92,6 +92,41 @@ impl Default for Opt {
     }
 }
 
+/// Preprocess the source and return the tokens.
+///
+/// Note on the return type:
+/// If successful, this returns an `Ok(VecDeque<Token>)`.
+/// The `VecDeque` is so you can iterate the tokens in order without consuming them.
+/// If unsuccessful, this returns an `Err(VecDeque<Error>)`,
+/// again so you can iterate the tokens in order.
+/// Regardless, this always returns all warnings found.
+#[allow(clippy::type_complexity)]
+pub fn preprocess(
+    buf: &str,
+    opt: &Opt,
+) -> (
+    Result<VecDeque<Locatable<Token>>, VecDeque<CompileError>>,
+    VecDeque<CompileWarning>,
+) {
+    let filename = opt.filename.to_string_lossy();
+    let mut cpp = PreProcessor::new(filename, buf.chars(), opt.debug_lex);
+
+    let mut tokens = VecDeque::new();
+    let mut errs = VecDeque::new();
+    for result in &mut cpp {
+        match result {
+            Ok(token) => tokens.push_back(token),
+            Err(err) => errs.push_back(err),
+        }
+    }
+    let res = if errs.is_empty() {
+        Ok(tokens)
+    } else {
+        Err(errs)
+    };
+    (res, cpp.warnings())
+}
+
 /// Compile and return the declarations and warnings.
 pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
     let filename = opt.filename.to_string_lossy();

@@ -255,6 +255,11 @@ impl<'a> PreProcessor<'a> {
                 ret_err!(self.define(start));
                 self.next()
             }
+            Undef => {
+                let name = ret_err!(self.expect_id());
+                self.definitions.remove(&name.data);
+                self.next()
+            }
             _ => unimplemented!("preprocessing directives besides if/ifdef"),
         }
     }
@@ -526,6 +531,19 @@ mod tests {
             _ => panic!("not a keyword: {:?}", token),
         }
     }
+    fn assert_same(src: &str, cpp_src: &str) {
+        assert_eq!(
+            cpp(src)
+                .map(|res| res.map(|token| token.data))
+                .collect::<Vec<_>>(),
+            cpp(cpp_src)
+                .map(|res| res.map(|token| token.data))
+                .collect::<Vec<_>>(),
+            "{} is not the same as {}",
+            src,
+            cpp_src,
+        );
+    }
     #[test]
     fn keywords() {
         for keyword in KEYWORDS.values() {
@@ -580,9 +598,18 @@ A";
 #define a b
 int a() { return 1; }";
         let cpp_src = "int b() { return 1; }";
-        assert_eq!(
-            cpp(src).collect::<Vec<_>>(),
-            cpp(cpp_src).collect::<Vec<_>>()
-        );
+        assert_same(src, cpp_src);
+    }
+    #[test]
+    fn undef() {
+        let src = "
+#define a b
+a
+#undef a
+a";
+        let cpp_src = "
+b
+a";
+        assert_same(src, cpp_src);
     }
 }

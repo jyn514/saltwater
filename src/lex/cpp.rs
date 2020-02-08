@@ -73,7 +73,9 @@ impl Iterator for PreProcessor<'_> {
     /// The preprocessor hides all internal complexity and returns only tokens.
     type Item = CppResult<Token>;
     fn next(&mut self) -> Option<Self::Item> {
-        let next_token = if let Some(token) = self.pending.pop_front() {
+        let next_token = if let Some(err) = self.error_handler.pop_front() {
+            Some(Err(err))
+        } else if let Some(token) = self.pending.pop_front() {
             Some(Ok(token))
         } else {
             match self.next_cpp_token()? {
@@ -152,7 +154,7 @@ impl<'a> PreProcessor<'a> {
     }
 
     /* internal functions */
-    fn tokens_until_newline(&mut self) -> impl Iterator<Item = CompileResult<Locatable<Token>>> {
+    fn tokens_until_newline(&mut self) -> Vec<CompileResult<Locatable<Token>>> {
         let mut tokens = Vec::new();
         let line = self.lexer.line;
         loop {
@@ -165,7 +167,7 @@ impl<'a> PreProcessor<'a> {
                 None => break,
             }
         }
-        tokens.into_iter()
+        tokens
     }
 
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
@@ -272,6 +274,16 @@ impl<'a> PreProcessor<'a> {
                 drop(self.tokens_until_newline());
                 self.next()
             }
+            Error => {
+                let tokens: Vec<_> = ret_err!(self
+                    .tokens_until_newline()
+                    .into_iter()
+                    .map(|res| res.map(|l| l.data))
+                    .collect());
+                self.error_handler
+                    .error(CppError::User(tokens), self.lexer.span(start));
+                self.next()
+            }
             _ => unimplemented!("#include, #line, #error"),
         }
     }
@@ -321,13 +333,16 @@ impl<'a> PreProcessor<'a> {
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn cpp_expr(&mut self) -> Result<Expr, CompileError> {
         let start = self.lexer.location.offset;
-        let mut line_tokens = self.tokens_until_newline().map(|result| match result {
-            Ok(Locatable {
-                data: Token::Id(_),
-                location,
-            }) => Ok(location.with(Token::Literal(Literal::Int(0)))),
-            _ => result,
-        });
+        let mut line_tokens = self
+            .tokens_until_newline()
+            .into_iter()
+            .map(|result| match result {
+                Ok(Locatable {
+                    data: Token::Id(_),
+                    location,
+                }) => Ok(location.with(Token::Literal(Literal::Int(0)))),
+                _ => result,
+            });
         // NOTE: This only returns the first error because anything else requires a refactor
         let first = line_tokens.next().unwrap_or_else(|| {
             Err(CompileError::new(
@@ -433,6 +448,7 @@ impl<'a> PreProcessor<'a> {
             // object macro
             let tokens = self
                 .tokens_until_newline()
+                .into_iter()
                 .map(|res| res.map(|loc| loc.data))
                 .collect::<Result<_, Locatable<Error>>>()?;
             self.definitions.insert(id.data, tokens);

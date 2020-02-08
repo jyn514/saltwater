@@ -40,12 +40,16 @@ impl ErrorHandler {
         self.errors.pop_front()
     }
 
-    /// Stopgap to make it easier to transition to lazy warnings.
-    ///
-    /// TODO: Remove this method
+    /// Shortcut for adding a warning
     pub(crate) fn warn<W: Into<Warning>>(&mut self, warning: W, location: Location) {
         self.warnings.push_back(location.with(warning.into()));
     }
+
+    /// Shortcut for adding an error
+    pub(crate) fn error<E: Into<Error>>(&mut self, error: E, location: Location) {
+        self.errors.push_back(location.with(error.into()));
+    }
+
     /// Add an iterator of errors to the error queue
     pub(crate) fn extend<E: Into<CompileError>>(&mut self, iter: impl Iterator<Item = E>) {
         self.errors.extend(iter.map(Into::into));
@@ -169,6 +173,14 @@ pub enum SyntaxError {
 pub enum CppError {
     #[error("{0}")]
     Generic(String),
+
+    /// A user-defined error (`#error`) was present.
+    /// The `Vec<Token>` contains the tokens which followed the error.
+
+    // TODO: this allocates a string for each token,
+    // might be worth separating out into a function at some point
+    #[error("#error {}", (.0).iter().map(|t| t.to_string()).collect::<Vec<_>>().join(" "))]
+    User(Vec<Token>),
 
     /// An invalid directive was present, such as `#invalid`
     #[error("invalid preprocessing directive")]

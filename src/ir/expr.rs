@@ -176,12 +176,12 @@ impl Compiler {
         right: Expr,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        let target_ebb = builder.create_ebb();
+        let target_ebb = builder.create_block();
         let target_type = left.ctype.as_ir_type();
-        builder.append_ebb_param(target_ebb, target_type);
+        builder.append_block_param(target_ebb, target_type);
 
         let condition = self.compile_expr(condition, builder)?;
-        let (ebb_if_true, ebb_if_false) = (builder.create_ebb(), builder.create_ebb());
+        let (ebb_if_true, ebb_if_false) = (builder.create_block(), builder.create_block());
         builder.ins().brnz(condition.ir_val, ebb_if_true, &[]);
         builder.ins().jump(ebb_if_false, &[]);
 
@@ -195,7 +195,7 @@ impl Compiler {
         builder.switch_to_block(target_ebb);
 
         Ok(Value {
-            ir_val: *builder.ebb_params(target_ebb).first().unwrap(),
+            ir_val: *builder.block_params(target_ebb).first().unwrap(),
             ir_type: target_type,
             ctype: left_val.ctype,
         })
@@ -207,8 +207,8 @@ impl Compiler {
         brz: bool,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        let target_ebb = builder.create_ebb();
-        builder.append_ebb_param(target_ebb, types::B1);
+        let target_ebb = builder.create_block();
+        builder.append_block_param(target_ebb, types::B1);
         let left = self.compile_expr(left, builder)?;
 
         let branch_func = if brz {
@@ -217,6 +217,7 @@ impl Compiler {
             InstBuilder::brnz
         };
         branch_func(builder.ins(), left.ir_val, target_ebb, &[left.ir_val]);
+        self.fallthrough(builder);
 
         let right = self.compile_expr(right, builder)?;
         builder.ins().jump(target_ebb, &[right.ir_val]);
@@ -224,7 +225,7 @@ impl Compiler {
         builder.switch_to_block(target_ebb);
         Ok(Value {
             ir_val: *builder
-                .ebb_params(target_ebb)
+                .block_params(target_ebb)
                 .first()
                 .expect("if we passed an EBB arg it should be here"),
             ir_type: types::B1,

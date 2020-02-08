@@ -118,7 +118,7 @@ pub enum SemanticError {
     UnreachableStatement,
 
     #[error("redeclaration of label {0}")]
-    LabelRedeclaration(cranelift::prelude::Ebb),
+    LabelRedeclaration(cranelift::prelude::Block),
 
     #[error("use of undeclared label {0}")]
     UndeclaredLabel(crate::intern::InternedStr),

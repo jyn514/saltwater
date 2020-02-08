@@ -303,7 +303,7 @@ pub fn pretty_print<T: std::fmt::Display, S: AsRef<str>>(
         .location(file, location.span.start())
         .expect("start location should be in bounds");
     let buf = format!(
-        "{}:{}:{}: {}: {}\n",
+        "{}:{}:{} {}: {}\n",
         file_db.name(file),
         start.line.number(),
         start.column.number(),

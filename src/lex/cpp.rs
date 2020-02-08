@@ -284,7 +284,15 @@ impl<'a> PreProcessor<'a> {
                     .error(CppError::User(tokens), self.lexer.span(start));
                 self.next()
             }
-            _ => unimplemented!("#include, #line, #error"),
+            Line => {
+                self.error_handler.warn(
+                    Warning::Generic("#line is not yet implemented".into()),
+                    self.lexer.span(start),
+                );
+                drop(self.tokens_until_newline());
+                self.next()
+            }
+            Include => unimplemented!("#include"),
         }
     }
     fn replace_id(

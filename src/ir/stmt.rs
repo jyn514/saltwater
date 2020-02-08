@@ -76,8 +76,8 @@ impl Compiler {
                 }
             }
             StmtType::Goto(name) => match self.labels.get(&name) {
-                Some(ebb) => {
-                    Self::jump_to_block(*ebb, builder);
+                Some(block) => {
+                    Self::jump_to_block(*block, builder);
                     Ok(())
                 }
                 None => Err(stmt.location.error(SemanticError::UndeclaredLabel(name))),
@@ -137,8 +137,8 @@ impl Compiler {
         Ok(())
     }
     /// Enter a loop context:
-    /// - Create a new start and end EBB
-    /// - Switch to the start EBB
+    /// - Create a new start and end block
+    /// - Switch to the start block
     /// - Return (start, end, previous_last_saw_loop)
     fn enter_loop(&mut self, builder: &mut FunctionBuilder) -> (Block, Block, bool) {
         let (loop_body, end_body) = (builder.create_block(), builder.create_block());
@@ -311,7 +311,7 @@ impl Compiler {
         if default.is_some() {
             Err(location.error(SemanticError::MultipleDefaultCase))
         } else {
-            let default_ebb = if builder.is_pristine() {
+            let default_block = if builder.is_pristine() {
                 builder.cursor().current_block().unwrap()
             } else {
                 let new = builder.create_block();
@@ -319,7 +319,7 @@ impl Compiler {
                 builder.switch_to_block(new);
                 new
             };
-            *default = Some(default_ebb);
+            *default = Some(default_block);
             self.compile_stmt(inner, builder)
         }
     }
@@ -360,9 +360,9 @@ impl Compiler {
         }
     }
     #[inline]
-    fn jump_to_block(ebb: Block, builder: &mut FunctionBuilder) {
+    fn jump_to_block(block: Block, builder: &mut FunctionBuilder) {
         if !builder.is_filled() {
-            builder.ins().jump(ebb, &[]);
+            builder.ins().jump(block, &[]);
         }
     }
 }

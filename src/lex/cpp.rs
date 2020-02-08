@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
 use super::{Lexer, Token};
-use crate::data::error::CppError;
+use crate::data::error::{CppError, Warning};
 use crate::data::lex::{Keyword, Literal};
 use crate::data::prelude::*;
 use crate::get_str;
@@ -266,7 +266,13 @@ impl<'a> PreProcessor<'a> {
                 self.definitions.remove(&name.data);
                 self.next()
             }
-            _ => unimplemented!("#include, #line, #error, #pragma"),
+            Pragma => {
+                self.error_handler
+                    .warn(Warning::IgnoredPragma, self.lexer.span(start));
+                drop(self.tokens_until_newline());
+                self.next()
+            }
+            _ => unimplemented!("#include, #line, #error"),
         }
     }
     fn replace_id(
@@ -659,5 +665,10 @@ d
             })) => true,
             _ => false,
         });
+    }
+    #[test]
+    fn pragma() {
+        let src = "#pragma gcc __attribute__((inline))";
+        assert!(cpp(src).next().is_none());
     }
 }

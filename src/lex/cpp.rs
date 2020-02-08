@@ -53,6 +53,8 @@ pub struct PreProcessor<'a> {
     debug: bool,
     /// Keeps track of the _start_ of all `#if` directives
     nested_ifs: Vec<u32>,
+    /// The tokens that have been `#define`d and are currently being substituted
+    pending: VecDeque<Locatable<Token>>,
 }
 
 type CppResult<T> = Result<Locatable<T>, CompileError>;
@@ -70,21 +72,19 @@ impl Iterator for PreProcessor<'_> {
     /// The preprocessor hides all internal complexity and returns only tokens.
     type Item = CppResult<Token>;
     fn next(&mut self) -> Option<Self::Item> {
-        let next_token = match self.next_cpp_token()? {
-            Err(err) => return Some(Err(err)),
-            Ok(loc) => match loc.data {
-                CppToken::Directive(directive) => {
-                    let start = loc.location.span.start().to_usize() as u32;
-                    self.directive(directive, start)
-                }
-                CppToken::Token(mut token) => {
-                    if let Token::Id(id) = token {
-                        token = ret_err!(self.replace_id(id)?).data;
+        let next_token = if let Some(token) = self.pending.pop_front() {
+            Some(Ok(token))
+        } else {
+            match self.next_cpp_token()? {
+                Err(err) => return Some(Err(err)),
+                Ok(loc) => match loc.data {
+                    CppToken::Directive(directive) => {
+                        let start = loc.location.span.start().to_usize() as u32;
+                        self.directive(directive, start)
                     }
-                    Self::replace_keywords(&mut token);
-                    Some(Ok(Locatable::new(token, loc.location)))
-                }
-            },
+                    CppToken::Token(token) => self.handle_token(token, loc.location),
+                },
+            }
         };
         if self.debug {
             if let Some(Ok(token)) = &next_token {
@@ -96,6 +96,26 @@ impl Iterator for PreProcessor<'_> {
 }
 
 impl<'a> PreProcessor<'a> {
+    // possibly recursively replace tokens
+    fn handle_token(&mut self, token: Token, location: Location) -> Option<CppResult<Token>> {
+        if let Token::Id(id) = token {
+            let mut token = self.replace_id(id, location);
+            if let Some(Ok(Locatable {
+                data: data @ Token::Id(_),
+                ..
+            })) = &mut token
+            {
+                if let Token::Id(name) = &data {
+                    if let Some(keyword) = KEYWORDS.get(get_str!(name)) {
+                        *data = Token::Keyword(*keyword);
+                    }
+                }
+            }
+            token
+        } else {
+            Some(Ok(Locatable::new(token, location)))
+        }
+    }
     /// Wrapper around [`Lexer::new`]
     pub fn new<T: AsRef<str> + Into<String>>(file: T, chars: &'a str, debug: bool) -> Self {
         Self {
@@ -104,6 +124,7 @@ impl<'a> PreProcessor<'a> {
             debug,
             error_handler: Default::default(),
             nested_ifs: Default::default(),
+            pending: Default::default(),
         }
     }
     /// Return the first valid token in the file,
@@ -146,14 +167,6 @@ impl<'a> PreProcessor<'a> {
         tokens.into_iter()
     }
 
-    #[inline]
-    fn replace_keywords(token: &mut Token) {
-        if let Token::Id(name) = token {
-            if let Some(keyword) = KEYWORDS.get(get_str!(name)) {
-                *token = Token::Keyword(*keyword)
-            }
-        }
-    }
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
         let next_token = self.lexer.next();
         let is_hash = match next_token {
@@ -206,7 +219,7 @@ impl<'a> PreProcessor<'a> {
         }
         let location = self.lexer.span(self.lexer.location.offset);
         let name = err_handler(self.lexer.next(), location)?;
-        let actual = self.replace_id(name.data);
+        let actual = self.replace_id(name.data, name.location);
         err_handler(actual, name.location)
     }
     fn directive(&mut self, kind: DirectiveKind, start: u32) -> Option<CppResult<Token>> {
@@ -237,12 +250,36 @@ impl<'a> PreProcessor<'a> {
             _ => unimplemented!("preprocessing directives besides if/ifdef"),
         }
     }
-    fn replace_id(&mut self, name: InternedStr) -> Option<CppResult<Token>> {
+    fn replace_id(
+        &mut self,
+        mut name: InternedStr,
+        location: Location,
+    ) -> Option<CppResult<Token>> {
         let start = self.lexer.location.offset;
-        // TODO: actually implement #define
-        self.lexer.chars = self.lexer.current.take().into_iter()
-            .chain(self.lexer.lookahead.take().into_iter())
-            .chain(self.lexer.chars);
+        while let Some(def) = self.definitions.get(&name) {
+            if def.is_empty() {
+                // TODO: recursion is bad and I should feel bad
+                return self.next();
+            }
+            let first = &def[0];
+
+            if def.len() > 1 {
+                // prepend the new tokens to the pending tokens
+                let mut new_pending = VecDeque::new();
+                new_pending.extend(def[1..].iter().map(|token| Locatable {
+                    data: token.clone(),
+                    location,
+                }));
+                new_pending.append(&mut self.pending);
+                self.pending = new_pending;
+            }
+
+            if let Token::Id(new_name) = first {
+                name = *new_name;
+            } else {
+                return Some(Ok(Locatable::new(first.clone(), self.lexer.span(start))));
+            }
+        }
         Some(Ok(Locatable::new(Token::Id(name), self.lexer.span(start))))
     }
     // convienience function around cpp_expr

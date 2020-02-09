@@ -15,7 +15,7 @@ const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
 
 impl Compiler {
-    pub(crate) fn store_static(
+    pub(super) fn store_static(
         &mut self,
         mut symbol: Symbol,
         init: Option<Initializer>,
@@ -100,7 +100,7 @@ impl Compiler {
             })
         })
     }
-    pub(crate) fn compile_string(
+    pub(super) fn compile_string(
         &mut self,
         string: Vec<u8>,
         location: Location,

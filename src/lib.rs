@@ -24,7 +24,7 @@ pub use parse::Parser;
 
 #[macro_use]
 pub mod utils;
-pub mod arch;
+mod arch;
 pub mod data;
 mod fold;
 pub mod intern;

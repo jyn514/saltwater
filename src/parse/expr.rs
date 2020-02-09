@@ -1559,6 +1559,47 @@ fn flatten<E>((err, (left, _)): (E, (Expr, Expr))) -> (E, Expr) {
 /// Implicit conversions.
 /// These are handled here and no other part of the compiler deals with them directly.
 impl Type {
+    #[inline]
+    fn is_void_pointer(&self) -> bool {
+        match self {
+            Type::Pointer(t) => **t == Type::Void,
+            _ => false,
+        }
+    }
+    #[inline]
+    fn is_char_pointer(&self) -> bool {
+        match self {
+            Type::Pointer(t) => match **t {
+                Type::Char(_) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+    #[inline]
+    /// used for pointer addition and subtraction, see section 6.5.6 of the C11 standard
+    fn is_pointer_to_complete_object(&self) -> bool {
+        match self {
+            Type::Pointer(ctype) => ctype.is_complete() && !ctype.is_function(),
+            Type::Array(_, _) => true,
+            _ => false,
+        }
+    }
+    #[inline]
+    fn is_struct(&self) -> bool {
+        match self {
+            Type::Struct(_) | Type::Union(_) => true,
+            _ => false,
+        }
+    }
+    #[inline]
+    fn is_complete(&self) -> bool {
+        match self {
+            Type::Void | Type::Function(_) | Type::Array(_, ArrayType::Unbounded) => false,
+            // TODO: update when we allow incomplete struct and union types (e.g. `struct s;`)
+            _ => true,
+        }
+    }
     // Perform the 'default promotions' from 6.5.2.2.6
     fn default_promote(self) -> Type {
         if self.is_integral() {

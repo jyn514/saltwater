@@ -1522,7 +1522,7 @@ impl Expr {
 
 impl From<(Literal, Location)> for Expr {
     fn from((literal, location): (Literal, Location)) -> Self {
-        let ctype = match literal {
+        let ctype = match &literal {
             Literal::Char(_) => Type::Char(true),
             Literal::Int(_) => Type::Long(true),
             Literal::UnsignedInt(_) => Type::Long(false),
@@ -1737,7 +1737,7 @@ pub(crate) mod tests {
         assert_eq!(
             parsed,
             Ok(Expr::from((
-                Literal::Str(InternedStr::get_or_intern("hi there\0")),
+                Literal::Str("hi there\0".into()),
                 get_location(&parsed)
             )))
         );

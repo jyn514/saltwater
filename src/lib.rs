@@ -96,7 +96,7 @@ impl Default for Opt {
 pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
     let filename = opt.filename.to_string_lossy();
     let filename_ref = InternedStr::get_or_intern(filename.as_ref());
-    let mut cpp = PreProcessor::new(filename, buf.chars(), opt.debug_lex);
+    let mut cpp = PreProcessor::new(filename, &buf, opt.debug_lex);
 
     let mut errs = VecDeque::new();
 

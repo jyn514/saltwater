@@ -514,6 +514,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// | SIZEOF '(' type_name ')'
     /// ;
     fn unary_expr(&mut self) -> SyntaxResult {
+        let _guard = self.recursion_check();
         match self.peek_token() {
             Some(Token::PlusPlus) => {
                 let Locatable { location, .. } = self.next_token().unwrap();

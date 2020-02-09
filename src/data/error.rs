@@ -210,8 +210,8 @@ pub enum CppError {
     #[error("expected {0}, got <end-of-file>")]
     EndOfFile(&'static str),
 
-    #[error("file '{}' not found", crate::get_str!(.0))]
-    FileNotFound(InternedStr),
+    #[error("file '{0}' not found")]
+    FileNotFound(String),
 
     /// The file ended before an `#if` or `#ifdef` was closed.
     ///

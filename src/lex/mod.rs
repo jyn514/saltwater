@@ -22,7 +22,7 @@ pub use cpp::PreProcessor;
 #[derive(Debug)]
 struct Lexer<'a> {
     location: SingleLocation,
-    chars: &'a [u8],
+    chars: Cow<'a, [u8]>,
     /// used for 2-character tokens
     current: Option<u8>,
     /// used for 3-character tokens
@@ -50,13 +50,13 @@ struct SingleLocation {
 
 impl<'a> Lexer<'a> {
     /// Creates a Lexer from a filename and the contents of a file
-    fn new<T: AsRef<str> + Into<String>>(file: T, chars: &'a [u8]) -> Lexer<'a> {
+    fn new<C: Into<Cow<'a, [u8]>>, T: AsRef<str> + Into<String>>(file: T, chars: C) -> Lexer<'a> {
         Lexer {
             location: SingleLocation {
                 offset: 0,
                 filename: InternedStr::get_or_intern(file),
             },
-            chars,
+            chars: chars.into(),
             seen_line_token: false,
             line: 0,
             current: None,

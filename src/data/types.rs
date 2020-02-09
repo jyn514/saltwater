@@ -188,7 +188,7 @@ pub struct BitfieldType {
 impl Type {
     /// https://stackoverflow.com/questions/14821936/what-is-a-scalar-object-in-c#14822074
     #[inline]
-    pub fn is_scalar(&self) -> bool {
+    pub(crate) fn is_scalar(&self) -> bool {
         use Type::*;
         match self {
             Enum(_, _) => true,
@@ -197,16 +197,9 @@ impl Type {
         }
     }
     #[inline]
-    pub fn is_bool(&self) -> bool {
+    pub(crate) fn is_bool(&self) -> bool {
         match self {
             Type::Bool => true,
-            _ => false,
-        }
-    }
-    #[inline]
-    pub fn is_char(&self) -> bool {
-        match self {
-            Type::Char(true) => true,
             _ => false,
         }
     }
@@ -235,7 +228,7 @@ impl Type {
         }
     }
     #[inline]
-    pub fn is_arithmetic(&self) -> bool {
+    pub(crate) fn is_arithmetic(&self) -> bool {
         self.is_integral() || self.is_floating()
     }
     #[inline]
@@ -246,54 +239,13 @@ impl Type {
         }
     }
     #[inline]
-    pub fn is_void_pointer(&self) -> bool {
-        match self {
-            Type::Pointer(t) => **t == Type::Void,
-            _ => false,
-        }
-    }
-    #[inline]
-    pub fn is_char_pointer(&self) -> bool {
-        match self {
-            Type::Pointer(t) => match **t {
-                Type::Char(_) => true,
-                _ => false,
-            },
-            _ => false,
-        }
-    }
-    #[inline]
-    /// used for pointer addition and subtraction, see section 6.5.6 of the C11 standard
-    pub fn is_pointer_to_complete_object(&self) -> bool {
-        match self {
-            Type::Pointer(ctype) => ctype.is_complete() && !ctype.is_function(),
-            Type::Array(_, _) => true,
-            _ => false,
-        }
-    }
-    #[inline]
-    pub fn is_struct(&self) -> bool {
-        match self {
-            Type::Struct(_) | Type::Union(_) => true,
-            _ => false,
-        }
-    }
-    #[inline]
-    pub fn is_complete(&self) -> bool {
-        match self {
-            Type::Void | Type::Function(_) | Type::Array(_, ArrayType::Unbounded) => false,
-            // TODO: update when we allow incomplete struct and union types (e.g. `struct s;`)
-            _ => true,
-        }
-    }
-    #[inline]
     pub fn is_function(&self) -> bool {
         match self {
             Type::Function(_) => true,
             _ => false,
         }
     }
-    pub fn member_offset(&self, member: InternedStr) -> Result<u64, ()> {
+    pub(crate) fn member_offset(&self, member: InternedStr) -> Result<u64, ()> {
         match self {
             Type::Struct(stype) => Ok(stype.offset(member)),
             Type::Union(_) => Ok(0),
@@ -337,7 +289,11 @@ impl std::fmt::Display for Type {
 
 use std::fmt::{self, Formatter};
 
-pub fn print_type(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt::Result {
+pub(super) fn print_type(
+    ctype: &Type,
+    name: Option<InternedStr>,
+    f: &mut Formatter,
+) -> fmt::Result {
     print_pre(ctype, f)?;
     print_mid(ctype, name, f)?;
     print_post(ctype, f)
@@ -426,10 +382,7 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
 }
 
 impl FunctionType {
-    pub fn should_return(&self) -> bool {
+    pub(crate) fn should_return(&self) -> bool {
         *self.return_type != Type::Void
-    }
-    pub fn has_params(&self) -> bool {
-        !(self.params.len() == 1 && self.params[0].ctype == Type::Void)
     }
 }

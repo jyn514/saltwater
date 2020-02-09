@@ -1114,6 +1114,16 @@ impl Token {
 
 /* stateless helper functions */
 impl Expr {
+    fn zero(location: Location) -> Expr {
+        Expr {
+            ctype: Type::Int(true),
+            constexpr: true,
+            expr: ExprType::Literal(Literal::Int(0)),
+            lval: false,
+            location,
+        }
+    }
+
     fn indirection(self, lval: bool, ctype: Type, location: Location) -> Self {
         Expr {
             constexpr: self.constexpr,

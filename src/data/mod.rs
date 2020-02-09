@@ -179,18 +179,6 @@ impl Qualifiers {
     };
 }
 
-impl Expr {
-    pub fn zero(location: Location) -> Expr {
-        Expr {
-            ctype: Type::Int(true),
-            constexpr: true,
-            expr: ExprType::Literal(Literal::Int(0)),
-            lval: false,
-            location,
-        }
-    }
-}
-
 impl<K: Hash + Eq, V> Scope<K, V> {
     #[inline]
     pub fn new() -> Self {

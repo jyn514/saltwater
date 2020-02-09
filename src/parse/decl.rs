@@ -29,7 +29,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// where specifier_qualifier_list: (type_specifier | type_qualifier)+
     ///
     /// Used for casts and `sizeof` builtin.
-    pub fn type_name(&mut self) -> SyntaxResult<Locatable<(Type, Qualifiers)>> {
+    pub(crate) fn type_name(&mut self) -> SyntaxResult<Locatable<(Type, Qualifiers)>> {
         let (sc, qualifiers, ctype, _) = self.declaration_specifiers()?;
         if sc != None {
             self.semantic_err("type cannot have a storage class", self.last_location);
@@ -64,7 +64,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * We push all but one declaration into the 'pending' vector
      * and return the last.
      */
-    pub fn declaration(&mut self) -> SyntaxResult<VecDeque<Locatable<Declaration>>> {
+    pub(super) fn declaration(&mut self) -> SyntaxResult<VecDeque<Locatable<Declaration>>> {
         let (sc, mut qualifiers, ctype, seen_compound_type) = self.declaration_specifiers()?;
         if self.match_next(&Token::Semicolon).is_some() {
             if !seen_compound_type {

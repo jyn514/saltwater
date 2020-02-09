@@ -446,7 +446,7 @@ pub(crate) mod tests {
     }
     #[inline]
     pub(crate) fn parser(input: &str) -> Parser<Lexer> {
-        let mut lexer = Lexer::new("<test suite>".to_string(), input.chars(), false);
+        let mut lexer = Lexer::new("<test suite>".to_string(), input, false);
         let first = lexer.next().unwrap().unwrap();
         Parser::new(first, lexer, false)
     }

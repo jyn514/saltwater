@@ -102,24 +102,35 @@ impl Compiler {
     }
     pub(crate) fn compile_string(
         &mut self,
-        string: InternedStr,
+        string: Vec<u8>,
         location: Location,
     ) -> CompileResult<DataId> {
-        let name = format!("str.{}", string.to_usize());
-        let str_id = match self.module.declare_data(&name, Linkage::Local, false, None) {
-            Ok(id) => id,
-            Err(err) => semantic_err!(format!("error declaring static string: {}", err), location),
+        use std::collections::hash_map::Entry;
+        let len = self.strings.len();
+        // TODO: it seems silly for both us and cranelift to store the string
+        let (string, str_id) = match self.strings.entry(string) {
+            Entry::Occupied(id) => return Ok(*id.get()),
+            Entry::Vacant(empty) => {
+                let name = format!("str.{}", len);
+                let id = match self.module.declare_data(&name, Linkage::Local, false, None) {
+                    Ok(id) => id,
+                    Err(err) => {
+                        semantic_err!(format!("error declaring static string: {}", err), location)
+                    }
+                };
+                let string = empty.key().clone();
+                empty.insert(id);
+                (string, id)
+            }
         };
-        if self.strings.insert(string, str_id).is_none() {
-            let mut ctx = DataContext::new();
-            ctx.define(string.resolve_and_clone().into_boxed_str().into());
-            self.module
-                .define_data(str_id, &ctx)
-                .map_err(|err| Locatable {
-                    data: format!("error defining static string: {}", err),
-                    location,
-                })?;
-        }
+        let mut ctx = DataContext::new();
+        ctx.define(string.into_boxed_slice());
+        self.module
+            .define_data(str_id, &ctx)
+            .map_err(|err| Locatable {
+                data: format!("error defining static string: {}", err),
+                location,
+            })?;
         Ok(str_id)
     }
     fn init_expr(
@@ -398,7 +409,7 @@ impl Literal {
                     x, f
                 )),
             }),
-            Literal::Str(string) => Ok(string.resolve_and_clone().into_boxed_str().into()),
+            Literal::Str(string) => Ok(string.into_boxed_slice()),
             Literal::Char(c) => Ok(Box::new([c])),
         }
     }

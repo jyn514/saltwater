@@ -2,8 +2,7 @@ use lazy_static::lazy_static;
 
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
-use std::path::{Path, PathBuf};
-use std::str::Chars;
+use std::path::PathBuf;
 
 use super::{Lexer, Token};
 use crate::data::error::{CppError, Warning};
@@ -36,7 +35,7 @@ struct OwnedChars;
 /// use rcc::PreProcessor;
 ///
 /// let cpp = PreProcessor::new("<stdin>".to_string(),
-///                        "int main(void) { char *hello = \"hi\"; }".chars(),
+///                        "int main(void) { char *hello = \"hi\"; }",
 ///                         false);
 /// for token in cpp {
 ///     assert!(token.is_ok());
@@ -102,7 +101,7 @@ impl Iterator for PreProcessor<'_> {
 
 impl<'a> PreProcessor<'a> {
     fn lexer(&self) -> &Lexer<'a> {
-        self.includes.last().map_or(&self.first_lexer, |t| &t.0)
+        self.includes.last().map_or(&self.first_lexer, |t| &t)
     }
     fn lexer_mut(&mut self) -> &mut Lexer {
         unimplemented!()
@@ -114,7 +113,7 @@ impl<'a> PreProcessor<'a> {
     fn next_token(&mut self) -> Option<CppResult<Token>> {
         self.lexer_mut().next()
     }
-    fn peek_token(&mut self) -> Option<char> {
+    fn peek_token(&mut self) -> Option<u8> {
         self.lexer_mut().peek()
     }
     fn span(&self, start: u32) -> Location {
@@ -150,14 +149,10 @@ impl<'a> PreProcessor<'a> {
         }
     }
     /// Wrapper around [`Lexer::new`]
-    pub fn new<T: AsRef<str> + Into<String>>(
-        file: T,
-        chars: std::str::Chars<'a>,
-        debug: bool,
-    ) -> Self {
+    pub fn new<T: AsRef<str> + Into<String>>(file: T, chars: &'a str, debug: bool) -> Self {
         Self {
             debug,
-            first_lexer: Lexer::new(file, chars),
+            first_lexer: Lexer::new(file, chars.as_bytes()),
             includes: Default::default(),
             definitions: Default::default(),
             error_handler: Default::default(),
@@ -502,7 +497,7 @@ impl<'a> PreProcessor<'a> {
             return Err(self.span(start).error(CppError::EmptyDefine));
         }
         let id = self.expect_id()?;
-        if self.peek_token() == Some('(') {
+        if self.peek_token() == Some(b'(') {
             // function macro
             unimplemented!("function macros")
         } else {
@@ -528,11 +523,11 @@ impl<'a> PreProcessor<'a> {
     }
     */
     fn include(&mut self, start: u32) -> Result<(), Locatable<Error>> {
-        use crate::data::lex::{ComparisonToken, Literal};
+        use crate::data::lex::ComparisonToken;
         let lexer = self.lexer_mut();
-        let local = if lexer.match_next('"') {
+        let local = if lexer.match_next(b'"') {
             true
-        } else if lexer.match_next('<') {
+        } else if lexer.match_next(b'<') {
             false
         } else {
             let (id, location) = match self.next_token() {
@@ -557,7 +552,7 @@ impl<'a> PreProcessor<'a> {
             match self.replace_id(id, location) {
                 // local
                 Some(Ok(Locatable {
-                    data: Token::Literal(Literal::Str(id)),
+                    data: Token::Id(id),
                     ..
                 })) => return self.include_path(id, true, start),
                 Some(Ok(Locatable {
@@ -581,6 +576,7 @@ impl<'a> PreProcessor<'a> {
         };
         // TODO: does expect_id consider self.pending?
         let filename = self.expect_id()?;
+
         self.include_path(filename.data, local, start)
     }
     fn include_path(
@@ -591,6 +587,13 @@ impl<'a> PreProcessor<'a> {
     ) -> Result<(), Locatable<Error>> {
         const SEARCH_PATH: &[&str] = &["/usr/include"];
 
+        let intern_lock = crate::intern::STRINGS
+            .read()
+            .expect("failed to lock String cache for reading");
+        let filename_str = intern_lock
+            .resolve(filename.0)
+            .expect("tried to get value of non-interned string");
+
         // local include: #include "dict.h"
         if local {
             // TODO: relative file paths
@@ -598,12 +601,6 @@ impl<'a> PreProcessor<'a> {
         }
         // if we don't find it locally, we fall back to system headers
         // this is part of the spec!
-        let intern_lock = crate::intern::STRINGS
-            .read()
-            .expect("failed to lock String cache for reading");
-        let filename_str = intern_lock
-            .resolve(filename.0)
-            .expect("tried to get value of non-interned string");
         for path in SEARCH_PATH {
             let mut buf = PathBuf::from(path);
             buf.push(filename_str);
@@ -611,14 +608,14 @@ impl<'a> PreProcessor<'a> {
                 // TODO: _any_ sort of error handling
                 let src = std::fs::read_to_string(&buf).expect("failed to read included file");
                 self.includes
-                    .push(Lexer::new(buf.to_string_lossy(), src));
+                    .push(Lexer::new(buf.to_string_lossy(), src.as_bytes()));
                 return Ok(());
             }
         }
-        return Err(CompileError::new(
+        Err(CompileError::new(
             CppError::FileNotFound(filename).into(),
             self.span(start),
-        ));
+        ))
     }
 }
 
@@ -736,7 +733,7 @@ mod tests {
     use super::{CppResult, Keyword, PreProcessor, KEYWORDS};
     use crate::data::prelude::*;
     fn cpp(input: &str) -> PreProcessor {
-        PreProcessor::new("<test suite>", input.chars(), false)
+        PreProcessor::new("<test suite>", input, false)
     }
     fn assert_keyword(token: Option<CppResult<Token>>, expected: Keyword) {
         match token {

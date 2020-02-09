@@ -29,10 +29,24 @@ codespan = "0.7"
 color-backtrace = { version = "0.3", default-features = false }
 
 [dev-dependencies]
+criterion = "0.3.1"
 walkdir = "2"
+
+[[bench]]
+name = "examples"
+harness = false
 
 [profile.release]
 lto = true
 
 [profile.test]
 debug = false  # speeds up link time
+
+[profile.bench]
+opt-level = 3
+debug = false
+lto = true
+debug-assertions = false
+codegen-units = 1
+incremental = false
+overflow-checks = false

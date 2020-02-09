@@ -2,6 +2,7 @@ use std::process;
 
 use ansi_term::Colour;
 
+// TODO: this should only be the binary, not the library
 pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
     eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
     process::exit(code);

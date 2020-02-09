@@ -76,9 +76,7 @@ impl Expr {
             false
         }
     }
-    // first result: whether the expression itself is erroneous
-    // second result: whether the expression was constexpr
-    pub fn constexpr(self) -> CompileResult<Locatable<(Literal, Type)>> {
+    pub(crate) fn constexpr(self) -> CompileResult<Locatable<(Literal, Type)>> {
         let folded = self.const_fold()?;
         match folded.expr {
             ExprType::Literal(token) => Ok(Locatable {

@@ -1,3 +1,4 @@
+// no-main
 extern int fibonacci(int n) {
     if (n < 2) {
         return 1;

@@ -2,7 +2,7 @@ use std::fmt;
 use std::sync::RwLock;
 
 use lazy_static::lazy_static;
-use string_interner::{StringInterner, Sym, Symbol};
+use string_interner::{StringInterner, Sym};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InternedStr(pub Sym);
@@ -25,16 +25,6 @@ macro_rules! get_str {
 }
 
 impl InternedStr {
-    #[inline(always)]
-    pub fn to_usize(self) -> usize {
-        self.0.to_usize()
-    }
-    pub fn len(self) -> usize {
-        get_str!(self).len()
-    }
-    pub fn is_empty(self) -> bool {
-        self == Default::default()
-    }
     pub fn resolve_and_clone(self) -> String {
         get_str!(self).to_string()
     }

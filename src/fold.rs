@@ -63,24 +63,13 @@ macro_rules! fold_compare_op {
 }
 
 impl Expr {
-    pub fn is_zero(&self) -> bool {
+    pub(crate) fn is_zero(&self) -> bool {
         if let ExprType::Literal(token) = &self.expr {
             match *token {
                 Int(i) => i == 0,
                 UnsignedInt(u) => u == 0,
                 Float(f) => f == 0.0,
                 Char(c) => c == 0,
-                _ => false,
-            }
-        } else {
-            false
-        }
-    }
-    pub fn is_negative(&self) -> bool {
-        if let ExprType::Literal(token) = &self.expr {
-            match *token {
-                Int(i) => i < 0,
-                Float(f) => f < 0.0,
                 _ => false,
             }
         } else {

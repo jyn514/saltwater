@@ -24,7 +24,6 @@ fn cpp_and_save(header: &str, dest: &Path) -> Result<(), Error> {
 }
 
 #[test]
-#[ignore]
 fn all_headers() -> Result<(), Error> {
     const STANDARD_HEADERS: &[&str] = &[
         "assert",

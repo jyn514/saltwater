@@ -9,7 +9,7 @@ use crate::data::{
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// expr_opt: expr ';' | ';'
-    pub fn expr_opt(&mut self, token: Token) -> SyntaxResult<Option<Expr>> {
+    pub(super) fn expr_opt(&mut self, token: Token) -> SyntaxResult<Option<Expr>> {
         if self.match_next(&token).is_some() {
             Ok(None)
         } else {
@@ -42,7 +42,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     //
     // Comma operator: evalutate the first expression (usually for its side effects)
     // and return the second
-    pub fn expr(&mut self) -> SyntaxResult {
+    pub(crate) fn expr(&mut self) -> SyntaxResult {
         self.left_associative_binary_op(
             Self::assignment_expr,
             &[&Token::Comma],
@@ -66,7 +66,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
     /// Parses an expression and ensures that it can be evaluated at compile time.
     // constant_expr: conditional_expr;
-    pub fn constant_expr(&mut self) -> SyntaxResult {
+    pub(super) fn constant_expr(&mut self) -> SyntaxResult {
         let expr = self.conditional_expr()?;
         if !expr.constexpr {
             self.error_handler.push_back(
@@ -96,7 +96,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     ///
     /// This is public so that we can parse expressions that can't have commas
     /// (usually initializers)
-    pub fn assignment_expr(&mut self) -> SyntaxResult {
+    pub(super) fn assignment_expr(&mut self) -> SyntaxResult {
         let lval = self.conditional_expr()?;
         let assign_op = match self.next_token() {
             Some(Locatable {
@@ -1178,7 +1178,7 @@ impl Expr {
     // - arrays -> pointers
     // - functions -> pointers
     // - variables -> value stored in that variable
-    pub fn rval(self) -> Expr {
+    pub(super) fn rval(self) -> Expr {
         match self.ctype {
             // a + 1 is the same as &a + 1
             Type::Array(to, _) => Expr {
@@ -1242,7 +1242,7 @@ impl Expr {
     // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
     //
     // if (expr)
-    pub fn truthy(mut self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
+    pub(crate) fn truthy(mut self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         self = self.rval();
         if self.ctype == Type::Bool {
             return Ok(self);
@@ -1268,7 +1268,7 @@ impl Expr {
         }
     }
     // !expr
-    pub fn logical_not(self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
+    fn logical_not(self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         let boolean = self.truthy()?;
         debug_assert!(boolean.ctype == Type::Bool);
         let zero = Expr::zero(boolean.location).cast(&Type::Bool).unwrap();
@@ -1286,7 +1286,10 @@ impl Expr {
     }
     // Simple assignment rules, section 6.5.16.1 of the C standard
     // the funky return type is so we don't consume the original expression in case of an error
-    pub fn cast(mut self, ctype: &Type) -> RecoverableResult<Expr, Locatable<SemanticError>> {
+    pub(super) fn cast(
+        mut self,
+        ctype: &Type,
+    ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         if self.ctype == *ctype {
             Ok(self)
         } else if self.ctype.is_arithmetic() && ctype.is_arithmetic()
@@ -1547,7 +1550,7 @@ fn flatten<E>((err, (left, _)): (E, (Expr, Expr))) -> (E, Expr) {
 /// These are handled here and no other part of the compiler deals with them directly.
 impl Type {
     // Perform the 'default promotions' from 6.5.2.2.6
-    pub fn default_promote(self) -> Type {
+    fn default_promote(self) -> Type {
         if self.is_integral() {
             self.integer_promote()
         } else if self == Type::Float {
@@ -1556,7 +1559,7 @@ impl Type {
             self
         }
     }
-    pub fn integer_promote(self) -> Type {
+    fn integer_promote(self) -> Type {
         if self.rank() <= Type::Int(true).rank() {
             if Type::Int(true).can_represent(&self) {
                 Type::Int(true)
@@ -1658,7 +1661,7 @@ impl Type {
     /// assert!(Long(false).rank() > Bool.rank());
     /// assert!(Long(true).rank() == Long(false).rank());
     /// ```
-    pub fn rank(&self) -> usize {
+    fn rank(&self) -> usize {
         use Type::*;
         match self {
             Bool => 0,
@@ -1670,7 +1673,7 @@ impl Type {
             _ => std::usize::MAX,
         }
     }
-    pub fn for_string_literal(len: SIZE_T) -> Type {
+    fn for_string_literal(len: SIZE_T) -> Type {
         Type::Array(Box::new(Type::Char(true)), ArrayType::Fixed(len))
     }
 }

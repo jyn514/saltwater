@@ -1703,7 +1703,7 @@ impl Type {
     /// It is an error to take the rank of a non-integral type.
     ///
     /// Examples:
-    /// ```
+    /// ```ignore
     /// use rcc::data::types::Type::*;
     /// assert!(Long(true).rank() > Int(true).rank());
     /// assert!(Int(false).rank() > Short(false).rank());

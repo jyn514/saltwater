@@ -2,6 +2,8 @@ use lazy_static::lazy_static;
 
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
+use std::path::{Path, PathBuf};
+use std::str::Chars;
 
 use super::{Lexer, Token};
 use crate::data::error::CppError;
@@ -9,6 +11,7 @@ use crate::data::lex::{Keyword, Literal};
 use crate::data::prelude::*;
 use crate::get_str;
 
+struct OwnedChars;
 /// A preprocessor does textual substitution and deletion on a C source file.
 ///
 /// The C preprocessor, or `cpp`, is tightly tied to C tokenization.
@@ -41,8 +44,9 @@ use crate::get_str;
 pub struct PreProcessor<'a> {
     /// The preprocessor collaborates extremely closely with the lexer,
     /// since it sometimes needs to know if a token is followed by whitespace.
+    first_lexer: Lexer<'a>,
     /// Each lexer represents a separate source file.
-    lexers: Vec<Lexer<'a>>,
+    includes: Vec<Lexer<'a>>,
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
     definitions: HashMap<InternedStr, Vec<Token>>,
@@ -105,10 +109,11 @@ impl Iterator for PreProcessor<'_> {
 // ```
 impl<'a> PreProcessor<'a> {
     fn lexer(&self) -> &Lexer<'a> {
-        self.lexers.last().unwrap()
+        self.includes.last().map_or(&self.first_lexer, |t| &t.0)
     }
-    fn lexer_mut(&mut self) -> &mut Lexer<'a> {
-        self.lexers.last_mut().unwrap()
+    fn lexer_mut(&mut self) -> &mut Lexer {
+        unimplemented!()
+        //self.lexers.last_mut().unwrap()
     }
     fn line(&self) -> usize {
         self.lexer().line
@@ -154,9 +159,10 @@ impl<'a> PreProcessor<'a> {
     /// Wrapper around [`Lexer::new`]
     pub fn new<T: AsRef<str> + Into<String>>(file: T, chars: &'a str, debug: bool) -> Self {
         Self {
-            lexers: vec![Lexer::new(file, chars.as_bytes())],
-            definitions: Default::default(),
             debug,
+            first_lexer: Lexer::new(file, chars),
+            includes: Default::default(),
+            definitions: Default::default(),
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
@@ -204,16 +210,16 @@ impl<'a> PreProcessor<'a> {
 
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
         let next_token = loop {
-            let lexer = self.lexers.last_mut().unwrap();
+            let lexer: Lexer<'_> = unimplemented!(); //self.lexers.last_mut().unwrap();
             match lexer.next() {
                 Some(token) => break token,
                 None => {
                     self.error_handler.append(&mut lexer.error_handler);
                     // this is the original source file
-                    if self.lexers.len() == 1 {
+                    if self.includes.is_empty() {
                         return None;
                     } else {
-                        self.lexers.pop();
+                        self.includes.pop();
                     }
                 }
             }
@@ -246,6 +252,7 @@ impl<'a> PreProcessor<'a> {
             next_token.map(Locatable::from)
         })
     }
+    // this function does _not_ perform macro substitution
     fn expect_id(&mut self) -> CppResult<InternedStr> {
         let location = self.span(self.offset());
         match self.next_token() {
@@ -351,7 +358,10 @@ impl<'a> PreProcessor<'a> {
                 drop(self.tokens_until_newline());
                 self.next()
             }
-            Include => unimplemented!("#include"),
+            Include => {
+                ret_err!(self.include(start));
+                self.next()
+            }
         }
     }
     fn replace_id(
@@ -522,6 +532,110 @@ impl<'a> PreProcessor<'a> {
             self.definitions.insert(id.data, tokens);
             Ok(())
         }
+    }
+    /*
+    fn match_token(&mut self, token: Token) -> Option<Locatable<Token>> {
+        use std::mem;
+        let next_token = self.peek_token()?;
+        if mem::discriminant(next_token) == mem::discriminant(token) {
+            self.next_token()
+        } else {
+            None
+        }
+    }
+    */
+    fn include(&mut self, start: u32) -> Result<(), Locatable<Error>> {
+        use crate::data::lex::{ComparisonToken, Literal};
+        let lexer = self.lexer_mut();
+        let local = if lexer.match_next('"') {
+            true
+        } else if lexer.match_next('<') {
+            false
+        } else {
+            let (id, location) = match self.next_token() {
+                Some(Ok(Locatable {
+                    data: Token::Id(id),
+                    location,
+                })) => (id, location),
+                Some(Err(err)) => return Err(err),
+                Some(Ok(other)) => {
+                    return Err(CompileError::new(
+                        CppError::UnexpectedToken("include file", other.data).into(),
+                        other.location,
+                    ))
+                }
+                None => {
+                    return Err(CompileError::new(
+                        CppError::EndOfFile("include file").into(),
+                        self.span(start),
+                    ))
+                }
+            };
+            match self.replace_id(id, location) {
+                // local
+                Some(Ok(Locatable {
+                    data: Token::Literal(Literal::Str(id)),
+                    ..
+                })) => return self.include_path(id, true, start),
+                Some(Ok(Locatable {
+                    data: Token::Comparison(ComparisonToken::Less),
+                    ..
+                })) => false,
+                Some(Ok(other)) => {
+                    return Err(CompileError::new(
+                        CppError::UnexpectedToken("include file", other.data).into(),
+                        other.location,
+                    ))
+                }
+                Some(Err(err)) => return Err(err),
+                None => {
+                    return Err(CompileError::new(
+                        CppError::EndOfFile("include file").into(),
+                        self.span(start),
+                    ))
+                }
+            }
+        };
+        // TODO: does expect_id consider self.pending?
+        let filename = self.expect_id()?;
+        self.include_path(filename.data, local, start)
+    }
+    fn include_path(
+        &mut self,
+        filename: InternedStr,
+        local: bool,
+        start: u32,
+    ) -> Result<(), Locatable<Error>> {
+        const SEARCH_PATH: &[&str] = &["/usr/include"];
+
+        // local include: #include "dict.h"
+        if local {
+            // TODO: relative file paths
+            unimplemented!();
+        }
+        // if we don't find it locally, we fall back to system headers
+        // this is part of the spec!
+        let intern_lock = crate::intern::STRINGS
+            .read()
+            .expect("failed to lock String cache for reading");
+        let filename_str = intern_lock
+            .resolve(filename.0)
+            .expect("tried to get value of non-interned string");
+        for path in SEARCH_PATH {
+            let mut buf = PathBuf::from(path);
+            buf.push(filename_str);
+            if buf.exists() {
+                // TODO: _any_ sort of error handling
+                let src = std::fs::read_to_string(&buf).expect("failed to read included file");
+                self.includes
+                    .push(Lexer::new(buf.to_string_lossy(), src));
+                return Ok(());
+            }
+        }
+        return Err(CompileError::new(
+            CppError::FileNotFound(filename).into(),
+            self.span(start),
+        ));
     }
 }
 

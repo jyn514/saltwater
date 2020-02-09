@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::convert::TryFrom;
 
 use super::data::{error::LexError, lex::*, prelude::*};
@@ -21,7 +22,7 @@ pub use cpp::PreProcessor;
 #[derive(Debug)]
 struct Lexer<'a> {
     location: SingleLocation,
-    chars: &'a [u8],
+    chars: Cow<'a, u8>,
     /// used for 2-character tokens
     current: Option<u8>,
     /// used for 3-character tokens

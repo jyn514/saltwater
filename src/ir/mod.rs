@@ -39,7 +39,7 @@ struct Compiler {
     debug: bool,
     // if false, we last saw a switch
     last_saw_loop: bool,
-    strings: HashMap<InternedStr, DataId>,
+    strings: HashMap<Vec<u8>, DataId>,
     loops: Vec<(Block, Block)>,
     // switch, default, end
     // if default is empty once we get to the end of a switch body,

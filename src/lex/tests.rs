@@ -14,7 +14,7 @@ fn lex(input: &str) -> Option<LexType> {
     lexed.pop()
 }
 fn lex_all(input: &str) -> Vec<LexType> {
-    Lexer::new("<test suite>".to_string(), input.chars()).collect()
+    Lexer::new("<test suite>".to_string(), input.as_bytes()).collect()
 }
 
 fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
@@ -39,7 +39,7 @@ fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
 }
 
 fn match_str(lexed: Option<LexType>, expected: &str) -> bool {
-    let string = InternedStr::get_or_intern(format!("{}\0", expected));
+    let string = format!("{}\0", expected).into();
     match_data(lexed, |c| c == Ok(&Literal::Str(string).into()))
 }
 

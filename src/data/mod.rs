@@ -553,7 +553,7 @@ mod tests {
             "struct s",
         ];
         for ty in types.iter() {
-            let mut lexer = PreProcessor::new("<integration-test>", ty.chars(), false);
+            let mut lexer = PreProcessor::new("<integration-test>", ty, false);
             let first = lexer.next().unwrap().unwrap();
             let mut parser = Parser::new(first, &mut lexer, false);
 

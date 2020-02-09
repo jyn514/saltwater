@@ -36,7 +36,7 @@ use crate::get_str;
 /// use rcc::PreProcessor;
 ///
 /// let cpp = PreProcessor::new("<stdin>".to_string(),
-///                        "int main(void) { char *hello = \"hi\"; }".chars(),
+///                        "int main(void) { char *hello = \"hi\"; }",
 ///                         false);
 /// for token in cpp {
 ///     assert!(token.is_ok());
@@ -97,13 +97,9 @@ impl Iterator for PreProcessor<'_> {
 
 impl<'a> PreProcessor<'a> {
     /// Wrapper around [`Lexer::new`]
-    pub fn new<T: AsRef<str> + Into<String>>(
-        file: T,
-        chars: std::str::Chars<'a>,
-        debug: bool,
-    ) -> Self {
+    pub fn new<T: AsRef<str> + Into<String>>(file: T, chars: &'a str, debug: bool) -> Self {
         Self {
-            lexer: Lexer::new(file, chars),
+            lexer: Lexer::new(file, chars.as_bytes()),
             definitions: Default::default(),
             debug,
             error_handler: Default::default(),
@@ -445,7 +441,7 @@ mod tests {
     use super::{CppResult, Keyword, PreProcessor, KEYWORDS};
     use crate::data::prelude::*;
     fn cpp(input: &str) -> PreProcessor {
-        PreProcessor::new("<test suite>", input.chars(), false)
+        PreProcessor::new("<test suite>", input, false)
     }
     fn assert_keyword(token: Option<CppResult<Token>>, expected: Keyword) {
         match token {

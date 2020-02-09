@@ -119,7 +119,7 @@ pub enum Literal {
     Int(i64),
     UnsignedInt(u64),
     Float(f64),
-    Str(InternedStr),
+    Str(Vec<u8>),
     Char(u8),
 }
 
@@ -351,7 +351,7 @@ impl std::fmt::Display for Literal {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(s) => write!(f, "\"{}\"", s),
+            Str(s) => write!(f, "\"{}\"", String::from_utf8_lossy(s)),
             Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
         }
     }
@@ -404,7 +404,7 @@ impl From<ComparisonToken> for Token {
 mod test {
     use crate::*;
     fn cpp(s: &str) -> PreProcessor {
-        PreProcessor::new("<integration-test>", s.chars(), false)
+        PreProcessor::new("<integration-test>", s, false)
     }
     #[test]
     fn assignment_display() {

@@ -361,3 +361,9 @@ impl Compiler {
         Ok(())
     }
 }
+
+impl FunctionType {
+    fn has_params(&self) -> bool {
+        !(self.params.len() == 1 && self.params[0].ctype == Type::Void)
+    }
+}

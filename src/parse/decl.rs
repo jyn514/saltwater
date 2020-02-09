@@ -1739,6 +1739,13 @@ impl Declarator {
 }
 
 impl Type {
+    #[inline]
+    fn is_char(&self) -> bool {
+        match self {
+            Type::Char(true) => true,
+            _ => false,
+        }
+    }
     /// Given a type, return the maximum number of initializers for that type
     fn type_len(&self) -> usize {
         match self {

@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use thiserror::Error;
 
 use super::{lex::Token, Expr, Locatable, Location, Type};
+use crate::intern::InternedStr;
 
 /// RecoverableResult is a type that represents a Result that can be recovered from.
 ///
@@ -95,7 +96,7 @@ pub enum SemanticError {
     EmptyProgram,
 
     #[error("use of undeclared identifier '{0}'")]
-    UndeclaredVar(crate::intern::InternedStr),
+    UndeclaredVar(InternedStr),
 
     #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
     ConstOverflow { is_positive: bool },
@@ -131,7 +132,7 @@ pub enum SemanticError {
     LabelRedeclaration(cranelift::prelude::Block),
 
     #[error("use of undeclared label {0}")]
-    UndeclaredLabel(crate::intern::InternedStr),
+    UndeclaredLabel(InternedStr),
 
     #[error("{}case outside of switch statement", if *(.is_default) { "default " } else { "" })]
     CaseOutsideSwitch { is_default: bool },
@@ -208,6 +209,9 @@ pub enum CppError {
     /// The `&str` describes what token was expected.
     #[error("expected {0}, got <end-of-file>")]
     EndOfFile(&'static str),
+
+    #[error("file '{}' not found", crate::get_str!(.0))]
+    FileNotFound(InternedStr),
 
     /// The file ended before an `#if` or `#ifdef` was closed.
     ///

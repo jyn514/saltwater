@@ -1563,6 +1563,49 @@ impl Keyword {
     }
 }
 
+enum LengthError {
+    NonIntegral,
+    Negative,
+}
+
+impl From<LengthError> for String {
+    fn from(err: LengthError) -> String {
+        let s: &'static str = err.into();
+        s.to_string()
+    }
+}
+
+impl From<LengthError> for &'static str {
+    fn from(err: LengthError) -> &'static str {
+        use LengthError::*;
+        match err {
+            NonIntegral => "The length of an array must be an integer",
+            Negative => "The length of an array must not be negative",
+        }
+    }
+}
+
+impl Expr {
+    fn const_int(self) -> CompileResult<SIZE_T> {
+        use std::convert::TryInto;
+        if !self.ctype.is_integral() {
+            semantic_err!(LengthError::NonIntegral.into(), self.location,);
+        }
+        let literal = self.constexpr()?;
+        match literal.data.0 {
+            Literal::UnsignedInt(u) => Ok(u),
+            Literal::Int(x) => x.try_into().map_err(|_| {
+                CompileError::semantic(Locatable::new(
+                    LengthError::Negative.into(),
+                    literal.location,
+                ))
+            }),
+            Literal::Char(c) => Ok(u64::from(c)),
+            x => unreachable!("should have been caught already: {:?}", x),
+        }
+    }
+}
+
 impl TryFrom<Keyword> for Type {
     type Error = ();
     fn try_from(keyword: Keyword) -> Result<Type, ()> {

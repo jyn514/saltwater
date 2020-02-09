@@ -253,7 +253,7 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file: FileId, file_db
 }
 
 #[must_use]
-pub fn pretty_print<T: std::fmt::Display, S: AsRef<str>>(
+fn pretty_print<T: std::fmt::Display, S: AsRef<str>>(
     prefix: ANSIString,
     msg: T,
     location: Location,

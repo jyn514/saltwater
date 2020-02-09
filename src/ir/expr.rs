@@ -12,8 +12,8 @@ use crate::data::{
 type IrResult = CompileResult<Value>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Value {
-    pub(crate) ir_val: IrValue,
+pub(super) struct Value {
+    pub(super) ir_val: IrValue,
     ir_type: IrType,
     ctype: Type,
 }
@@ -27,7 +27,7 @@ impl Compiler {
     // clippy doesn't like big match statements, but this is kind of essential complexity,
     // it can't be any smaller without supporting fewer features
     #[allow(clippy::cognitive_complexity)]
-    pub(crate) fn compile_expr(&mut self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
+    pub(super) fn compile_expr(&mut self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
         let expr = expr.const_fold()?;
         let location = expr.location;
         let ir_type = if expr.lval {

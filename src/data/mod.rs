@@ -67,15 +67,6 @@ pub enum Initializer {
     FunctionBody(Vec<Stmt>),           // int f() { return 0; }
 }
 
-impl Initializer {
-    pub fn is_scalar(&self) -> bool {
-        match self {
-            Self::Scalar(_) => true,
-            _ => false,
-        }
-    }
-}
-
 /// Holds the metadata for an expression.
 ///
 /// This should be the datatype you use in APIs, etc.
@@ -177,26 +168,15 @@ pub struct Qualifiers {
 #[derive(Debug)]
 pub struct Scope<K: Hash + Eq, V>(Vec<HashMap<K, V>>);
 
-#[allow(dead_code)]
 impl Qualifiers {
-    pub const NONE: Qualifiers = Qualifiers {
+    pub(crate) const NONE: Qualifiers = Qualifiers {
         c_const: false,
         volatile: false,
         inline: false,
     };
-    pub const VOLATILE: Qualifiers = Qualifiers {
-        c_const: false,
-        volatile: true,
-        inline: false,
-    };
-    pub const CONST: Qualifiers = Qualifiers {
+    pub(crate) const CONST: Qualifiers = Qualifiers {
         c_const: true,
         volatile: false,
-        inline: false,
-    };
-    pub const CONST_VOLATILE: Qualifiers = Qualifiers {
-        c_const: true,
-        volatile: true,
         inline: false,
     };
 }

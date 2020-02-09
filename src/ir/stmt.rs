@@ -6,7 +6,7 @@ use super::Compiler;
 use crate::data::prelude::*;
 
 impl Compiler {
-    pub(crate) fn compile_all(
+    pub(super) fn compile_all(
         &mut self,
         stmts: Vec<Stmt>,
         builder: &mut FunctionBuilder,
@@ -16,7 +16,7 @@ impl Compiler {
         }
         Ok(())
     }
-    pub(crate) fn compile_stmt(
+    pub(super) fn compile_stmt(
         &mut self,
         stmt: Stmt,
         builder: &mut FunctionBuilder,

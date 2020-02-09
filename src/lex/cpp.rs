@@ -11,7 +11,6 @@ use crate::data::lex::{Keyword, Literal};
 use crate::data::prelude::*;
 use crate::get_str;
 
-struct OwnedChars;
 /// A preprocessor does textual substitution and deletion on a C source file.
 ///
 /// The C preprocessor, or `cpp`, is tightly tied to C tokenization.
@@ -109,30 +108,36 @@ impl Iterator for PreProcessor<'_> {
 // ```
 impl<'a> PreProcessor<'a> {
     fn lexer(&self) -> &Lexer<'a> {
-        self.includes.last().map_or(&self.first_lexer, |t| &t.0)
+        self.includes.last().unwrap_or(&self.first_lexer)
     }
-    fn lexer_mut(&mut self) -> &mut Lexer {
-        unimplemented!()
-        //self.lexers.last_mut().unwrap()
+    fn lexer_mut(&mut self) -> &mut Lexer<'a> {
+        self.includes.last_mut().unwrap_or(&mut self.first_lexer)
     }
+    #[inline]
     fn line(&self) -> usize {
         self.lexer().line
     }
+    #[inline]
     fn next_token(&mut self) -> Option<CppResult<Token>> {
         self.lexer_mut().next()
     }
+    #[inline]
     fn peek_token(&mut self) -> Option<u8> {
         self.lexer_mut().peek()
     }
+    #[inline]
     fn span(&self, start: u32) -> Location {
         self.lexer().span(start)
     }
+    #[inline]
     fn consume_whitespace(&mut self) {
         self.lexer_mut().consume_whitespace()
     }
+    #[inline]
     fn seen_line_token(&self) -> bool {
         self.lexer().seen_line_token
     }
+    #[inline]
     fn offset(&self) -> u32 {
         self.lexer().location.offset
     }
@@ -210,7 +215,8 @@ impl<'a> PreProcessor<'a> {
 
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
         let next_token = loop {
-            let lexer: Lexer<'_> = unimplemented!(); //self.lexers.last_mut().unwrap();
+            // we have to duplicate a bit of code here to avoid borrow errors
+            let lexer = self.includes.last_mut().unwrap_or(&mut self.first_lexer);
             match lexer.next() {
                 Some(token) => break token,
                 None => {
@@ -318,7 +324,7 @@ impl<'a> PreProcessor<'a> {
                 self.next()
             }
             Undef => {
-                let name = dbg!(ret_err!(self.expect_id()));
+                let name = ret_err!(self.expect_id());
                 self.definitions.remove(&name.data);
                 self.next()
             }
@@ -364,6 +370,7 @@ impl<'a> PreProcessor<'a> {
             }
         }
     }
+    // TODO: this needs to have an idea of 'pending chars', not just pending tokens
     fn replace_id(
         &mut self,
         mut name: InternedStr,
@@ -574,9 +581,10 @@ impl<'a> PreProcessor<'a> {
             match self.replace_id(id, location) {
                 // local
                 Some(Ok(Locatable {
-                    data: Token::Literal(Literal::Str(id)),
+                    data: Token::Literal(Literal::Str(data)),
                     ..
-                })) => return self.include_path(id, true, start),
+                })) => unimplemented!("#include for macros"), //return self.include_path(id, true, start),
+                // system
                 Some(Ok(Locatable {
                     data: Token::Comparison(ComparisonToken::Less),
                     ..
@@ -596,17 +604,23 @@ impl<'a> PreProcessor<'a> {
                 }
             }
         };
-        // TODO: does expect_id consider self.pending?
-        let filename = self.expect_id()?;
-        self.include_path(filename.data, local, start)
+
+        let filename = self.bytes_until(if local { b'"' } else { b'>' });
+        self.include_path(filename, local, start)
     }
     fn include_path(
         &mut self,
-        filename: InternedStr,
+        filename: Vec<u8>,
         local: bool,
         start: u32,
     ) -> Result<(), Locatable<Error>> {
         const SEARCH_PATH: &[&str] = &["/usr/include"];
+        log::debug!("in search path");
+
+        // Recall that the original file was valid UTF8.
+        // Since in UTF8, no ASCII character can occur
+        // within a multi-byte sequence, `filename` must be valid UTF8.
+        let filename = String::from_utf8(filename).expect("passed invalid utf8 to start");
 
         // local include: #include "dict.h"
         if local {
@@ -623,12 +637,12 @@ impl<'a> PreProcessor<'a> {
             .expect("tried to get value of non-interned string");
         for path in SEARCH_PATH {
             let mut buf = PathBuf::from(path);
-            buf.push(filename_str);
+            buf.push(&filename);
             if buf.exists() {
                 // TODO: _any_ sort of error handling
                 let src = std::fs::read_to_string(&buf).expect("failed to read included file");
                 self.includes
-                    .push(Lexer::new(buf.to_string_lossy(), src));
+                    .push(Lexer::new(buf.to_string_lossy(), src.into_bytes()));
                 return Ok(());
             }
         }
@@ -636,6 +650,17 @@ impl<'a> PreProcessor<'a> {
             CppError::FileNotFound(filename).into(),
             self.span(start),
         ));
+    }
+    fn bytes_until(&mut self, byte: u8) -> Vec<u8> {
+        log::debug!("in bytes_until");
+        let mut bytes = Vec::new();
+        while self.lexer_mut().peek() != Some(byte) {
+            match self.lexer_mut().next_char() {
+                None => return bytes,
+                Some(c) => bytes.push(c),
+            }
+        }
+        bytes
     }
 }
 

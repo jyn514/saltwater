@@ -559,7 +559,7 @@ impl<'a> PreProcessor<'a> {
             match self.replace_id(id, location) {
                 // local
                 Some(Ok(Locatable {
-                    data: Token::Literal(Literal::Str(data)),
+                    data: Token::Literal(Literal::Str(_)),
                     ..
                 })) => unimplemented!("#include for macros"), //return self.include_path(id, true, start),
                 // system

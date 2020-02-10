@@ -599,15 +599,14 @@ mod tests {
     fn cpp(input: &str) -> PreProcessor {
         PreProcessor::new("<test suite>", input, false)
     }
-    fn assert_err<F: Fn(&CppError) -> bool>(src: &str, f: F, description: &str) {
-        match cpp(src).next().unwrap().unwrap_err().data {
-            Error::PreProcessor(cpp_err) => {
-                if !f(&cpp_err) {
-                    panic!("expected {}, got {}", description, cpp_err)
-                }
+    macro_rules! assert_err {
+        ($src: expr, $err: pat, $description: expr $(,)?) => {
+            match cpp($src).next().unwrap().unwrap_err().data {
+                Error::PreProcessor($err) => {}
+                Error::PreProcessor(other) => panic!("expected {}, got {}", $description, other),
+                _ => panic!("expected cpp err"),
             }
-            _ => panic!("expected cpp err"),
-        }
+        };
     }
     fn assert_keyword(token: Option<CppResult<Token>>, expected: Keyword) {
         match token {
@@ -726,21 +725,11 @@ int f() BEGIN return 5; END";
     }
     #[test]
     fn empty_def() {
-        assert_err(
-            "#define",
-            |err| match err {
-                CppError::EndOfFile(_) => true,
-                _ => false,
-            },
-            "empty define",
-        );
-        assert_err(
+        assert_err!("#define", CppError::EndOfFile(_), "empty define",);
+        assert_err!(
             "#define
             int",
-            |err| match err {
-                CppError::EmptyDefine => true,
-                _ => false,
-            },
+            CppError::EmptyDefine,
             "empty define",
         );
     }
@@ -769,14 +758,7 @@ b
 d
 #endif
 ";
-        assert_err(
-            src,
-            |err| match err {
-                CppError::UnexpectedElse => true,
-                _ => false,
-            },
-            "duplicate else",
-        );
+        assert_err!(src, CppError::UnexpectedElse, "duplicate else",);
     }
     #[test]
     fn pragma() {
@@ -799,32 +781,11 @@ d
     }
     #[test]
     fn error() {
-        assert_err(
-            "#error cannot drink and drive",
-            |err| match err {
-                CppError::User(_) => true,
-                _ => false,
-            },
-            "#error",
-        );
+        assert_err!("#error cannot drink and drive", CppError::User(_), "#error",);
     }
     #[test]
     fn invalid_directive() {
-        assert_err(
-            "#wrong",
-            |err| match err {
-                CppError::InvalidDirective => true,
-                _ => false,
-            },
-            "invalid directive",
-        );
-        assert_err(
-            "#1",
-            |err| match err {
-                CppError::UnexpectedToken(_, _) => true,
-                _ => false,
-            },
-            "unexpected token",
-        );
+        assert_err!("#wrong", CppError::InvalidDirective, "invalid directive",);
+        assert_err!("#1", CppError::UnexpectedToken(_, _), "unexpected token",);
     }
 }

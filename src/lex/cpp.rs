@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
 use super::{Lexer, Token};
-use crate::data::error::{CppError, Warning};
+use crate::data::error::CppError;
 use crate::data::lex::{Keyword, Literal};
 use crate::data::prelude::*;
 use crate::get_str;
@@ -215,6 +215,7 @@ impl<'a> PreProcessor<'a> {
         }
     }
     fn directive(&mut self, kind: DirectiveKind, start: u32) -> Option<CppResult<Token>> {
+        use crate::data::error::Warning as WarningDiagnostic;
         use DirectiveKind::*;
         match kind {
             If => {
@@ -267,8 +268,18 @@ impl<'a> PreProcessor<'a> {
             }
             Pragma => {
                 self.error_handler
-                    .warn(Warning::IgnoredPragma, self.lexer.span(start));
+                    .warn(WarningDiagnostic::IgnoredPragma, self.lexer.span(start));
                 drop(self.tokens_until_newline());
+                self.next()
+            }
+            Warning => {
+                let tokens: Vec<_> = ret_err!(self
+                    .tokens_until_newline()
+                    .into_iter()
+                    .map(|res| res.map(|l| l.data))
+                    .collect());
+                self.error_handler
+                    .warn(WarningDiagnostic::User(tokens), self.lexer.span(start));
                 self.next()
             }
             Error => {
@@ -283,7 +294,7 @@ impl<'a> PreProcessor<'a> {
             }
             Line => {
                 self.error_handler.warn(
-                    Warning::Generic("#line is not yet implemented".into()),
+                    WarningDiagnostic::Generic("#line is not yet implemented".into()),
                     self.lexer.span(start),
                 );
                 drop(self.tokens_until_newline());
@@ -361,7 +372,8 @@ impl<'a> PreProcessor<'a> {
         // TODO: can semantic errors happen here? should we check?
         parser.expr().map_err(CompileError::from)
     }
-    /// #if
+    /// We've already seen an `#if` or `#ifdef` and are processing the
+    /// lines that follow.
     fn if_directive(&mut self, condition: bool, start: u32) -> Option<CppResult<Token>> {
         if condition {
             self.nested_ifs.push(true);
@@ -473,6 +485,7 @@ enum DirectiveKind {
     Define,
     Undef,
     Line,
+    Warning,
     Error,
     Pragma,
 }
@@ -503,6 +516,7 @@ impl TryFrom<&str> for DirectiveKind {
             "define" => Define,
             "undef" => Undef,
             "line" => Line,
+            "warning" => Warning,
             "error" => Error,
             "pragma" => Pragma,
             _ => return Err(()),

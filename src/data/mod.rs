@@ -10,6 +10,8 @@ pub mod lex;
 pub mod types;
 pub mod prelude {
     pub(crate) use super::error::{ErrorHandler, Recover, RecoverableResult};
+    #[cfg(test)]
+    pub(crate) use super::lex::test::cpp;
     pub use super::{
         error::{CompileError, CompileResult, CompileWarning, Error, SemanticError, SyntaxError},
         lex::{Literal, Locatable, Location, Token},
@@ -539,7 +541,7 @@ impl Eq for Symbol {}
 
 #[cfg(test)]
 mod tests {
-    use crate::{Parser, PreProcessor};
+    use crate::{Files, Parser, PreProcessor};
 
     #[test]
     fn type_display() {
@@ -552,8 +554,10 @@ mod tests {
             "_Bool",
             "struct s",
         ];
+        let mut files: Files = Default::default();
         for ty in types.iter() {
-            let mut lexer = PreProcessor::new("<integration-test>", ty, false);
+            let id = files.add("<test suite>", String::from(*ty).into());
+            let mut lexer = PreProcessor::new(id, String::from(*ty), false, &mut files);
             let first = lexer.next().unwrap().unwrap();
             let mut parser = Parser::new(first, &mut lexer, false);
 

@@ -41,11 +41,10 @@ pub fn compile_and_run(program: &str, args: &[&str]) -> Result<Output, Error> {
 }
 
 pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, Error> {
-    let opts = rcc::Opt {
-        filename: "<integration-test>".into(),
-        ..Default::default()
-    };
-    let (result, _warnings) = rcc::compile(program, &opts);
+    let opts = Default::default();
+    let mut files = rcc::Files::default();
+    let id = files.add("<test-suite>", String::from(program).into());
+    let (result, _warnings) = rcc::compile(program, &opts, id, &mut files);
     let module = result?;
     let output = tempfile::NamedTempFile::new()
         .expect("cannot create tempfile")

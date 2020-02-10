@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use codespan::FileId;
 
@@ -34,20 +35,22 @@ use crate::Files;
 /// Examples:
 ///
 /// ```
-/// use rcc::PreProcessor;
+/// use rcc::{Files, PreProcessor};
 ///
-/// let cpp = PreProcessor::new("<stdin>".to_string(),
-///                        "int main(void) { char *hello = \"hi\"; }",
-///                         false);
+/// let mut files = Files::new();
+/// let src = "int main(void) { char *hello = \"hi\"; }";
+/// let file = files.add("example.c", String::from(src).into());
+/// let cpp = PreProcessor::new(file, src, false, &mut files);
 /// for token in cpp {
 ///     assert!(token.is_ok());
 /// }
+/// ```
 pub struct PreProcessor<'a> {
     /// The preprocessor collaborates extremely closely with the lexer,
     /// since it sometimes needs to know if a token is followed by whitespace.
-    first_lexer: Lexer<'a>,
+    first_lexer: Lexer,
     /// Each lexer represents a separate source file that is currently being processed.
-    includes: Vec<Lexer<'a>>,
+    includes: Vec<Lexer>,
     /// All known files, including files which have already been read.
     files: &'a mut Files,
     /// Note that this is a simple HashMap and not a Scope, because
@@ -104,10 +107,10 @@ impl Iterator for PreProcessor<'_> {
 }
 
 impl<'a> PreProcessor<'a> {
-    fn lexer(&self) -> &Lexer<'a> {
+    fn lexer(&self) -> &Lexer {
         self.includes.last().unwrap_or(&self.first_lexer)
     }
-    fn lexer_mut(&mut self) -> &mut Lexer<'a> {
+    fn lexer_mut(&mut self) -> &mut Lexer {
         self.includes.last_mut().unwrap_or(&mut self.first_lexer)
     }
     #[inline]
@@ -159,10 +162,15 @@ impl<'a> PreProcessor<'a> {
         }
     }
     /// Wrapper around [`Lexer::new`]
-    pub fn new(file: FileId, chars: &'a str, debug: bool, files: &'a mut Files) -> Self {
+    pub fn new<S: Into<Rc<str>>>(
+        file: FileId,
+        chars: S,
+        debug: bool,
+        files: &'a mut Files,
+    ) -> Self {
         Self {
             debug,
-            first_lexer: Lexer::new(file, chars.as_bytes()),
+            first_lexer: Lexer::new(file, chars),
             includes: Default::default(),
             definitions: Default::default(),
             error_handler: Default::default(),
@@ -618,10 +626,11 @@ impl<'a> PreProcessor<'a> {
             buf.push(&filename);
             if buf.exists() {
                 // TODO: _any_ sort of error handling
-                let src = std::fs::read_to_string(&buf).expect("failed to read included file");
-                let id = self.files.add(buf.to_string_lossy(), src);
-                self.includes
-                    .push(Lexer::new(id, self.files.source(id).as_bytes()));
+                let src = std::fs::read_to_string(&buf)
+                    .expect("failed to read included file")
+                    .into();
+                let id = self.files.add(buf.to_string_lossy(), Rc::clone(&src));
+                self.includes.push(Lexer::new(id, src));
                 return Ok(());
             }
         }
@@ -754,11 +763,9 @@ lazy_static! {
 
 #[cfg(test)]
 mod tests {
-    use super::{CppResult, Keyword, PreProcessor, KEYWORDS};
+    use super::{CppResult, Keyword, KEYWORDS};
+    use crate::data::lex::test::cpp;
     use crate::data::prelude::*;
-    fn cpp(input: &str) -> PreProcessor {
-        PreProcessor::new("<test suite>", input, false)
-    }
     fn assert_keyword(token: Option<CppResult<Token>>, expected: Keyword) {
         match token {
             Some(Ok(Locatable {

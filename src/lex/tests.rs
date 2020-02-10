@@ -1,4 +1,5 @@
-use super::{CompileResult, Lexer, Literal, Locatable, Location, Token};
+use super::{CompileResult, Literal, Locatable, Token};
+use crate::data::lex::test::cpp;
 use crate::intern::InternedStr;
 
 type LexType = CompileResult<Locatable<Token>>;
@@ -14,7 +15,7 @@ fn lex(input: &str) -> Option<LexType> {
     lexed.pop()
 }
 fn lex_all(input: &str) -> Vec<LexType> {
-    Lexer::new("<test suite>".to_string(), input.as_bytes()).collect()
+    cpp(input).collect()
 }
 
 fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
@@ -88,10 +89,7 @@ fn test_plus() {
         parse,
         Some(Ok(Locatable {
             data: Token::Plus,
-            location: Location {
-                filename: InternedStr::get_or_intern("<stdin>"),
-                span: (0..1).into(),
-            }
+            location: Default::default(),
         }))
     )
 }

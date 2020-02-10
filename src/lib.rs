@@ -11,12 +11,13 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command;
+use std::rc::Rc;
 
 use codespan::FileId;
 use cranelift_module::Backend;
 use cranelift_object::ObjectBackend;
 
-pub type Files = codespan::Files<String>;
+pub type Files = codespan::Files<Rc<str>>;
 pub type Product = <ObjectBackend as Backend>::Product;
 
 use data::prelude::CompileError;
@@ -59,7 +60,7 @@ impl From<VecDeque<CompileError>> for Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Opt {
     /// If set, print all tokens found by the lexer in addition to compiling.
     pub debug_lex: bool,
@@ -76,18 +77,6 @@ pub struct Opt {
     /// The maximum number of errors to allow before giving up.
     /// If None, allows an unlimited number of errors.
     pub max_errors: Option<std::num::NonZeroUsize>,
-}
-
-impl Default for Opt {
-    fn default() -> Self {
-        Opt {
-            debug_lex: false,
-            debug_ast: false,
-            debug_asm: false,
-            no_link: false,
-            max_errors: None,
-        }
-    }
 }
 
 /// Preprocess the source and return the tokens.
@@ -133,7 +122,7 @@ pub fn compile(
     file: FileId,
     files: &mut Files,
 ) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
-    let mut cpp = PreProcessor::new(file, &buf, opt.debug_lex, files);
+    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, files);
 
     let mut errs = VecDeque::new();
 
@@ -226,10 +215,10 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
 mod tests {
     use super::*;
     fn compile(src: &str) -> Result<Product, Error> {
-        let options = Opt {
-            ..Default::default()
-        };
-        super::compile(src, &options).0
+        let options = Opt::default();
+        let mut files: Files = Default::default();
+        let id = files.add("<test suite>", src.into());
+        super::compile(src, &options, id, &mut files).0
     }
     fn compile_err(src: &str) -> VecDeque<CompileError> {
         match compile(src).err().unwrap() {

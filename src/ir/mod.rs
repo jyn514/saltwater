@@ -304,6 +304,8 @@ impl Compiler {
     ) -> CompileResult<()> {
         let signature = func_type.signature(self.module.isa());
         let func_id = self.declare_func(id.clone(), &signature, sc, true)?;
+        self.scope.enter();
+
         // external name is meant to be a lookup in a symbol table,
         // but we just give it garbage values
         let mut func = Function::with_name_signature(ExternalName::user(0, 0), signature);
@@ -338,6 +340,7 @@ impl Compiler {
                 builder.ins().return_(&[]);
             }
         }
+        self.scope.exit();
         builder.seal_all_blocks();
         builder.finalize();
 

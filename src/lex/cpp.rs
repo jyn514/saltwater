@@ -465,7 +465,7 @@ impl<'a> PreProcessor<'a> {
             return Err(self.lexer.span(start).error(CppError::EmptyDefine));
         }
         let id = self.expect_id()?;
-        if self.lexer.peek() == Some('(') {
+        if self.lexer.peek() == Some(b'(') {
             // function macro
             unimplemented!("function macros")
         } else {

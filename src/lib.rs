@@ -109,7 +109,7 @@ pub fn preprocess(
     VecDeque<CompileWarning>,
 ) {
     let filename = opt.filename.to_string_lossy();
-    let mut cpp = PreProcessor::new(filename, buf.chars(), opt.debug_lex);
+    let mut cpp = PreProcessor::new(filename, &buf, opt.debug_lex);
 
     let mut tokens = VecDeque::new();
     let mut errs = VecDeque::new();

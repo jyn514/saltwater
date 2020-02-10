@@ -52,15 +52,12 @@ struct Compiler {
 /// Compile a program from a high level IR to a Cranelift Module
 pub(crate) fn compile(
     program: Vec<Locatable<Declaration>>,
+    name: String,
     debug: bool,
 ) -> (
     Result<ObjectProduct, CompileError>,
     VecDeque<CompileWarning>,
 ) {
-    let name = program.first().map_or_else(
-        || "<empty>".to_string(),
-        |decl| decl.location.filename.resolve_and_clone(),
-    );
     // really we'd like to have all errors but that requires a refactor
     let mut err = None;
     let mut compiler = Compiler::new(name, debug);

@@ -9,12 +9,14 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
+use codespan::FileId;
 use cranelift_module::Backend;
 use cranelift_object::ObjectBackend;
 
+pub type Files = codespan::Files<String>;
 pub type Product = <ObjectBackend as Backend>::Product;
 
 use data::prelude::CompileError;
@@ -59,9 +61,6 @@ impl From<VecDeque<CompileError>> for Error {
 
 #[derive(Debug)]
 pub struct Opt {
-    /// The file where the C source came from
-    pub filename: PathBuf,
-
     /// If set, print all tokens found by the lexer in addition to compiling.
     pub debug_lex: bool,
 
@@ -82,7 +81,6 @@ pub struct Opt {
 impl Default for Opt {
     fn default() -> Self {
         Opt {
-            filename: "<default>".into(),
             debug_lex: false,
             debug_ast: false,
             debug_asm: false,
@@ -104,12 +102,13 @@ impl Default for Opt {
 pub fn preprocess(
     buf: &str,
     opt: &Opt,
+    file: FileId,
+    files: &mut Files,
 ) -> (
     Result<VecDeque<Locatable<Token>>, VecDeque<CompileError>>,
     VecDeque<CompileWarning>,
 ) {
-    let filename = opt.filename.to_string_lossy();
-    let mut cpp = PreProcessor::new(filename, buf, opt.debug_lex);
+    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, files);
 
     let mut tokens = VecDeque::new();
     let mut errs = VecDeque::new();
@@ -128,10 +127,13 @@ pub fn preprocess(
 }
 
 /// Compile and return the declarations and warnings.
-pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
-    let filename = opt.filename.to_string_lossy();
-    let filename_ref = InternedStr::get_or_intern(filename.as_ref());
-    let mut cpp = PreProcessor::new(filename, &buf, opt.debug_lex);
+pub fn compile(
+    buf: &str,
+    opt: &Opt,
+    file: FileId,
+    files: &mut Files,
+) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
+    let mut cpp = PreProcessor::new(file, &buf, opt.debug_lex, files);
 
     let mut errs = VecDeque::new();
 
@@ -154,7 +156,7 @@ pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<Compil
     };
     let eof = || Location {
         span: (buf.len() as u32..buf.len() as u32).into(),
-        filename: filename_ref,
+        file,
     };
 
     let first = match first {
@@ -184,7 +186,8 @@ pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<Compil
     if !errs.is_empty() {
         return (Err(Error::Source(errs)), warnings);
     }
-    let (result, ir_warnings) = ir::compile(hir, opt.debug_asm);
+    let name = files.name(file);
+    let (result, ir_warnings) = ir::compile(hir, name.into(), opt.debug_asm);
     warnings.extend(ir_warnings);
     (result.map_err(Error::from), warnings)
 }
@@ -224,7 +227,6 @@ mod tests {
     use super::*;
     fn compile(src: &str) -> Result<Product, Error> {
         let options = Opt {
-            filename: "<test-suite>".into(),
             ..Default::default()
         };
         super::compile(src, &options).0

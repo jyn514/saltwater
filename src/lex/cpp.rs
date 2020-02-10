@@ -769,13 +769,14 @@ b
 d
 #endif
 ";
-        assert!(match cpp(src).next() {
-            Some(Err(CompileError {
-                data: Error::PreProcessor(CppError::UnexpectedElse),
-                ..
-            })) => true,
-            _ => false,
-        });
+        assert_err(
+            src,
+            |err| match err {
+                CppError::UnexpectedElse => true,
+                _ => false,
+            },
+            "duplicate else",
+        );
     }
     #[test]
     fn pragma() {
@@ -798,22 +799,32 @@ d
     }
     #[test]
     fn error() {
-        let src = "#error cannot drink and drive";
-        let mut cpp = cpp(src);
-        match cpp.next().unwrap().unwrap_err().data {
-            Error::PreProcessor(CppError::User(_)) => {}
-            other => panic!("expected #error, got {:?}", other),
-        };
+        assert_err(
+            "#error cannot drink and drive",
+            |err| match err {
+                CppError::User(_) => true,
+                _ => false,
+            },
+            "#error",
+        );
     }
     #[test]
     fn invalid_directive() {
-        assert!(match cpp("#wrong").next().unwrap().unwrap_err().data {
-            Error::PreProcessor(CppError::InvalidDirective) => true,
-            _ => false,
-        });
-        assert!(match cpp("#1").next().unwrap().unwrap_err().data {
-            Error::PreProcessor(CppError::UnexpectedToken(_, _)) => true,
-            _ => false,
-        });
+        assert_err(
+            "#wrong",
+            |err| match err {
+                CppError::InvalidDirective => true,
+                _ => false,
+            },
+            "invalid directive",
+        );
+        assert_err(
+            "#1",
+            |err| match err {
+                CppError::UnexpectedToken(_, _) => true,
+                _ => false,
+            },
+            "unexpected token",
+        );
     }
 }

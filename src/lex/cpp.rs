@@ -546,6 +546,7 @@ impl<'a> PreProcessor<'a> {
     fn include(&mut self, start: u32) -> Result<(), Locatable<Error>> {
         use crate::data::lex::ComparisonToken;
         let lexer = self.lexer_mut();
+        lexer.consume_whitespace();
         let local = if lexer.match_next(b'"') {
             true
         } else if lexer.match_next(b'<') {

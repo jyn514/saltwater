@@ -95,6 +95,13 @@ impl Iterator for PreProcessor<'_> {
     }
 }
 
+// idiom: to check if there has been a newline since the last token,
+// use the following pattern:
+// ```rust
+// let line = self.lexer.line;
+// ... do stuff that consumes tokens ...
+// let seen_newline = line == self.lexer.line;
+// ```
 impl<'a> PreProcessor<'a> {
     // possibly recursively replace tokens
     fn handle_token(&mut self, token: Token, location: Location) -> Option<CppResult<Token>> {

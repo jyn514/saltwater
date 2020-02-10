@@ -246,12 +246,18 @@ pub enum LexError {
     __Nonexhaustive,
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error, PartialEq)]
 /// errors are non-exhaustive and may have new variants added at any time
 pub enum Warning {
     // for compatibility
     #[error("{0}")]
     Generic(String),
+
+    /// A #warning directive was present, followed by the tokens in this variant.
+    // TODO: this allocates a string for each token,
+    // might be worth separating out into a function at some point
+    #[error("#warning {}", (.0).iter().map(|t| t.to_string()).collect::<Vec<_>>().join(" "))]
+    User(Vec<Token>),
 
     #[error("rcc does not support #pragma")]
     IgnoredPragma,

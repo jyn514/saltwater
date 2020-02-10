@@ -1,6 +1,6 @@
 use crate::intern::InternedStr;
 
-use codespan::Span;
+use codespan::{FileId, Span};
 
 use std::cmp::Ordering;
 
@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Location {
     pub span: Span,
-    pub filename: InternedStr,
+    pub file: FileId,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -185,7 +185,7 @@ impl Location {
 impl PartialOrd for Location {
     /// NOTE: this only compares the start of the spans, it ignores the end
     fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
-        if self.filename == other.filename {
+        if self.file == other.file {
             Some(self.span.cmp(&other.span))
         } else {
             None

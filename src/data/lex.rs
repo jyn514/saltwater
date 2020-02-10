@@ -273,9 +273,11 @@ impl AssignmentToken {
 #[cfg(test)]
 impl Default for Location {
     fn default() -> Self {
+        let mut files = crate::Files::default();
+        let id = files.add("<test suite>", String::new().into());
         Self {
             span: (0..1).into(),
-            filename: Default::default(),
+            file: id,
         }
     }
 }
@@ -401,10 +403,12 @@ impl From<ComparisonToken> for Token {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use crate::*;
-    fn cpp(s: &str) -> PreProcessor {
-        PreProcessor::new("<integration-test>", s, false)
+    pub(crate) fn cpp(s: &str) -> PreProcessor {
+        let mut files: Files = Default::default();
+        let id = files.add("<test suite>", String::new().into());
+        PreProcessor::new(id, s, false, Box::leak(Box::new(files)))
     }
     #[test]
     fn assignment_display() {

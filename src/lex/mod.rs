@@ -1,5 +1,5 @@
-use std::borrow::Cow;
 use std::convert::TryFrom;
+use std::rc::Rc;
 
 use codespan::FileId;
 
@@ -22,9 +22,9 @@ pub use cpp::PreProcessor;
 /// Lexer implements iterator, so you can loop over the tokens.
 /// ```
 #[derive(Debug)]
-struct Lexer<'a> {
+struct Lexer {
     location: SingleLocation,
-    chars: Cow<'a, [u8]>,
+    chars: Rc<str>,
     /// used for 2-character tokens
     current: Option<u8>,
     /// used for 3-character tokens
@@ -50,9 +50,9 @@ struct SingleLocation {
     file: FileId,
 }
 
-impl<'a> Lexer<'a> {
+impl Lexer {
     /// Creates a Lexer from a filename and the contents of a file
-    fn new<C: Into<Cow<'a, [u8]>>>(file: FileId, chars: C) -> Lexer<'a> {
+    fn new<S: Into<Rc<str>>>(file: FileId, chars: S) -> Lexer {
         Lexer {
             location: SingleLocation { offset: 0, file },
             chars: chars.into(),
@@ -84,7 +84,10 @@ impl<'a> Lexer<'a> {
             self.current = self.lookahead.take();
             Some(c)
         } else {
-            self.chars.get(self.location.offset as usize).copied()
+            self.chars
+                .as_bytes()
+                .get(self.location.offset as usize)
+                .copied()
         };
         next.map(|c| {
             self.location.offset += 1;
@@ -98,16 +101,21 @@ impl<'a> Lexer<'a> {
     /// Return the character that would be returned by `next_char`.
     /// Can be called any number of the times and will still return the same result.
     fn peek(&mut self) -> Option<u8> {
-        self.current = self
-            .current
-            .or_else(|| self.lookahead.take())
-            .or_else(|| self.chars.get(self.location.offset as usize).copied());
+        self.current = self.current.or_else(|| self.lookahead.take()).or_else(|| {
+            self.chars
+                .as_bytes()
+                .get(self.location.offset as usize)
+                .copied()
+        });
         self.current
     }
     fn peek_next(&mut self) -> Option<u8> {
-        self.lookahead = self
-            .lookahead
-            .or_else(|| self.chars.get((self.location.offset + 1) as usize).copied());
+        self.lookahead = self.lookahead.or_else(|| {
+            self.chars
+                .as_bytes()
+                .get((self.location.offset + 1) as usize)
+                .copied()
+        });
         self.lookahead
     }
     /// If the next character is `item`, consume it and return true.
@@ -525,7 +533,7 @@ impl<'a> Lexer<'a> {
     }
 }
 
-impl<'a> Iterator for Lexer<'a> {
+impl Iterator for Lexer {
     // option: whether the stream is exhausted
     // result: whether the next lexeme is an error
     type Item = CompileResult<Locatable<Token>>;

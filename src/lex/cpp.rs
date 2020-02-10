@@ -594,10 +594,20 @@ lazy_static! {
 
 #[cfg(test)]
 mod tests {
-    use super::{CppResult, Keyword, PreProcessor, KEYWORDS};
+    use super::{CppError, CppResult, Keyword, PreProcessor, KEYWORDS};
     use crate::data::prelude::*;
     fn cpp(input: &str) -> PreProcessor {
         PreProcessor::new("<test suite>", input, false)
+    }
+    fn assert_err<F: Fn(&CppError) -> bool>(src: &str, f: F, description: &str) {
+        match cpp(src).next().unwrap().unwrap_err().data {
+            Error::PreProcessor(cpp_err) => {
+                if !f(&cpp_err) {
+                    panic!("expected {}, got {}", description, cpp_err)
+                }
+            }
+            _ => panic!("expected cpp err"),
+        }
     }
     fn assert_keyword(token: Option<CppResult<Token>>, expected: Keyword) {
         match token {
@@ -631,6 +641,32 @@ mod tests {
                 assert_keyword(cpp(&keyword.to_string()).next(), *keyword);
             }
         }
+    }
+    #[test]
+    fn if_directive() {
+        assert_same(
+            "
+#if a
+    b
+#else
+    c
+#endif",
+            "c",
+        );
+        assert_same(
+            "
+#if 0 + 2
+    b
+#endif",
+            "b",
+        );
+        assert_same(
+            "
+#if 1^1
+    b
+#endif",
+            "",
+        );
     }
     #[test]
     fn ifdef() {
@@ -676,6 +712,37 @@ A";
 int a() { return 1; }";
         let cpp_src = "int b() { return 1; }";
         assert_same(src, cpp_src);
+
+        let multidef = "
+#define a b + c
+int d() { return a; }";
+        assert_same(multidef, "int d() { return b + c; }");
+
+        let opdef = "
+#define BEGIN {
+#define END }
+int f() BEGIN return 5; END";
+        assert_same(opdef, "int f() { return 5; }");
+    }
+    #[test]
+    fn empty_def() {
+        assert_err(
+            "#define",
+            |err| match err {
+                CppError::EndOfFile(_) => true,
+                _ => false,
+            },
+            "empty define",
+        );
+        assert_err(
+            "#define
+            int",
+            |err| match err {
+                CppError::EmptyDefine => true,
+                _ => false,
+            },
+            "empty define",
+        );
     }
     #[test]
     fn undef() {
@@ -714,5 +781,39 @@ d
     fn pragma() {
         let src = "#pragma gcc __attribute__((inline))";
         assert!(cpp(src).next().is_none());
+    }
+    #[test]
+    fn line() {
+        let src = "#line 1";
+        let mut cpp = cpp(src);
+        assert!(cpp.next().is_none());
+        assert!(cpp.warnings().pop_front().is_some());
+    }
+    #[test]
+    fn warning() {
+        let src = "#warning your pants are on file";
+        let mut cpp = cpp(src);
+        assert!(cpp.next().is_none());
+        assert!(cpp.warnings().pop_front().is_some());
+    }
+    #[test]
+    fn error() {
+        let src = "#error cannot drink and drive";
+        let mut cpp = cpp(src);
+        match cpp.next().unwrap().unwrap_err().data {
+            Error::PreProcessor(CppError::User(_)) => {}
+            other => panic!("expected #error, got {:?}", other),
+        };
+    }
+    #[test]
+    fn invalid_directive() {
+        assert!(match cpp("#wrong").next().unwrap().unwrap_err().data {
+            Error::PreProcessor(CppError::InvalidDirective) => true,
+            _ => false,
+        });
+        assert!(match cpp("#1").next().unwrap().unwrap_err().data {
+            Error::PreProcessor(CppError::UnexpectedToken(_, _)) => true,
+            _ => false,
+        });
     }
 }

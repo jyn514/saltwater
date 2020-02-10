@@ -5,11 +5,14 @@ use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::str::Chars;
 
+use codespan::FileId;
+
 use super::{Lexer, Token};
 use crate::data::error::CppError;
 use crate::data::lex::{Keyword, Literal};
 use crate::data::prelude::*;
 use crate::get_str;
+use crate::Files;
 
 /// A preprocessor does textual substitution and deletion on a C source file.
 ///
@@ -44,8 +47,10 @@ pub struct PreProcessor<'a> {
     /// The preprocessor collaborates extremely closely with the lexer,
     /// since it sometimes needs to know if a token is followed by whitespace.
     first_lexer: Lexer<'a>,
-    /// Each lexer represents a separate source file.
+    /// Each lexer represents a separate source file that is currently being processed.
     includes: Vec<Lexer<'a>>,
+    /// All known files, including files which have already been read.
+    files: &'a mut Files,
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
     definitions: HashMap<InternedStr, Vec<Token>>,
@@ -162,7 +167,7 @@ impl<'a> PreProcessor<'a> {
         }
     }
     /// Wrapper around [`Lexer::new`]
-    pub fn new<T: AsRef<str> + Into<String>>(file: T, chars: &'a str, debug: bool) -> Self {
+    pub fn new(file: FileId, chars: &'a str, debug: bool, files: &'a mut Files) -> Self {
         Self {
             debug,
             first_lexer: Lexer::new(file, chars),
@@ -171,6 +176,7 @@ impl<'a> PreProcessor<'a> {
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
+            files,
         }
     }
     /// Return the first valid token in the file,
@@ -641,8 +647,9 @@ impl<'a> PreProcessor<'a> {
             if buf.exists() {
                 // TODO: _any_ sort of error handling
                 let src = std::fs::read_to_string(&buf).expect("failed to read included file");
+                let id = self.files.add(buf.to_string_lossy(), src);
                 self.includes
-                    .push(Lexer::new(buf.to_string_lossy(), src.into_bytes()));
+                    .push(Lexer::new(id, self.files.source(id).as_bytes()));
                 return Ok(());
             }
         }

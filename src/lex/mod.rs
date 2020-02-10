@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::convert::TryFrom;
 
+use codespan::FileId;
+
 use super::data::{error::LexError, lex::*, prelude::*};
 use super::intern::InternedStr;
 
@@ -45,17 +47,14 @@ enum CharError {
 #[derive(Debug)]
 struct SingleLocation {
     offset: u32,
-    filename: InternedStr,
+    file: FileId,
 }
 
 impl<'a> Lexer<'a> {
     /// Creates a Lexer from a filename and the contents of a file
-    fn new<C: Into<Cow<'a, [u8]>>, T: AsRef<str> + Into<String>>(file: T, chars: C) -> Lexer<'a> {
+    fn new<C: Into<Cow<'a, [u8]>>>(file: FileId, chars: C) -> Lexer<'a> {
         Lexer {
-            location: SingleLocation {
-                offset: 0,
-                filename: InternedStr::get_or_intern(file),
-            },
+            location: SingleLocation { offset: 0, file },
             chars: chars.into(),
             seen_line_token: false,
             line: 0,
@@ -126,7 +125,7 @@ impl<'a> Lexer<'a> {
     fn span(&self, start: u32) -> Location {
         Location {
             span: (start..self.location.offset).into(),
-            filename: self.location.filename,
+            file: self.location.file,
         }
     }
     /// Remove all consecutive whitespace pending in the stream.

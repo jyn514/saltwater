@@ -191,8 +191,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /* utility functions */
     #[inline]
     fn enter_scope(&mut self) {
-        self.scope.enter_scope();
-        self.tag_scope.enter_scope();
+        self.scope.enter();
+        self.tag_scope.enter();
     }
     fn leave_scope(&mut self, location: Location) {
         use crate::data::StorageClass;
@@ -217,8 +217,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 _ => {}
             }
         }
-        self.scope.leave_scope();
-        self.tag_scope.leave_scope();
+        self.scope.exit();
+        self.tag_scope.exit();
     }
     // don't use this, use next_token instead
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {

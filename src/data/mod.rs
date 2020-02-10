@@ -185,11 +185,11 @@ impl<K: Hash + Eq, V> Scope<K, V> {
         Self(vec![HashMap::new()])
     }
     #[inline]
-    pub(crate) fn enter_scope(&mut self) {
+    pub(crate) fn enter(&mut self) {
         self.0.push(HashMap::<K, V>::new())
     }
     #[inline]
-    pub(crate) fn leave_scope(&mut self) {
+    pub(crate) fn exit(&mut self) {
         self.0.pop();
     }
     pub(crate) fn get(&self, name: &K) -> Option<&V> {

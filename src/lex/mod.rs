@@ -80,7 +80,21 @@ impl Lexer {
     ///
     /// This function should never set `self.location.offset` to an out-of-bounds location
     fn next_char(&mut self) -> Option<u8> {
-        let next = if let Some(c) = self.current {
+        let mut c = self._next_char();
+        // Section 5.1.1.2 phase 2: discard backslashes before newlines
+        while c == Some(b'\\') && self.peek() == Some(b'\n') {
+            self._next_char();  // discard \n
+            self.consume_whitespace();
+            c = self._next_char();
+        }
+        if c == Some(b'\n') {
+            self.seen_line_token = false;
+            self.line += 1;
+        }
+        c
+    }
+    fn _next_char(&mut self) -> Option<u8> {
+        if let Some(c) = self.current {
             self.current = self.lookahead.take();
             Some(c)
         } else {
@@ -88,13 +102,8 @@ impl Lexer {
                 .as_bytes()
                 .get(self.location.offset as usize)
                 .copied()
-        };
-        next.map(|c| {
+        }.map(|c| {
             self.location.offset += 1;
-            if c == b'\n' {
-                self.seen_line_token = false;
-                self.line += 1;
-            }
             c
         })
     }
@@ -548,11 +557,6 @@ impl Iterator for Lexer {
     fn next(&mut self) -> Option<Self::Item> {
         self.consume_whitespace();
         let mut c = self.next_char();
-        // Section 5.1.1.2 phase 2: discard backslashes before newlines
-        while c == Some(b'\\') && self.match_next(b'\n') {
-            self.consume_whitespace();
-            c = self.next_char();
-        }
         // avoid stack overflow on lots of comments
         while c == Some(b'/') {
             c = match self.peek() {

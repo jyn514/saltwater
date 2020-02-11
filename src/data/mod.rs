@@ -463,7 +463,8 @@ impl Eq for Symbol {}
 
 #[cfg(test)]
 mod tests {
-    use crate::{Files, Parser, PreProcessor};
+    use crate::data::lex::test::cpp;
+    use crate::Parser;
 
     #[test]
     fn type_display() {
@@ -476,10 +477,8 @@ mod tests {
             "_Bool",
             "struct s",
         ];
-        let mut files: Files = Default::default();
         for ty in types.iter() {
-            let id = files.add("<test suite>", String::from(*ty).into());
-            let mut lexer = PreProcessor::new(id, String::from(*ty), false, &mut files);
+            let mut lexer = cpp(ty);
             let first = lexer.next().unwrap().unwrap();
             let mut parser = Parser::new(first, &mut lexer, false);
 

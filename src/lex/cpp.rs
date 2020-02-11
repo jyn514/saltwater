@@ -680,17 +680,6 @@ impl<'a> PreProcessor<'a> {
             Ok(())
         }
     }
-    /*
-    fn match_token(&mut self, token: Token) -> Option<Locatable<Token>> {
-        use std::mem;
-        let next_token = self.peek_token()?;
-        if mem::discriminant(next_token) == mem::discriminant(token) {
-            self.next_token()
-        } else {
-            None
-        }
-    }
-    */
     fn include(&mut self, start: u32) -> Result<(), Locatable<Error>> {
         use crate::data::lex::ComparisonToken;
         let lexer = self.lexer_mut();

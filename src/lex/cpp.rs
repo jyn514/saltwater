@@ -59,11 +59,16 @@ pub struct PreProcessor<'a> {
     error_handler: ErrorHandler,
     /// Whether or not to display each token as it is processed
     debug: bool,
-    /// Keeps track of the _start_ of all `#if` directives
-    /// bool: whether we've seen an `else`
-    nested_ifs: Vec<bool>,
+    /// Keeps track of current `#if` directives
+    nested_ifs: Vec<IfState>,
     /// The tokens that have been `#define`d and are currently being substituted
     pending: VecDeque<Locatable<Token>>,
+}
+
+enum IfState {
+    If,
+    Elif,
+    Else,
 }
 
 type CppResult<T> = Result<Locatable<T>, CompileError>;
@@ -295,16 +300,42 @@ impl<'a> PreProcessor<'a> {
         match kind {
             If => {
                 let condition = ret_err!(self.boolean_expr());
-                self.if_directive(condition, start)
+                ret_err!(self.if_directive(condition, IfState::If, start));
+                self.next()
             }
             IfNDef => {
                 let name = ret_err!(self.expect_id());
-                self.if_directive(!self.definitions.contains_key(&name.data), start)
+                ret_err!(self.if_directive(
+                    !self.definitions.contains_key(&name.data),
+                    IfState::If,
+                    start
+                ));
+                self.next()
             }
             IfDef => {
                 let name = ret_err!(self.expect_id());
-                self.if_directive(self.definitions.contains_key(&name.data), start)
+                ret_err!(self.if_directive(
+                    self.definitions.contains_key(&name.data),
+                    IfState::If,
+                    start
+                ));
+                self.next()
             }
+            Elif => match self.nested_ifs.last() {
+                None => Some(Err(CompileError::new(
+                    CppError::UnexpectedElif { early: true }.into(),
+                    self.span(start),
+                ))),
+                // saw a previous #if or #elif, consume #elif and #else
+                Some(IfState::If) | Some(IfState::Elif) => {
+                    ret_err!(self.consume_directive(start, DirectiveKind::Elif));
+                    self.next()
+                }
+                Some(IfState::Else) => Some(Err(CompileError::new(
+                    CppError::UnexpectedElif { early: false }.into(),
+                    self.span(start),
+                ))),
+            },
             Else => match self.nested_ifs.last() {
                 None => Some(Err(CompileError::new(
                     CppError::UnexpectedElse.into(),
@@ -312,12 +343,12 @@ impl<'a> PreProcessor<'a> {
                 ))),
                 // we already took the `#if` condition,
                 // `#else` should just be ignored
-                Some(true) => {
+                Some(IfState::If) | Some(IfState::Elif) => {
                     ret_err!(self.consume_directive(start, DirectiveKind::Else));
                     self.next()
                 }
                 // we saw an `#else` before, seeing it again is an error
-                Some(false) => Some(Err(CompileError::new(
+                Some(IfState::Else) => Some(Err(CompileError::new(
                     CppError::UnexpectedElse.into(),
                     self.span(start),
                 ))),
@@ -544,15 +575,20 @@ impl<'a> PreProcessor<'a> {
         // TODO: can semantic errors happen here? should we check?
         parser.expr().map_err(CompileError::from)
     }
-    /// We've already seen an `#if` or `#ifdef` and are processing the
+    /// We've already seen an `#if`, `#ifdef`, or `#elif` and are processing the
     /// lines that follow.
-    fn if_directive(&mut self, condition: bool, start: u32) -> Option<CppResult<Token>> {
+    fn if_directive(
+        &mut self,
+        condition: bool,
+        state: IfState,
+        start: u32,
+    ) -> Result<(), CompileError> {
         if condition {
-            self.nested_ifs.push(true);
+            self.nested_ifs.push(state);
+            Ok(())
         } else {
-            ret_err!(self.consume_directive(start, DirectiveKind::If));
+            self.consume_directive(start, DirectiveKind::If)
         }
-        self.next()
     }
     /// Assuming we've just seen `#if 0`, keep consuming tokens until `#endif`
     /// This has to take into account nesting of #if directives.
@@ -569,28 +605,14 @@ impl<'a> PreProcessor<'a> {
     /// ```
     /// should yield `int` as the next token, not `void`.
     fn consume_directive(&mut self, start: u32, kind: DirectiveKind) -> Result<(), CompileError> {
-        fn match_directive(
-            token: &CppResult<CppToken>,
-            expected: DirectiveKind,
-        ) -> Option<Location> {
-            match token {
-                Ok(Locatable {
-                    data: CppToken::Directive(directive),
-                    location,
-                }) => {
-                    if *directive == expected {
-                        Some(*location)
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        }
         let mut depth = 1;
         while depth > 0 {
-            let token = match self.next_cpp_token() {
-                Some(token) => token,
+            let (directive, location) = match self.next_cpp_token() {
+                Some(Ok(Locatable {
+                    data: CppToken::Directive(d),
+                    location,
+                })) => (d, location),
+                Some(_) => continue,
                 None => {
                     return Err(Locatable::new(
                         CppError::UnterminatedIf {
@@ -601,16 +623,30 @@ impl<'a> PreProcessor<'a> {
                     .into())
                 }
             };
-            if match_directive(&token, DirectiveKind::If).is_some()
-                || match_directive(&token, DirectiveKind::IfDef).is_some()
-            {
+            if directive == DirectiveKind::If || directive == DirectiveKind::IfDef {
                 depth += 1;
-            } else if match_directive(&token, DirectiveKind::EndIf).is_some() {
+            } else if directive == DirectiveKind::EndIf {
                 depth -= 1;
-            } else if let Some(location) = match_directive(&token, DirectiveKind::Else) {
-                if kind == DirectiveKind::If {
+            } else if directive == DirectiveKind::Elif {
+                if depth == 1 {
+                    if kind == DirectiveKind::Else {
+                        self.nested_ifs.pop();
+                        return Err(CompileError::new(
+                            CppError::UnexpectedElif { early: false }.into(),
+                            location,
+                        ));
+                    } else {
+                        // see if we should take this condition
+                        let expr = self.boolean_expr()?;
+                        return self.if_directive(expr, IfState::Elif, start);
+                    }
+                }
+                // consume the tokens from the #elif as if they were part of the #if
+                continue;
+            } else if directive == DirectiveKind::Else {
+                if kind == DirectiveKind::If || kind == DirectiveKind::Elif {
                     if depth == 1 {
-                        self.nested_ifs.push(false);
+                        self.nested_ifs.push(IfState::Else);
                         break;
                     }
                 } else {
@@ -656,7 +692,7 @@ impl<'a> PreProcessor<'a> {
     }
     */
     fn include(&mut self, start: u32) -> Result<(), Locatable<Error>> {
-        use crate::data::lex::{ComparisonToken, Literal};
+        use crate::data::lex::ComparisonToken;
         let lexer = self.lexer_mut();
         lexer.consume_whitespace();
         let local = if lexer.match_next(b'"') {
@@ -753,23 +789,23 @@ impl<'a> PreProcessor<'a> {
     fn bytes_until(&mut self, byte: u8) -> Vec<u8> {
         log::debug!("in bytes_until");
         let mut bytes = Vec::new();
-        while self.lexer_mut().peek() != Some(byte) {
+        loop {
             match self.lexer_mut().next_char() {
-                None => return bytes,
-                Some(c) => bytes.push(c),
+                Some(c) if c != byte => bytes.push(c),
+                _ => return bytes,
             }
         }
-        bytes
     }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum DirectiveKind {
     If,
-    EndIf,
-    Else,
     IfDef,
     IfNDef,
+    Elif,
+    Else,
+    EndIf,
     Include,
     Define,
     Undef,
@@ -797,6 +833,7 @@ impl TryFrom<&str> for DirectiveKind {
         use DirectiveKind::*;
         Ok(match s {
             "if" => If,
+            "elif" => Elif,
             "endif" => EndIf,
             "else" => Else,
             "ifdef" => IfDef,

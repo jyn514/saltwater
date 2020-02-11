@@ -237,6 +237,12 @@ pub enum CppError {
     #[error("#else after #else or #else without #if")]
     UnexpectedElse,
 
+    /// An `#elif` was present, but either
+    /// a) no `#if` was currently open, or
+    /// b) an `#else` has already been seen.
+    #[error("{}", if *early { "#elif without #if" } else { "#elif after #else " })]
+    UnexpectedElif { early: bool },
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

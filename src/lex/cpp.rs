@@ -768,6 +768,8 @@ impl<'a> PreProcessor<'a> {
             // TODO: relative file paths
             unimplemented!();
         }
+        // if we don't find it locally, we fall back to system headers
+        // this is part of the spec!
         for path in SEARCH_PATH {
             let mut buf = PathBuf::from(path);
             buf.push(&filename);
@@ -781,10 +783,10 @@ impl<'a> PreProcessor<'a> {
                 return Ok(());
             }
         }
-        return Err(CompileError::new(
+        Err(CompileError::new(
             CppError::FileNotFound(filename).into(),
             self.span(start),
-        ));
+        ))
     }
     fn bytes_until(&mut self, byte: u8) -> Vec<u8> {
         log::debug!("in bytes_until");
@@ -913,11 +915,9 @@ lazy_static! {
 
 #[cfg(test)]
 mod tests {
-    use super::{CppError, CppResult, Keyword, PreProcessor, KEYWORDS};
-    use crate::data::prelude::*;
-    fn cpp(input: &str) -> PreProcessor {
-        PreProcessor::new("<test suite>", input, false)
-    }
+    use super::*;
+    use crate::data::lex::test::cpp;
+
     macro_rules! assert_err {
         ($src: expr, $err: pat, $description: expr $(,)?) => {
             match cpp($src).next().unwrap().unwrap_err().data {

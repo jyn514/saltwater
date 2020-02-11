@@ -279,6 +279,8 @@ impl<'a> PreProcessor<'a> {
                 drop(self.tokens_until_newline());
                 self.next()
             }
+            // NOTE: #warning is a non-standard extension, but is implemented
+            // by most major compilers including clang and gcc.
             Warning => {
                 let tokens: Vec<_> = ret_err!(self
                     .tokens_until_newline()

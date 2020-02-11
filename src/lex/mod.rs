@@ -83,7 +83,7 @@ impl Lexer {
         let mut c = self._next_char();
         // Section 5.1.1.2 phase 2: discard backslashes before newlines
         while c == Some(b'\\') && self.peek() == Some(b'\n') {
-            self._next_char();  // discard \n
+            self._next_char(); // discard \n
             self.consume_whitespace();
             c = self._next_char();
         }
@@ -102,7 +102,8 @@ impl Lexer {
                 .as_bytes()
                 .get(self.location.offset as usize)
                 .copied()
-        }.map(|c| {
+        }
+        .map(|c| {
             self.location.offset += 1;
             c
         })

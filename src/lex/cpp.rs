@@ -404,30 +404,121 @@ impl<'a> PreProcessor<'a> {
             _ => unreachable!("bug in const_fold or parser: cpp cond should be boolean"),
         }
     }
+    fn defined(
+        lex_tokens: &mut impl Iterator<Item = Result<Locatable<Token>, CompileError>>,
+        cpp_tokens: &mut Vec<Result<Locatable<Token>, CompileError>>,
+        location: Location,
+    ) -> Result<InternedStr, CompileError> {
+        enum State {
+            Start,
+            SawParen,
+            SawId(InternedStr),
+        };
+        use State::*;
+        let mut state = Start;
+        loop {
+            return match lex_tokens.next() {
+                None => Err(CompileError::new(
+                    CppError::EndOfFile("defined(identifier)").into(),
+                    location,
+                )),
+                Some(Err(err)) => {
+                    cpp_tokens.push(Err(err));
+                    continue;
+                }
+                Some(Ok(Locatable {
+                    data: Token::Id(def),
+                    location,
+                })) => match state {
+                    Start => Ok(def),
+                    SawParen => {
+                        state = SawId(def);
+                        continue;
+                    }
+                    SawId(_) => Err(CompileError::new(
+                        CppError::UnexpectedToken("right paren", Token::Id(def)).into(),
+                        location,
+                    )),
+                },
+                Some(Ok(Locatable {
+                    data: Token::LeftParen,
+                    location,
+                })) => match state {
+                    Start => {
+                        state = SawParen;
+                        continue;
+                    }
+                    _ => Err(CompileError::new(
+                        CppError::UnexpectedToken("identifier or right paren", Token::LeftParen)
+                            .into(),
+                        location,
+                    )),
+                },
+                Some(Ok(Locatable {
+                    data: Token::RightParen,
+                    location,
+                })) => match state {
+                    Start => Err(CompileError::new(
+                        CppError::UnexpectedToken("identifier or left paren", Token::RightParen)
+                            .into(),
+                        location,
+                    )),
+                    SawParen => Err(CompileError::new(
+                        CppError::UnexpectedToken("identifier", Token::RightParen).into(),
+                        location,
+                    )),
+                    SawId(def) => Ok(def),
+                },
+                Some(Ok(other)) => Err(CompileError::new(
+                    CppError::UnexpectedToken("identifier", other.data).into(),
+                    other.location,
+                )),
+            };
+        }
+    }
     /// A C expression on a single line. Used for `#if` directives.
     ///
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn cpp_expr(&mut self) -> Result<Expr, CompileError> {
         let start = self.offset();
-        let mut line_tokens = self
-            .tokens_until_newline()
-            .into_iter()
-            .map(|result| match result {
+        let defined = InternedStr::get_or_intern("defined");
+
+        let lex_tokens = self.tokens_until_newline();
+        let mut cpp_tokens = Vec::with_capacity(lex_tokens.len());
+        let mut lex_tokens = lex_tokens.into_iter();
+        while let Some(token) = lex_tokens.next() {
+            let token = match token {
+                Ok(Locatable {
+                    data: Token::Id(name),
+                    location,
+                }) if name == defined => {
+                    let def = Self::defined(&mut lex_tokens, &mut cpp_tokens, location)?;
+                    let literal = if self.definitions.contains_key(&def) {
+                        Literal::Int(1)
+                    } else {
+                        Literal::Int(0)
+                    };
+                    Ok(location.with(Token::Literal(literal)))
+                }
                 Ok(Locatable {
                     data: Token::Id(_),
                     location,
                 }) => Ok(location.with(Token::Literal(Literal::Int(0)))),
-                _ => result,
-            });
-        // NOTE: This only returns the first error because anything else requires a refactor
-        let first = line_tokens.next().unwrap_or_else(|| {
-            Err(CompileError::new(
+                _ => token,
+            };
+            cpp_tokens.push(token);
+        }
+        if cpp_tokens.is_empty() {
+            return Err(CompileError::new(
                 CppError::EmptyExpression.into(),
                 self.span(start),
-            ))
-        })?;
-        let mut parser = crate::Parser::new(first, line_tokens, self.debug);
+            ));
+        }
+        // TODO: remove(0) is bad and I should feel bad
+        // TODO: this only returns the first error because anything else requires a refactor
+        let first = cpp_tokens.remove(0)?;
+        let mut parser = crate::Parser::new(first, cpp_tokens.into_iter(), self.debug);
         // TODO: catch expressions that aren't allowed
         // (see https://github.com/jyn514/rcc/issues/5#issuecomment-575339427)
         // TODO: can semantic errors happen here? should we check?

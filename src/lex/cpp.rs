@@ -69,6 +69,35 @@ pub struct PreProcessor<'a> {
 ///
 /// `If` means we are currently processing an `#if`,
 /// `Elif` means an `#elif`, and `Else` means an `#else`.
+///
+/// There are more states, but they are tracked internally to `consume_directive()`.
+/// The state diagram looks like this (pipe to `xdot -` for visualization):
+///
+/// ```dot
+/// strict digraph if_state {
+///    IF [label="self.nested_ifs.push(If)"];
+///    ELIF [label="self.nested_ifs.push(Elif)"];
+///    ELSE [label="self.nested_ifs.push(Else)"];
+///    END [label="self.nested_ifs.pop()"];
+///
+///    start -> IF [label="#if 1"]
+///    IF -> END [label="#endif"]
+///    IF -> consume_all [label="#elif ... / #else"]
+///    consume_all -> END [label="#endif"]
+///
+///    start -> consume_if [label="#if 0"]
+///    consume_if -> consume_if [label="#elif 0"]
+///    consume_if -> ELIF [label="#elif 1"]
+///    consume_if -> ELSE [label="#else"]
+///    consume_if -> END  [label="#endif"]
+///
+///    ELIF -> consume_all [label="#elif ... / #else"]
+///    ELIF -> END         [label="#endif"]
+///
+///    ELSE -> END [label="#endif"]
+///  }
+/// ```
+#[derive(Debug)]
 enum IfState {
     If,
     Elif,
@@ -317,33 +346,27 @@ impl<'a> PreProcessor<'a> {
         match kind {
             If => {
                 let condition = self.boolean_expr()?;
-                self.if_directive(condition, IfState::If, start)
+                self.if_directive(condition, start)
             }
             IfNDef => {
                 let name = self.expect_id()?;
-                self.if_directive(
-                    !self.definitions.contains_key(&name.data),
-                    IfState::If,
-                    start,
-                )
+                self.if_directive(!self.definitions.contains_key(&name.data), start)
             }
             IfDef => {
                 let name = self.expect_id()?;
-                self.if_directive(
-                    self.definitions.contains_key(&name.data),
-                    IfState::If,
-                    start,
-                )
+                self.if_directive(self.definitions.contains_key(&name.data), start)
             }
+            // No matter what happens here, we will not read the tokens from this `#elif`.
+            // Either we have been reading an `#if` or an `#elif` or an `#else`;
+            // in any case, this `#elif` will be ignored.
             Elif => match self.nested_ifs.last() {
                 None => Err(CompileError::new(
                     CppError::UnexpectedElif { early: true }.into(),
                     self.span(start),
                 )),
-                // saw a previous #if or #elif, consume #elif and #else
-                Some(IfState::If) | Some(IfState::Elif) => {
-                    self.consume_directive(start, DirectiveKind::Elif)
-                }
+                // saw a previous #if or #elif, consume all following directives
+                // `If` / `Elif` -> `consume_all`
+                Some(IfState::If) | Some(IfState::Elif) => self.consume_directive(start, false),
                 Some(IfState::Else) => Err(CompileError::new(
                     CppError::UnexpectedElif { early: false }.into(),
                     self.span(start),
@@ -356,9 +379,8 @@ impl<'a> PreProcessor<'a> {
                 )),
                 // we already took the `#if` condition,
                 // `#else` should just be ignored
-                Some(IfState::If) | Some(IfState::Elif) => {
-                    self.consume_directive(start, DirectiveKind::Else)
-                }
+                // `Else` -> `consume_all`
+                Some(IfState::If) | Some(IfState::Elif) => self.consume_directive(start, false),
                 // we saw an `#else` before, seeing it again is an error
                 Some(IfState::Else) => Err(CompileError::new(
                     CppError::UnexpectedElse.into(),
@@ -594,23 +616,22 @@ impl<'a> PreProcessor<'a> {
         // TODO: can semantic errors happen here? should we check?
         parser.expr().map_err(CompileError::from)
     }
-    /// We've already seen an `#if`, `#ifdef`, or `#elif` and are processing the
-    /// lines that follow.
-    fn if_directive(
-        &mut self,
-        condition: bool,
-        state: IfState,
-        start: u32,
-    ) -> Result<(), CompileError> {
+    /// We saw an `#if`, `#ifdef`, or `#ifndef` token at the start of the line
+    /// and want to either take the branch or ignore the tokens within the directive.
+    fn if_directive(&mut self, condition: bool, start: u32) -> Result<(), CompileError> {
         if condition {
-            self.nested_ifs.push(state);
+            // start -> IF
+            self.nested_ifs.push(IfState::If);
             Ok(())
         } else {
-            self.consume_directive(start, DirectiveKind::If)
+            // `start` -> `consume_if`
+            self.consume_directive(start, true)
         }
     }
-    /// Assuming we've just seen `#if 0`, keep consuming tokens until `#endif`
+    /// Keep consuming tokens until `#endif`.
     /// This has to take into account nesting of #if directives.
+    ///
+    /// `consume_if` indicates whether this is the `consume_if` or `consume_all` state.
     ///
     /// Example:
     /// ```c
@@ -623,57 +644,49 @@ impl<'a> PreProcessor<'a> {
     /// int g() { return 0; }
     /// ```
     /// should yield `int` as the next token, not `void`.
-    fn consume_directive(&mut self, start: u32, kind: DirectiveKind) -> Result<(), CompileError> {
+    fn consume_directive(&mut self, start: u32, consume_if: bool) -> Result<(), CompileError> {
         let mut depth = 1;
         while depth > 0 {
-            let (directive, location) = match self.next_cpp_token() {
+            let directive = match self.next_cpp_token() {
                 Some(Ok(Locatable {
                     data: CppToken::Directive(d),
-                    location,
-                })) => (d, location),
+                    ..
+                })) => d,
                 Some(_) => continue,
                 None => {
-                    return Err(Locatable::new(
-                        CppError::UnterminatedIf {
-                            ifdef: kind == DirectiveKind::IfDef,
-                        },
-                        self.span(start),
-                    )
-                    .into())
+                    return Err(Locatable::new(CppError::UnterminatedIf, self.span(start)).into())
                 }
             };
-            if directive == DirectiveKind::If || directive == DirectiveKind::IfDef {
+            if directive == DirectiveKind::If
+                || directive == DirectiveKind::IfDef
+                || directive == DirectiveKind::IfNDef
+            {
                 depth += 1;
             } else if directive == DirectiveKind::EndIf {
                 depth -= 1;
-            } else if directive == DirectiveKind::Elif {
-                if depth == 1 {
-                    if kind == DirectiveKind::Else {
-                        self.nested_ifs.pop();
-                        return Err(CompileError::new(
-                            CppError::UnexpectedElif { early: false }.into(),
-                            location,
-                        ));
-                    } else {
-                        // see if we should take this condition
-                        let expr = self.boolean_expr()?;
-                        return self.if_directive(expr, IfState::Elif, start);
-                    }
-                }
-                // consume the tokens from the #elif as if they were part of the #if
-                continue;
-            } else if directive == DirectiveKind::Else {
-                if kind == DirectiveKind::If || kind == DirectiveKind::Elif {
-                    if depth == 1 {
+            // Note the only directives left are #elif and #else.
+            // If depth >= 2, they are just ignored.
+            } else if depth == 1 {
+                // `consume_if` from the state diagram
+                if consume_if {
+                    if directive == DirectiveKind::Elif {
+                        let condition = self.boolean_expr()?;
+                        if !condition {
+                            // stay in the same `consume_if` state
+                            continue;
+                        } else {
+                            // go to `Elif` state
+                            self.nested_ifs.push(IfState::Elif);
+                            return Ok(());
+                        }
+                    // go to `Else` state
+                    } else if directive == DirectiveKind::Else {
                         self.nested_ifs.push(IfState::Else);
-                        break;
+                        return Ok(());
                     }
-                } else {
-                    assert_eq!(kind, DirectiveKind::Else);
-                    self.nested_ifs.pop();
-                    return Err(CompileError::new(CppError::UnexpectedElse.into(), location));
+                    // otherwise, keep consuming tokens
                 }
-                // otherwise, discard #else
+                // `consume_all` from the state diagram: all directives ignored
             }
         }
         Ok(())

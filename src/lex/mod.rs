@@ -93,6 +93,9 @@ impl Lexer {
         }
         c
     }
+    // Internal use only, use `next_char()` instead.
+    // This gets the next token from the buffer
+    // and updates the current offset and relevant fields.
     fn _next_char(&mut self) -> Option<u8> {
         if let Some(c) = self.current {
             self.current = self.lookahead.take();
@@ -119,6 +122,8 @@ impl Lexer {
         });
         self.current
     }
+    /// Return the character that would be returned if you called `next_char()` twice in a row.
+    /// Can be called any number of the times and will still return the same result.
     fn peek_next(&mut self) -> Option<u8> {
         self.lookahead = self.lookahead.or_else(|| {
             self.chars

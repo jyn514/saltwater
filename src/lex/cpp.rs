@@ -65,6 +65,10 @@ pub struct PreProcessor<'a> {
     pending: VecDeque<Locatable<Token>>,
 }
 
+/// Keeps track of the state of a conditional inclusion directive.
+///
+/// `If` means we are currently processing an `#if`,
+/// `Elif` means an `#elif`, and `Else` means an `#else`.
 enum IfState {
     If,
     Elif,
@@ -119,12 +123,16 @@ impl Iterator for PreProcessor<'_> {
 // let seen_newline = line == self.lexer.line;
 // ```
 impl<'a> PreProcessor<'a> {
+    /// Since there could potentially be multiple lexers (for multiple files),
+    /// this is a convenience function that returns the lexer for the current file.
     fn lexer(&self) -> &Lexer {
         self.includes.last().unwrap_or(&self.first_lexer)
     }
+    /// Same as `lexer()` but `&mut self -> &mut Lexer`.
     fn lexer_mut(&mut self) -> &mut Lexer {
         self.includes.last_mut().unwrap_or(&mut self.first_lexer)
     }
+    /* Convenience functions */
     #[inline]
     fn line(&self) -> usize {
         self.lexer().line
@@ -153,7 +161,7 @@ impl<'a> PreProcessor<'a> {
     fn offset(&self) -> u32 {
         self.lexer().location.offset
     }
-    // possibly recursively replace tokens
+    /// Possibly recursively replace tokens. This also handles turning identifiers into keywords.
     fn handle_token(&mut self, token: Token, location: Location) -> Option<CppResult<Token>> {
         if let Token::Id(id) = token {
             let mut token = self.replace_id(id, location);
@@ -173,7 +181,10 @@ impl<'a> PreProcessor<'a> {
             Some(Ok(Locatable::new(token, location)))
         }
     }
-    /// Wrapper around [`Lexer::new`]
+    /// Create a new preprocessor for the file identified by `file`.
+    ///
+    /// Note that the preprocessor may add arbitrarily many `#include`d files to `files`,
+    /// but will never delete a file.
     pub fn new<S: Into<Rc<str>>>(
         file: FileId,
         chars: S,
@@ -215,6 +226,10 @@ impl<'a> PreProcessor<'a> {
     }
 
     /* internal functions */
+    /// Return all tokens from the current position until the end of the current line.
+    ///
+    /// Note that these are _tokens_ and not bytes, so if there are invalid tokens
+    /// on the current line, this will return a lex error.
     fn tokens_until_newline(&mut self) -> Vec<CompileResult<Locatable<Token>>> {
         let mut tokens = Vec::new();
         let line = self.line();
@@ -231,12 +246,16 @@ impl<'a> PreProcessor<'a> {
         tokens
     }
 
+    /// If at the start of the line and we see `#directive`, return that directive.
+    /// Otherwise, if we see a token (or error), return that error.
+    /// Otherwise, return `None`.
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
         let next_token = loop {
             // we have to duplicate a bit of code here to avoid borrow errors
             let lexer = self.includes.last_mut().unwrap_or(&mut self.first_lexer);
             match lexer.next() {
                 Some(token) => break token,
+                // finished this file, go on to the next one
                 None => {
                     self.error_handler.append(&mut lexer.error_handler);
                     // this is the original source file
@@ -294,6 +313,8 @@ impl<'a> PreProcessor<'a> {
             }),
         }
     }
+    // Handle a directive. This assumes we have consumed the directive (e.g. `#if`),
+    // but not the rest of the tokens on the current line.
     fn directive(&mut self, kind: DirectiveKind, start: u32) -> Option<CppResult<Token>> {
         use crate::data::error::Warning as WarningDiagnostic;
         use DirectiveKind::*;

@@ -77,33 +77,29 @@ enum IfState {
 
 type CppResult<T> = Result<Locatable<T>, CompileError>;
 
-macro_rules! ret_err {
-    ($result: expr) => {
-        match $result {
-            Ok(data) => data,
-            Err(err) => return Some(Err(err)),
-        }
-    };
-}
-
 impl Iterator for PreProcessor<'_> {
     /// The preprocessor hides all internal complexity and returns only tokens.
     type Item = CppResult<Token>;
     fn next(&mut self) -> Option<Self::Item> {
-        let next_token = if let Some(err) = self.error_handler.pop_front() {
-            Some(Err(err))
-        } else if let Some(token) = self.pending.pop_front() {
-            Some(Ok(token))
-        } else {
-            match self.next_cpp_token()? {
-                Err(err) => return Some(Err(err)),
-                Ok(loc) => match loc.data {
-                    CppToken::Directive(directive) => {
-                        let start = loc.location.span.start().to_usize() as u32;
-                        self.directive(directive, start)
-                    }
-                    CppToken::Token(token) => self.handle_token(token, loc.location),
-                },
+        let next_token = loop {
+            if let Some(err) = self.error_handler.pop_front() {
+                break Some(Err(err));
+            } else if let Some(token) = self.pending.pop_front() {
+                break Some(Ok(token));
+            } else {
+                match self.next_cpp_token()? {
+                    Err(err) => return Some(Err(err)),
+                    Ok(loc) => match loc.data {
+                        CppToken::Directive(directive) => {
+                            let start = loc.location.span.start().to_usize() as u32;
+                            match self.directive(directive, start) {
+                                Err(err) => break Some(Err(err)),
+                                Ok(()) => continue,
+                            }
+                        }
+                        CppToken::Token(token) => break self.handle_token(token, loc.location),
+                    },
+                }
             }
         };
         if self.debug {
@@ -315,111 +311,103 @@ impl<'a> PreProcessor<'a> {
     }
     // Handle a directive. This assumes we have consumed the directive (e.g. `#if`),
     // but not the rest of the tokens on the current line.
-    fn directive(&mut self, kind: DirectiveKind, start: u32) -> Option<CppResult<Token>> {
+    fn directive(&mut self, kind: DirectiveKind, start: u32) -> Result<(), CompileError> {
         use crate::data::error::Warning as WarningDiagnostic;
         use DirectiveKind::*;
         match kind {
             If => {
-                let condition = ret_err!(self.boolean_expr());
-                ret_err!(self.if_directive(condition, IfState::If, start));
-                self.next()
+                let condition = self.boolean_expr()?;
+                self.if_directive(condition, IfState::If, start)
             }
             IfNDef => {
-                let name = ret_err!(self.expect_id());
-                ret_err!(self.if_directive(
+                let name = self.expect_id()?;
+                self.if_directive(
                     !self.definitions.contains_key(&name.data),
                     IfState::If,
-                    start
-                ));
-                self.next()
+                    start,
+                )
             }
             IfDef => {
-                let name = ret_err!(self.expect_id());
-                ret_err!(self.if_directive(
+                let name = self.expect_id()?;
+                self.if_directive(
                     self.definitions.contains_key(&name.data),
                     IfState::If,
-                    start
-                ));
-                self.next()
+                    start,
+                )
             }
             Elif => match self.nested_ifs.last() {
-                None => Some(Err(CompileError::new(
+                None => Err(CompileError::new(
                     CppError::UnexpectedElif { early: true }.into(),
                     self.span(start),
-                ))),
+                )),
                 // saw a previous #if or #elif, consume #elif and #else
                 Some(IfState::If) | Some(IfState::Elif) => {
-                    ret_err!(self.consume_directive(start, DirectiveKind::Elif));
-                    self.next()
+                    self.consume_directive(start, DirectiveKind::Elif)
                 }
-                Some(IfState::Else) => Some(Err(CompileError::new(
+                Some(IfState::Else) => Err(CompileError::new(
                     CppError::UnexpectedElif { early: false }.into(),
                     self.span(start),
-                ))),
+                )),
             },
             Else => match self.nested_ifs.last() {
-                None => Some(Err(CompileError::new(
+                None => Err(CompileError::new(
                     CppError::UnexpectedElse.into(),
                     self.span(start),
-                ))),
+                )),
                 // we already took the `#if` condition,
                 // `#else` should just be ignored
                 Some(IfState::If) | Some(IfState::Elif) => {
-                    ret_err!(self.consume_directive(start, DirectiveKind::Else));
-                    self.next()
+                    self.consume_directive(start, DirectiveKind::Else)
                 }
                 // we saw an `#else` before, seeing it again is an error
-                Some(IfState::Else) => Some(Err(CompileError::new(
+                Some(IfState::Else) => Err(CompileError::new(
                     CppError::UnexpectedElse.into(),
                     self.span(start),
-                ))),
+                )),
             },
             EndIf => {
                 if self.nested_ifs.pop().is_none() {
-                    Some(Err(CompileError::new(
+                    Err(CompileError::new(
                         CppError::UnexpectedEndIf.into(),
                         self.span(start),
-                    )))
+                    ))
                 } else {
-                    self.next()
+                    Ok(())
                 }
             }
-            Define => {
-                ret_err!(self.define(start));
-                self.next()
-            }
+            Define => self.define(start),
             Undef => {
-                let name = ret_err!(self.expect_id());
+                let name = self.expect_id()?;
                 self.definitions.remove(&name.data);
-                self.next()
+                Ok(())
             }
             Pragma => {
                 self.error_handler
                     .warn(WarningDiagnostic::IgnoredPragma, self.span(start));
                 drop(self.tokens_until_newline());
-                self.next()
+                Ok(())
             }
             // NOTE: #warning is a non-standard extension, but is implemented
             // by most major compilers including clang and gcc.
             Warning => {
-                let tokens: Vec<_> = ret_err!(self
+                let tokens: Vec<_> = self
                     .tokens_until_newline()
                     .into_iter()
                     .map(|res| res.map(|l| l.data))
-                    .collect());
+                    .collect::<Result<_, _>>()?;
                 self.error_handler
                     .warn(WarningDiagnostic::User(tokens), self.span(start));
-                self.next()
+                Ok(())
             }
             Error => {
-                let tokens: Vec<_> = ret_err!(self
+                let tokens: Vec<_> = self
                     .tokens_until_newline()
                     .into_iter()
                     .map(|res| res.map(|l| l.data))
-                    .collect());
+                    .collect::<Result<_, _>>()?;
                 self.error_handler
                     .error(CppError::User(tokens), self.span(start));
-                self.next()
+                Ok(())
             }
             Line => {
                 self.error_handler.warn(
@@ -427,12 +415,9 @@ impl<'a> PreProcessor<'a> {
                     self.span(start),
                 );
                 drop(self.tokens_until_newline());
-                self.next()
+                Ok(())
             }
-            Include => {
-                ret_err!(self.include(start));
-                self.next()
-            }
+            Include => self.include(start),
         }
     }
     /// Recursively replace the current identifier with its definitions.

@@ -804,9 +804,11 @@ impl<'a> PreProcessor<'a> {
             let mut buf = PathBuf::from(path);
             buf.push(&filename);
             if buf.exists() {
-                // TODO: _any_ sort of error handling
                 let src = std::fs::read_to_string(&buf)
-                    .expect("failed to read included file")
+                    .map_err(|err| Locatable {
+                        data: CppError::IO(err.to_string()),
+                        location: self.span(start),
+                    })?
                     .into();
                 let id = self.files.add(buf.to_string_lossy(), Rc::clone(&src));
                 self.includes.push(Lexer::new(id, src));

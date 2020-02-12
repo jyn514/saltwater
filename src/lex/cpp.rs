@@ -487,6 +487,8 @@ impl<'a> PreProcessor<'a> {
             _ => unreachable!("bug in const_fold or parser: cpp cond should be boolean"),
         }
     }
+    // `#if defined(a)` or `#if defined a`
+    // http://port70.net/~nsz/c/c11/n1570.html#6.10.1p1
     fn defined(
         lex_tokens: &mut impl Iterator<Item = Result<Locatable<Token>, CompileError>>,
         cpp_tokens: &mut Vec<Result<Locatable<Token>, CompileError>>,
@@ -691,6 +693,10 @@ impl<'a> PreProcessor<'a> {
         }
         Ok(())
     }
+    // http://port70.net/~nsz/c/c11/n1570.html#6.10.3
+    // `#define a b` - object macro
+    // `#define f(a) a` - function macro
+    // `#define f (a) - object macro
     fn define(&mut self, start: u32) -> Result<(), Locatable<Error>> {
         let line = self.line();
         self.consume_whitespace();
@@ -712,6 +718,9 @@ impl<'a> PreProcessor<'a> {
             Ok(())
         }
     }
+    // http://port70.net/~nsz/c/c11/n1570.html#6.10.2
+    // `#include <file>` - system include
+    // `#include "file"` - local include, but falls back to system include if `file` is not found.
     fn include(&mut self, start: u32) -> Result<(), Locatable<Error>> {
         use crate::data::lex::ComparisonToken;
         let lexer = self.lexer_mut();
@@ -770,6 +779,8 @@ impl<'a> PreProcessor<'a> {
         let filename = self.bytes_until(if local { b'"' } else { b'>' });
         self.include_path(filename, local, start)
     }
+    // we've done the parsing for an `#include`,
+    // now we want to do the dirty work of reading it into memory
     fn include_path(
         &mut self,
         filename: Vec<u8>,
@@ -780,7 +791,7 @@ impl<'a> PreProcessor<'a> {
         log::debug!("in search path");
 
         // Recall that the original file was valid UTF8.
-        // Since in UTF8, no ASCII character can occur
+        // Since in UTF8 no ASCII character can occur
         // within a multi-byte sequence, `filename` must be valid UTF8.
         let filename = String::from_utf8(filename).expect("passed invalid utf8 to start");
 
@@ -809,6 +820,8 @@ impl<'a> PreProcessor<'a> {
             self.span(start),
         ))
     }
+    // Returns every byte between the current position and the next `byte`.
+    // Consumes and does not return the final `byte`.
     fn bytes_until(&mut self, byte: u8) -> Vec<u8> {
         log::debug!("in bytes_until");
         let mut bytes = Vec::new();

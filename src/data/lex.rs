@@ -405,6 +405,7 @@ impl From<ComparisonToken> for Token {
 #[cfg(test)]
 pub(crate) mod test {
     use crate::*;
+    /// Create a new preprocessor with `s` as the input
     pub(crate) fn cpp(s: &str) -> PreProcessor {
         let mut files: Files = Default::default();
         let id = files.add("<test suite>", String::new().into());

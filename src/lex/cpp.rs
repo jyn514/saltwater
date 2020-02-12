@@ -55,7 +55,7 @@ pub struct PreProcessor<'a> {
     files: &'a mut Files,
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
-    definitions: HashMap<InternedStr, Vec<Token>>,
+    definitions: HashMap<InternedStr, Definition>,
     error_handler: ErrorHandler,
     /// Whether or not to display each token as it is processed
     debug: bool,
@@ -63,6 +63,14 @@ pub struct PreProcessor<'a> {
     nested_ifs: Vec<IfState>,
     /// The tokens that have been `#define`d and are currently being substituted
     pending: VecDeque<Locatable<Token>>,
+}
+
+enum Definition {
+    Object(Vec<Token>),
+    Function {
+        arguments: Vec<InternedStr>,
+        body: Vec<Token>,
+    },
 }
 
 /// Keeps track of the state of a conditional inclusion directive.
@@ -454,7 +462,7 @@ impl<'a> PreProcessor<'a> {
     ) -> Option<CppResult<Token>> {
         let start = self.offset();
         let mut ids_seen = std::collections::HashSet::new();
-        while let Some(def) = self.definitions.get(&name) {
+        while let Some(Definition::Object(def)) = self.definitions.get(&name) {
             ids_seen.insert(name);
             if def.is_empty() {
                 // TODO: recursion is bad and I should feel bad
@@ -712,7 +720,7 @@ impl<'a> PreProcessor<'a> {
                 .into_iter()
                 .map(|res| res.map(|loc| loc.data))
                 .collect::<Result<_, Locatable<Error>>>()?;
-            self.definitions.insert(id.data, tokens);
+            self.definitions.insert(id.data, Definition::Object(tokens));
             Ok(())
         }
     }

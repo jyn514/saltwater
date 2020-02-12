@@ -29,9 +29,7 @@ use crate::Files;
 /// Variables can only be defined as strings, or more accurately, token sequences.
 ///
 /// It is possible to tell the difference between an undefined variable
-/// and a variable defined to be empty using
-/// `#ifdef var` and `#if var`.
-/// Note that `#if defined(...)` is not currently implemented.
+/// and a variable defined to be empty using `#ifdef var` and `#if var`.
 ///
 /// Examples:
 ///

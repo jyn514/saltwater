@@ -229,6 +229,10 @@ pub enum CppError {
     #[error("macro name missing")]
     EmptyDefine,
 
+    /// An `#include<>` or `#include""` was present.
+    #[error("empty filename")]
+    EmptyInclude,
+
     /// A `#endif` was present, but no `#if` was currently open
     #[error("#endif without #if")]
     UnexpectedEndIf,

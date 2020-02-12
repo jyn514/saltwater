@@ -1147,5 +1147,17 @@ d
     fn invalid_directive() {
         assert_err!("#wrong", CppError::InvalidDirective, "invalid directive",);
         assert_err!("#1", CppError::UnexpectedToken(_, _), "unexpected token",);
+        assert_err!("#include", CppError::EndOfFile(_), "end of file");
+        assert_err!("#if defined", CppError::EndOfFile(_), "end of file");
+        for s in &[
+            "#if defined()",
+            "#if defined(+)",
+            "#if defined)",
+            "#if defined(()",
+            "#if defined(a a",
+        ] {
+            assert_err!(s, CppError::UnexpectedToken(_, _), "unexpected token");
+        }
+        assert_err!("#if", CppError::EmptyExpression, "empty expression");
     }
 }

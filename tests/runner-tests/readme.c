@@ -1,6 +1,5 @@
-// code: 6
-int puts(const char *s);
-int putchar(char);
+// output: j is 6
+#include<stdio.h>
 
 typedef struct s *sp;
 
@@ -19,9 +18,7 @@ int main(void) {
   const int c = my_struct_pointer->outer = 4;
   // should return 6
   int j = i + f*a[2] - c/g(1);
-  puts("i is ");
-  putchar('0' + j);
-  putchar('\n');
+  printf("j is %d\n", j);
   return j;
 }
 

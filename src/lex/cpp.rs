@@ -799,7 +799,7 @@ impl<'a> PreProcessor<'a> {
             unimplemented!();
         }
         // if we don't find it locally, we fall back to system headers
-        // this is part of the spec!
+        // this is part of the spec! http://port70.net/~nsz/c/c11/n1570.html#6.10.2p3
         for path in SEARCH_PATH {
             let mut buf = PathBuf::from(path);
             buf.push(&filename);

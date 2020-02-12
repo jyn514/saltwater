@@ -213,6 +213,10 @@ pub enum CppError {
     #[error("file '{0}' not found")]
     FileNotFound(String),
 
+    #[error("IO error: {0}")]
+    // TODO: find a way to put io::Error in here (doesn't derive Clone or PartialEq)
+    IO(String),
+
     /// The file ended before an `#if`, `#ifdef`, or `#ifndef` was closed.
     #[error("#if is never terminated")]
     UnterminatedIf,

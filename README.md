@@ -124,7 +124,7 @@ Hello, world!
 
 ### All options
 
-```sh
+```txt
 $ rcc --help
 rcc 0.5.0
 Joshua Nelson <jyn514@gmail.com>:Graham Scheaffer <me@gisch.dev>

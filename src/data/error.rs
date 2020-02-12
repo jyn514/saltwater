@@ -213,11 +213,9 @@ pub enum CppError {
     #[error("file '{0}' not found")]
     FileNotFound(String),
 
-    /// The file ended before an `#if` or `#ifdef` was closed.
-    ///
-    /// The `ifdef` boolean represents which of the two directives was open.
-    #[error("#{} is never terminated", if *(.ifdef) { "ifdef"} else { "if" })]
-    UnterminatedIf { ifdef: bool },
+    /// The file ended before an `#if`, `#ifdef`, or `#ifndef` was closed.
+    #[error("#if is never terminated")]
+    UnterminatedIf,
 
     /// An `#if` occurred without an expression following.
     #[error("expected expression for #if")]

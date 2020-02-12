@@ -435,6 +435,10 @@ impl<'a> PreProcessor<'a> {
             }
         }
     }
+    /// Recursively replace the current identifier with its definitions.
+    ///
+    /// This does cycle detection by replacing the repeating identifier at least once;
+    /// see the `recursive_macros` test for more details.
     // TODO: this needs to have an idea of 'pending chars', not just pending tokens
     fn replace_id(
         &mut self,
@@ -442,7 +446,9 @@ impl<'a> PreProcessor<'a> {
         location: Location,
     ) -> Option<CppResult<Token>> {
         let start = self.offset();
+        let mut ids_seen = std::collections::HashSet::new();
         while let Some(def) = self.definitions.get(&name) {
+            ids_seen.insert(name);
             if def.is_empty() {
                 // TODO: recursion is bad and I should feel bad
                 return self.next();
@@ -453,6 +459,7 @@ impl<'a> PreProcessor<'a> {
                 // prepend the new tokens to the pending tokens
                 let mut new_pending = VecDeque::new();
                 new_pending.extend(def[1..].iter().map(|token| Locatable {
+                    // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
                     data: token.clone(),
                     location,
                 }));
@@ -462,6 +469,10 @@ impl<'a> PreProcessor<'a> {
 
             if let Token::Id(new_name) = first {
                 name = *new_name;
+                // recursive definition, stop now and return the current name.
+                if ids_seen.contains(&name) {
+                    break;
+                }
             } else {
                 return Some(Ok(Locatable::new(first.clone(), self.span(start))));
             }
@@ -1051,6 +1062,28 @@ int d() { return a; }";
 #define END }
 int f() BEGIN return 5; END";
         assert_same(opdef, "int f() { return 5; }");
+    }
+    #[test]
+    fn recursive_macros() {
+        assert_same("#define a a\na", "a");
+        assert_same("#define a a + b\na", "a + b");
+        let mutual_recursion = "
+#define a b
+#define b a
+a";
+        assert_same(mutual_recursion, "a");
+        let mutual_recursion_2 = "
+#define a b
+#define b c
+#define c a
+a";
+        assert_same(mutual_recursion_2, "a");
+        let mutual_recursion_3 = "
+#define a b
+#define b c
+#define c b
+a";
+        assert_same(mutual_recursion_3, "b");
     }
     #[test]
     fn empty_def() {

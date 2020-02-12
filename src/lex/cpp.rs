@@ -778,21 +778,40 @@ impl<'a> PreProcessor<'a> {
         self.include_path(filename, local, start)
     }
     // we've done the parsing for an `#include`,
-    // now we want to do the dirty work of reading it into memory
-    fn include_path(
+    // now we want to figure what file on disk it corresponds to
+    fn find_include_path(
         &mut self,
-        filename: Vec<u8>,
+        filename: String,
         local: bool,
         start: u32,
-    ) -> Result<(), Locatable<Error>> {
+    ) -> Result<PathBuf, Locatable<Error>> {
         const SEARCH_PATH: &[&str] = &["/usr/include"];
         log::debug!("in search path");
 
-        // Recall that the original file was valid UTF8.
-        // Since in UTF8 no ASCII character can occur
-        // within a multi-byte sequence, `filename` must be valid UTF8.
-        let filename = String::from_utf8(filename).expect("passed invalid utf8 to start");
-
+        if filename.is_empty() {
+            return Err(CompileError::new(
+                CppError::EmptyInclude.into(),
+                self.span(start),
+            ));
+        }
+        // can't be a closure because of borrowck
+        macro_rules! not_found {
+            () => {
+                Err(CompileError::new(
+                    CppError::FileNotFound(filename).into(),
+                    self.span(start),
+                ))
+            };
+        }
+        // absolute path, ignore everything except the filename
+        if filename.as_bytes()[0] == b'/' {
+            let path = &std::path::Path::new(&filename);
+            return if path.exists() {
+                Ok(PathBuf::from(filename))
+            } else {
+                not_found!()
+            };
+        }
         // local include: #include "dict.h"
         if local {
             // TODO: relative file paths
@@ -804,21 +823,33 @@ impl<'a> PreProcessor<'a> {
             let mut buf = PathBuf::from(path);
             buf.push(&filename);
             if buf.exists() {
-                let src = std::fs::read_to_string(&buf)
-                    .map_err(|err| Locatable {
-                        data: CppError::IO(err.to_string()),
-                        location: self.span(start),
-                    })?
-                    .into();
-                let id = self.files.add(buf.to_string_lossy(), Rc::clone(&src));
-                self.includes.push(Lexer::new(id, src));
-                return Ok(());
+                return Ok(buf);
             }
         }
-        Err(CompileError::new(
-            CppError::FileNotFound(filename).into(),
-            self.span(start),
-        ))
+        return not_found!();
+    }
+    // we've done the parsing for an `#include`,
+    // now we want to do the dirty work of reading it into memory
+    fn include_path(
+        &mut self,
+        filename: Vec<u8>,
+        local: bool,
+        start: u32,
+    ) -> Result<(), Locatable<Error>> {
+        // Recall that the original file was valid UTF8.
+        // Since in UTF8 no ASCII character can occur
+        // within a multi-byte sequence, `filename` must be valid UTF8.
+        let filename = String::from_utf8(filename).expect("passed invalid utf8 to start");
+        let resolved = self.find_include_path(filename, local, start)?;
+        let src = std::fs::read_to_string(&resolved)
+            .map_err(|err| Locatable {
+                data: CppError::IO(err.to_string()),
+                location: self.span(start),
+            })?
+            .into();
+        let id = self.files.add(resolved.to_string_lossy(), Rc::clone(&src));
+        self.includes.push(Lexer::new(id, src));
+        Ok(())
     }
     // Returns every byte between the current position and the next `byte`.
     // Consumes and does not return the final `byte`.

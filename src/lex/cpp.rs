@@ -1095,6 +1095,7 @@ a";
 #define c b
 a";
         assert_same(mutual_recursion_3, "b");
+        assert_same("#define a \n a", "");
     }
     #[test]
     fn empty_def() {
@@ -1107,16 +1108,34 @@ a";
         );
     }
     #[test]
+    fn redefinition() {
+        let src = "
+#define a b
+#define a c
+a
+";
+        assert_same(src, "c");
+        let src = "
+#define a b
+#define a
+a
+";
+        assert_same(src, "");
+    }
+    #[test]
     fn undef() {
         let src = "
 #define a b
 a
 #undef a
 a";
-        let cpp_src = "
-b
-a";
-        assert_same(src, cpp_src);
+        assert_same(src, "b a");
+        let src = "
+#define a
+#undef a
+a
+";
+        assert_same(src, "a");
     }
     #[test]
     fn else_directive() {

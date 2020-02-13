@@ -89,7 +89,7 @@ pub(crate) fn compile_aot(
 
     let builder = ObjectBuilder::new(
         isa,
-        name.clone(),
+        name,
         ObjectTrapCollection::Disabled,
         cranelift_module::default_libcall_names(),
     )

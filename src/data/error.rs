@@ -213,6 +213,9 @@ pub enum CppError {
     #[error("file '{0}' not found")]
     FileNotFound(String),
 
+    #[error("wrong number of arguments: expected {0}, got {1}")]
+    TooFewArguments(usize, usize),
+
     #[error("IO error: {0}")]
     // TODO: find a way to put io::Error in here (doesn't derive Clone or PartialEq)
     IO(String),
@@ -283,6 +286,9 @@ pub enum Warning {
 
     #[error("rcc does not support #pragma")]
     IgnoredPragma,
+
+    #[error("variadic macros are not yet supported")]
+    IgnoredVariadic,
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

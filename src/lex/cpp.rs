@@ -148,16 +148,6 @@ impl Iterator for PreProcessor<'_> {
     }
 }
 
-macro_rules! ret_err {
-    ($maybe_err: expr) => {
-        match $maybe_err {
-            None => return None,
-            Some(Err(err)) => return Some(Err(err)),
-            Some(Ok(token)) => token,
-        }
-    };
-}
-
 // idiom: to check if there has been a newline since the last token,
 // use the following pattern:
 // ```rust
@@ -197,21 +187,6 @@ impl<'a> PreProcessor<'a> {
                 Ok(None)
             }
         }
-        /*
-        if let Some(replacement) = self.pending.get(0) {
-            if replacement.data == token {
-                let location = replacement.location;
-                self.pending.pop_front();
-                return Ok(Some(location));
-            }
-        }
-        match self.lexer_mut().next() {
-            None => Ok(None),
-            Some(Err(err)) => Err(err),
-            Some(Ok(matching)) if matching.data == token => Ok(Some(matching.location)),
-            Some(_) => Ok(None),
-        }
-        */
     }
     /* Convenience functions */
     #[inline]
@@ -563,27 +538,21 @@ impl<'a> PreProcessor<'a> {
                 Ok(Some(_)) => break,
             }
         }
-        /*
-        let handle_err = |this, maybe_match| match maybe_match {
-            None => false,
-            Some(Err(err)) =>
-        }
-        */
-        let location = self.span(start);
-        let mut args = Vec::new();
-        let mut current_arg = Vec::new();
-        println!("expanding arguments");
-        // now, expand all arguments
-        /*
+
         macro_rules! ret_err {
             ($maybe_err: expr) => {
                 match $maybe_err {
-                    Err(err) => return Some(Err(err)),
-                    Ok(other) => other,
+                    None => return None,
+                    Some(Err(err)) => return Some(Err(err)),
+                    Some(Ok(token)) => token,
                 }
-            }
+            };
         }
-        */
+
+        let location = self.span(start);
+        let mut args = Vec::new();
+        let mut current_arg = Vec::new();
+        // now, expand all arguments
         loop {
             let next = ret_err!(self.next_replacement_token());
             if next.data == Token::Comma {
@@ -596,15 +565,13 @@ impl<'a> PreProcessor<'a> {
                 current_arg.push(next);
             }
         }
-        println!("finished token expansion");
         if args.len() != params.len() {
             return Some(Err(CompileError::new(
                 CppError::TooFewArguments(args.len(), params.len()).into(),
                 self.span(start),
             )));
         }
-        println!("finished param len check");
-        for token in dbg!(body) {
+        for token in body {
             if let Token::Id(id) = token {
                 if let Some(index) = params.iter().position(|&param| param == id) {
                     let replacement = args[index].clone();
@@ -616,7 +583,6 @@ impl<'a> PreProcessor<'a> {
                 self.pending.push_back(location.with(token.clone()));
             }
         }
-        println!("finished token collection");
         self.pending
             .pop_front()
             .map_or_else(|| self.next(), |token| Some(Ok(token)))

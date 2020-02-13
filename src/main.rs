@@ -123,10 +123,13 @@ fn real_main(
             let args = std::env::args();
             let argc = args.len() as i32;
             let vec_args = args
-                .into_iter()
-                .map(|string| std::ffi::CString::new(string).unwrap().as_ptr() as *const u8)
-                .collect::<Vec<*const u8>>();
-            let pointer = vec_args.as_ptr() as *const *const u8;
+                .map(|string| std::ffi::CString::new(string).unwrap())
+                .collect::<Vec<std::ffi::CString>>();
+            let pointer = vec_args
+                .iter()
+                .map(|cstr| cstr.as_ptr() as *const u8)
+                .collect::<Vec<*const u8>>()
+                .as_ptr() as *const *const u8;
             let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 =
                 unsafe { std::mem::transmute(main_function) };
             let _ = unsafe { main(argc, pointer) };

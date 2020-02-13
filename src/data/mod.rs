@@ -162,23 +162,41 @@ pub struct Symbol {
 pub struct Qualifiers {
     pub volatile: bool,
     pub c_const: bool,
+    pub func: FunctionQualifiers,
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct FunctionQualifiers {
     pub inline: bool,
+    pub no_return: bool,
 }
 
 #[derive(Debug)]
 pub(crate) struct Scope<K: Hash + Eq, V>(Vec<HashMap<K, V>>);
 
 impl Qualifiers {
+    pub(crate) fn has_func_qualifiers(self) -> bool {
+        self.func.inline || self.func.no_return
+    }
     pub(crate) const NONE: Qualifiers = Qualifiers {
         c_const: false,
         volatile: false,
-        inline: false,
+        func: FunctionQualifiers {
+            inline: false,
+            no_return: false,
+        },
     };
-    pub(crate) const CONST: Qualifiers = Qualifiers {
-        c_const: true,
-        volatile: false,
-        inline: false,
-    };
+}
+
+impl Display for FunctionQualifiers {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match (self.inline, self.no_return) {
+            (true, true) => write!(f, "{} {}", Keyword::Inline, Keyword::NoReturn),
+            (true, false) => write!(f, "{}", Keyword::NoReturn),
+            (false, true) => write!(f, "{}", Keyword::NoReturn),
+            (false, false) => Ok(()),
+        }
+    }
 }
 
 impl<K: Hash + Eq, V> Scope<K, V> {

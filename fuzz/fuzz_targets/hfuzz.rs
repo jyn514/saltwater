@@ -9,12 +9,8 @@ use rcc::data::lex::{Keyword::*, Token};
 use rcc::PreProcessor;
 use std::default::Default;
 
-fn lex<'s>(s: &'s str, file: FileId, files: &'s mut Files) -> PreProcessor<'s> {
-    PreProcessor::new(file, s, false, files)
-}
-
 fn is_exotic_keyword(s: &str, file: FileId, files: &mut Files) -> bool {
-    let (first, _) = lex(s, file, files).first_token();
+    let (first, _) = PreProcessor::new(file, s, false, files).first_token();
     let first = match first {
         Some(Locatable {
             data: Token::Keyword(k),

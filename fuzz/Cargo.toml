@@ -17,6 +17,7 @@ version = "0.4"
 
 [dependencies]
 honggfuzz = "0.5"
+codespan = "0.7"
 
 # Prevent this from interfering with workspaces
 [workspace]

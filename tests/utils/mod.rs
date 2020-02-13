@@ -45,8 +45,9 @@ pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, Error
         filename: "<integration-test>".into(),
         ..Default::default()
     };
-    let (result, _warnings) = rcc::compile_aot(program, &opts);
-    let module = result?;
+    let module = rcc::initialize_aot_module(program.to_owned());
+    let (result, _warnings) = rcc::compile(module, program, &opts);
+    let module = result?.finish();
     let output = tempfile::NamedTempFile::new()
         .expect("cannot create tempfile")
         .into_temp_path();

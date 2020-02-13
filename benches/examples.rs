@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use rcc::compile_aot as compile;
+use rcc::{compile, initialize_aot_module};
 
 const FACTORIAL: &str = include_str!("../tests/runner-tests/factorial.c");
 const FIBONACCI: &str = include_str!("../tests/runner-tests/fibonacci.c");
@@ -11,13 +11,18 @@ fn examples(c: &mut Criterion) {
     };
     let mut group = c.benchmark_group("Fibonacci");
     group.bench_function("rcc", |b| {
-        b.iter(|| black_box(compile(FIBONACCI, &opts)));
+        b.iter(|| {
+            let module = initialize_aot_module("Fibonacci".to_owned());
+            black_box(compile(module, FIBONACCI, &opts))
+        });
     });
     group.finish();
-
     let mut group = c.benchmark_group("Factorial");
     group.bench_function("rcc", |b| {
-        b.iter(|| black_box(compile(FACTORIAL, &opts)));
+        b.iter(|| {
+            let module = initialize_aot_module("Factorial".to_owned());
+            black_box(compile(module, FACTORIAL, &opts))
+        });
     });
     group.finish();
 }

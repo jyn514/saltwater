@@ -1,8 +1,34 @@
+/*fn main() {
+    let module = rcc::initialize_jit_module();
+    let (jit, warnings) = compile(module, buf, &opt);
+    handle_warnings(warnings, file_id, file_db);
+    let mut jit = RccJIT::from_module(jit?);
+    jit.finalize();
+    let main_function = jit.get_compiled_function("main");
+    if let Some(main_function) = main_function {
+        let args = std::env::args();
+        let argc = args.len() as i32;
+        let vec_args = args
+            .map(|string| std::ffi::CString::new(string).unwrap())
+            .collect::<Vec<std::ffi::CString>>();
+        let pointer = vec_args
+            .iter()
+            .map(|cstr| cstr.as_ptr() as *const u8)
+            .collect::<Vec<*const u8>>()
+            .as_ptr() as *const *const u8;
+        let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 =
+            unsafe { std::mem::transmute(main_function) };
+        let _ = unsafe { main(argc, pointer) };
+    }
+    Ok(())
+}
+*/
+
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Read};
 use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -19,15 +45,14 @@ use ansi_term::{ANSIString, Colour};
 use codespan::{FileId, Files};
 use pico_args::Arguments;
 use rcc::{
-    assemble, compile_aot, compile_jit,
+    compile,
     data::{
         error::{CompileWarning, RecoverableResult},
         lex::Location,
     },
-    link, preprocess, utils, Error, Opt,
+    preprocess, utils, Error, Opt, RccJIT,
 };
 use std::ffi::OsStr;
-use tempfile::NamedTempFile;
 
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
@@ -45,14 +70,12 @@ FLAGS:
     -a, --debug-ast        If set, print the parsed abstract syntax tree in addition to compiling
         --debug-lex        If set, print all tokens found by the lexer in addition to compiling.
     -h, --help             Prints help information
-    -c, --no-link          If set, compile and assemble but do not link. Object file is machine-dependent.
     -E, --preprocess-only  If set, preprocess only, but do not do anything else.
                             Note that preprocessing discards whitespace and comments.
                             There is not currently a way to disable this behavior.
     -V, --version          Prints version information
 
 OPTIONS:
-    -o, --output <output>    The output file to use. [default: a.out]
         --max-errors <max>   The maximum number of errors to allow before giving up.
                              Use 0 to allow unlimited errors. [default: 10]
 
@@ -62,7 +85,7 @@ ARGS:
 
 const USAGE: &str = "\
 usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
-           [--debug-lex] [--jit] [--no-link | -c] [<file>]";
+           [--debug-lex] [<file>]";
 
 struct BinOpt {
     /// The options that will be passed to `compile()`
@@ -76,12 +99,7 @@ struct BinOpt {
 
 // TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
-fn real_main(
-    file_db: &Files<String>,
-    file_id: FileId,
-    opt: &BinOpt,
-    output: &Path,
-) -> Result<(), Error> {
+fn real_main(file_db: &Files<String>, file_id: FileId, opt: &BinOpt) -> Result<(), Error> {
     env_logger::init();
 
     let buf = file_db.source(file_id);
@@ -102,40 +120,29 @@ fn real_main(
     } else {
         &opt.opt
     };
-    if !opt.jit {
-        let (result, warnings) = compile_aot(buf, &opt);
-        handle_warnings(warnings, file_id, file_db);
 
-        let product = result?;
-        if opt.no_link {
-            return assemble(product, output);
-        }
-        let tmp_file = NamedTempFile::new()?;
-        assemble(product, tmp_file.as_ref())?;
-        link(tmp_file.as_ref(), output).map_err(io::Error::into)
-    } else {
-        let (jit, warnings) = compile_jit(buf, &opt);
-        handle_warnings(warnings, file_id, file_db);
-        let mut jit = jit?;
-        jit.finalize();
-        let main_function = jit.get_compiled_function("main");
-        if let Some(main_function) = main_function {
-            let args = std::env::args();
-            let argc = args.len() as i32;
-            let vec_args = args
-                .map(|string| std::ffi::CString::new(string).unwrap())
-                .collect::<Vec<std::ffi::CString>>();
-            let pointer = vec_args
-                .iter()
-                .map(|cstr| cstr.as_ptr() as *const u8)
-                .collect::<Vec<*const u8>>()
-                .as_ptr() as *const *const u8;
-            let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 =
-                unsafe { std::mem::transmute(main_function) };
-            let _ = unsafe { main(argc, pointer) };
-        }
-        Ok(())
+    let module = rcc::initialize_jit_module();
+    let (jit, warnings) = compile(module, buf, &opt);
+    handle_warnings(warnings, file_id, file_db);
+    let mut jit = RccJIT::from_module(jit?);
+    jit.finalize();
+    let main_function = jit.get_compiled_function("main");
+    if let Some(main_function) = main_function {
+        let args = std::env::args();
+        let argc = args.len() as i32;
+        let vec_args = args
+            .map(|string| std::ffi::CString::new(string).unwrap())
+            .collect::<Vec<std::ffi::CString>>();
+        let pointer = vec_args
+            .iter()
+            .map(|cstr| cstr.as_ptr() as *const u8)
+            .collect::<Vec<*const u8>>()
+            .as_ptr() as *const *const u8;
+        let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 =
+            unsafe { std::mem::transmute(main_function) };
+        let _ = unsafe { main(argc, pointer) };
     }
+    Ok(())
 }
 
 fn handle_warnings(warnings: VecDeque<CompileWarning>, file: FileId, file_db: &Files<String>) {
@@ -153,7 +160,7 @@ fn main() {
     #[cfg(debug_assertions)]
     color_backtrace::install();
 
-    let (mut opt, output) = match parse_args() {
+    let mut opt = match parse_args() {
         Ok(opt) => opt,
         Err(err) => {
             println!(
@@ -192,7 +199,7 @@ fn main() {
     let mut file_db = Files::new();
     // TODO: remove `lossy` call
     let file_id = file_db.add(opt.opt.filename.to_string_lossy(), buf);
-    real_main(&file_db, file_id, &opt, &output)
+    real_main(&file_db, file_id, &opt)
         .unwrap_or_else(|err| err_exit(err, opt.opt.max_errors, file_id, &file_db));
 }
 
@@ -205,7 +212,7 @@ macro_rules! type_sizes {
         $(println!("{}: {}", stringify!($type), std::mem::size_of::<$type>());)*
     };
 }
-fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
+fn parse_args() -> Result<BinOpt, pico_args::Error> {
     let mut input = Arguments::from_env();
     if input.contains(["-h", "--help"]) {
         println!("{}", HELP);
@@ -232,31 +239,25 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             RecoverableResult<Expr>
         );
     }
-    let output = input
-        .opt_value_from_os_str(["-o", "--output"], os_str_to_path_buf)?
-        .unwrap_or_else(|| "a.out".into());
     let max_errors = input
         .opt_value_from_fn("--max-errors", |s| {
             usize::from_str_radix(s, 10).map(NonZeroUsize::new)
         })?
         .unwrap_or_else(|| Some(NonZeroUsize::new(10).unwrap()));
-    Ok((
-        BinOpt {
-            preprocess_only: input.contains(["-E", "--preprocess-only"]),
-            opt: Opt {
-                debug_lex: input.contains("--debug-lex"),
-                debug_asm: input.contains("--debug-asm"),
-                debug_ast: input.contains(["-a", "--debug-ast"]),
-                no_link: input.contains(["-c", "--no-link"]),
-                jit: input.contains("--jit"),
-                max_errors,
-                filename: input
-                    .free_from_os_str(os_str_to_path_buf)?
-                    .unwrap_or_else(|| "-".into()),
-            },
+    Ok(BinOpt {
+        preprocess_only: input.contains(["-E", "--preprocess-only"]),
+        opt: Opt {
+            debug_lex: input.contains("--debug-lex"),
+            debug_asm: input.contains("--debug-asm"),
+            debug_ast: input.contains(["-a", "--debug-ast"]),
+            no_link: input.contains(["-c", "--no-link"]),
+            max_errors,
+            jit: true,
+            filename: input
+                .free_from_os_str(os_str_to_path_buf)?
+                .unwrap_or_else(|| "-".into()),
         },
-        output,
-    ))
+    })
 }
 
 fn err_exit(

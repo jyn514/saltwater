@@ -12,9 +12,10 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use cranelift_module::Backend;
-use cranelift_object::ObjectBackend;
-
+use cranelift::codegen::settings::Configurable;
+use cranelift_module::{Backend, FuncOrDataId, Module};
+use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
+use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
 pub type Product = <ObjectBackend as Backend>::Product;
 
 use data::prelude::CompileError;
@@ -129,70 +130,68 @@ pub fn preprocess(
     (res, cpp.warnings())
 }
 
-/// Compile and return the declarations and warnings.
-pub fn compile_aot(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
-    let filename = opt.filename.to_string_lossy();
-    let filename_ref = InternedStr::get_or_intern(filename.as_ref());
-    let mut cpp = PreProcessor::new(filename, &buf, opt.debug_lex);
+pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
+    let mut flags_builder = cranelift::codegen::settings::builder();
 
-    let mut errs = VecDeque::new();
+    // use debug assertions
+    flags_builder
+        .enable("enable_verifier")
+        .expect("enable_verifier should be a valid option");
+    // minimal optimizations
+    flags_builder
+        .set("opt_level", "speed")
+        .expect("opt_level: speed should be a valid option");
+    // don't emit call to __cranelift_probestack
+    flags_builder
+        .set("enable_probestack", "false")
+        .expect("enable_probestack should be a valid option");
 
-    macro_rules! handle_err {
-        ($err: expr) => {{
-            errs.push_back($err);
-            if let Some(max) = opt.max_errors {
-                if errs.len() >= max.into() {
-                    return (Err(Error::Source(errs)), cpp.warnings());
-                }
-            }
-        }};
-    }
-    let first = loop {
-        match cpp.next() {
-            Some(Ok(token)) => break Some(token),
-            Some(Err(err)) => handle_err!(err),
-            None => break None,
-        }
-    };
-    let eof = || Location {
-        span: (buf.len() as u32..buf.len() as u32).into(),
-        filename: filename_ref,
-    };
+    let isa = cranelift::codegen::isa::lookup(arch::TARGET)
+        .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", arch::TARGET), 5))
+        .finish(cranelift::codegen::settings::Flags::new(flags_builder));
 
-    let first = match first {
-        Some(token) => token,
-        None => {
-            if errs.is_empty() {
-                errs.push_back(eof().error(SemanticError::EmptyProgram));
-            }
-            return (Err(Error::Source(errs)), cpp.warnings());
-        }
-    };
-
-    let mut hir = vec![];
-    let mut parser = Parser::new(first, &mut cpp, opt.debug_ast);
-    for res in &mut parser {
-        match res {
-            Ok(decl) => hir.push(decl),
-            Err(err) => handle_err!(err),
-        }
-    }
-    if hir.is_empty() && errs.is_empty() {
-        errs.push_back(eof().error(SemanticError::EmptyProgram));
-    }
-
-    let mut warnings = parser.warnings();
-    warnings.extend(cpp.warnings());
-    if !errs.is_empty() {
-        return (Err(Error::Source(errs)), warnings);
-    }
-    let (result, ir_warnings) = ir::compile_aot(hir, opt.debug_asm);
-    warnings.extend(ir_warnings);
-    (result.map_err(Error::from), warnings)
+    let builder = SimpleJITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
+    let module = Module::new(builder);
+    module
 }
 
-/// Compile and return the JITed module and warnings.
-pub fn compile_jit(buf: &str, opt: &Opt) -> (Result<ir::RccJIT, Error>, VecDeque<CompileWarning>) {
+pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
+    let mut flags_builder = cranelift::codegen::settings::builder();
+
+    // use debug assertions
+    flags_builder
+        .enable("enable_verifier")
+        .expect("enable_verifier should be a valid option");
+    // minimal optimizations
+    flags_builder
+        .set("opt_level", "speed")
+        .expect("opt_level: speed should be a valid option");
+    // don't emit call to __cranelift_probestack
+    flags_builder
+        .set("enable_probestack", "false")
+        .expect("enable_probestack should be a valid option");
+
+    let isa = cranelift::codegen::isa::lookup(arch::TARGET)
+        .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", arch::TARGET), 5))
+        .finish(cranelift::codegen::settings::Flags::new(flags_builder));
+
+    let builder = ObjectBuilder::new(
+        isa,
+        name,
+        ObjectTrapCollection::Disabled,
+        cranelift_module::default_libcall_names(),
+    )
+    .expect("unknown error creating module");
+    let module = Module::new(builder);
+    module
+}
+
+/// Compile and return the declarations and warnings.
+pub fn compile<B: Backend>(
+    module: Module<B>,
+    buf: &str,
+    opt: &Opt,
+) -> (Result<Module<B>, Error>, VecDeque<CompileWarning>) {
     let filename = opt.filename.to_string_lossy();
     let filename_ref = InternedStr::get_or_intern(filename.as_ref());
     let mut cpp = PreProcessor::new(filename, &buf, opt.debug_lex);
@@ -248,7 +247,7 @@ pub fn compile_jit(buf: &str, opt: &Opt) -> (Result<ir::RccJIT, Error>, VecDeque
     if !errs.is_empty() {
         return (Err(Error::Source(errs)), warnings);
     }
-    let (result, ir_warnings) = ir::RccJIT::compile(hir, opt.debug_asm);
+    let (result, ir_warnings) = ir::compile(module, hir, opt.debug_asm);
     warnings.extend(ir_warnings);
     (result.map_err(Error::from), warnings)
 }
@@ -283,6 +282,47 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
     }
 }
 
+pub struct RccJIT {
+    module: Module<SimpleJITBackend>,
+}
+impl RccJIT {
+    pub fn from_module(m: Module<SimpleJITBackend>) -> Self {
+        Self { module: m }
+    }
+
+    pub fn compile_string(
+        program: &str,
+        opt: &Opt,
+    ) -> (Result<Self, Error>, VecDeque<CompileWarning>) {
+        let module = initialize_jit_module();
+        let (result, warnings) = compile::<SimpleJITBackend>(module, program, opt);
+        let result = result.map(|x| RccJIT::from_module(x));
+        (result, warnings)
+    }
+
+    pub fn finalize(&mut self) {
+        self.module.finalize_definitions();
+    }
+
+    pub fn get_compiled_function(&mut self, name: &str) -> Option<*const u8> {
+        let name = self.module.get_name(name);
+        if let Some(FuncOrDataId::Func(id)) = name {
+            Some(self.module.get_finalized_function(id))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_compiled_data(&mut self, name: &str) -> Option<(*mut u8, usize)> {
+        let name = self.module.get_name(name);
+        if let Some(FuncOrDataId::Data(id)) = name {
+            Some(self.module.get_finalized_data(id))
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,7 +331,8 @@ mod tests {
             filename: "<test-suite>".into(),
             ..Default::default()
         };
-        super::compile_aot(src, &options).0
+        let module = initialize_aot_module("RccAOT".to_owned());
+        super::compile(module, src, &options).0.map(|x| x.finish())
     }
     fn compile_err(src: &str) -> VecDeque<CompileError> {
         match compile(src).err().unwrap() {

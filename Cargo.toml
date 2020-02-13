@@ -51,3 +51,11 @@ debug-assertions = false
 codegen-units = 1
 incremental = false
 overflow-checks = false
+
+[[bin]]
+name = "rcc"
+path = "src/bin/main.rs"
+
+[[bin]]
+name = "rccjit"
+path = "src/bin/jit.rs"

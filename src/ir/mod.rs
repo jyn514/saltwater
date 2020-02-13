@@ -5,7 +5,6 @@ mod stmt;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
-use crate::arch::TARGET;
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
 use crate::utils;
 use cranelift::codegen::{
@@ -16,16 +15,11 @@ use cranelift::codegen::{
         stackslot::{StackSlotData, StackSlotKind},
         ExternalName, InstBuilder, MemFlags,
     },
-    isa,
-    settings::{self, Configurable},
+    settings,
 };
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Block, FunctionBuilder, FunctionBuilderContext, Signature};
-use cranelift_module::{
-    self, Backend, DataId, FuncId, FuncOrDataId, Linkage, Module as CraneliftModule,
-};
-use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct, ObjectTrapCollection};
-use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
+use cranelift_module::{self, Backend, DataId, FuncId, Linkage, Module as CraneliftModule};
 
 type Module<T> = CraneliftModule<T>;
 
@@ -52,118 +46,14 @@ struct Compiler<T: Backend> {
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
-pub(crate) fn compile_aot(
+pub(crate) fn compile<B: Backend>(
+    module: Module<B>,
     program: Vec<Locatable<Declaration>>,
     debug: bool,
-) -> (
-    Result<ObjectProduct, CompileError>,
-    VecDeque<CompileWarning>,
-) {
-    let name = program.first().map_or_else(
-        || "<empty>".to_string(),
-        |decl| decl.location.filename.resolve_and_clone(),
-    );
+) -> (Result<Module<B>, CompileError>, VecDeque<CompileWarning>) {
     // really we'd like to have all errors but that requires a refactor
     let mut err = None;
-    let mut flags_builder = settings::builder();
-    // allow creating shared libraries
-    flags_builder
-        .enable("is_pic")
-        .expect("is_pic should be a valid option");
-    // use debug assertions
-    flags_builder
-        .enable("enable_verifier")
-        .expect("enable_verifier should be a valid option");
-    // minimal optimizations
-    flags_builder
-        .set("opt_level", "speed")
-        .expect("opt_level: speed should be a valid option");
-    // don't emit call to __cranelift_probestack
-    flags_builder
-        .set("enable_probestack", "false")
-        .expect("enable_probestack should be a valid option");
-
-    let isa = isa::lookup(TARGET)
-        .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", TARGET), 5))
-        .finish(settings::Flags::new(flags_builder));
-
-    let builder = ObjectBuilder::new(
-        isa,
-        name,
-        ObjectTrapCollection::Disabled,
-        cranelift_module::default_libcall_names(),
-    )
-    .expect("unknown error creating module");
-    let module = Module::new(builder);
-    let mut compiler = Compiler::<ObjectBackend>::new(module, debug);
-    for decl in program {
-        let current = match (decl.data.symbol.ctype.clone(), decl.data.init) {
-            (Type::Function(func_type), None) => compiler
-                .declare_func(
-                    decl.data.symbol.id,
-                    &func_type.signature(compiler.module.isa()),
-                    decl.data.symbol.storage_class,
-                    false,
-                )
-                .map(|_| ()),
-            (Type::Void, _) => unreachable!("parser let an incomplete type through"),
-            (Type::Function(func_type), Some(Initializer::FunctionBody(stmts))) => compiler
-                .compile_func(
-                    decl.data.symbol.id,
-                    func_type,
-                    decl.data.symbol.storage_class,
-                    stmts,
-                    decl.location,
-                ),
-            (_, Some(Initializer::FunctionBody(_))) => {
-                unreachable!("only functions should have a function body")
-            }
-            (_, init) => compiler.store_static(decl.data.symbol, init, decl.location),
-        };
-        if let Err(e) = current {
-            err = Some(e);
-            break;
-        }
-    }
-    let warns = compiler.error_handler.warnings;
-    if let Some(err) = err {
-        (Err(err), warns)
-    } else {
-        (Ok(compiler.module.finish()), warns)
-    }
-}
-
-/// Compile a program from a high level IR to a Cranelift Module in a JIT mode
-pub(crate) fn compile_jit(
-    program: Vec<Locatable<Declaration>>,
-    debug: bool,
-) -> (
-    Result<Module<SimpleJITBackend>, CompileError>,
-    VecDeque<CompileWarning>,
-) {
-    // really we'd like to have all errors but that requires a refactor
-    let mut err = None;
-    let mut flags_builder = settings::builder();
-    // use debug assertions
-    flags_builder
-        .enable("enable_verifier")
-        .expect("enable_verifier should be a valid option");
-    // minimal optimizations
-    flags_builder
-        .set("opt_level", "speed")
-        .expect("opt_level: speed should be a valid option");
-    // don't emit call to __cranelift_probestack
-    flags_builder
-        .set("enable_probestack", "false")
-        .expect("enable_probestack should be a valid option");
-
-    let isa = isa::lookup(TARGET)
-        .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", TARGET), 5))
-        .finish(settings::Flags::new(flags_builder));
-
-    let builder = SimpleJITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-    let module = Module::new(builder);
-    let mut compiler = Compiler::<SimpleJITBackend>::new(module, debug);
+    let mut compiler = Compiler::<B>::new(module, debug);
     for decl in program {
         let current = match (decl.data.symbol.ctype.clone(), decl.data.init) {
             (Type::Function(func_type), None) => compiler
@@ -201,64 +91,20 @@ pub(crate) fn compile_jit(
     }
 }
 
-pub struct RccJIT {
-    module: Module<SimpleJITBackend>,
-}
-impl RccJIT {
-    pub fn compile(
-        program: Vec<Locatable<Declaration>>,
-        debug: bool,
-    ) -> (Result<Self, CompileError>, VecDeque<CompileWarning>) {
-        let (module, warnings) = compile_jit(program, debug);
-        if let Err(err) = module {
-            (Err(err), warnings)
-        } else {
-            (
-                Ok(Self {
-                    module: module.unwrap(),
-                }),
-                warnings,
-            )
-        }
-    }
+/*let isa = isa::lookup(TARGET)
+    .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", TARGET), 5))
+    .finish(settings::Flags::new(flags_builder));
 
-    pub fn finalize(&mut self) {
-        self.module.finalize_definitions();
-    }
-
-    pub fn get_compiled_function(&mut self, name: &str) -> Option<*const u8> {
-        let name = self.module.get_name(name);
-        if let Some(FuncOrDataId::Func(id)) = name {
-            Some(self.module.get_finalized_function(id))
-        } else {
-            None
-        }
-    }
-
-    pub fn get_compiled_data(&mut self, name: &str) -> Option<(*mut u8, usize)> {
-        let name = self.module.get_name(name);
-        if let Some(FuncOrDataId::Data(id)) = name {
-            Some(self.module.get_finalized_data(id))
-        } else {
-            None
-        }
-    }
-}
+let builder = ObjectBuilder::new(
+    isa,
+    name,
+    ObjectTrapCollection::Disabled,
+    cranelift_module::default_libcall_names(),
+)
+.expect("unknown error creating module");*/
 
 impl<B: Backend> Compiler<B> {
     fn new(module: Module<B>, debug: bool) -> Compiler<B> {
-        /*let isa = isa::lookup(TARGET)
-            .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", TARGET), 5))
-            .finish(settings::Flags::new(flags_builder));
-
-        let builder = ObjectBuilder::new(
-            isa,
-            name,
-            ObjectTrapCollection::Disabled,
-            cranelift_module::default_libcall_names(),
-        )
-        .expect("unknown error creating module");*/
-
         Compiler {
             module,
             scope: Scope::new(),

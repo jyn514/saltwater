@@ -29,14 +29,7 @@ fn run_all() -> Result<(), io::Error> {
 }
 
 fn run_one(path: &path::Path) -> Result<(), io::Error> {
-    println!("testing {}", path.display());
-    let program_bytes = utils::cpp()
-        .arg(path.as_os_str())
-        .output()
-        .expect("failed to run preprocessor")
-        .stdout;
-    let program = std::str::from_utf8(&program_bytes).expect("program should be valid utf8");
-
+    let program = std::fs::read_to_string(path).unwrap();
     let mut reader = io::BufReader::new(std::fs::File::open(path)?);
     let mut first_line = String::new();
     reader.read_line(&mut first_line)?;

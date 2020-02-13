@@ -19,7 +19,7 @@ use ansi_term::{ANSIString, Colour};
 use codespan::{FileId, Files};
 use pico_args::Arguments;
 use rcc::{
-    assemble, compile,
+    assemble, compile_aot, compile_jit,
     data::{
         error::{CompileWarning, RecoverableResult},
         lex::Location,
@@ -62,7 +62,7 @@ ARGS:
 
 const USAGE: &str = "\
 usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
-           [--debug-lex] [--no-link | -c] [<file>]";
+           [--debug-lex] [--jit] [--no-link | -c] [<file>]";
 
 struct BinOpt {
     /// The options that will be passed to `compile()`
@@ -102,16 +102,37 @@ fn real_main(
     } else {
         &opt.opt
     };
-    let (result, warnings) = compile(buf, &opt);
-    handle_warnings(warnings, file_id, file_db);
+    if !opt.jit {
+        let (result, warnings) = compile_aot(buf, &opt);
+        handle_warnings(warnings, file_id, file_db);
 
-    let product = result?;
-    if opt.no_link {
-        return assemble(product, output);
+        let product = result?;
+        if opt.no_link {
+            return assemble(product, output);
+        }
+        let tmp_file = NamedTempFile::new()?;
+        assemble(product, tmp_file.as_ref())?;
+        link(tmp_file.as_ref(), output).map_err(io::Error::into)
+    } else {
+        let (jit, warnings) = compile_jit(buf, &opt);
+        handle_warnings(warnings, file_id, file_db);
+        let mut jit = jit?;
+        jit.finalize();
+        let main_function = jit.get_compiled_function("main");
+        if let Some(main_function) = main_function {
+            let args = std::env::args();
+            let argc = args.len() as i32;
+            let vec_args = args
+                .into_iter()
+                .map(|string| std::ffi::CString::new(string).unwrap().as_ptr() as *const u8)
+                .collect::<Vec<*const u8>>();
+            let pointer = vec_args.as_ptr() as *const *const u8;
+            let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 =
+                unsafe { std::mem::transmute(main_function) };
+            let _ = unsafe { main(argc, pointer) };
+        }
+        Ok(())
     }
-    let tmp_file = NamedTempFile::new()?;
-    assemble(product, tmp_file.as_ref())?;
-    link(tmp_file.as_ref(), output).map_err(io::Error::into)
 }
 
 fn handle_warnings(warnings: VecDeque<CompileWarning>, file: FileId, file_db: &Files<String>) {
@@ -224,6 +245,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
                 debug_asm: input.contains("--debug-asm"),
                 debug_ast: input.contains(["-a", "--debug-ast"]),
                 no_link: input.contains(["-c", "--no-link"]),
+                jit: input.contains("--jit"),
                 max_errors,
                 filename: input
                     .free_from_os_str(os_str_to_path_buf)?

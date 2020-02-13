@@ -73,7 +73,8 @@ pub struct Opt {
 
     /// If set, compile and assemble but do not link. Object file is machine-dependent.
     pub no_link: bool,
-
+    /// If set, compile and emitt JIT code, and do not emit object files and binaries.
+    pub jit: bool,
     /// The maximum number of errors to allow before giving up.
     /// If None, allows an unlimited number of errors.
     pub max_errors: Option<std::num::NonZeroUsize>,
@@ -88,6 +89,7 @@ impl Default for Opt {
             debug_asm: false,
             no_link: false,
             max_errors: None,
+            jit: false,
         }
     }
 }
@@ -128,7 +130,7 @@ pub fn preprocess(
 }
 
 /// Compile and return the declarations and warnings.
-pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
+pub fn compile_aot(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
     let filename = opt.filename.to_string_lossy();
     let filename_ref = InternedStr::get_or_intern(filename.as_ref());
     let mut cpp = PreProcessor::new(filename, &buf, opt.debug_lex);
@@ -184,7 +186,69 @@ pub fn compile(buf: &str, opt: &Opt) -> (Result<Product, Error>, VecDeque<Compil
     if !errs.is_empty() {
         return (Err(Error::Source(errs)), warnings);
     }
-    let (result, ir_warnings) = ir::compile(hir, opt.debug_asm);
+    let (result, ir_warnings) = ir::compile_aot(hir, opt.debug_asm);
+    warnings.extend(ir_warnings);
+    (result.map_err(Error::from), warnings)
+}
+
+/// Compile and return the JITed module and warnings.
+pub fn compile_jit(buf: &str, opt: &Opt) -> (Result<ir::RccJIT, Error>, VecDeque<CompileWarning>) {
+    let filename = opt.filename.to_string_lossy();
+    let filename_ref = InternedStr::get_or_intern(filename.as_ref());
+    let mut cpp = PreProcessor::new(filename, &buf, opt.debug_lex);
+
+    let mut errs = VecDeque::new();
+
+    macro_rules! handle_err {
+        ($err: expr) => {{
+            errs.push_back($err);
+            if let Some(max) = opt.max_errors {
+                if errs.len() >= max.into() {
+                    return (Err(Error::Source(errs)), cpp.warnings());
+                }
+            }
+        }};
+    }
+    let first = loop {
+        match cpp.next() {
+            Some(Ok(token)) => break Some(token),
+            Some(Err(err)) => handle_err!(err),
+            None => break None,
+        }
+    };
+    let eof = || Location {
+        span: (buf.len() as u32..buf.len() as u32).into(),
+        filename: filename_ref,
+    };
+
+    let first = match first {
+        Some(token) => token,
+        None => {
+            if errs.is_empty() {
+                errs.push_back(eof().error(SemanticError::EmptyProgram));
+            }
+            return (Err(Error::Source(errs)), cpp.warnings());
+        }
+    };
+
+    let mut hir = vec![];
+    let mut parser = Parser::new(first, &mut cpp, opt.debug_ast);
+    for res in &mut parser {
+        match res {
+            Ok(decl) => hir.push(decl),
+            Err(err) => handle_err!(err),
+        }
+    }
+    if hir.is_empty() && errs.is_empty() {
+        errs.push_back(eof().error(SemanticError::EmptyProgram));
+    }
+
+    let mut warnings = parser.warnings();
+    warnings.extend(cpp.warnings());
+    if !errs.is_empty() {
+        return (Err(Error::Source(errs)), warnings);
+    }
+    let (result, ir_warnings) = ir::RccJIT::compile(hir, opt.debug_asm);
     warnings.extend(ir_warnings);
     (result.map_err(Error::from), warnings)
 }
@@ -227,7 +291,7 @@ mod tests {
             filename: "<test-suite>".into(),
             ..Default::default()
         };
-        super::compile(src, &options).0
+        super::compile_aot(src, &options).0
     }
     fn compile_err(src: &str) -> VecDeque<CompileError> {
         match compile(src).err().unwrap() {

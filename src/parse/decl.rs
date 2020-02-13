@@ -221,9 +221,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
     }
     fn declare_typedef(&mut self, id: Locatable<InternedStr>, ctype: Type, qualifiers: Qualifiers) {
-        if qualifiers.inline {
-            self.semantic_err(
-                "`inline` is only allowed on function declarations",
+        if qualifiers.has_func_qualifiers() {
+            self.error_handler.error(
+                SemanticError::InvalidFuncQualifiers(qualifiers.func),
                 id.location,
             );
         }
@@ -631,7 +631,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             // TODO: this is such a hack
             let tmp_symbol = Symbol {
                 id: name,
-                qualifiers: Qualifiers::CONST,
+                qualifiers: Qualifiers {
+                    c_const: true,
+                    ..Default::default()
+                },
                 storage_class: StorageClass::Register,
                 init: true,
                 ctype: Type::Enum(None, vec![(name, current)]),
@@ -1054,9 +1057,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }) = prefix
         {
             // `inline` is allowed on function declarations
-        } else if qualifiers.inline {
-            self.semantic_err(
-                "`inline` is only allowed on function declarations",
+        } else if qualifiers.has_func_qualifiers() {
+            self.error_handler.error(
+                SemanticError::InvalidFuncQualifiers(qualifiers.func),
                 self.last_location,
             );
         }
@@ -1446,7 +1449,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         } else if keyword == Keyword::Volatile {
             qualifiers.volatile = true;
         } else if keyword == Keyword::Inline {
-            qualifiers.inline = true;
+            qualifiers.func.inline = true;
+        } else if keyword == Keyword::NoReturn {
+            qualifiers.func.no_return = true;
         } else if keyword == Keyword::Signed || keyword == Keyword::Unsigned {
             if *ctype == Some(Type::Float) || *ctype == Some(Type::Double) {
                 self.semantic_err(

@@ -1,17 +1,20 @@
+extern crate codespan;
 #[macro_use]
 extern crate honggfuzz;
 extern crate rcc;
 
+use codespan::FileId;
+use rcc::{Files, Locatable};
 use rcc::data::lex::{Keyword::*, Token};
-use rcc::Locatable;
 use rcc::PreProcessor;
+use std::default::Default;
 
-fn lex(s: &str) -> PreProcessor {
-    PreProcessor::new("<test-suite>", s.chars(), false)
+fn lex<'s>(s: &'s str, file: FileId, files: &'s mut Files) -> PreProcessor<'s> {
+    PreProcessor::new(file, s, false, files)
 }
 
-fn is_exotic_keyword(s: &str) -> bool {
-    let (first, _) = lex(s).first_token();
+fn is_exotic_keyword(s: &str, file: FileId, files: &mut Files) -> bool {
+    let (first, _) = lex(s, file, files).first_token();
     let first = match first {
         Some(Locatable {
             data: Token::Keyword(k),
@@ -20,23 +23,23 @@ fn is_exotic_keyword(s: &str) -> bool {
         _ => return false,
     };
     match first {
-        Restrict | Complex | Atomic | Imaginary | ThreadLocal | NoReturn | Generic
-        | StaticAssert | Alignof | Alignas => true,
+        Restrict | Complex | Atomic | Imaginary | ThreadLocal | Generic | StaticAssert
+        | Alignof | Alignas => true,
         _ => false,
     }
 }
 
 fn main() {
     use rcc::Opt;
-    let opt = Opt {
-        filename: "<fuzz test>".into(),
-        ..Opt::default()
-    };
+    let opt = Opt::default();
+
     loop {
         fuzz!(|s: &[u8]| {
             if let Ok(s) = std::str::from_utf8(s) {
-                if !is_exotic_keyword(s) {
-                    let _ = rcc::compile(s, &opt);
+                let mut files = Files::new();
+                let file = files.add("<test-suite>", String::from(s).into());
+                if !is_exotic_keyword(s, file, &mut files) {
+                    let _ = rcc::compile(s, &opt, file, &mut files);
                 }
             }
         });

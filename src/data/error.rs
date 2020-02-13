@@ -98,6 +98,9 @@ pub enum SemanticError {
     #[error("use of undeclared identifier '{0}'")]
     UndeclaredVar(InternedStr),
 
+    #[error("`{0}` is only allowed on function declarations")]
+    InvalidFuncQualifiers(super::FunctionQualifiers),
+
     #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
     ConstOverflow { is_positive: bool },
 

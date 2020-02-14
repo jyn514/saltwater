@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 use std::cmp::max;
 use std::convert::TryInto;
 
@@ -18,7 +20,7 @@ use crate::data::{
 use Type::*;
 
 /// Size of a `char` in bytes;
-/// 
+///
 /// Note: The standard requires this to always be one.
 const CHAR_SIZE: u16 = 1;
 
@@ -87,6 +89,7 @@ impl StructType {
 }
 
 impl Type {
+    /// Returns true if `other` can be cast to `self` without losing infomation.
     pub fn can_represent(&self, other: &Type) -> bool {
         self == other
             || *self == Type::Double && *other == Type::Float
@@ -95,6 +98,9 @@ impl Type {
                     || self.sizeof() == other.sizeof() && self.is_signed() == other.is_signed())
     }
 
+    /// Get the size of a type in bytes.
+    ///
+    /// This is the `sizeof` operator in C.
     pub fn sizeof(&self) -> Result<SIZE_T, &'static str> {
         match self {
             Bool => Ok(BOOL_SIZE.into()),
@@ -130,6 +136,7 @@ impl Type {
             Error => Err("cannot take `sizeof` <type error>"),
         }
     }
+    /// Get the alignment of a type in bytes.
     pub fn alignof(&self) -> Result<SIZE_T, &'static str> {
         match self {
             Bool
@@ -153,9 +160,11 @@ impl Type {
             Error => Err("cannot take `alignof` <type error>"),
         }
     }
+    /// Get the pointer type
     pub fn ptr_type() -> IrType {
         IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
     }
+    /// Convert `self` into the type for the IR.
     pub fn as_ir_type(&self) -> IrType {
         match self {
             // Integers
@@ -190,6 +199,7 @@ impl Type {
 }
 
 impl FunctionType {
+    /// Generate the IR function signature for `self`
     pub fn signature(&self, isa: &dyn TargetIsa) -> Signature {
         let mut params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
             // no arguments

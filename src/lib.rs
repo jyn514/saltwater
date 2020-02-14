@@ -74,7 +74,7 @@ pub struct Opt {
 
     /// If set, compile and assemble but do not link. Object file is machine-dependent.
     pub no_link: bool,
-    /// If set, compile and emitt JIT code, and do not emit object files and binaries.
+    /// If set, compile and emit JIT code, and do not emit object files and binaries.
     pub jit: bool,
     /// The maximum number of errors to allow before giving up.
     /// If None, allows an unlimited number of errors.
@@ -282,14 +282,18 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
     }
 }
 
+/// Structure used to handle JITing C code.
+///
+/// You should use `RccJIT::from_module` or `RccJIT::compile_string` to create instance of RccJIT.
 pub struct RccJIT {
     module: Module<SimpleJITBackend>,
 }
 impl RccJIT {
+    /// Instantiate RccJIT from SimpleJIT Module.
     pub fn from_module(m: Module<SimpleJITBackend>) -> Self {
         Self { module: m }
     }
-
+    /// Compile string and return JITed code.
     pub fn compile_string(
         program: &str,
         opt: &Opt,
@@ -300,10 +304,14 @@ impl RccJIT {
         (result, warnings)
     }
 
+    /// Invoke this function before trying to get access to "new" compiled functions.
     pub fn finalize(&mut self) {
         self.module.finalize_definitions();
     }
-
+    /// Get compiled function, if this function doesn't exist then `None` is returned, otherwise it's address returned.
+    ///
+    /// # Panics
+    /// Panics if function is not compiled (finalized). Try to invoke `finalize` before using `get_compiled_function`.
     pub fn get_compiled_function(&mut self, name: &str) -> Option<*const u8> {
         let name = self.module.get_name(name);
         if let Some(FuncOrDataId::Func(id)) = name {
@@ -312,7 +320,7 @@ impl RccJIT {
             None
         }
     }
-
+    /// Get compiled static data, if this data doesn't exit then `None` is returned, otherwise it's andress and size returned.
     pub fn get_compiled_data(&mut self, name: &str) -> Option<(*mut u8, usize)> {
         let name = self.module.get_name(name);
         if let Some(FuncOrDataId::Data(id)) = name {

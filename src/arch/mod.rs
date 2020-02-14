@@ -19,13 +19,19 @@ use crate::data::{
 };
 use Type::*;
 
-/// Size of a `char` in bytes;
+/// Size of a `char` in bytes
 ///
 /// Note: The standard requires this to always be one.
+/// http://port70.net/~nsz/c/c11/n1570.html#6.5.3.5
 const CHAR_SIZE: u16 = 1;
 
 // TODO: allow this to be configured at runtime
-/// The target triple for the configured target.
+/// The target triple for the host.
+///
+/// A "target triple" is used to represent information about a compiler target.
+/// Traditionaly, the target triple uses this format: `<architecture>-<vendor>-<operating system>`
+/// The target triple is represented as a struct and contains additional
+/// information like ABI and endianness.
 pub(crate) const TARGET: Triple = Triple::host();
 // TODO: make this const when const_if_match is stabilized
 // TODO: see https://github.com/rust-lang/rust/issues/49146
@@ -89,7 +95,7 @@ impl StructType {
 }
 
 impl Type {
-    /// Returns true if `other` can be cast to `self` without losing infomation.
+    /// Returns true if `other` can be converted to `self` without losing infomation.
     pub fn can_represent(&self, other: &Type) -> bool {
         self == other
             || *self == Type::Double && *other == Type::Float
@@ -160,11 +166,11 @@ impl Type {
             Error => Err("cannot take `alignof` <type error>"),
         }
     }
-    /// Get the pointer type
+    /// Return an IR integer type large enough to contain a pointer.
     pub fn ptr_type() -> IrType {
         IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
     }
-    /// Convert `self` into the type for the IR.
+    /// Return an IR type which can represent this C type
     pub fn as_ir_type(&self) -> IrType {
         match self {
             // Integers

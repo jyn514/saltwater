@@ -181,9 +181,6 @@ pub enum SyntaxError {
 /// Preprocessing errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum CppError {
-    #[error("{0}")]
-    Generic(String),
-
     /// A user-defined error (`#error`) was present.
     /// The `Vec<Token>` contains the tokens which followed the error.
 

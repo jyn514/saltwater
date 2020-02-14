@@ -54,8 +54,5 @@ overflow-checks = false
 
 [[bin]]
 name = "rcc"
-path = "src/bin/main.rs"
+path = "src/bin/rcc.rs"
 
-[[bin]]
-name = "rccjit"
-path = "src/bin/jit.rs"

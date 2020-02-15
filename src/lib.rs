@@ -12,7 +12,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use cranelift::codegen::settings::Configurable;
+use cranelift::codegen::settings::{Configurable, Flags};
 use cranelift_module::{Backend, FuncOrDataId, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
 use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
@@ -129,10 +129,14 @@ pub fn preprocess(
     };
     (res, cpp.warnings())
 }
-
-pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
+fn get_flags(jit: bool) -> Flags {
     let mut flags_builder = cranelift::codegen::settings::builder();
-
+    if !jit {
+        // allow creating shared libraries
+        flags_builder
+            .enable("is_pic")
+            .expect("is_pic should be a valid option");
+    }
     // use debug assertions
     flags_builder
         .enable("enable_verifier")
@@ -145,10 +149,14 @@ pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
     flags_builder
         .set("enable_probestack", "false")
         .expect("enable_probestack should be a valid option");
+    Flags::new(flags_builder)
+}
+pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
+    let flags = get_flags(true);
 
     let isa = cranelift::codegen::isa::lookup(arch::TARGET)
         .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", arch::TARGET), 5))
-        .finish(cranelift::codegen::settings::Flags::new(flags_builder));
+        .finish(flags);
 
     let builder = SimpleJITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
     let module = Module::new(builder);
@@ -156,24 +164,11 @@ pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
 }
 
 pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
-    let mut flags_builder = cranelift::codegen::settings::builder();
-
-    // use debug assertions
-    flags_builder
-        .enable("enable_verifier")
-        .expect("enable_verifier should be a valid option");
-    // minimal optimizations
-    flags_builder
-        .set("opt_level", "speed")
-        .expect("opt_level: speed should be a valid option");
-    // don't emit call to __cranelift_probestack
-    flags_builder
-        .set("enable_probestack", "false")
-        .expect("enable_probestack should be a valid option");
+    let flags = get_flags(false);
 
     let isa = cranelift::codegen::isa::lookup(arch::TARGET)
         .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", arch::TARGET), 5))
-        .finish(cranelift::codegen::settings::Flags::new(flags_builder));
+        .finish(flags);
 
     let builder = ObjectBuilder::new(
         isa,

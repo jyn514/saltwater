@@ -129,12 +129,12 @@ fn real_main(
                 // we use block there so we can be 100% sure that memory allocated for CString is freed.
                 let vec_args = args
                     .map(|string| std::ffi::CString::new(string).unwrap())
-                    .collect::<Vec<std::ffi::CString>>();
+                    .collect::<Vec<_>>();
                 // CString should be alive if we want to pass it's pointer to another function properly, otherwise this may lead to memory leak or UB.
                 let pointer = vec_args
                     .iter()
                     .map(|cstr| cstr.as_ptr() as *const u8)
-                    .collect::<Vec<*const u8>>()
+                    .collect::<Vec<_>>()
                     .as_ptr() as *const *const u8;
                 let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 =
                     unsafe { std::mem::transmute(main) }; // this transmute is safe: this function is finalized(`rccjit.finalize()`) and **guaranteed** to be non-null

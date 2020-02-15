@@ -91,18 +91,6 @@ pub(crate) fn compile<B: Backend>(
     }
 }
 
-/*let isa = isa::lookup(TARGET)
-    .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", TARGET), 5))
-    .finish(settings::Flags::new(flags_builder));
-
-let builder = ObjectBuilder::new(
-    isa,
-    name,
-    ObjectTrapCollection::Disabled,
-    cranelift_module::default_libcall_names(),
-)
-.expect("unknown error creating module");*/
-
 impl<B: Backend> Compiler<B> {
     fn new(module: Module<B>, debug: bool) -> Compiler<B> {
         Compiler {

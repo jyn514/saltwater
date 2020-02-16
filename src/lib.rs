@@ -285,19 +285,21 @@ pub struct JIT {
     module: Module<SimpleJITBackend>,
 }
 
-impl JIT {
-    /// Instantiate JIT from SimpleJIT Module.
-    pub fn from_module(m: Module<SimpleJITBackend>) -> Self {
-        Self { module: m }
+impl From<Module<SimpleJITBackend>> for JIT {
+    fn from(module: Module<SimpleJITBackend>) -> Self {
+        Self { module }
     }
+}
+
+impl JIT {
     /// Compile string and return JITed code.
-    pub fn compile_string(
+    pub fn from_string(
         program: &str,
         opt: &Opt,
     ) -> (Result<Self, Error>, VecDeque<CompileWarning>) {
         let module = initialize_jit_module();
         let (result, warnings) = compile::<SimpleJITBackend>(module, program, opt);
-        let result = result.map(|x| JIT::from_module(x));
+        let result = result.map(JIT::from);
         (result, warnings)
     }
 

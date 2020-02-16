@@ -563,7 +563,7 @@ impl<'a> PreProcessor<'a> {
             )));
         }
         for token in body {
-            if let &Token::Id(id) = token {
+            if let Token::Id(id) = *token {
                 // #define f(a) { a + 1 } \n f(b) => b + 1
                 if let Some(index) = params.iter().position(|&param| param == id) {
                     let replacement = args[index].clone();

@@ -159,8 +159,7 @@ pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
         .finish(flags);
 
     let builder = SimpleJITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-    let module = Module::new(builder);
-    module
+    Module::new(builder)
 }
 
 pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
@@ -177,8 +176,7 @@ pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
         cranelift_module::default_libcall_names(),
     )
     .expect("unknown error creating module");
-    let module = Module::new(builder);
-    module
+    Module::new(builder)
 }
 
 /// Compile and return the declarations and warnings.

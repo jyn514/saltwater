@@ -564,6 +564,7 @@ impl<'a> PreProcessor<'a> {
         }
         for token in body {
             if let &Token::Id(id) = token {
+                // #define f(a) { a + 1 } \n f(b) => b + 1
                 if let Some(index) = params.iter().position(|&param| param == id) {
                     let replacement = args[index].clone();
                     self.pending.extend(replacement);
@@ -783,6 +784,12 @@ impl<'a> PreProcessor<'a> {
         }
         Ok(())
     }
+    // before:
+    // #define f(a, b, c) a + b + c
+    //           ^
+    // after:
+    // #define f(a, b, c) a + b + c
+    //                   ^
     fn fn_args(&mut self, start: u32) -> Result<Vec<InternedStr>, Locatable<Error>> {
         let mut arguments = Vec::new();
         loop {
@@ -859,6 +866,7 @@ impl<'a> PreProcessor<'a> {
             return Err(self.span(start).error(CppError::EmptyDefine));
         }
         let id = self.expect_id()?;
+        // NOTE: does _not_ discard whitespace
         if self.lexer_mut().match_next(b'(') {
             // function macro
             // first, parse the arguments:

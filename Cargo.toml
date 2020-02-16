@@ -39,6 +39,7 @@ jit = ["cranelift-simplejit"]
 [[bench]]
 name = "examples"
 harness = false
+required-features = ["jit"]
 
 [profile.release]
 lto = true

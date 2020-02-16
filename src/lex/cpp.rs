@@ -513,9 +513,9 @@ impl<'a> PreProcessor<'a> {
             }
         }
         // second step: perform function macro replacement
-        self.maybe_replace_function(name, start)
+        self.replace_function(name, start)
     }
-    fn maybe_replace_function(
+    fn replace_function(
         &mut self,
         name: InternedStr,
         start: u32,

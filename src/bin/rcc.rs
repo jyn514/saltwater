@@ -120,7 +120,7 @@ fn real_main(
         let module = rcc::initialize_jit_module();
         let (result, warnings) = compile(module, buf, &opt);
         handle_warnings(warnings, file_id, file_db);
-        let mut rccjit = rcc::RccJIT::from_module(result?);
+        let mut rccjit = rcc::JIT::from_module(result?);
         rccjit.finalize();
         if let Some(main) = rccjit.get_compiled_function("main") {
             let args = std::env::args().skip(1);

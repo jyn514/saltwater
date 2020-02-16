@@ -277,14 +277,16 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
     }
 }
 
-/// Structure used to handle JITing C code.
+/// Structure used to handle compiling C code to memory instead of to disk.
 ///
-/// You should use `RccJIT::from_module` or `RccJIT::compile_string` to create instance of RccJIT.
-pub struct RccJIT {
+/// You should use `JIT::from_module` or `JIT::compile_string` to create instance of JIT.
+/// NOTE: JIT stands for 'Just In Time' compiled, the way that Java and JavaScript work.
+pub struct JIT {
     module: Module<SimpleJITBackend>,
 }
-impl RccJIT {
-    /// Instantiate RccJIT from SimpleJIT Module.
+
+impl JIT {
+    /// Instantiate JIT from SimpleJIT Module.
     pub fn from_module(m: Module<SimpleJITBackend>) -> Self {
         Self { module: m }
     }
@@ -295,7 +297,7 @@ impl RccJIT {
     ) -> (Result<Self, Error>, VecDeque<CompileWarning>) {
         let module = initialize_jit_module();
         let (result, warnings) = compile::<SimpleJITBackend>(module, program, opt);
-        let result = result.map(|x| RccJIT::from_module(x));
+        let result = result.map(|x| JIT::from_module(x));
         (result, warnings)
     }
 

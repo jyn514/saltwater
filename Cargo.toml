@@ -13,24 +13,33 @@ default-run = "rcc"
 
 [dependencies]
 lazy_static = "1"
-ansi_term = "0.12"
+ansi_term = { version = "0.12", optional = true }
 cranelift = "0.58"
 cranelift-module = "0.58"
 cranelift-object = "0.58"
-env_logger = { version = "0.7", default-features = false }
+env_logger = { version = "0.7", default-features = false, optional = true }
 hexf-parse = "0.1"
 thiserror = ">=1.0.9"
 log = "0.4"
 target-lexicon = "0.10"
-tempfile = "3"
-pico-args = "0.3"
+tempfile = { version = "3", optional = true }
+pico-args = { version = "0.3", optional = true }
 string-interner = "0.7"
 codespan = "0.7"
-color-backtrace = { version = "0.3", default-features = false }
+color-backtrace = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
 criterion = "0.3.1"
 walkdir = "2"
+
+[features]
+default = ["bin"]
+bin = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "env_logger"]
+
+[[bin]]
+name = "rcc"
+path = "src/main.rs"
+required-features = ["bin"]
 
 [[bench]]
 name = "examples"

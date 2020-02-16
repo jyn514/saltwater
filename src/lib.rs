@@ -14,7 +14,7 @@ use std::process::Command;
 use cranelift::codegen::settings::{Configurable, Flags};
 use cranelift_module::{Backend, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
-#[cfg(jit)]
+#[cfg(feature = "jit")]
 use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
 pub type Product = <ObjectBackend as Backend>::Product;
 
@@ -153,7 +153,7 @@ fn get_flags(jit: bool) -> Flags {
     Flags::new(flags_builder)
 }
 
-#[cfg(jit)]
+#[cfg(feature = "jit")]
 pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
     let flags = get_flags(true);
 
@@ -282,19 +282,19 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
 ///
 /// You should use `JIT::from_module` or `JIT::compile_string` to create instance of JIT.
 /// NOTE: JIT stands for 'Just In Time' compiled, the way that Java and JavaScript work.
-#[cfg(jit)]
+#[cfg(feature = "jit")]
 pub struct JIT {
     module: Module<SimpleJITBackend>,
 }
 
-#[cfg(jit)]
+#[cfg(feature = "jit")]
 impl From<Module<SimpleJITBackend>> for JIT {
     fn from(module: Module<SimpleJITBackend>) -> Self {
         Self { module }
     }
 }
 
-#[cfg(jit)]
+#[cfg(feature = "jit")]
 impl JIT {
     /// Compile string and return JITed code.
     pub fn from_string(
@@ -327,6 +327,8 @@ impl JIT {
     }
     /// Get compiled static data, if this data doesn't exit then `None` is returned, otherwise it's andress and size returned.
     pub fn get_compiled_data(&mut self, name: &str) -> Option<(*mut u8, usize)> {
+        use cranelift_module::FuncOrDataId;
+
         let name = self.module.get_name(name);
         if let Some(FuncOrDataId::Data(id)) = name {
             Some(self.module.get_finalized_data(id))

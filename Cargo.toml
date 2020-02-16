@@ -58,4 +58,3 @@ overflow-checks = false
 [[bin]]
 name = "rcc"
 path = "src/bin/rcc.rs"
-

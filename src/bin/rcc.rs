@@ -123,7 +123,7 @@ fn real_main(
         let mut rccjit = rcc::RccJIT::from_module(result?);
         rccjit.finalize();
         if let Some(main) = rccjit.get_compiled_function("main") {
-            let args = std::env::args()[1..];
+            let args = std::env::args().skip(1);
             let argc = args.len() as i32;
             let exit_code = {
                 // we use block there so we can be 100% sure that memory allocated for CString is freed.

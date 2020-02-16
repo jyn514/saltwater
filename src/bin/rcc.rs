@@ -104,28 +104,44 @@ fn real_main(
     } else {
         &opt.opt
     };
-    if !opt.jit {
-        let module = rcc::initialize_aot_module("rccmain".to_owned());
-        let (result, warnings) = compile(module, buf, &opt);
-        handle_warnings(warnings, file_id, file_db);
-
-        let product = result.map(|x| x.finish())?;
-        if opt.no_link {
-            return assemble(product, output);
+    #[cfg(jit)]
+    {
+        if !opt.jit {
+            aot_main(buf, &opt, file_id, file_db, output)
+        } else {
+            let module = rcc::initialize_jit_module();
+            let (result, warnings) = compile(module, buf, &opt);
+            handle_warnings(warnings, file_id, file_db);
+            let mut rccjit = rcc::JIT::from(result?);
+            if let Some(exit_code) = unsafe { rccjit.run_main() } {
+                std::process::exit(exit_code);
+            }
+            Ok(())
         }
-        let tmp_file = NamedTempFile::new()?;
-        assemble(product, tmp_file.as_ref())?;
-        link(tmp_file.as_ref(), output).map_err(io::Error::into)
-    } else {
-        let module = rcc::initialize_jit_module();
-        let (result, warnings) = compile(module, buf, &opt);
-        handle_warnings(warnings, file_id, file_db);
-        let mut rccjit = rcc::JIT::from(result?);
-        if let Some(exit_code) = unsafe { rccjit.run_main() } {
-            std::process::exit(exit_code);
-        }
-        Ok(())
     }
+    #[cfg(not(jit))]
+    aot_main(buf, &opt, file_id, file_db, output)
+}
+
+#[inline]
+fn aot_main(
+    buf: &str,
+    opt: &Opt,
+    file_id: FileId,
+    file_db: &Files<String>,
+    output: &Path,
+) -> Result<(), Error> {
+    let module = rcc::initialize_aot_module("rccmain".to_owned());
+    let (result, warnings) = compile(module, buf, opt);
+    handle_warnings(warnings, file_id, file_db);
+
+    let product = result.map(|x| x.finish())?;
+    if opt.no_link {
+        return assemble(product, output);
+    }
+    let tmp_file = NamedTempFile::new()?;
+    assemble(product, tmp_file.as_ref())?;
+    link(tmp_file.as_ref(), output).map_err(io::Error::into)
 }
 
 fn handle_warnings(warnings: VecDeque<CompileWarning>, file: FileId, file_db: &Files<String>) {

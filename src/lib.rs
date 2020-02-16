@@ -12,8 +12,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cranelift::codegen::settings::{Configurable, Flags};
-use cranelift_module::{Backend, FuncOrDataId, Module};
+use cranelift_module::{Backend, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
+#[cfg(jit)]
 use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
 pub type Product = <ObjectBackend as Backend>::Product;
 
@@ -128,6 +129,7 @@ pub fn preprocess(
     };
     (res, cpp.warnings())
 }
+
 fn get_flags(jit: bool) -> Flags {
     let mut flags_builder = cranelift::codegen::settings::builder();
     if !jit {
@@ -150,6 +152,8 @@ fn get_flags(jit: bool) -> Flags {
         .expect("enable_probestack should be a valid option");
     Flags::new(flags_builder)
 }
+
+#[cfg(jit)]
 pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
     let flags = get_flags(true);
 
@@ -278,16 +282,19 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
 ///
 /// You should use `JIT::from_module` or `JIT::compile_string` to create instance of JIT.
 /// NOTE: JIT stands for 'Just In Time' compiled, the way that Java and JavaScript work.
+#[cfg(jit)]
 pub struct JIT {
     module: Module<SimpleJITBackend>,
 }
 
+#[cfg(jit)]
 impl From<Module<SimpleJITBackend>> for JIT {
     fn from(module: Module<SimpleJITBackend>) -> Self {
         Self { module }
     }
 }
 
+#[cfg(jit)]
 impl JIT {
     /// Compile string and return JITed code.
     pub fn from_string(
@@ -309,6 +316,8 @@ impl JIT {
     /// # Panics
     /// Panics if function is not compiled (finalized). Try to invoke `finalize` before using `get_compiled_function`.
     pub fn get_compiled_function(&mut self, name: &str) -> Option<*const u8> {
+        use cranelift_module::FuncOrDataId;
+
         let name = self.module.get_name(name);
         if let Some(FuncOrDataId::Func(id)) = name {
             Some(self.module.get_finalized_function(id))

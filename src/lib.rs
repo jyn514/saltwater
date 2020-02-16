@@ -3,7 +3,6 @@
 #![warn(explicit_outlives_requirements)]
 #![warn(unreachable_pub)]
 #![warn(deprecated_in_future)]
-#![deny(unsafe_code)]
 #![deny(unused_extern_crates)]
 
 use std::collections::VecDeque;
@@ -325,6 +324,34 @@ impl JIT {
         } else {
             None
         }
+    }
+    /// Given a module, run the `main` function.
+    ///
+    /// This automatically calls `self.finalize()`.
+    /// If `main()` does not exist in the module, returns `None`; otherwise returns the exit code.
+    ///
+    /// # Safety
+    /// This function runs arbitrary C code.
+    /// It can segfault, access out-of-bounds memory, cause data races, or do anything else C can do.
+    pub unsafe fn run_main(&mut self) -> Option<i32> {
+        self.finalize();
+        let main = self.get_compiled_function("main")?;
+        let args = std::env::args().skip(1);
+        let argc = args.len() as i32;
+        let vec_args = args
+            .map(|string| std::ffi::CString::new(string).unwrap())
+            .collect::<Vec<_>>();
+        // CString should be alive if we want to pass it's pointer to another function properly, otherwise this may lead to memory leak or UB.
+        let pointer = vec_args
+            .iter()
+            .map(|cstr| cstr.as_ptr() as *const u8)
+            .collect::<Vec<_>>()
+            .as_ptr() as *const *const u8;
+        assert_ne!(main, std::ptr::null());
+        // this transmute is safe: this function is finalized(`self.finalize()`) and **guaranteed** to be non-null
+        let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 = std::mem::transmute(main);
+        // through transmute is safe,invoking this function is unsafe because we invoke C code.
+        Some(main(argc, pointer))
     }
 }
 

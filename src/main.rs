@@ -25,7 +25,7 @@ use rcc::{
         error::{CompileWarning, RecoverableResult},
         lex::Location,
     },
-    link, preprocess, utils, Error, Files, Opt,
+    link, preprocess, Error, Files, Opt,
 };
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
@@ -254,8 +254,8 @@ fn err_exit(err: Error, max_errors: Option<NonZeroUsize>, file_db: &Files) -> ! 
             print_issues(num_warnings, num_errors);
             process::exit(2);
         }
-        IO(err) => utils::fatal(&err, 3),
-        Platform(err) => utils::fatal(&err, 4),
+        IO(err) => fatal(&err, 3),
+        Platform(err) => fatal(&err, 4),
     }
 }
 
@@ -331,6 +331,11 @@ fn get_warnings() -> usize {
 #[inline]
 fn get_errors() -> usize {
     ERRORS.load(Ordering::SeqCst)
+}
+
+fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
+    eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
+    process::exit(code);
 }
 
 #[cfg(test)]

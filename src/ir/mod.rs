@@ -23,7 +23,6 @@ use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct, ObjectTrapCo
 
 use crate::arch::TARGET;
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
-use crate::utils;
 
 type Module = CraneliftModule<ObjectBackend>;
 
@@ -119,7 +118,7 @@ impl Compiler {
             .expect("enable_probestack should be a valid option");
 
         let isa = isa::lookup(TARGET)
-            .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", TARGET), 5))
+            .unwrap_or_else(|_| panic!("platform not supported: {}", TARGET))
             .finish(settings::Flags::new(flags_builder));
 
         let builder = ObjectBuilder::new(
@@ -175,7 +174,7 @@ impl Compiler {
         let func_id = self
             .module
             .declare_function(get_str!(id), linkage, &signature)
-            .unwrap_or_else(|err| utils::fatal(err, 6));
+            .unwrap_or_else(|err| panic!("{}", err));
         self.scope.insert(id, Id::Function(func_id));
         Ok(func_id)
     }
@@ -348,14 +347,18 @@ impl Compiler {
         }
 
         if let Err(err) = codegen::verify_function(&func, &flags) {
-            println!("{}", func);
-            utils::fatal(err, 3);
+            panic!(
+                "verification error: {}\nnote: while compiling {}",
+                err, func
+            );
         }
 
         let mut ctx = codegen::Context::for_function(func);
         if let Err(err) = self.module.define_function(func_id, &mut ctx) {
-            println!("{}", ctx.func);
-            utils::fatal(err, 4);
+            panic!(
+                "definition error: {}\nnote: while compiling {}",
+                err, ctx.func
+            );
         }
 
         Ok(())

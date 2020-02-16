@@ -26,7 +26,7 @@ pub use lex::PreProcessor;
 pub use parse::Parser;
 
 #[macro_use]
-pub mod utils;
+mod macros;
 mod arch;
 pub mod data;
 mod fold;

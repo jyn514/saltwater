@@ -515,22 +515,15 @@ impl<'a> PreProcessor<'a> {
         // second step: perform function macro replacement
         self.replace_function(name, start)
     }
-    fn replace_function(
-        &mut self,
-        name: InternedStr,
-        start: u32,
-    ) -> Option<CppResult<Token>> {
+    fn replace_function(&mut self, name: InternedStr, start: u32) -> Option<CppResult<Token>> {
         use std::mem;
         let no_replacement =
             |this: &mut PreProcessor| Some(Ok(Locatable::new(Token::Id(name), this.span(start))));
         // check if this should be a function at all
-        let (params, body) =
-            if let Some(Definition::Function { params, body }) = self.definitions.get(&name) {
-                // lol this is so bad
-                (params.clone(), body.clone())
-            } else {
-                return no_replacement(self);
-            };
+        if let Some(Definition::Function { .. }) = self.definitions.get(&name) {
+        } else {
+            return no_replacement(self);
+        };
         loop {
             match self.match_next(Token::LeftParen) {
                 Err(err) => self.error_handler.push_back(err),
@@ -539,22 +532,16 @@ impl<'a> PreProcessor<'a> {
             }
         }
 
-        macro_rules! ret_err {
-            ($maybe_err: expr) => {
-                match $maybe_err {
-                    None => return None,
-                    Some(Err(err)) => return Some(Err(err)),
-                    Some(Ok(token)) => token,
-                }
-            };
-        }
-
         let location = self.span(start);
         let mut args = Vec::new();
         let mut current_arg = Vec::new();
         // now, expand all arguments
         loop {
-            let next = ret_err!(self.next_replacement_token());
+            let next = match self.next_replacement_token() {
+                None => return None,
+                Some(Err(err)) => return Some(Err(err)),
+                Some(Ok(token)) => token,
+            };
             if next.data == Token::Comma {
                 args.push(mem::replace(&mut current_arg, Vec::new()));
                 continue;
@@ -565,6 +552,10 @@ impl<'a> PreProcessor<'a> {
                 current_arg.push(next);
             }
         }
+        let (params, body) = match self.definitions.get(&name) {
+            Some(Definition::Function { params, body }) => (params, body),
+            _ => unreachable!("already checked this above"),
+        };
         if args.len() != params.len() {
             return Some(Err(CompileError::new(
                 CppError::TooFewArguments(args.len(), params.len()).into(),
@@ -572,7 +563,7 @@ impl<'a> PreProcessor<'a> {
             )));
         }
         for token in body {
-            if let Token::Id(id) = token {
+            if let &Token::Id(id) = token {
                 if let Some(index) = params.iter().position(|&param| param == id) {
                     let replacement = args[index].clone();
                     self.pending.extend(replacement);

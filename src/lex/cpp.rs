@@ -784,6 +784,7 @@ impl<'a> PreProcessor<'a> {
         }
         Ok(())
     }
+    // Consumes tokens like this:
     // before:
     // #define f(a, b, c) a + b + c
     //           ^

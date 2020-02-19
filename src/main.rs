@@ -133,8 +133,9 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file: FileId, file_db
 fn pretty_print(diagnostic: &Diagnostic, file_db: &Files<String>) {
     use codespan_reporting::term::{self, termcolor};
     let mut term = termcolor::Ansi::new(std::io::stdout());
-    term::emit(&mut term, &term::Config::default(), file_db, diagnostic)
-        .expect("failed to emit warning");
+    let mut config = term::Config::default();
+    config.display_style = term::DisplayStyle::Short;
+    term::emit(&mut term, &config, file_db, diagnostic).expect("failed to emit warning");
 }
 
 fn main() {

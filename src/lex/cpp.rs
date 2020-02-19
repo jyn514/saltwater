@@ -35,12 +35,13 @@ use crate::Files;
 /// Examples:
 ///
 /// ```
-/// use rcc::{Files, PreProcessor};
+/// use rcc::{Files, PreProcessor, Source};
 ///
 /// let mut files = Files::new();
-/// let src = "int main(void) { char *hello = \"hi\"; }";
-/// let file = files.add("example.c", String::from(src).into());
-/// let cpp = PreProcessor::new(file, src, false, &mut files);
+/// let code = String::from("int main(void) { char *hello = \"hi\"; }").into();
+/// let src = Source { path: "example.c".into(), code: std::rc::Rc::clone(&code) };
+/// let file = files.add("example.c", src);
+/// let cpp = PreProcessor::new(file, code, false, &mut files);
 /// for token in cpp {
 ///     assert!(token.is_ok());
 /// }
@@ -1015,14 +1016,18 @@ impl<'a> PreProcessor<'a> {
         // Since in UTF8 no ASCII character can occur
         // within a multi-byte sequence, `filename` must be valid UTF8.
         let filename = String::from_utf8(filename).expect("passed invalid utf8 to start");
-        let resolved = self.find_include_path(filename, local, start)?;
+        let resolved = self.find_include_path(filename.clone(), local, start)?;
         let src = std::fs::read_to_string(&resolved)
             .map_err(|err| Locatable {
                 data: CppError::IO(err.to_string()),
                 location: self.span(start),
             })?
             .into();
-        let id = self.files.add(resolved.to_string_lossy(), Rc::clone(&src));
+        let source = crate::Source {
+            path: resolved,
+            code: Rc::clone(&src),
+        };
+        let id = self.files.add(filename, source);
         self.includes.push(Lexer::new(id, src));
         Ok(())
     }

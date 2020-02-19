@@ -12,7 +12,7 @@ fn printf(args: &[&str], expected: &str) {
     }}",
         args.join(", ")
     );
-    utils::assert_output(&program, expected);
+    utils::assert_output(&program, "".into(), expected);
 }
 
 fn printf_helper(format: &str, args: &[&str]) {
@@ -74,6 +74,7 @@ fn multiple_given_args() {
             sprintf(buf, \"it is %d\\n\", 2019);
             puts(buf);
         }",
+        "".into(),
         "it is 2019\n\n",
     );
 }

@@ -980,6 +980,7 @@ impl<'a> PreProcessor<'a> {
             };
         }
         // absolute path, ignore everything except the filename
+        // e.g `#include </usr/local/include/stdio.h>`
         if filename.as_bytes()[0] == b'/' {
             let path = &std::path::Path::new(&filename);
             return if path.exists() {
@@ -990,8 +991,14 @@ impl<'a> PreProcessor<'a> {
         }
         // local include: #include "dict.h"
         if local {
-            // TODO: relative file paths
-            unimplemented!("local includes");
+            let current_path = &self.files.source(self.lexer().location.file).path;
+            let relative_path = &current_path
+                .parent()
+                .expect("current file can't be a directory");
+            let resolved = relative_path.join(&filename);
+            if resolved.exists() {
+                return Ok(resolved);
+            }
         }
         // if we don't find it locally, we fall back to system headers
         // this is part of the spec! http://port70.net/~nsz/c/c11/n1570.html#6.10.2p3

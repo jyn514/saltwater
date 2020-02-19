@@ -67,8 +67,8 @@ fn all_headers() -> Result<(), Error> {
         let header_file = header_file?;
         let path = header_file.path();
         println!("compiling {}", path.display());
-        let header_code = fs::read_to_string(path)?;
-        utils::assert_compiles_no_main(&header_code);
+        let header_code = fs::read_to_string(&path)?;
+        utils::assert_compiles_no_main(&header_code, path);
     }
     Ok(())
 }

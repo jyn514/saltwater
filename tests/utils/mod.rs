@@ -43,7 +43,11 @@ pub fn compile_and_run(program: &str, args: &[&str]) -> Result<Output, Error> {
 pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, Error> {
     let opts = Default::default();
     let mut files = rcc::Files::default();
-    let id = files.add("<test-suite>", String::from(program).into());
+    let source = rcc::Source {
+        code: String::from(program).into(),
+        path: std::path::PathBuf::new(),
+    };
+    let id = files.add("<test-suite>", source);
     let (result, _warnings) = rcc::compile(program, &opts, id, &mut files);
     let module = result?;
     let output = tempfile::NamedTempFile::new()

@@ -9,7 +9,7 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
 
@@ -17,7 +17,21 @@ use codespan::FileId;
 use cranelift_module::Backend;
 use cranelift_object::ObjectBackend;
 
-pub type Files = codespan::Files<Rc<str>>;
+/// The `Source` type for `codespan::Files`.
+///
+/// Used to store extra metadata about the file, like the absolute filename.
+pub struct Source {
+    pub code: Rc<str>,
+    pub path: PathBuf,
+}
+
+impl AsRef<str> for Source {
+    fn as_ref(&self) -> &str {
+        self.code.as_ref()
+    }
+}
+
+pub type Files = codespan::Files<Source>;
 pub type Product = <ObjectBackend as Backend>::Product;
 
 use data::prelude::CompileError;
@@ -208,6 +222,16 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
         Err(Error::new(ErrorKind::Other, "linking program failed"))
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl<T: Into<Rc<str>>> From<T> for Source {
+    fn from(src: T) -> Self {
+        Self {
+            code: src.into(),
+            path: PathBuf::new(),
+        }
     }
 }
 

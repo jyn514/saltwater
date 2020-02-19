@@ -254,6 +254,12 @@ fn test_characters() {
     assert!(lex("'\\777'").unwrap().unwrap_err().is_lex_err());
     // extra digits are not allowed for octal escapes
     assert!(lex("'\\0001'").unwrap().unwrap_err().is_lex_err());
+    // should catch overflow in hex escapes
+    assert!(lex("'\\xfff'").unwrap().unwrap_err().is_lex_err());
+    assert!(lex("'\\xfffffffffffffffffffffffffff'")
+        .unwrap()
+        .unwrap_err()
+        .is_lex_err());
 }
 #[test]
 fn test_strings() {

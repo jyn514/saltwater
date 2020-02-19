@@ -165,10 +165,14 @@ fn main() {
         opt.filename
     };
     let buf: Rc<_> = buf.into();
+    let source = rcc::Source {
+        path: opt.filename.clone(),
+        code: Rc::clone(&buf),
+    };
 
     let mut file_db = Files::new();
     // TODO: remove `lossy` call
-    let file_id = file_db.add(opt.filename.to_string_lossy(), Rc::clone(&buf));
+    let file_id = file_db.add(opt.filename.to_string_lossy(), source);
     real_main(buf, &mut file_db, file_id, &opt, &output)
         .unwrap_or_else(|err| err_exit(err, opt.opt.max_errors, &file_db));
 }
@@ -346,7 +350,11 @@ mod test {
 
     fn pp<S: Into<Span>>(span: S, source: &str) -> String {
         let mut file_db = Files::new();
-        let file = file_db.add("<test-suite>", String::from(source).into());
+        let source = rcc::Source {
+            code: String::from(source).into(),
+            path: std::path::PathBuf::new(),
+        };
+        let file = file_db.add("<test-suite>", source);
         let location = Location {
             file,
             span: span.into(),

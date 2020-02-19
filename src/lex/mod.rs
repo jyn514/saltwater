@@ -493,8 +493,10 @@ impl Lexer {
         let mut base = 0_u64;
         let mut update = |this: &mut Self, c: u8| {
             this.next_char();
-            // TODO: handle overflow
-            base <<= 4; // base *= 16
+            // NOTE: this can't overflow, it will just shift in a 0
+            // base *= 16
+            base <<= 4;
+            // NOTE: because we shifted in a 0 and c < 16, this can't overflow
             base += u64::from(c);
         };
         loop {

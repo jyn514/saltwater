@@ -1,4 +1,4 @@
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::rc::Rc;
 
 use codespan::FileId;
@@ -42,6 +42,8 @@ enum CharError {
     Eof,
     Newline,
     Terminator,
+    OctalTooLarge,
+    HexTooLarge,
 }
 
 #[derive(Debug)]
@@ -424,19 +426,32 @@ impl Lexer {
                     Ok(match c {
                         // escaped newline: "a\
                         // b"
-                        b'\n' => return self.parse_single_char(string),
+                        b'\n' => unreachable!("should be handled earlier"),
                         b'n' => b'\n',   // embedded newline: "a\nb"
                         b'r' => b'\r',   // carriage return
                         b't' => b'\t',   // tab
                         b'"' => b'"',    // escaped "
                         b'\'' => b'\'',  // escaped '
                         b'\\' => b'\\',  // \
-                        b'0' => b'\0',   // null character: "\0"
                         b'a' => b'\x07', // bell
                         b'b' => b'\x08', // backspace
                         b'v' => b'\x0b', // vertical tab
                         b'f' => b'\x0c', // form feed
                         b'?' => b'?',    // a literal b'?', for trigraphs
+                        b'0'..=b'9' => {
+                            return self.parse_octal_char_escape(c).map_err(|err| {
+                                // try to avoid extraneous errors, but don't try too hard
+                                self.match_next(b'\'');
+                                err
+                            });
+                        }
+                        b'x' => {
+                            return self.parse_hex_char_escape().map_err(|err| {
+                                // try to avoid extraneous errors, but don't try too hard
+                                self.match_next(b'\'');
+                                err
+                            });
+                        }
                         _ => {
                             self.error_handler.warn(
                                 &format!("unknown character escape '\\{}'", c),
@@ -459,6 +474,39 @@ impl Lexer {
             Err(CharError::Eof)
         }
     }
+    fn parse_octal_char_escape(&mut self, start: u8) -> Result<u8, CharError> {
+        let mut base: u16 = (start - b'0').into();
+        // at most 3 digits in an octal constant, `start` is the first so only 2 possible left
+        for _ in 0..2 {
+            match self.peek() {
+                Some(c) if b'0' <= c && c < b'8' => {
+                    self.next_char();
+                    base <<= 3; // base *= 8
+                    base += u16::from(c - b'0');
+                }
+                _ => break,
+            }
+        }
+        base.try_into().map_err(|_| CharError::OctalTooLarge)
+    }
+    fn parse_hex_char_escape(&mut self) -> Result<u8, CharError> {
+        let mut base = 0_u64;
+        let mut update = |this: &mut Self, c: u8| {
+            this.next_char();
+            // TODO: handle overflow
+            base <<= 4; // base *= 16
+            base += u64::from(c);
+        };
+        loop {
+            match self.peek() {
+                Some(c) if b'0' <= c && c <= b'9' => update(self, c - b'0'),
+                Some(c) if b'a' <= c && c <= b'z' => update(self, c - b'a' + 10),
+                Some(c) if b'A' <= c && c <= b'Z' => update(self, c - b'A' + 10),
+                _ => break,
+            }
+        }
+        base.try_into().map_err(|_| CharError::HexTooLarge)
+    }
     /// Parse a character literal, starting after the opening quote.
     ///
     /// Before: chars{"\0' blah"}
@@ -480,7 +528,7 @@ impl Lexer {
             Err(String::from("Illegal newline while parsing char literal")),
         );
         match self.parse_single_char(false) {
-            Ok(c) if c.is_ascii() => match self.next_char() {
+            Ok(c) => match self.next_char() {
                 Some(b'\'') => Ok(Literal::Char(c as u8).into()),
                 Some(b'\n') => newline_err,
                 None => term_err,
@@ -489,13 +537,13 @@ impl Lexer {
                     Err(String::from("Multi-character character literal"))
                 }
             },
-            Ok(_) => {
-                consume_until_quote(self);
-                Err(String::from("Multi-byte unicode character literal"))
-            }
             Err(CharError::Eof) => term_err,
             Err(CharError::Newline) => newline_err,
             Err(CharError::Terminator) => Err(String::from("Empty character constant")),
+            Err(CharError::HexTooLarge) => Err(String::from("hex character escape out of range")),
+            Err(CharError::OctalTooLarge) => {
+                Err(String::from("octal character escape out of range"))
+            }
         }
     }
     /// Parse a string literal, starting before the opening quote.
@@ -522,6 +570,12 @@ impl Lexer {
                         return Err(String::from("Illegal newline while parsing string literal"))
                     }
                     Err(CharError::Terminator) => break,
+                    Err(CharError::HexTooLarge) => {
+                        return Err(String::from("hex character escape out of range"))
+                    }
+                    Err(CharError::OctalTooLarge) => {
+                        return Err(String::from("octal character escape out of range"))
+                    }
                 }
             }
             self.consume_whitespace();

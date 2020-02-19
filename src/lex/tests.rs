@@ -244,6 +244,16 @@ fn test_characters() {
     assert!(match_char(lex("'\\f'"), b'\x0c'));
     assert!(match_char(lex("'\\t'"), b'\t'));
     assert!(match_char(lex("'\\?'"), b'?'));
+    assert!(match_char(lex("'\\x00'"), b'\0'));
+    // extra digits are allowed for hex escapes
+    assert!(match_char(lex("'\\x00001'"), b'\x01'));
+    // invalid ascii is allowed
+    assert!(match_char(lex("'\\xff'"), b'\xff'));
+    // out of range escapes should be caught
+    assert!(lex("'\\xfff'").unwrap().unwrap_err().is_lex_err());
+    assert!(lex("'\\777'").unwrap().unwrap_err().is_lex_err());
+    // extra digits are not allowed for octal escapes
+    assert!(lex("'\\0001'").unwrap().unwrap_err().is_lex_err());
 }
 #[test]
 fn test_strings() {

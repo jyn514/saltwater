@@ -123,7 +123,7 @@ impl Iterator for PreProcessor<'_> {
             if let Some(err) = self.error_handler.pop_front() {
                 break Some(Err(err));
             } else if let Some(token) = self.pending.pop_front() {
-                break Some(Ok(token));
+                break self.handle_token(token.data, token.location);
             } else {
                 match self.next_cpp_token()? {
                     Err(err) => return Some(Err(err)),
@@ -576,9 +576,7 @@ impl<'a> PreProcessor<'a> {
                 self.pending.push_back(location.with(token.clone()));
             }
         }
-        self.pending
-            .pop_front()
-            .map_or_else(|| self.next(), |token| Some(Ok(token)))
+        self.next()
     }
     // convienience function around cpp_expr
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
@@ -1371,6 +1369,19 @@ d
 #endif
 ";
         assert_err!(src, CppError::UnexpectedElse, "duplicate else",);
+    }
+    #[test]
+    fn function_body_replacement() {
+        let src = "#define a b
+        #define f(c) a
+        f(1)";
+        assert_same(src, "b")
+    }
+    #[test]
+    fn object_body_replacement() {
+        let src = "#define NULL ((void*)0)
+        int *p = NULL;";
+        assert_same(src, "int *p = ((void*)0);")
     }
     #[test]
     fn pragma() {

@@ -8,6 +8,7 @@ use std::rc::Rc;
 use codespan::FileId;
 
 use super::{Lexer, Token};
+use crate::arch::TARGET;
 use crate::data::error::CppError;
 use crate::data::lex::{Keyword, Literal};
 use crate::data::prelude::*;
@@ -65,7 +66,7 @@ pub struct PreProcessor<'a> {
     /// The tokens that have been `#define`d and are currently being substituted
     pending: VecDeque<Locatable<Token>>,
     /// The paths to search for `#include`d files
-    search_path: Vec<&'a str>,
+    search_path: Vec<std::borrow::Cow<'a, str>>,
 }
 
 enum Definition {
@@ -246,6 +247,10 @@ impl<'a> PreProcessor<'a> {
         debug: bool,
         files: &'a mut Files,
     ) -> Self {
+        let system_path = format!(
+            "{}-{}-{}",
+            TARGET.architecture, TARGET.operating_system, TARGET.environment
+        );
         Self {
             debug,
             first_lexer: Lexer::new(file, chars),
@@ -254,7 +259,12 @@ impl<'a> PreProcessor<'a> {
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
-            search_path: vec!["/usr/include"],
+            search_path: vec![
+                format!("/usr/local/include/{}", system_path).into(),
+                "/usr/local/include".into(),
+                format!("/usr/include/{}", system_path).into(),
+                "/usr/include".into(),
+            ],
             files,
         }
     }
@@ -1003,7 +1013,7 @@ impl<'a> PreProcessor<'a> {
         // if we don't find it locally, we fall back to system headers
         // this is part of the spec! http://port70.net/~nsz/c/c11/n1570.html#6.10.2p3
         for path in &self.search_path {
-            let mut buf = PathBuf::from(path);
+            let mut buf = PathBuf::from(path.as_ref());
             buf.push(&filename);
             if buf.exists() {
                 return Ok(buf);

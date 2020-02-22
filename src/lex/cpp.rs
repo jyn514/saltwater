@@ -992,7 +992,7 @@ impl<'a> PreProcessor<'a> {
             let current_path = &self.files.source(self.lexer().location.file).path;
             let relative_path = &current_path
                 .parent()
-                .expect("current file can't be a directory");
+                .unwrap_or_else(|| std::path::Path::new(""));
             let resolved = relative_path.join(&filename);
             if resolved.exists() {
                 return Ok(resolved);

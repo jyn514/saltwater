@@ -20,6 +20,11 @@ use cranelift_object::ObjectBackend;
 /// The `Source` type for `codespan::Files`.
 ///
 /// Used to store extra metadata about the file, like the absolute filename.
+///
+/// NOTE: If `path` is empty (e.g. by using `my_string.into()`),
+/// then the path will be relative to the _compiler_, not to the current file.
+/// This is recommended only for test code and proof of concepts,
+/// since it does not adhere to the C standard.
 pub struct Source {
     pub code: Rc<str>,
     pub path: PathBuf,
@@ -225,7 +230,6 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
     }
 }
 
-#[cfg(test)]
 impl<T: Into<Rc<str>>> From<T> for Source {
     fn from(src: T) -> Self {
         Self {

@@ -34,7 +34,11 @@ fn run_all() -> Result<(), io::Error> {
 
 fn run_one(path: &path::Path) -> Result<(), io::Error> {
     println!("testing {}", path.display());
-    let status = Command::new("target/debug/rcc").arg(path).status().unwrap();
+    let target = std::env::var("CARGO_TARGET_DIR").unwrap_or("target".into());
+    let status = Command::new(format!("{}/debug/rcc", target))
+        .arg(path)
+        .status()
+        .unwrap();
     assert_eq!(status.code(), Some(102));
     Ok(())
 }

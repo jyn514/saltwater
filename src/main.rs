@@ -350,10 +350,7 @@ mod test {
 
     fn pp<S: Into<Span>>(span: S, source: &str) -> String {
         let mut file_db = Files::new();
-        let source = rcc::Source {
-            code: String::from(source).into(),
-            path: std::path::PathBuf::new(),
-        };
+        let source = String::from(source).into());
         let file = file_db.add("<test-suite>", source);
         let location = Location {
             file,

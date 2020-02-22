@@ -64,6 +64,8 @@ pub struct PreProcessor<'a> {
     nested_ifs: Vec<IfState>,
     /// The tokens that have been `#define`d and are currently being substituted
     pending: VecDeque<Locatable<Token>>,
+    /// The paths to search for `#include`d files
+    search_path: Vec<&'a str>,
 }
 
 enum Definition {
@@ -252,6 +254,7 @@ impl<'a> PreProcessor<'a> {
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
+            search_path: vec!["/usr/include"],
             files,
         }
     }
@@ -959,7 +962,6 @@ impl<'a> PreProcessor<'a> {
         local: bool,
         start: u32,
     ) -> Result<PathBuf, Locatable<Error>> {
-        const SEARCH_PATH: &[&str] = &["/usr/include"];
         log::debug!("in search path");
 
         if filename.is_empty() {
@@ -1000,7 +1002,7 @@ impl<'a> PreProcessor<'a> {
         }
         // if we don't find it locally, we fall back to system headers
         // this is part of the spec! http://port70.net/~nsz/c/c11/n1570.html#6.10.2p3
-        for path in SEARCH_PATH {
+        for path in &self.search_path {
             let mut buf = PathBuf::from(path);
             buf.push(&filename);
             if buf.exists() {

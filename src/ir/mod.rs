@@ -19,9 +19,7 @@ use cranelift::codegen::{
 };
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Block, FunctionBuilder, FunctionBuilderContext, Signature};
-use cranelift_module::{self, Backend, DataId, FuncId, Linkage, Module as CraneliftModule};
-
-type Module<T> = CraneliftModule<T>;
+use cranelift_module::{self, Backend, DataId, FuncId, Linkage, Module};
 
 enum Id {
     Function(FuncId),

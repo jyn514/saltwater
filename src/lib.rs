@@ -3,7 +3,6 @@
 #![warn(explicit_outlives_requirements)]
 #![warn(unreachable_pub)]
 #![warn(deprecated_in_future)]
-#![deny(unsafe_code)]
 #![deny(unused_extern_crates)]
 
 use std::collections::VecDeque;
@@ -13,8 +12,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cranelift::codegen::settings::{Configurable, Flags};
-use cranelift_module::{Backend, FuncOrDataId, Module};
+use cranelift_module::{Backend, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
+#[cfg(feature = "jit")]
 use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
 pub type Product = <ObjectBackend as Backend>::Product;
 
@@ -129,6 +129,7 @@ pub fn preprocess(
     };
     (res, cpp.warnings())
 }
+
 fn get_flags(jit: bool) -> Flags {
     let mut flags_builder = cranelift::codegen::settings::builder();
     if !jit {
@@ -151,6 +152,8 @@ fn get_flags(jit: bool) -> Flags {
         .expect("enable_probestack should be a valid option");
     Flags::new(flags_builder)
 }
+
+#[cfg(feature = "jit")]
 pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
     let flags = get_flags(true);
 
@@ -159,8 +162,7 @@ pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
         .finish(flags);
 
     let builder = SimpleJITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-    let module = Module::new(builder);
-    module
+    Module::new(builder)
 }
 
 pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
@@ -177,8 +179,7 @@ pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
         cranelift_module::default_libcall_names(),
     )
     .expect("unknown error creating module");
-    let module = Module::new(builder);
-    module
+    Module::new(builder)
 }
 
 /// Compile and return the declarations and warnings.
@@ -277,25 +278,32 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
     }
 }
 
-/// Structure used to handle JITing C code.
+/// Structure used to handle compiling C code to memory instead of to disk.
 ///
-/// You should use `RccJIT::from_module` or `RccJIT::compile_string` to create instance of RccJIT.
-pub struct RccJIT {
+/// You should use `JIT::from_module` or `JIT::compile_string` to create instance of JIT.
+/// NOTE: JIT stands for 'Just In Time' compiled, the way that Java and JavaScript work.
+#[cfg(feature = "jit")]
+pub struct JIT {
     module: Module<SimpleJITBackend>,
 }
-impl RccJIT {
-    /// Instantiate RccJIT from SimpleJIT Module.
-    pub fn from_module(m: Module<SimpleJITBackend>) -> Self {
-        Self { module: m }
+
+#[cfg(feature = "jit")]
+impl From<Module<SimpleJITBackend>> for JIT {
+    fn from(module: Module<SimpleJITBackend>) -> Self {
+        Self { module }
     }
+}
+
+#[cfg(feature = "jit")]
+impl JIT {
     /// Compile string and return JITed code.
-    pub fn compile_string(
+    pub fn from_string(
         program: &str,
         opt: &Opt,
     ) -> (Result<Self, Error>, VecDeque<CompileWarning>) {
         let module = initialize_jit_module();
         let (result, warnings) = compile::<SimpleJITBackend>(module, program, opt);
-        let result = result.map(|x| RccJIT::from_module(x));
+        let result = result.map(JIT::from);
         (result, warnings)
     }
 
@@ -308,6 +316,8 @@ impl RccJIT {
     /// # Panics
     /// Panics if function is not compiled (finalized). Try to invoke `finalize` before using `get_compiled_function`.
     pub fn get_compiled_function(&mut self, name: &str) -> Option<*const u8> {
+        use cranelift_module::FuncOrDataId;
+
         let name = self.module.get_name(name);
         if let Some(FuncOrDataId::Func(id)) = name {
             Some(self.module.get_finalized_function(id))
@@ -317,12 +327,42 @@ impl RccJIT {
     }
     /// Get compiled static data, if this data doesn't exit then `None` is returned, otherwise it's andress and size returned.
     pub fn get_compiled_data(&mut self, name: &str) -> Option<(*mut u8, usize)> {
+        use cranelift_module::FuncOrDataId;
+
         let name = self.module.get_name(name);
         if let Some(FuncOrDataId::Data(id)) = name {
             Some(self.module.get_finalized_data(id))
         } else {
             None
         }
+    }
+    /// Given a module, run the `main` function.
+    ///
+    /// This automatically calls `self.finalize()`.
+    /// If `main()` does not exist in the module, returns `None`; otherwise returns the exit code.
+    ///
+    /// # Safety
+    /// This function runs arbitrary C code.
+    /// It can segfault, access out-of-bounds memory, cause data races, or do anything else C can do.
+    pub unsafe fn run_main(&mut self) -> Option<i32> {
+        self.finalize();
+        let main = self.get_compiled_function("main")?;
+        let args = std::env::args().skip(1);
+        let argc = args.len() as i32;
+        let vec_args = args
+            .map(|string| std::ffi::CString::new(string).unwrap())
+            .collect::<Vec<_>>();
+        // CString should be alive if we want to pass it's pointer to another function properly, otherwise this may lead to memory leak or UB.
+        let pointer = vec_args
+            .iter()
+            .map(|cstr| cstr.as_ptr() as *const u8)
+            .collect::<Vec<_>>()
+            .as_ptr() as *const *const u8;
+        assert_ne!(main, std::ptr::null());
+        // this transmute is safe: this function is finalized(`self.finalize()`) and **guaranteed** to be non-null
+        let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 = std::mem::transmute(main);
+        // through transmute is safe,invoking this function is unsafe because we invoke C code.
+        Some(main(argc, pointer))
     }
 }
 

@@ -99,10 +99,11 @@ impl Lexer {
     // This gets the next token from the buffer
     // and updates the current offset and relevant fields.
     fn _next_char(&mut self) -> Option<u8> {
-        if let Some(c) = self.current {
+        if let c @ Some(_) = self.current {
             self.current = self.lookahead.take();
-            Some(c)
+            c
         } else {
+            assert!(self.lookahead.is_none());
             self.chars
                 .as_bytes()
                 .get(self.location.offset as usize)
@@ -580,7 +581,22 @@ impl Lexer {
                     }
                 }
             }
+            let old_saw_token = self.seen_line_token;
             self.consume_whitespace();
+            // we're in a quandry here: we saw a newline, which reset `seen_line_token`,
+            // but we're about to return a string, which will mistakenly reset it again.
+            // HACK: `unput()` a newline, so that we'll reset `seen_line_token` again
+            // HACK: on the following call to `next()`.
+            // NOTE: since we saw a newline, we must have consumed at least one token,
+            // NOTE: so this can't possibly discard `self.lookahead`.
+            if self.seen_line_token != old_saw_token {
+                assert!(self.lookahead.is_none());
+                self.lookahead = self.current.take();
+                self.current = Some(b'\n');
+                // TODO: this is not right,
+                // it will break if someone calls `span()` before consuming the newline
+                self.location.offset -= 1;
+            }
         }
         literal.push(b'\0');
         Ok(Literal::Str(literal).into())

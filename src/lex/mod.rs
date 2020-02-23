@@ -136,6 +136,20 @@ impl Lexer {
         });
         self.lookahead
     }
+    /// Return a single token to the stream.
+    /// Can be called at most once before running out of space to store the token.
+    ///
+    /// # Panics
+    /// This function will panic if called twice in a row
+    /// or when `self.lookahead.is_some()`.
+    fn unput(&mut self, byte: u8) {
+        assert!(self.lookahead.is_none());
+        self.lookahead = self.current.take();
+        self.current = Some(byte);
+        // TODO: this is not right,
+        // it will break if someone calls `span()` before consuming the newline
+        self.location.offset -= 1;
+    }
     /// If the next character is `item`, consume it and return true.
     /// Otherwise, return false.
     fn match_next(&mut self, item: u8) -> bool {
@@ -590,12 +604,7 @@ impl Lexer {
             // NOTE: since we saw a newline, we must have consumed at least one token,
             // NOTE: so this can't possibly discard `self.lookahead`.
             if self.seen_line_token != old_saw_token {
-                assert!(self.lookahead.is_none());
-                self.lookahead = self.current.take();
-                self.current = Some(b'\n');
-                // TODO: this is not right,
-                // it will break if someone calls `span()` before consuming the newline
-                self.location.offset -= 1;
+                self.unput(b'\n');
             }
         }
         literal.push(b'\0');
@@ -834,8 +843,7 @@ impl Iterator for Lexer {
                     }
                 },
                 b'"' => {
-                    self.current = Some(b'"');
-                    self.location.offset -= 1;
+                    self.unput(b'"');
                     match self.parse_string() {
                         Ok(id) => id,
                         Err(err) => {

@@ -266,6 +266,9 @@ pub enum LexError {
     #[error("unterminated /* comment")]
     UnterminatedComment,
 
+    #[error("no newline at end of file")]
+    NoNewlineAtEOF,
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

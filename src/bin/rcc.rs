@@ -104,46 +104,44 @@ fn real_main(
     } else {
         &opt.opt
     };
-    if !opt.jit {
-        let module = rcc::initialize_aot_module("rccmain".to_owned());
-        let (result, warnings) = compile(module, buf, &opt);
-        handle_warnings(warnings, file_id, file_db);
-
-        let product = result.map(|x| x.finish())?;
-        if opt.no_link {
-            return assemble(product, output);
+    #[cfg(jit)]
+    {
+        if !opt.jit {
+            aot_main(buf, &opt, file_id, file_db, output)
+        } else {
+            let module = rcc::initialize_jit_module();
+            let (result, warnings) = compile(module, buf, &opt);
+            handle_warnings(warnings, file_id, file_db);
+            let mut rccjit = rcc::JIT::from(result?);
+            if let Some(exit_code) = unsafe { rccjit.run_main() } {
+                std::process::exit(exit_code);
+            }
+            Ok(())
         }
-        let tmp_file = NamedTempFile::new()?;
-        assemble(product, tmp_file.as_ref())?;
-        link(tmp_file.as_ref(), output).map_err(io::Error::into)
-    } else {
-        let module = rcc::initialize_jit_module();
-        let (result, warnings) = compile(module, buf, &opt);
-        handle_warnings(warnings, file_id, file_db);
-        let mut rccjit = rcc::RccJIT::from_module(result?);
-        rccjit.finalize();
-        if let Some(main) = rccjit.get_compiled_function("main") {
-            let args = std::env::args().skip(1);
-            let argc = args.len() as i32;
-            let exit_code = {
-                // we use block there so we can be 100% sure that memory allocated for CString is freed.
-                let vec_args = args
-                    .map(|string| std::ffi::CString::new(string).unwrap())
-                    .collect::<Vec<_>>();
-                // CString should be alive if we want to pass it's pointer to another function properly, otherwise this may lead to memory leak or UB.
-                let pointer = vec_args
-                    .iter()
-                    .map(|cstr| cstr.as_ptr() as *const u8)
-                    .collect::<Vec<_>>()
-                    .as_ptr() as *const *const u8;
-                let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 =
-                    unsafe { std::mem::transmute(main) }; // this transmute is safe: this function is finalized(`rccjit.finalize()`) and **guaranteed** to be non-null
-                unsafe { main(argc, pointer) } // through transmute is safe,invoking this function is unsafe because we invoke C code.
-            };
-            std::process::exit(exit_code);
-        }
-        Ok(())
     }
+    #[cfg(not(jit))]
+    aot_main(buf, &opt, file_id, file_db, output)
+}
+
+#[inline]
+fn aot_main(
+    buf: &str,
+    opt: &Opt,
+    file_id: FileId,
+    file_db: &Files<String>,
+    output: &Path,
+) -> Result<(), Error> {
+    let module = rcc::initialize_aot_module("rccmain".to_owned());
+    let (result, warnings) = compile(module, buf, opt);
+    handle_warnings(warnings, file_id, file_db);
+
+    let product = result.map(|x| x.finish())?;
+    if opt.no_link {
+        return assemble(product, output);
+    }
+    let tmp_file = NamedTempFile::new()?;
+    assemble(product, tmp_file.as_ref())?;
+    link(tmp_file.as_ref(), output).map_err(io::Error::into)
 }
 
 fn handle_warnings(warnings: VecDeque<CompileWarning>, file: FileId, file_db: &Files<String>) {

@@ -302,6 +302,7 @@ impl<'a> PreProcessor<'a> {
         loop {
             self.consume_whitespace();
             if self.line() != line {
+                assert!(!self.lexer().seen_line_token);
                 break;
             }
             match self.next_token() {
@@ -1434,5 +1435,16 @@ d
             assert_err!(s, CppError::UnexpectedToken(_, _), "unexpected token");
         }
         assert_err!("#if", CppError::EmptyExpression, "empty expression");
+    }
+    #[test]
+    // make sure that `"b"` doesn't accidentally consume the newline token
+    // without resetting `self.seen_line_token`
+    fn str_at_eol() {
+        let src = r#"
+#define a "b"
+#define c a
+c
+"#;
+        assert_same(src, "\"b\"");
     }
 }

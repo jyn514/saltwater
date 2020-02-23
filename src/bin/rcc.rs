@@ -45,6 +45,7 @@ FLAGS:
     -a, --debug-ast        If set, print the parsed abstract syntax tree in addition to compiling
         --debug-lex        If set, print all tokens found by the lexer in addition to compiling.
         --jit              If set, will use JIT compilation for C code and instantly run compiled code (No files produced).
+                           NOTE: this option only works if rcc was compiled with the `jit` feature.
     -h, --help             Prints help information
     -c, --no-link          If set, compile and assemble but do not link. Object file is machine-dependent.
     -E, --preprocess-only  If set, preprocess only, but do not do anything else.

@@ -4,6 +4,7 @@
 #![warn(unreachable_pub)]
 #![warn(deprecated_in_future)]
 #![deny(unused_extern_crates)]
+#![deny(unsafe_code)]
 
 use std::collections::VecDeque;
 use std::fs::File;
@@ -344,25 +345,28 @@ impl JIT {
     /// # Safety
     /// This function runs arbitrary C code.
     /// It can segfault, access out-of-bounds memory, cause data races, or do anything else C can do.
+    #[allow(unsafe_code)]
     pub unsafe fn run_main(&mut self) -> Option<i32> {
         self.finalize();
         let main = self.get_compiled_function("main")?;
         let args = std::env::args().skip(1);
         let argc = args.len() as i32;
+        // CString should be alive if we want to pass its pointer to another function,
+        // otherwise this may lead to UB.
         let vec_args = args
             .map(|string| std::ffi::CString::new(string).unwrap())
             .collect::<Vec<_>>();
-        // CString should be alive if we want to pass it's pointer to another function properly, otherwise this may lead to memory leak or UB.
-        let pointer = vec_args
+        // This vec needs to be stored so we aren't passing a pointer to a freed temporary.
+        let argv = vec_args
             .iter()
             .map(|cstr| cstr.as_ptr() as *const u8)
-            .collect::<Vec<_>>()
-            .as_ptr() as *const *const u8;
+            .collect::<Vec<_>>();
         assert_ne!(main, std::ptr::null());
-        // this transmute is safe: this function is finalized(`self.finalize()`) and **guaranteed** to be non-null
+        // this transmute is safe: this function is finalized (`self.finalize()`)
+        // and **guaranteed** to be non-null
         let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 = std::mem::transmute(main);
-        // through transmute is safe,invoking this function is unsafe because we invoke C code.
-        Some(main(argc, pointer))
+        // though transmute is safe, invoking this function is unsafe because we invoke C code.
+        Some(main(argc, argv.as_ptr() as *const *const u8));
     }
 }
 

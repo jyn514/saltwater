@@ -1,5 +1,5 @@
 use super::{CompileResult, Literal, Locatable, Token};
-use crate::data::lex::test::cpp;
+use crate::data::lex::test::{cpp, cpp_no_newline};
 use crate::intern::InternedStr;
 
 type LexType = CompileResult<Locatable<Token>>;
@@ -272,7 +272,16 @@ fn test_strings() {
         "consecutive strings"
     ));
     assert!(match_str(lex("\"string with \\0\""), "string with \0"));
-    assert_eq!(lex("\"").unwrap().unwrap_err().location.span, (0..1).into());
+    // 2 for newline
+    assert_eq!(lex("\"").unwrap().unwrap_err().location.span, (0..2).into());
+}
+
+#[test]
+fn test_no_newline() {
+    assert!(cpp_no_newline("").next().is_none());
+    let mut tokens: Vec<_> = cpp_no_newline(" ").collect();
+    assert_eq!(tokens.len(), 1);
+    assert!(tokens.remove(0).unwrap_err().is_lex_err());
 }
 
 // Integration tests

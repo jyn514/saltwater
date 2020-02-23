@@ -407,10 +407,16 @@ pub(crate) mod test {
     use crate::*;
     /// Create a new preprocessor with `s` as the input
     pub(crate) fn cpp(s: &str) -> PreProcessor {
+        let newline = format!("{}\n", s).into_boxed_str();
+        cpp_no_newline(Box::leak(newline))
+    }
+    /// Create a new preprocessor with `s` as the input, but without a trailing newline
+    pub(crate) fn cpp_no_newline(s: &str) -> PreProcessor {
         let mut files: Files = Default::default();
         let id = files.add("<test suite>", String::new().into());
         PreProcessor::new(id, s, false, Box::leak(Box::new(files)))
     }
+
     #[test]
     fn assignment_display() {
         let tokens = [

@@ -39,7 +39,7 @@ use crate::Files;
 /// use rcc::{Files, PreProcessor, Source};
 ///
 /// let mut files = Files::new();
-/// let code = String::from("int main(void) { char *hello = \"hi\"; }").into();
+/// let code = String::from("int main(void) { char *hello = \"hi\"; }\n").into();
 /// let src = Source { path: "example.c".into(), code: std::rc::Rc::clone(&code) };
 /// let file = files.add("example.c", src);
 /// let cpp = PreProcessor::new(file, code, false, &mut files);
@@ -302,7 +302,8 @@ impl<'a> PreProcessor<'a> {
         loop {
             self.consume_whitespace();
             if self.line() != line {
-                assert!(!self.lexer().seen_line_token);
+                // lines should end with a newline, but in case they don't, don't crash
+                assert!(!self.lexer().seen_line_token || self.lexer_mut().peek().is_none());
                 break;
             }
             match self.next_token() {
@@ -1330,7 +1331,7 @@ a";
     }
     #[test]
     fn empty_def() {
-        assert_err!("#define", CppError::EndOfFile(_), "empty define",);
+        assert_err!("#define", CppError::EmptyDefine, "empty define");
         assert_err!(
             "#define
             int",

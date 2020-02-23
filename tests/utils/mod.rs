@@ -35,7 +35,8 @@ pub fn cpp() -> std::process::Command {
 }
 
 pub fn compile_and_run(program: &str, path: PathBuf, args: &[&str]) -> Result<Output, Error> {
-    let output = compile(program, path, false)?;
+    let output = compile(program, path, false)
+        .unwrap_or_else(|err| panic!("failed to compile program '{}': {}", program, err));
     info!("running file {:?}", output);
     run(&output, args).map_err(Error::IO)
 }
@@ -124,17 +125,18 @@ pub fn assert_crash(program: &str, path: PathBuf) {
 }
 
 pub fn assert_output(program: &str, path: PathBuf, output: &str) {
-    assert!(
-        match compile_and_run(program, path, &[]) {
-            Err(_) => false,
-            Ok(actual) => actual.stdout == output.as_bytes(),
-        },
-        "{} should have the output {}",
-        program,
-        output
-    );
+    match compile_and_run(program, path, &[]) {
+        Err(_) => panic!("program failed to compile or run: {}", program),
+        Ok(actual) => assert_eq!(
+            actual.stdout,
+            output.as_bytes(),
+            "{} should have the output {} (got {})",
+            program,
+            output,
+            String::from_utf8_lossy(&actual.stdout),
+        ),
+    }
 }
-
 pub fn assert_succeeds(program: &str, path: PathBuf) {
     assert!(
         match compile_and_run(program, path, &[]) {

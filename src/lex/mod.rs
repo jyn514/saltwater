@@ -642,6 +642,11 @@ impl Iterator for Lexer {
     /// Any item may be an error, but items will always have an associated location.
     /// The file may be empty to start, in which case the iterator will return None.
     fn next(&mut self) -> Option<Self::Item> {
+        // sanity check
+        if self.chars.len() == 0 {
+            return None;
+        }
+
         self.consume_whitespace();
         let mut c = self.next_char();
         // avoid stack overflow on lots of comments
@@ -865,6 +870,18 @@ impl Iterator for Lexer {
                 location: self.span(span_start),
             }))
         });
+        if c.is_none()
+            && self.location.offset as usize == self.chars.len()
+            && self.chars.as_bytes()[self.chars.len() - 1] != b'\n'
+        {
+            let err = Some(Err(CompileError::new(
+                LexError::NoNewlineAtEOF.into(),
+                self.span(self.chars.len() as u32 - 1),
+            )));
+            // HACK: avoid infinite loop
+            self.location.offset += 1;
+            return err;
+        }
         // oof
         c.map(|result| result.map_err(|err| err.map(|err| LexError::Generic(err).into())))
     }

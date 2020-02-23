@@ -54,17 +54,14 @@ mod ir;
 mod lex;
 mod parse;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("{}", .0.iter().map(|err| err.data.to_string()).collect::<Vec<_>>().join("\n"))]
     Source(VecDeque<CompileError>),
+    #[error("platform-specific error: {0}")]
     Platform(String),
-    IO(io::Error),
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Error {
-        Error::IO(err)
-    }
+    #[error("io error: {0}")]
+    IO(#[from] io::Error),
 }
 
 impl From<CompileError> for Error {
@@ -256,7 +253,7 @@ mod tests {
     }
     #[test]
     fn empty() {
-        let mut lex_errs = compile_err("`");
+        let mut lex_errs = compile_err("`\n");
         assert!(lex_errs.pop_front().unwrap().data.is_lex_err());
         assert!(lex_errs.is_empty());
 
@@ -266,7 +263,7 @@ mod tests {
         assert!(err.is_semantic_err());
         assert!(empty_errs.is_empty());
 
-        let mut parse_err = compile_err("+++");
+        let mut parse_err = compile_err("+++\n");
         let err = parse_err.pop_front();
         assert!(parse_err.is_empty());
         assert!(err.unwrap().data.is_syntax_err());

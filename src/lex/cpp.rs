@@ -251,11 +251,15 @@ impl<'a> PreProcessor<'a> {
             "{}-{}-{}",
             TARGET.architecture, TARGET.operating_system, TARGET.environment
         );
+        let int = |i| Definition::Object(vec![Token::Literal(Literal::Int(i))]);
         Self {
             debug,
             first_lexer: Lexer::new(file, chars),
             includes: Default::default(),
-            definitions: Default::default(),
+            definitions: map! {
+                format!("__{}__", TARGET.architecture).into() => int(1),
+                format!("__{}__", TARGET.operating_system).into() => int(1),
+            },
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),

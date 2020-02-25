@@ -14,9 +14,9 @@ default-run = "rcc"
 [dependencies]
 lazy_static = "1"
 ansi_term = { version = "0.12", optional = true }
-cranelift = "0.58"
-cranelift-module = "0.58"
-cranelift-object = "0.58"
+cranelift = "0.59"
+cranelift-module = "0.59"
+cranelift-object = "0.59"
 env_logger = { version = "0.7", default-features = false, optional = true }
 hexf-parse = "0.1"
 thiserror = ">=1.0.9"

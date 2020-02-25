@@ -307,7 +307,9 @@ impl<'a> PreProcessor<'a> {
             self.consume_whitespace();
             if self.line() != line {
                 // lines should end with a newline, but in case they don't, don't crash
-                assert!(!self.lexer().seen_line_token || self.lexer_mut().peek().is_none());
+                assert!(!self.lexer().seen_line_token || self.lexer_mut().peek().is_none(),
+                    "expected `tokens_until_newline()` to reset `seen_line_token`, but `lexer.peek()` is {:?}",
+                    self.lexer_mut().peek());
                 break;
             }
             match self.next_token() {
@@ -1184,7 +1186,7 @@ lazy_static! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::lex::test::cpp;
+    use crate::data::lex::test::{cpp, cpp_no_newline};
 
     macro_rules! assert_err {
         ($src: expr, $err: pat, $description: expr $(,)?) => {
@@ -1451,5 +1453,17 @@ d
 c
 "#;
         assert_same(src, "\"b\"");
+    }
+    #[test]
+    fn test_comment_newline() {
+        let tokens: Vec<_> = cpp_no_newline(
+            "
+#if 1 //
+int main() {}
+#endif
+",
+        )
+        .collect();
+        assert_eq!(tokens, cpp("int main() {}").collect::<Vec<_>>());
     }
 }

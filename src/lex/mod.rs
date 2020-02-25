@@ -174,25 +174,28 @@ impl Lexer {
     /// Before: b"    // some comment\n /*multi comment*/hello   "
     /// After:  b"hello   "
     fn consume_whitespace(&mut self) {
-        let consume_comments = |s: &mut Self| {
-            if s.peek() == Some(b'/') {
-                match s.peek_next() {
-                    Some(b'/') => s.consume_line_comment(),
+        // there may be comments following whitespace
+        loop {
+            // whitespace
+            while self.peek().map_or(false, |c| c.is_ascii_whitespace()) {
+                self.next_char();
+            }
+            // comments
+            if self.peek() == Some(b'/') {
+                match self.peek_next() {
+                    Some(b'/') => self.consume_line_comment(),
                     Some(b'*') => {
-                        s.next_char();
-                        s.next_char();
-                        if let Err(err) = s.consume_multi_comment() {
-                            s.error_handler.push_back(err);
+                        self.next_char();
+                        self.next_char();
+                        if let Err(err) = self.consume_multi_comment() {
+                            self.error_handler.push_back(err);
                         }
                     }
-                    _ => {}
+                    _ => break,
                 }
+            } else {
+                break;
             }
-        };
-        consume_comments(self);
-        while self.peek().map_or(false, |c| c.is_ascii_whitespace()) {
-            self.next_char();
-            consume_comments(self);
         }
     }
     /// Remove all characters between now and the next b'\n' character.
@@ -666,28 +669,7 @@ impl Iterator for Lexer {
         }
 
         self.consume_whitespace();
-        let mut c = self.next_char();
-        // avoid stack overflow on lots of comments
-        while c == Some(b'/') {
-            c = match self.peek() {
-                Some(b'/') => {
-                    self.consume_line_comment();
-                    self.consume_whitespace();
-                    self.next_char()
-                }
-                Some(b'*') => {
-                    // discard b'*' so /*/ doesn't look like a complete comment
-                    self.next_char();
-                    if let Err(err) = self.consume_multi_comment() {
-                        return Some(Err(err));
-                    }
-                    self.consume_whitespace();
-                    self.next_char()
-                }
-                _ => break,
-            }
-        }
-        let c = c.and_then(|c| {
+        let c = self.next_char().and_then(|c| {
             let span_start = self.location.offset - 1;
             // this giant switch is most of the logic
             let data = match c {

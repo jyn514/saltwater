@@ -169,12 +169,30 @@ impl Lexer {
         }
     }
     /// Remove all consecutive whitespace pending in the stream.
+    /// This includes comments.
     ///
-    /// Before: u8s{"    hello   "}
-    /// After:  chars{"hello   "}
+    /// Before: b"    // some comment\n /*multi comment*/hello   "
+    /// After:  b"hello   "
     fn consume_whitespace(&mut self) {
+        let consume_comments = |s: &mut Self| {
+            if s.peek() == Some(b'/') {
+                match s.peek_next() {
+                    Some(b'/') => s.consume_line_comment(),
+                    Some(b'*') => {
+                        s.next_char();
+                        s.next_char();
+                        if let Err(err) = s.consume_multi_comment() {
+                            s.error_handler.push_back(err);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        };
+        consume_comments(self);
         while self.peek().map_or(false, |c| c.is_ascii_whitespace()) {
             self.next_char();
+            consume_comments(self);
         }
     }
     /// Remove all characters between now and the next b'\n' character.
@@ -884,5 +902,6 @@ impl Iterator for Lexer {
         }
         // oof
         c.map(|result| result.map_err(|err| err.map(|err| LexError::Generic(err).into())))
+            .or_else(|| self.error_handler.pop_front().map(Err))
     }
 }

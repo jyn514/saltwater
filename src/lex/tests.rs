@@ -223,7 +223,11 @@ fn test_comments() {
         3
     );
     let bad_comment = lex("/* unterminated comments are an error ");
-    assert!(bad_comment.is_some() && bad_comment.unwrap().is_err());
+    assert!(
+        bad_comment.is_some() && bad_comment.as_ref().unwrap().is_err(),
+        "expected unterminated comment err, got {:?}",
+        bad_comment
+    );
     // check for stack overflow
     assert_eq!(lex(&"//".repeat(10_000)), None);
     assert_eq!(lex(&"/* */".repeat(10_000)), None);

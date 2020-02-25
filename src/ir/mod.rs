@@ -126,8 +126,7 @@ impl Compiler {
             name,
             ObjectTrapCollection::Disabled,
             cranelift_module::default_libcall_names(),
-        )
-        .expect("unknown error creating module");
+        );
 
         Compiler {
             module: Module::new(builder),

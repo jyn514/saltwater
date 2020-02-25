@@ -1465,5 +1465,13 @@ int main() {}
         )
         .collect();
         assert_eq!(tokens, cpp("int main() {}").collect::<Vec<_>>());
+        assert_same(
+            "
+#if 1 /**//**/
+int main(){}
+#endif
+",
+            "int main() {}",
+        );
     }
 }

@@ -508,13 +508,15 @@ impl Compiler {
                 .expect("if sizeof() succeeds so should alignof()")
                 .try_into()
                 .expect("align should never be more than 255 bytes");
-            builder.emit_small_memmove(
+            builder.emit_small_memory_copy(
                 self.module.target_config(),
                 target.ir_val,
                 value.ir_val,
                 size,
                 align,
                 align,
+                // could be overlapping: `s = s;`
+                false,
             );
             return Ok(value);
         }

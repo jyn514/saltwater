@@ -443,8 +443,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(ctype) => ctype,
             None => {
                 if signed.is_none() {
-                    // if it's not an id, it's invalid anyway
-                    // other parts of the parser will have a better error message
+                    // these are the only tokens that can come before an id in a
+                    // declarator if it's not a declarator, it's invalid anyway
+                    // other parts of the parser will have a better error
+                    // message
                     match self.peek_token() {
                         Some(Token::Id(_)) | Some(Token::Star) | Some(Token::LeftParen) => {
                             let loc = self.next_location();
@@ -1841,7 +1843,9 @@ mod tests {
         Declaration, Initializer, Qualifiers, Symbol,
     };
     use crate::intern::InternedStr;
-    use crate::parse::tests::{match_all, match_data, parse, parse_all, ParseType};
+    use crate::parse::tests::{
+        assert_errs_decls, match_all, match_data, parse, parse_all, ParseType,
+    };
     use std::boxed::Box;
     use Type::*;
 
@@ -2246,6 +2250,25 @@ mod tests {
             assert!(parse(err).unwrap().is_err());
         }
     }
+
+    #[test]
+    fn default_type_specifier_warns() {
+        let default_type_decls = &[
+            "i;",
+            "f();",
+            "a[1];",
+            "(*fp)();",
+            "(i);",
+            "((*f)());",
+            "(a[1]);",
+            "(((((((((i)))))))));",
+        ];
+
+        for decl in default_type_decls {
+            assert_errs_decls(decl, 0, 1, 1);
+        }
+    }
+
     #[test]
     fn enum_declaration() {
         assert!(parse("enum;").unwrap().is_err());

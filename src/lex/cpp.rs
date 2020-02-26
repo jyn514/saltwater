@@ -252,6 +252,7 @@ impl<'a> PreProcessor<'a> {
             TARGET.architecture, TARGET.operating_system, TARGET.environment
         );
         let int = |i| Definition::Object(vec![Token::Literal(Literal::Int(i))]);
+        #[allow(clippy::inconsistent_digit_grouping)]
         Self {
             debug,
             first_lexer: Lexer::new(file, chars),
@@ -260,6 +261,8 @@ impl<'a> PreProcessor<'a> {
                 format!("__{}__", TARGET.architecture).into() => int(1),
                 format!("__{}__", TARGET.operating_system).into() => int(1),
                 "__STDC__".into() => int(1),
+                "__STDC_HOSTED__".into() => int(1),
+                "__STDC_VERSION__".into() => int(2011_12),
                 "__STDC_NO_ATOMICS__".into() => int(1),
                 "__STDC_NO_COMPLEX__".into() => int(1),
                 "__STDC_NO_THREADS__".into() => int(1),

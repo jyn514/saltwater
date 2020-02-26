@@ -23,7 +23,6 @@ Other than that, it should work exactly the same as on Linux.
 
 ## TODO
 
-- Function-like macros
 - Complex assignment (`a /= 5`)
 - Multiple translation units (files)
 - Bitfields?

@@ -183,10 +183,13 @@ impl<'a> PreProcessor<'a> {
         match self.next_replacement_token() {
             None => Ok(None),
             Some(Err(err)) => Err(err),
-            Some(Ok(matching)) if matching.data == token => Ok(Some(matching.location)),
-            Some(Ok(other)) => {
-                self.pending.push_front(other);
-                Ok(None)
+            Some(Ok(next)) => {
+                if next.data == token {
+                    Ok(Some(next.location))
+                } else {
+                    self.pending.push_front(next);
+                    Ok(None)
+                }
             }
         }
     }
@@ -366,8 +369,12 @@ impl<'a> PreProcessor<'a> {
                         Err(Locatable::new(CppError::InvalidDirective.into(), location))
                     }
                 }
-                Ok(other) if self.line() == line => {
-                    Err(other.map(|tok| CppError::UnexpectedToken("directive", tok).into()))
+                Ok(other) => {
+                    if self.line() == line {
+                        Err(other.map(|tok| CppError::UnexpectedToken("directive", tok).into()))
+                    } else {
+                        Ok(other.into())
+                    }
                 }
                 other => other.map(Locatable::from),
             }

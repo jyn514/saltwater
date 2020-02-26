@@ -10,6 +10,7 @@ categories = ["development-tools", "parser-implementations"]
 license = "BSD-3-Clause"
 keywords = ["C", "compiler", "recursive-descent", "cranelift"]
 default-run = "rcc"
+documentation = "https://docs.rs/rcc"
 
 [dependencies]
 lazy_static = "1"

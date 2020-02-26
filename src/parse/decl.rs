@@ -445,10 +445,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 if signed.is_none() {
                     // if it's not an id, it's invalid anyway
                     // other parts of the parser will have a better error message
-                    if let Some(Token::Id(_)) = self.peek_token() {
-                        let loc = self.next_location();
-                        self.error_handler
-                            .warn("type specifier missing, defaults to int", loc);
+                    match self.peek_token() {
+                        Some(Token::Id(_)) | Some(Token::Star) | Some(Token::LeftParen) => {
+                            let loc = self.next_location();
+                            self.error_handler
+                                .warn("type specifier missing, defaults to int", loc);
+                        }
+                        _ => {}
                     }
                 }
                 Type::Int(signed.unwrap_or(true))

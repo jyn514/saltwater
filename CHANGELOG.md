@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 See https://github.com/jyn514/rcc/issues/5 for a full list, including directives that aren't implemented.
 - The `-E` option is also implemented. However, it doesn't include any newlines, so it's a little hard to read.
 - Hex and octal character escapes (`'\x01'`). The null character escape is no longer special cased and is simply an octal escape.
-- Added predefined macros for the host architecture and OS
+- Added predefined macros for the host architecture and OS, as well as a few `__STDC*__` defines.
 - Static data is now stored using `.bss` where possible. This avoids crashes on `int a[0xffffffff];`
 
 ### Changed

@@ -1,5 +1,5 @@
 // output: j is 6
-#include<stdio.h>
+int printf(const char *, ...);
 
 typedef struct s *sp;
 

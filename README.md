@@ -34,7 +34,7 @@ Other than that, it should work exactly the same as on Linux.
 ```c
 $ cat tests/runner-tests/readme.c
 // output: j is 6
-#include<stdio.h>
+int printf(const char *, ...);
 
 typedef struct s *sp;
 

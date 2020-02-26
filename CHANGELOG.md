@@ -3,6 +3,46 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2020-02-25
+
+### Added
+
+- The preprocessor is working! It now supports
+  - `#include` directives
+  - `#define` directives, including function macros and cycle detection for object macros. Cycle detection for function macros is not implemented.
+  - `#warning` and `#error` directives
+  - `#if defined(var)` and `#elif`
+See https://github.com/jyn514/rcc/issues/5 for a full list, including directives that aren't implemented.
+- The `-E` option is also implemented. However, it doesn't include any newlines, so it's a little hard to read.
+- Hex and octal character escapes (`'\x01'`). The null character escape is no longer special cased and is simply an octal escape.
+- Added predefined macros for the host architecture and OS
+- Static data is now stored using `.bss` where possible. This avoids crashes on `int a[0xffffffff];`
+
+### Changed
+
+- Many fewer structs and functions are public. This allows removing unused code and also shouldn't affect library users since the exposed API wasn't particularly useful for anything except the parser.
+- Errors now look like `<file>:2:1 error:` instead of `<stdin>:2:1: error:`
+- Files must now end with a newline. Files not ending with a newline are a compile error (according to C11 they are undefined behavior: [5.1.1.2](http://port70.net/~nsz/c/c11/n1570.html#5.1.1.2))
+- `rcc` will now panic instead of calling `std::process::exit` if an unrecoverable error occurs during codegen.
+- Most dependencies (notably, excluding Cranelift) have been made optional to make `rcc` easier to use as a library.
+- The top-level API looks significantly different. It now requires a `FileId` and a `Files` struct to allow for multiple files to be `#include`d. The `Opt` struct has also been made part of the library instead of the binary.
+
+### Fixed
+
+- Fixed crash on `switch (1) { case 1: case 1: }`
+- Fixed crash on `void f() { int f; } int main() { f(); }`
+- Fixed crash on `_Noreturn`
+- Fixed _many_ of the bugs with `seen_line_token`, so this is no longer incorrectly marked as an error:
+
+```c
+#define a "b"
+#define c "d"
+```
+
+### Removed
+
+- The `CppError::Generic` variant has been removed in favor of specific error variants.
+
 ## [0.5.0] - 2020-02-07
 
 ### Added

@@ -443,8 +443,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(ctype) => ctype,
             None => {
                 if signed.is_none() {
-                    // these are the only tokens that can come before an id in a
-                    // declarator if it's not a declarator, it's invalid anyway
+                    // these are the only tokens that can come before an id in a declarator
+                    // if it's not a declarator, it's invalid anyway
                     // other parts of the parser will have a better error
                     // message
                     match self.peek_token() {

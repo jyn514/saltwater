@@ -259,6 +259,10 @@ impl<'a> PreProcessor<'a> {
             definitions: map! {
                 format!("__{}__", TARGET.architecture).into() => int(1),
                 format!("__{}__", TARGET.operating_system).into() => int(1),
+                "__STDC_NO_ATOMICS__".into() => int(1),
+                "__STDC_NO_COMPLEX__".into() => int(1),
+                "__STDC_NO_THREADS__".into() => int(1),
+                "__STDC_NO_VLA__".into() => int(1),
             },
             error_handler: Default::default(),
             nested_ifs: Default::default(),

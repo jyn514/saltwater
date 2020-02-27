@@ -10,7 +10,7 @@ use rcc::PreProcessor;
 use std::default::Default;
 
 fn is_exotic_keyword(s: &str, file: FileId, files: &mut Files) -> bool {
-    let (first, _) = PreProcessor::new(file, s, false, files).first_token();
+    let (first, _) = PreProcessor::new(file, s, false, vec![], files).first_token();
     let first = match first {
         Some(Locatable {
             data: Token::Keyword(k),

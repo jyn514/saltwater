@@ -93,6 +93,9 @@ pub struct Opt {
     /// The maximum number of errors to allow before giving up.
     /// If None, allows an unlimited number of errors.
     pub max_errors: Option<std::num::NonZeroUsize>,
+
+    /// The directories to consider as part of the search path.
+    pub search_path: Vec<PathBuf>,
 }
 
 /// Preprocess the source and return the tokens.
@@ -113,7 +116,8 @@ pub fn preprocess(
     Result<VecDeque<Locatable<Token>>, VecDeque<CompileError>>,
     VecDeque<CompileWarning>,
 ) {
-    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, files);
+    let path = opt.search_path.iter().map(|p| p.into());
+    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
 
     let mut tokens = VecDeque::new();
     let mut errs = VecDeque::new();
@@ -138,7 +142,8 @@ pub fn compile(
     file: FileId,
     files: &mut Files,
 ) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
-    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, files);
+    let path = opt.search_path.iter().map(|p| p.into());
+    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
 
     let mut errs = VecDeque::new();
 

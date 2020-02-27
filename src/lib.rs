@@ -196,8 +196,8 @@ pub fn compile(
     if !errs.is_empty() {
         return (Err(Error::Source(errs)), warnings);
     }
-    let name = files.name(file);
-    let (result, ir_warnings) = ir::compile(hir, name.into(), opt.debug_asm);
+    let name = files.name(file).to_string_lossy();
+    let (result, ir_warnings) = ir::compile(hir, name.into_owned(), opt.debug_asm);
     warnings.extend(ir_warnings);
     (result.map_err(Error::from), warnings)
 }

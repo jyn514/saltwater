@@ -184,6 +184,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 "fatal: maximum recursion depth exceeded ({} > {})",
                 depth, MAX_DEPTH
             );
+            if !self.error_handler.is_empty() {
+                println!("pending errors:");
+                // we're about to crash, no point worrying about performance
+                for error in self.error_handler.clone() {
+                    println!("- error: {}", error.data);
+                }
+                for warning in self.error_handler.clone().warnings {
+                    println!("- warning: {}", warning.data);
+                }
+            }
             std::process::exit(102);
         }
         guard

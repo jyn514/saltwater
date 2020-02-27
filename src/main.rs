@@ -172,8 +172,7 @@ fn main() {
     };
 
     let mut file_db = Files::new();
-    // TODO: remove `lossy` call
-    let file_id = file_db.add(opt.filename.to_string_lossy(), source);
+    let file_id = file_db.add(&opt.filename, source);
     real_main(buf, &mut file_db, file_id, &opt, &output)
         .unwrap_or_else(|err| err_exit(err, opt.opt.max_errors, &file_db));
 }
@@ -306,7 +305,7 @@ fn pretty_print<T: std::fmt::Display>(
         .expect("start location should be in bounds");
     let buf = format!(
         "{}:{}:{} {}: {}\n",
-        file_db.name(file),
+        file_db.name(file).to_string_lossy(),
         start.line.number(),
         start.column.number(),
         prefix,

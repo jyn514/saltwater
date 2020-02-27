@@ -35,6 +35,8 @@ struct Lexer {
     seen_line_token: bool,
     line: usize,
     error_handler: ErrorHandler,
+    /// Whether or not to display each token as it is processed
+    debug: bool,
 }
 
 // returned when lexing a string literal
@@ -54,8 +56,9 @@ struct SingleLocation {
 
 impl Lexer {
     /// Creates a Lexer from a filename and the contents of a file
-    fn new<S: Into<Rc<str>>>(file: FileId, chars: S) -> Lexer {
+    fn new<S: Into<Rc<str>>>(file: FileId, chars: S, debug: bool) -> Lexer {
         Lexer {
+            debug,
             location: SingleLocation { offset: 0, file },
             chars: chars.into(),
             seen_line_token: false,
@@ -881,6 +884,11 @@ impl Iterator for Lexer {
             // HACK: avoid infinite loop
             self.location.offset += 1;
             return err;
+        }
+        if self.debug {
+            if let Some(Ok(token)) = &c {
+                println!("token: {}", token.data);
+            }
         }
         // oof
         c.map(|result| result.map_err(|err| err.map(|err| LexError::Generic(err).into())))

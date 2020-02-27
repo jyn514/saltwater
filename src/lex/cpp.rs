@@ -1,8 +1,9 @@
 use lazy_static::lazy_static;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use codespan::FileId;
@@ -40,7 +41,7 @@ use crate::Files;
 /// let code = String::from("int main(void) { char *hello = \"hi\"; }\n").into();
 /// let src = Source { path: "example.c".into(), code: std::rc::Rc::clone(&code) };
 /// let file = files.add("example.c", src);
-/// let cpp = PreProcessor::new(file, code, false, &mut files);
+/// let cpp = PreProcessor::new(file, code, false, vec![], &mut files);
 /// for token in cpp {
 ///     assert!(token.is_ok());
 /// }
@@ -64,7 +65,7 @@ pub struct PreProcessor<'a> {
     /// The tokens that have been `#define`d and are currently being substituted
     pending: VecDeque<Locatable<Token>>,
     /// The paths to search for `#include`d files
-    search_path: Vec<std::borrow::Cow<'a, str>>,
+    search_path: Vec<Cow<'a, Path>>,
 }
 
 enum Definition {
@@ -242,17 +243,30 @@ impl<'a> PreProcessor<'a> {
     ///
     /// Note that the preprocessor may add arbitrarily many `#include`d files to `files`,
     /// but will never delete a file.
-    pub fn new<S: Into<Rc<str>>>(
+    pub fn new<
+        'files: 'a,
+        'search: 'a,
+        I: IntoIterator<Item = Cow<'search, Path>>,
+        S: Into<Rc<str>>,
+    >(
         file: FileId,
         chars: S,
         debug: bool,
-        files: &'a mut Files,
+        user_search_path: I,
+        files: &'files mut Files,
     ) -> Self {
         let system_path = format!(
             "{}-{}-{}",
             TARGET.architecture, TARGET.operating_system, TARGET.environment
         );
         let int = |i| Definition::Object(vec![Token::Literal(Literal::Int(i))]);
+        let mut search_path = vec![
+            PathBuf::from(format!("/usr/local/include/{}", system_path)).into(),
+            Path::new("/usr/local/include").into(),
+            PathBuf::from(format!("/usr/include/{}", system_path)).into(),
+            Path::new("/usr/include").into(),
+        ];
+        search_path.extend(user_search_path.into_iter());
         #[allow(clippy::inconsistent_digit_grouping)]
         Self {
             debug,
@@ -272,13 +286,8 @@ impl<'a> PreProcessor<'a> {
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
-            search_path: vec![
-                format!("/usr/local/include/{}", system_path).into(),
-                "/usr/local/include".into(),
-                format!("/usr/include/{}", system_path).into(),
-                "/usr/include".into(),
-            ],
             files,
+            search_path,
         }
     }
     /// Return the first valid token in the file,

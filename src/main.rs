@@ -56,6 +56,7 @@ OPTIONS:
     -o, --output <output>    The output file to use. [default: a.out]
         --max-errors <max>   The maximum number of errors to allow before giving up.
                              Use 0 to allow unlimited errors. [default: 10]
+    -I, --include <dir>      Add a directory to the local include path (`#include \"file.h\"`)
 
 ARGS:
     <file>    The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
@@ -63,7 +64,7 @@ ARGS:
 
 const USAGE: &str = "\
 usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
-           [--debug-lex] [--no-link | -c] [<file>]";
+           [--debug-lex] [--no-link | -c] [-I <dir>] [<file>]";
 
 struct BinOpt {
     /// The options that will be passed to `compile()`
@@ -221,6 +222,12 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             usize::from_str_radix(s, 10).map(NonZeroUsize::new)
         })?
         .unwrap_or_else(|| Some(NonZeroUsize::new(10).unwrap()));
+    let mut search_path = Vec::new();
+    while let Some(include) =
+        input.opt_value_from_os_str(["-I", "--include"], os_str_to_path_buf)?
+    {
+        search_path.push(include);
+    }
     Ok((
         BinOpt {
             preprocess_only: input.contains(["-E", "--preprocess-only"]),
@@ -230,6 +237,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
                 debug_ast: input.contains(["-a", "--debug-ast"]),
                 no_link: input.contains(["-c", "--no-link"]),
                 max_errors,
+                search_path,
             },
             filename: input
                 .free_from_os_str(os_str_to_path_buf)?

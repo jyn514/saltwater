@@ -58,8 +58,6 @@ pub struct PreProcessor<'a> {
     /// the preprocessor has no concept of scope other than `undef`
     definitions: HashMap<InternedStr, Definition>,
     error_handler: ErrorHandler,
-    /// Whether or not to display each token as it is processed
-    debug: bool,
     /// Keeps track of current `#if` directives
     nested_ifs: Vec<IfState>,
     /// The tokens that have been `#define`d and are currently being substituted
@@ -121,7 +119,7 @@ impl Iterator for PreProcessor<'_> {
     /// The preprocessor hides all internal complexity and returns only tokens.
     type Item = CppResult<Token>;
     fn next(&mut self) -> Option<Self::Item> {
-        let next_token = loop {
+        loop {
             if let Some(err) = self.error_handler.pop_front() {
                 break Some(Err(err));
             } else if let Some(token) = self.pending.pop_front() {
@@ -141,13 +139,7 @@ impl Iterator for PreProcessor<'_> {
                     },
                 }
             }
-        };
-        if self.debug {
-            if let Some(Ok(token)) = &next_token {
-                println!("token: {}", token.data);
-            }
         }
-        next_token
     }
 }
 
@@ -243,6 +235,8 @@ impl<'a> PreProcessor<'a> {
     ///
     /// Note that the preprocessor may add arbitrarily many `#include`d files to `files`,
     /// but will never delete a file.
+    ///
+    /// The `debug` parameter specifies whether to print out tokens before replacement.
     pub fn new<
         'files: 'a,
         'search: 'a,
@@ -269,8 +263,7 @@ impl<'a> PreProcessor<'a> {
         search_path.extend(user_search_path.into_iter());
         #[allow(clippy::inconsistent_digit_grouping)]
         Self {
-            debug,
-            first_lexer: Lexer::new(file, chars),
+            first_lexer: Lexer::new(file, chars, debug),
             includes: Default::default(),
             definitions: map! {
                 format!("__{}__", TARGET.architecture).into() => int(1),
@@ -745,7 +738,7 @@ impl<'a> PreProcessor<'a> {
         // TODO: remove(0) is bad and I should feel bad
         // TODO: this only returns the first error because anything else requires a refactor
         let first = cpp_tokens.remove(0)?;
-        let mut parser = crate::Parser::new(first, cpp_tokens.into_iter(), self.debug);
+        let mut parser = crate::Parser::new(first, cpp_tokens.into_iter(), false);
         // TODO: catch expressions that aren't allowed
         // (see https://github.com/jyn514/rcc/issues/5#issuecomment-575339427)
         // TODO: can semantic errors happen here? should we check?
@@ -1075,7 +1068,8 @@ impl<'a> PreProcessor<'a> {
             code: Rc::clone(&src),
         };
         let id = self.files.add(filename, source);
-        self.includes.push(Lexer::new(id, src));
+        self.includes
+            .push(Lexer::new(id, src, self.first_lexer.debug));
         Ok(())
     }
     // Returns every byte between the current position and the next `byte`.

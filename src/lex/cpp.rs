@@ -16,6 +16,67 @@ use crate::data::prelude::*;
 use crate::get_str;
 use crate::Files;
 
+/// An easier interface for constructing a preprocessor.
+///
+/// Here is the example for `PreProcessor::new()` using the builder:
+/// ```
+/// use rcc::{Files, PreProcessorBuilder, Source};
+///
+/// let mut files = Files::new();
+/// let code = String::from("int main(void) { char *hello = \"hi\"; }\n").into();
+/// let src = Source { path: "example.c".into(), code: std::rc::Rc::clone(&code) };
+/// let file = files.add("example.c", src);
+/// let cpp = PreProcessorBuilder::new(code, file, &mut files).build();
+/// for token in cpp {
+///     assert!(token.is_ok());
+/// }
+/// ```
+pub struct PreProcessorBuilder<'a> {
+    /// The buffer for the starting file
+    buf: Rc<str>,
+    /// The starting file
+    file: FileId,
+    /// All known files, including files which have already been read.
+    files: &'a mut Files,
+    /// Whether to print each token before replacement
+    debug: bool,
+    /// The paths to search for `#include`d files
+    search_path: Vec<Cow<'a, Path>>,
+}
+
+impl<'a> PreProcessorBuilder<'a> {
+    pub fn new<S: Into<Rc<str>>>(
+        buf: S,
+        file: FileId,
+        files: &'a mut Files,
+    ) -> PreProcessorBuilder<'a> {
+        PreProcessorBuilder {
+            debug: false,
+            files,
+            file,
+            buf: buf.into(),
+            search_path: Vec::new(),
+        }
+    }
+    pub fn debug(mut self, yes: bool) -> Self {
+        self.debug = yes;
+        self
+    }
+    pub fn search_path<C: Into<Cow<'a, Path>>>(mut self, path: C) -> Self {
+        self.search_path.push(path.into());
+        self
+    }
+    pub fn build(self) -> PreProcessor<'a> {
+        PreProcessor::new(
+            self.file,
+            self.buf,
+            self.debug,
+            self.search_path,
+            self.files,
+        )
+    }
+}
+
 /// A preprocessor does textual substitution and deletion on a C source file.
 ///
 /// The C preprocessor, or `cpp`, is tightly tied to C tokenization.

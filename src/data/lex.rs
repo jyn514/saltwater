@@ -31,7 +31,26 @@ impl<T> Locatable<T> {
             location: self.location,
         }
     }
+    // this can't be `impl Into` because of the orphan rule
+    pub fn into<S>(self) -> Locatable<S>
+    where
+        T: Into<S>,
+    {
+        self.map(Into::into)
+    }
+    // this can't be `impl From` because of the orphan rule
+    pub fn from<S: Into<T>>(loc: Locatable<S>) -> Locatable<T> {
+        loc.map(Into::into)
+    }
 }
+
+/*
+impl<T, S: Into<T>> From<Locatable<S>> for Locatable<T> {
+    fn from(existing: Locatable<S>) -> Self {
+        existing.map(Into::into)
+    }
+}
+*/
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(test, derive(Arbitrary))]

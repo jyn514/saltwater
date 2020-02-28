@@ -6,11 +6,11 @@ extern crate rcc;
 use codespan::FileId;
 use rcc::{Files, Locatable};
 use rcc::data::lex::{Keyword::*, Token};
-use rcc::PreProcessor;
+use rcc::PreProcessorBuilder;
 use std::default::Default;
 
 fn is_exotic_keyword(s: &str, file: FileId, files: &mut Files) -> bool {
-    let (first, _) = PreProcessor::new(file, s, false, vec![], files).first_token();
+    let (first, _) = PreProcessorBuilder::new(s, file, files).build().first_token();
     let first = match first {
         Some(Locatable {
             data: Token::Keyword(k),

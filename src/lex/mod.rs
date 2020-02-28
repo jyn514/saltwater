@@ -7,9 +7,9 @@ use super::data::{error::LexError, lex::*, prelude::*};
 use super::intern::InternedStr;
 
 mod cpp;
+pub use cpp::{PreProcessor, PreProcessorBuilder};
 #[cfg(test)]
 mod tests;
-pub use cpp::PreProcessor;
 
 /// A Lexer takes the source code and turns it into tokens with location information.
 ///

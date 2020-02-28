@@ -71,7 +71,7 @@ impl<T> ErrorHandler<T> {
         T: From<S>,
     {
         self.errors
-            .extend(&mut other.errors.drain(..).map(|loc| loc.into()));
+            .extend(&mut other.errors.drain(..).map(|loc| loc.map(Into::into)));
         self.warnings.append(&mut other.warnings);
     }
 
@@ -384,6 +384,12 @@ impl From<Locatable<SyntaxError>> for CompileError {
 impl From<Locatable<CppError>> for CompileError {
     fn from(err: Locatable<CppError>) -> Self {
         err.map(Error::PreProcessor)
+    }
+}
+
+impl From<Locatable<LexError>> for CompileError {
+    fn from(err: Locatable<LexError>) -> Self {
+        err.map(Error::Lex)
     }
 }
 

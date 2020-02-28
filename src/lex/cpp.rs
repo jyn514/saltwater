@@ -208,7 +208,7 @@ impl<'a> PreProcessor<'a> {
     fn line(&self) -> usize {
         self.lexer().line
     }
-    //#[inline]
+    #[inline]
     fn next_token(&mut self) -> Option<CppResult<Token>> {
         match self.lexer_mut().next() {
             Some(Err(err)) => Some(Err(err.into())),
@@ -1155,9 +1155,9 @@ enum CppToken {
     Directive(DirectiveKind),
 }
 
-impl From<Token> for CppToken {
-    fn from(token: Token) -> CppToken {
-        CppToken::Token(token)
+impl From<Locatable<Token>> for Locatable<CppToken> {
+    fn from(token: Locatable<Token>) -> Locatable<CppToken> {
+        token.map(CppToken::Token)
     }
 }
 

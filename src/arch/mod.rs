@@ -72,9 +72,16 @@ impl StructType {
     pub(crate) fn struct_size(&self) -> Result<SIZE_T, &'static str> {
         let symbols = &self.members();
 
-        symbols.iter().try_fold(0, |offset, symbol| {
-            Ok(StructType::next_offset(offset, &symbol.ctype)?)
-        })
+        symbols
+            .iter()
+            .try_fold(0, |offset, symbol| {
+                Ok(StructType::next_offset(offset, &symbol.ctype)?)
+            })
+            .and_then(|size_t| {
+                let align_minus_one = self.align()? - 1;
+
+                Ok((size_t + align_minus_one) & !align_minus_one)
+            })
     }
     /// Calculate the size of a union: the max of all member sizes
     pub(crate) fn union_size(&self) -> Result<SIZE_T, &'static str> {
@@ -244,7 +251,7 @@ impl FunctionType {
 mod tests {
     use super::*;
     use crate::data::{
-        types::{ArrayType, StructType, Type},
+        types::{StructType, Type},
         Qualifiers, StorageClass, Symbol,
     };
 
@@ -259,27 +266,7 @@ mod tests {
         }
     }
     fn complex_type_for_size(size: u16) -> Type {
-        let mut types = vec![];
-
-        let (div, mut rem) = (size / 8, size % 8);
-        if div != 0 {
-            types.push(Type::Array(
-                Box::new(Type::Long(true)),
-                ArrayType::Fixed(div.into()),
-            ));
-        }
-
-        for i in [4, 2, 1].iter() {
-            let div = rem / i;
-            rem %= i;
-            if div == 1 {
-                types.push(type_for_size(*i));
-            } else {
-                assert_eq!(div, 0);
-            }
-        }
-        assert_eq!(rem, 0);
-        struct_for_types(types)
+        struct_for_types(vec![Type::Char(true); size as usize])
     }
     fn symbol_for_type(ctype: Type, id: InternedStr) -> Symbol {
         Symbol {
@@ -349,7 +336,7 @@ mod tests {
     #[test]
     fn char_struct() {
         let char_struct = type_for_size(5);
-        assert_eq!(char_struct.alignof().unwrap(), 4);
+        assert_eq!(char_struct.alignof().unwrap(), 1);
         assert_offset(vec![Type::Int(true), Type::Char(true)], 1, 4);
         assert_eq!(char_struct.sizeof().unwrap(), 5);
     }

@@ -244,7 +244,7 @@ impl<'a> PreProcessor<'a> {
             return Some(Ok(replacement));
         }
         match self.lexer_mut().next()? {
-            Err(err) => Some(Err(err)),
+            Err(err) => Some(Err(err.map(Into::into))),
             Ok(token) => Some(Ok(token.map(PendingToken::Replacement))),
         }
     }
@@ -269,9 +269,13 @@ impl<'a> PreProcessor<'a> {
     fn line(&self) -> usize {
         self.lexer().line
     }
-    #[inline]
+    //#[inline]
     fn next_token(&mut self) -> Option<CppResult<Token>> {
-        self.lexer_mut().next()
+        match self.lexer_mut().next() {
+            Some(Err(err)) => Some(Err(err.into())),
+            Some(Ok(ok)) => Some(Ok(ok)),
+            None => None,
+        }
     }
     #[inline]
     fn span(&self, start: u32) -> Location {
@@ -471,7 +475,7 @@ impl<'a> PreProcessor<'a> {
                 other => other.map(Locatable::from),
             }
         } else {
-            next_token.map(Locatable::from)
+            next_token.map(Locatable::from).map_err(|err| err.into())
         })
     }
     // this function does _not_ perform macro substitution
@@ -1212,9 +1216,9 @@ enum CppToken {
     Directive(DirectiveKind),
 }
 
-impl From<Locatable<Token>> for Locatable<CppToken> {
-    fn from(token: Locatable<Token>) -> Locatable<CppToken> {
-        Locatable::new(CppToken::Token(token.data), token.location)
+impl From<Token> for CppToken {
+    fn from(token: Token) -> CppToken {
+        CppToken::Token(token)
     }
 }
 

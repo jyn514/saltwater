@@ -11,6 +11,8 @@ pub use cpp::{PreProcessor, PreProcessorBuilder};
 #[cfg(test)]
 mod tests;
 
+type LexResult<T = Token> = Result<T, Locatable<LexError>>;
+
 /// A Lexer takes the source code and turns it into tokens with location information.
 ///
 /// Tokens are either literals, keywords, identifiers, or builtin operations.
@@ -36,7 +38,7 @@ struct Lexer {
     /// counts _logical_ lines, not physical lines
     /// used for the preprocessor (mostly for `tokens_until_newline()`)
     line: usize,
-    error_handler: ErrorHandler,
+    error_handler: ErrorHandler<LexError>,
     /// Whether or not to display each token as it is processed
     debug: bool,
 }
@@ -219,7 +221,7 @@ impl Lexer {
     ///
     /// Before: u8s{"hello this is a lot of text */ int main(){}"}
     /// After:  chars{" int main(){}"}
-    fn consume_multi_comment(&mut self) -> CompileResult<()> {
+    fn consume_multi_comment(&mut self) -> LexResult<()> {
         let start = self.location.offset - 2;
         while let Some(c) = self.next_char() {
             if c == b'*' && self.peek() == Some(b'/') {
@@ -227,9 +229,9 @@ impl Lexer {
                 return Ok(());
             }
         }
-        Err(CompileError {
+        Err(Locatable {
             location: self.span(start),
-            data: LexError::UnterminatedComment.into(),
+            data: LexError::UnterminatedComment,
         })
     }
     /// Parse a number literal, given the starting character and whether floats are allowed.
@@ -659,7 +661,7 @@ impl Lexer {
 impl Iterator for Lexer {
     // option: whether the stream is exhausted
     // result: whether the next lexeme is an error
-    type Item = CompileResult<Locatable<Token>>;
+    type Item = Result<Locatable<Token>, Locatable<LexError>>;
 
     /// Return the next token in the stream.
     ///
@@ -880,13 +882,10 @@ impl Iterator for Lexer {
             && self.location.offset as usize == self.chars.len()
             && self.chars.as_bytes()[self.chars.len() - 1] != b'\n'
         {
-            let err = Some(Err(CompileError::new(
-                LexError::NoNewlineAtEOF.into(),
-                self.span(self.chars.len() as u32 - 1),
-            )));
+            let location = self.span(self.chars.len() as u32 - 1);
             // HACK: avoid infinite loop
             self.location.offset += 1;
-            return err;
+            return Some(Err(location.with(LexError::NoNewlineAtEOF)));
         }
         if self.debug {
             if let Some(Ok(token)) = &c {
@@ -894,7 +893,7 @@ impl Iterator for Lexer {
             }
         }
         // oof
-        c.map(|result| result.map_err(|err| err.map(|err| LexError::Generic(err).into())))
+        c.map(|result| result.map_err(|err| err.map(LexError::Generic)))
             .or_else(|| self.error_handler.pop_front().map(Err))
     }
 }

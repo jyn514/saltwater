@@ -6,8 +6,9 @@
 #![deny(unsafe_code)]
 #![deny(unused_extern_crates)]
 
-use std::collections::VecDeque;
-use std::io;
+use std::collections::{HashMap, VecDeque};
+use std::fs::File;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
@@ -53,9 +54,7 @@ pub type WarningResult<T> = (Result<T, VecDeque<CompileError>>, VecDeque<Compile
 pub use analyze::Analyzer;
 pub use data::*;
 // https://github.com/rust-lang/rust/issues/64762
-pub use lex::Lexer;
-pub use lex::PreProcessor;
-pub use lex::PreProcessorBuilder;
+pub use lex::{Lexer, Definition, PreProcessor, PreProcessorBuilder};
 pub use parse::Parser;
 
 #[macro_use]
@@ -137,7 +136,7 @@ impl RecursionGuard {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Opt {
     /// If set, print all tokens found by the lexer in addition to compiling.
     pub debug_lex: bool,
@@ -161,17 +160,20 @@ pub struct Opt {
 
     /// The directories to consider as part of the search path.
     pub search_path: Vec<PathBuf>,
+
+    /// The pre-defined macros to have as part of the preprocessor.
+    pub definitions: HashMap<InternedStr, Definition>,
 }
 
 /// Preprocess the source and return the tokens.
 pub fn preprocess(
     buf: &str,
-    opt: &Opt,
+    opt: Opt,
     file: FileId,
     files: &mut Files,
 ) -> WarningResult<VecDeque<Locatable<Token>>> {
     let path = opt.search_path.iter().map(|p| p.into());
-    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
+    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, opt.definitions, files);
 
     let mut tokens = VecDeque::new();
     let mut errs = VecDeque::new();
@@ -192,12 +194,13 @@ pub fn preprocess(
 /// Perform semantic analysis, including type checking and constant folding.
 pub fn check_semantics(
     buf: &str,
-    opt: &Opt,
+    opt: Opt,
     file: FileId,
     files: &mut Files,
 ) -> WarningResult<Vec<Locatable<hir::Declaration>>> {
     let path = opt.search_path.iter().map(|p| p.into());
-    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
+    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, opt.definitions, files);
+
     let mut errs = VecDeque::new();
 
     macro_rules! handle_err {
@@ -255,24 +258,22 @@ pub fn check_semantics(
 pub fn compile<B: Backend>(
     module: Module<B>,
     buf: &str,
-    opt: &Opt,
+    opt: Opt,
     file: FileId,
     files: &mut Files,
 ) -> (Result<Module<B>, Error>, VecDeque<CompileWarning>) {
+    let debug_asm = opt.debug_asm;
     let (hir, mut warnings) = match check_semantics(buf, opt, file, files) {
         (Err(errs), warnings) => return (Err(Error::Source(errs)), warnings),
         (Ok(hir), warnings) => (hir, warnings),
     };
-    let (result, ir_warnings) = ir::compile(module, hir, opt.debug_asm);
+    let (result, ir_warnings) = ir::compile(module, hir, debug_asm);
     warnings.extend(ir_warnings);
     (result.map_err(Error::from), warnings)
 }
 
 #[cfg(feature = "codegen")]
 pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {
-    use io::Write;
-    use std::fs::File;
-
     let bytes = product.emit().map_err(Error::Platform)?;
     File::create(output)?
         .write_all(&bytes)

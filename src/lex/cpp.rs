@@ -42,6 +42,8 @@ pub struct PreProcessorBuilder<'a> {
     debug: bool,
     /// The paths to search for `#include`d files
     search_path: Vec<Cow<'a, Path>>,
+    /// The user-defined macros that should be defined at startup
+    definitions: HashMap<InternedStr, Definition>,
 }
 
 impl<'a> PreProcessorBuilder<'a> {
@@ -56,6 +58,7 @@ impl<'a> PreProcessorBuilder<'a> {
             file,
             buf: buf.into(),
             search_path: Vec::new(),
+            definitions: HashMap::new(),
         }
     }
     pub fn debug(mut self, yes: bool) -> Self {
@@ -72,6 +75,7 @@ impl<'a> PreProcessorBuilder<'a> {
             self.buf,
             self.debug,
             self.search_path,
+            self.definitions,
             self.files,
         )
     }
@@ -102,7 +106,7 @@ impl<'a> PreProcessorBuilder<'a> {
 /// let code = String::from("int main(void) { char *hello = \"hi\"; }\n").into();
 /// let src = Source { path: "example.c".into(), code: std::rc::Rc::clone(&code) };
 /// let file = files.add("example.c", src);
-/// let cpp = PreProcessor::new(file, code, false, vec![], &mut files);
+/// let cpp = PreProcessor::new(file, code, false, vec![], Default::default(), &mut files);
 /// for token in cpp {
 ///     assert!(token.is_ok());
 /// }
@@ -142,12 +146,43 @@ impl PendingToken {
     }
 }
 
-enum Definition {
+#[derive(Debug)]
+pub enum Definition {
     Object(Vec<Token>),
     Function {
         params: Vec<InternedStr>,
         body: Vec<Token>,
     },
+}
+
+impl From<Token> for CppToken {
+    fn from(t: Token) -> CppToken {
+        CppToken::Token(t)
+    }
+}
+
+impl From<Vec<Token>> for Definition {
+    fn from(tokens: Vec<Token>) -> Definition {
+        Definition::Object(tokens)
+    }
+}
+
+impl TryFrom<&str> for Definition {
+    type Error = Error;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let value = Rc::from(format!("{}\n", value));
+        let mut files = codespan::Files::new();
+        let dummy_id = files.add("<impl TryFrom<&str> for Definition>", Rc::clone(&value));
+        let lexer = Lexer::new(dummy_id, value, false);
+        lexer
+            .map(|res| match res {
+                Ok(loc) => Ok(loc.data),
+                Err(err) => Err(err.data),
+            })
+            .collect::<Result<_, _>>()
+            .map(Definition::Object)
+            .map_err(Into::into)
+    }
 }
 
 /// Keeps track of the state of a conditional inclusion directive.
@@ -337,6 +372,7 @@ impl<'a> PreProcessor<'a> {
         chars: S,
         debug: bool,
         user_search_path: I,
+        user_definitions: HashMap<InternedStr, Definition>,
         files: &'files mut Files,
     ) -> Self {
         let system_path = format!(
@@ -344,6 +380,20 @@ impl<'a> PreProcessor<'a> {
             TARGET.architecture, TARGET.operating_system, TARGET.environment
         );
         let int = |i| Definition::Object(vec![Token::Literal(Literal::Int(i))]);
+
+        #[allow(clippy::inconsistent_digit_grouping)]
+        let mut definitions = map! {
+            format!("__{}__", TARGET.architecture).into() => int(1),
+            format!("__{}__", TARGET.operating_system).into() => int(1),
+            "__STDC__".into() => int(1),
+            "__STDC_HOSTED__".into() => int(1),
+            "__STDC_VERSION__".into() => int(2011_12),
+            "__STDC_NO_ATOMICS__".into() => int(1),
+            "__STDC_NO_COMPLEX__".into() => int(1),
+            "__STDC_NO_THREADS__".into() => int(1),
+            "__STDC_NO_VLA__".into() => int(1),
+        };
+        definitions.extend(user_definitions);
         let mut search_path = vec![
             PathBuf::from(format!("/usr/local/include/{}", system_path)).into(),
             Path::new("/usr/local/include").into(),
@@ -351,24 +401,13 @@ impl<'a> PreProcessor<'a> {
             Path::new("/usr/include").into(),
         ];
         search_path.extend(user_search_path.into_iter());
-        #[allow(clippy::inconsistent_digit_grouping)]
         Self {
             first_lexer: Lexer::new(file, chars, debug),
             includes: Default::default(),
-            definitions: map! {
-                format!("__{}__", TARGET.architecture).into() => int(1),
-                format!("__{}__", TARGET.operating_system).into() => int(1),
-                "__STDC__".into() => int(1),
-                "__STDC_HOSTED__".into() => int(1),
-                "__STDC_VERSION__".into() => int(2011_12),
-                "__STDC_NO_ATOMICS__".into() => int(1),
-                "__STDC_NO_COMPLEX__".into() => int(1),
-                "__STDC_NO_THREADS__".into() => int(1),
-                "__STDC_NO_VLA__".into() => int(1),
-            },
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
+            definitions,
             files,
             search_path,
         }

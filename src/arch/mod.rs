@@ -80,6 +80,7 @@ impl StructType {
             .and_then(|size_t| {
                 let align_minus_one = self.align()? - 1;
 
+                // Rounds up to the next multiple of `align`
                 Ok((size_t + align_minus_one) & !align_minus_one)
             })
     }
@@ -265,9 +266,12 @@ mod tests {
             _ => complex_type_for_size(size),
         }
     }
+
+    #[inline]
     fn complex_type_for_size(size: u16) -> Type {
         struct_for_types(vec![Type::Char(true); size as usize])
     }
+
     fn symbol_for_type(ctype: Type, id: InternedStr) -> Symbol {
         Symbol {
             id,

@@ -25,6 +25,7 @@ pub(crate) struct ErrorHandler<T = Error> {
     pub(crate) warnings: VecDeque<CompileWarning>,
 }
 
+// Can't be derived because the derive mistakenly puts a bound of T: Default
 impl<T> Default for ErrorHandler<T> {
     fn default() -> Self {
         Self {

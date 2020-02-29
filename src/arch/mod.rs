@@ -341,7 +341,7 @@ mod tests {
     }
     #[test]
     fn align_of_non_char_struct() {
-        let ty = struct_for_types(vec![Int(true), Int(true)]);
-        assert_eq!(ty.alignof(), Ok(4));
+        let ty = struct_for_types(vec![Pointer(Box::new(Int(true))), Int(true)]);
+        assert_eq!(ty.alignof(), Ok(8));
     }
 }

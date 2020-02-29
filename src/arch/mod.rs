@@ -339,4 +339,9 @@ mod tests {
         assert_offset(vec![Type::Int(true), Type::Char(true)], 1, 4);
         assert_eq!(char_struct.sizeof().unwrap(), 5);
     }
+    #[test]
+    fn align_of_non_char_struct() {
+        let ty = struct_for_types(vec![Int(true), Int(true)]);
+        assert_eq!(ty.alignof(), Ok(4));
+    }
 }

@@ -263,13 +263,8 @@ mod tests {
             SHORT_SIZE => Type::Short(true),
             INT_SIZE => Type::Int(true),
             LONG_SIZE => Type::Long(true),
-            _ => complex_type_for_size(size),
+            _ => struct_for_types(vec![Type::Char(true); size as usize]),
         }
-    }
-
-    #[inline]
-    fn complex_type_for_size(size: u16) -> Type {
-        struct_for_types(vec![Type::Char(true); size as usize])
     }
 
     fn symbol_for_type(ctype: Type, id: InternedStr) -> Symbol {

@@ -63,9 +63,24 @@ pub struct PreProcessor<'a> {
     /// Keeps track of current `#if` directives
     nested_ifs: Vec<IfState>,
     /// The tokens that have been `#define`d and are currently being substituted
-    pending: VecDeque<Locatable<Token>>,
+    pending: VecDeque<Locatable<PendingToken>>,
     /// The paths to search for `#include`d files
     search_path: Vec<Cow<'a, Path>>,
+}
+
+#[derive(Clone)]
+enum PendingToken {
+    Replacement(Token),
+    Cyclic(Token),
+}
+
+impl PendingToken {
+    fn token(&self) -> &Token {
+        match self {
+            PendingToken::Replacement(t) => t,
+            PendingToken::Cyclic(t) => t,
+        }
+    }
 }
 
 enum Definition {
@@ -137,7 +152,9 @@ impl Iterator for PreProcessor<'_> {
                                 Ok(()) => continue,
                             }
                         }
-                        CppToken::Token(token) => break self.handle_token(token, loc.location),
+                        CppToken::Token(token) => {
+                            break self.handle_token(PendingToken::Replacement(token), loc.location)
+                        }
                     },
                 }
             }
@@ -169,13 +186,13 @@ impl<'a> PreProcessor<'a> {
         self.includes.last_mut().unwrap_or(&mut self.first_lexer)
     }
     /// Return the next token, taking into account replacements
-    fn next_replacement_token(&mut self) -> Option<CppResult<Token>> {
+    fn next_replacement_token(&mut self) -> Option<CppResult<PendingToken>> {
         if let Some(replacement) = self.pending.pop_front() {
             return Some(Ok(replacement));
         }
         match self.lexer_mut().next()? {
             Err(err) => Some(Err(err)),
-            Ok(token) => Some(Ok(token)),
+            Ok(token) => Some(Ok(token.map(PendingToken::Replacement))),
         }
     }
     /// If the next token is a `token`, consume it and return its location.
@@ -185,7 +202,7 @@ impl<'a> PreProcessor<'a> {
             None => Ok(None),
             Some(Err(err)) => Err(err),
             Some(Ok(next)) => {
-                if next.data == token {
+                if next.data.token() == &token {
                     Ok(Some(next.location))
                 } else {
                     self.pending.push_front(next);
@@ -220,9 +237,21 @@ impl<'a> PreProcessor<'a> {
         self.lexer().location.offset
     }
     /// Possibly recursively replace tokens. This also handles turning identifiers into keywords.
-    fn handle_token(&mut self, token: Token, location: Location) -> Option<CppResult<Token>> {
+    fn handle_token(
+        &mut self,
+        token: PendingToken,
+        location: Location,
+    ) -> Option<CppResult<Token>> {
+        let (token, needs_replacement) = match token {
+            PendingToken::Replacement(tok) => (tok, true),
+            PendingToken::Cyclic(tok) => (tok, false),
+        };
         if let Token::Id(id) = token {
-            let mut token = self.replace_id(id, location);
+            let mut token = if needs_replacement {
+                self.replace_id(id, location)
+            } else {
+                Some(Ok(Locatable::new(token, location)))
+            };
             if let Some(Ok(Locatable {
                 data: data @ Token::Id(_),
                 ..
@@ -537,10 +566,21 @@ impl<'a> PreProcessor<'a> {
             if def.len() > 1 {
                 // prepend the new tokens to the pending tokens
                 let mut new_pending = VecDeque::new();
-                new_pending.extend(def[1..].iter().map(|token| Locatable {
-                    // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
-                    data: token.clone(),
-                    location,
+                new_pending.extend(def[1..].iter().map(|token| {
+                    let pending_tok = if let Token::Id(id) = token {
+                        if ids_seen.contains(id) {
+                            PendingToken::Cyclic
+                        } else {
+                            PendingToken::Replacement
+                        }
+                    } else {
+                        PendingToken::Replacement
+                        // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
+                    }(token.clone());
+                    Locatable {
+                        data: pending_tok,
+                        location,
+                    }
                 }));
                 new_pending.append(&mut self.pending);
                 self.pending = new_pending;
@@ -586,10 +626,10 @@ impl<'a> PreProcessor<'a> {
                 Some(Err(err)) => return Some(Err(err)),
                 Some(Ok(token)) => token,
             };
-            if next.data == Token::Comma {
+            if next.data.token() == &Token::Comma {
                 args.push(mem::replace(&mut current_arg, Vec::new()));
                 continue;
-            } else if next.data == Token::RightParen {
+            } else if next.data.token() == &Token::RightParen {
                 args.push(mem::replace(&mut current_arg, Vec::new()));
                 break;
             } else {
@@ -613,10 +653,12 @@ impl<'a> PreProcessor<'a> {
                     let replacement = args[index].clone();
                     self.pending.extend(replacement);
                 } else {
-                    self.pending.push_back(location.with(token.clone()));
+                    self.pending
+                        .push_back(location.with(PendingToken::Replacement(token.clone())));
                 }
             } else {
-                self.pending.push_back(location.with(token.clone()));
+                self.pending
+                    .push_back(location.with(PendingToken::Replacement(token.clone())));
             }
         }
         self.next()
@@ -1495,5 +1537,12 @@ int main(){}
 ",
             "int main() {}",
         );
+    }
+    #[test]
+    fn cycle_detection() {
+        let src = "
+        #define sa_handler   __sa_handler.sa_handler
+        s.sa_handler";
+        assert_same(src, "s.__sa_handler.sa_handler");
     }
 }

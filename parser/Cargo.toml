@@ -10,3 +10,6 @@ edition = "2018"
 thiserror = "1"
 string-interner = "*"
 lazy_static = "*"
+codespan = "0.8"
+hexf-parse = "0.1"
+#rcc = { path = "../" }

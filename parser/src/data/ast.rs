@@ -1,4 +1,4 @@
-use crate::data::lex::Literal;
+use crate::data::lex::{AssignmentToken, ComparisonToken, Literal, Locatable};
 use crate::intern::InternedStr;
 
 pub type Program = Vec<Declaration>;
@@ -88,5 +88,58 @@ pub enum Declarator {
 
 type CompoundStatement = Vec<Stmt>;
 
-pub use crate::data::ExprType as Expr;
-pub use crate::data::StmtType as Stmt;
+pub use crate::data::{Stmt, StmtType};
+pub type Expr = Locatable<ExprType>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExprType {
+    // primary
+    Id(InternedStr),
+    Literal(Literal),
+
+    // postfix
+    FuncCall(Box<Expr>, Vec<Expr>),
+    Member(Box<Expr>, InternedStr),
+    // post increment/decrement
+    PostIncrement(Box<Expr>, bool),
+
+    // prefix
+    PreIncrement(Box<Expr>, bool),
+    Cast(Box<Expr>),
+    SizeofType(TypeName),
+    SizeofExpr(Box<Expr>),
+    Deref(Box<Expr>),
+    AddressOf(Box<Expr>),
+    UnaryPlus(Box<Expr>),
+    Negate(Box<Expr>),
+    BitwiseNot(Box<Expr>),
+    LogicalNot(Box<Expr>),
+
+    // binary
+    LogicalOr(Box<Expr>, Box<Expr>),
+    BitwiseOr(Box<Expr>, Box<Expr>),
+    LogicalAnd(Box<Expr>, Box<Expr>),
+    BitwiseAnd(Box<Expr>, Box<Expr>),
+    Xor(Box<Expr>, Box<Expr>),
+    Mul(Box<Expr>, Box<Expr>),
+    Div(Box<Expr>, Box<Expr>),
+    Mod(Box<Expr>, Box<Expr>),
+    Add(Box<Expr>, Box<Expr>),
+    Sub(Box<Expr>, Box<Expr>),
+    // bool: left or right
+    Shift(Box<Expr>, Box<Expr>, bool),
+    // Token: make >, <, <=, ... part of the same variant
+    Compare(Box<Expr>, Box<Expr>, ComparisonToken),
+    // Token: allow extended assignment
+    Assign(Box<Expr>, Box<Expr>, AssignmentToken),
+    
+    // misfits
+    // Ternary: if ? then : else
+    Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
+    Comma(Box<Expr>, Box<Expr>),
+    // &expr in static context
+    // requires cooperation with the linker
+    StaticRef(Box<Expr>),
+    // used to work around various bugs, see places this is constructed for details
+    Noop(Box<Expr>),
+}

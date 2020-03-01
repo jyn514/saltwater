@@ -9,11 +9,9 @@ pub mod lex;
 pub mod types;
 pub mod prelude {
     pub(crate) use super::error::{ErrorHandler, Recover, RecoverableResult};
-    #[cfg(test)]
-    pub(crate) use super::lex::test::cpp;
     pub use super::{
         error::{CompileError, CompileResult, CompileWarning, Error, SemanticError, SyntaxError},
-        lex::{Literal, Locatable, Location, Token},
+        lex::{Literal, Locatable, LocationTrait, DefaultLocation as Location, Token},
         types::{StructRef, StructType},
         Declaration, Expr, ExprType, Stmt, StmtType, Symbol,
     };
@@ -21,7 +19,8 @@ pub mod prelude {
 }
 use crate::intern::InternedStr;
 use error::CompileError;
-use lex::{AssignmentToken, ComparisonToken, Keyword, Literal, Locatable, Location};
+use lex::{AssignmentToken, ComparisonToken, Keyword, Literal, Locatable};
+use prelude::Location;
 
 pub type Stmt = Locatable<StmtType>;
 
@@ -71,6 +70,8 @@ pub enum Initializer {
 ///
 /// This should be the datatype you use in APIs, etc.
 /// because it is more useful than the raw ExprType.
+pub type Expr = Locatable<ExprType>;
+/*
 #[derive(Clone, Debug, PartialEq)]
 pub struct Expr {
     /// expr: holds the actual expression
@@ -100,10 +101,11 @@ pub struct Expr {
     /// implicit operations should point to the child expression
     pub location: Location,
 }
+*/
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprType {
-    Id(Symbol),
+    Id(InternedStr),
     Literal(Literal),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, InternedStr),

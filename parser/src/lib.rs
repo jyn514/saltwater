@@ -1,8 +1,12 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 mod decl;
 mod expr;
 //mod stmt;
 mod data;
 mod intern;
+mod lex;
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -12,7 +16,7 @@ use std::rc::Rc;
 
 use crate::data::{prelude::*, ast::Declaration, Scope};
 
-type Lexeme = CompileResult<Locatable<Token>>;
+type Lexeme<L = Location> = CompileResult<Locatable<Token, L>, L>;
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
 
 type SyntaxResult<T = Expr> = Result<T, Locatable<SyntaxError>>;
@@ -29,7 +33,7 @@ pub(crate) enum TagEntry {
 struct RecursionGuard(Rc<()>);
 
 #[derive(Debug)]
-pub struct Parser<I: Iterator<Item = Lexeme>> {
+pub struct Parser<I: Iterator<Item = Lexeme<L>>, L: LocationTrait = Location> {
     /// C actually has 4 different scopes:
     /// - label names
     /// - tags
@@ -46,16 +50,16 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// VecDeque supports pop_front with reasonable efficiency
     /// this is useful because there could be multiple declarators
     /// in a single declaration; e.g. `int a, b, c;`
-    pending: VecDeque<Locatable<Declaration>>,
+    pending: VecDeque<Locatable<Declaration, L>>,
     /// in case we get to the end of the file and want to show an error
-    last_location: Location,
+    last_location: L,
     /// the last token we saw from the Lexer. None if we haven't looked ahead.
     /// Should only be used in this module.
-    current: Option<Locatable<Token>>,
+    current: Option<Locatable<Token, L>>,
     /// TODO: are we sure we need 2 tokens of lookahead?
     /// this was put here for declarations, so we know the difference between
     /// int (*x) and int (int), but there's probably a workaround
-    next: Option<Locatable<Token>>,
+    next: Option<Locatable<Token, L>>,
     /// whether to debug each declaration
     debug: bool,
     /// Internal API which makes it easier to return errors lazily
@@ -64,9 +68,9 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     recursion_guard: RecursionGuard,
 }
 
-impl<I> Parser<I>
+impl<I, L: LocationTrait> Parser<I, L>
 where
-    I: Iterator<Item = Lexeme>,
+    I: Iterator<Item = Lexeme<L>>,
 {
     /// Create a new parser over the tokens.
     ///
@@ -74,7 +78,7 @@ where
     /// I would rather ensure `I` has at least one token,
     /// but I don't know a good way to do that without requiring users to
     /// use `std::iter::once`.
-    pub fn new(first: Locatable<Token>, tokens: I, debug: bool) -> Self {
+    pub fn new(first: Locatable<Token, L>, tokens: I, debug: bool) -> Self {
         Parser {
             scope: Default::default(),
             tag_scope: Default::default(),
@@ -170,11 +174,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         guard
     }
     /* utility functions */
+    /*
     #[inline]
     fn enter_scope(&mut self) {
         self.scope.enter();
         self.tag_scope.enter();
     }
+    */
     /*
     fn leave_scope(&mut self, location: Location) {
         use crate::data::StorageClass;
@@ -248,6 +254,23 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             token.location
         } else {
             self.last_location
+        }
+    }
+    fn match_id(&mut self) -> Option<Locatable<InternedStr>> {
+        if let Some(&Token::Id(id)) = self.peek_token() {
+            let location = self.next_token().unwrap().location;
+            Some(Locatable::new(id, location))
+        } else {
+            None
+        }
+    }
+    fn match_literal(&mut self) -> Option<Locatable<Literal>> {
+        let next = self.next_token();
+        if let Some(Locatable { data: Token::Literal(lit), location }) = next {
+            Some(location.with(lit))
+        } else {
+            self.unput(next);
+            None
         }
     }
     fn match_next(&mut self, next: &Token) -> Option<Locatable<Token>> {
@@ -364,12 +387,11 @@ impl Token {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+pub(crate) mod test {
     use super::Parser;
     use crate::data::prelude::*;
-    use crate::lex::PreProcessor as Lexer;
-
-    pub(crate) use super::expr::tests::parse_expr;
+    use crate::data::ast::Declaration;
+    use crate::lex::Lexer;
 
     pub(crate) type ParseType = CompileResult<Locatable<Declaration>>;
     pub(crate) fn parse(input: &str) -> Option<ParseType> {
@@ -386,89 +408,15 @@ pub(crate) mod tests {
             }))),
         }
     }
-    pub(crate) fn assert_errs_decls(input: &str, errs: usize, warnings: usize, decls: usize) {
-        let mut parser = parser(input);
-        let (decl_iter, err_iter) = parser.collect_results();
-        let warn_iter = parser.warnings().into_iter();
-        assert!(
-            (err_iter.len(), warn_iter.len(), decl_iter.len()) == (errs, warnings, decls),
-            "({} errs, {} warnings, {} decls) != ({}, {}, {}) when parsing {}",
-            err_iter.len(),
-            warn_iter.len(),
-            decl_iter.len(),
-            errs,
-            warnings,
-            decls,
-            input
-        );
-    }
     #[inline]
     pub(crate) fn parse_all(input: &str) -> Vec<ParseType> {
         parser(input).collect()
     }
     #[inline]
-    pub(crate) fn match_data<T>(lexed: Option<ParseType>, closure: T) -> bool
-    where
-        T: Fn(Declaration) -> bool,
-    {
-        match lexed {
-            Some(Ok(decl)) => closure(decl.data),
-            _ => false,
-        }
-    }
-    #[inline]
-    pub(crate) fn match_all<I, T>(mut lexed: I, closure: T) -> bool
-    where
-        I: Iterator<Item = ParseType>,
-        T: Fn(Declaration) -> bool,
-    {
-        lexed.all(|l| match l {
-            Ok(decl) => closure(decl.data),
-            _ => false,
-        })
-    }
-    #[inline]
     pub(crate) fn parser(input: &str) -> Parser<Lexer> {
-        let mut lexer = cpp(input);
-        let first = lexer.next().unwrap().unwrap();
-        Parser::new(first, lexer, false)
-    }
-    #[test]
-    fn peek() {
-        use crate::data::lex::{Keyword, Token};
-        use crate::intern::InternedStr;
-        let mut instance = parser("int a[(int)1];");
-        assert_eq!(
-            instance.next_token().unwrap().data,
-            Token::Keyword(Keyword::Int)
-        );
-        assert_eq!(
-            instance.next_token().unwrap().data,
-            Token::Id(InternedStr::get_or_intern("a"))
-        );
-        assert_eq!(instance.peek_token(), Some(&Token::LeftBracket));
-        assert_eq!(instance.peek_next_token(), Some(&Token::LeftParen));
-        assert_eq!(instance.peek_token(), Some(&Token::LeftBracket));
-        assert_eq!(instance.next_token().unwrap().data, Token::LeftBracket);
-        assert_eq!(instance.next_token().unwrap().data, Token::LeftParen);
-        assert_eq!(
-            instance.next_token().unwrap().data,
-            Token::Keyword(Keyword::Int)
-        );
-    }
-    #[test]
-    fn multiple_declaration() {
-        let mut decls = parse_all("int a; int a;");
-        assert_eq!(decls.len(), 2, "{:?}", decls);
-        assert!(decls.pop().unwrap().is_ok());
-        assert!(decls.pop().unwrap().is_ok());
-        assert_errs_decls("int a; char *a[];", 1, 0, 2);
-    }
-    #[test]
-    fn semicolons() {
-        let mut buf = Vec::new();
-        buf.resize(10_000, ';');
-        let buf: String = buf.into_iter().collect();
-        assert!(parse(&buf).is_none());
+        let mut lexer = Lexer::new((), input, false);
+        let first: Locatable<Token, Location> = lexer.next().unwrap().unwrap();
+        let p: Parser<Lexer> = Parser::new(first, lexer, false);
+        p
     }
 }

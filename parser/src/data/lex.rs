@@ -14,13 +14,38 @@ pub struct Location {
 }
 */
 
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Span { start: usize, end: usize }
+pub struct Span { start: u32, end: u32 }
+pub trait LocationTrait: Copy + std::fmt::Debug + PartialEq + Sized {
+    fn merge(&self, other: &Self) -> Self;
+
+    fn with<T>(self, data: T) -> Locatable<T, Self> {
+        Locatable {
+            data,
+            location: self,
+        }
+    }
+
+    fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError<Self> {
+        self.with(error.into())
+    }
+}
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Location { span: Span, file: () }
+pub struct DefaultLocation { pub span: Span, pub file: () }
+
+use std::ops::Range;
+impl From<Range<u32>> for Span {
+    fn from(r: Range<u32>) -> Span {
+        Span {
+            start: r.start,
+            end: r.end,
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug)]
-pub struct Locatable<T, L = Location> {
+pub struct Locatable<T, L: LocationTrait = DefaultLocation> {
     pub data: T,
     pub location: L,
 }
@@ -175,27 +200,27 @@ pub enum Token {
 }
 
 /* impls */
-
-impl Location {
-    pub fn with<T>(self, data: T) -> Locatable<T> {
-        Locatable {
-            data,
-            location: self,
-        }
-    }
-
-    pub fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError {
-        self.with(error.into())
-    }
-}
-
-impl PartialOrd for Location {
+impl PartialOrd for DefaultLocation {
     /// NOTE: this only compares the start of the spans, it ignores the end
-    fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &DefaultLocation) -> Option<Ordering> {
         if self.file == other.file {
             Some(self.span.cmp(&other.span))
         } else {
             None
+        }
+    }
+}
+
+impl LocationTrait for DefaultLocation {
+    fn merge(&self, other: &Self) -> Self {
+        use std::cmp::{min, max};
+
+        DefaultLocation {
+            span: Span {
+                start: min(self.span.start, other.span.start),
+                end: max(self.span.end, other.span.end),
+            },
+            file: (),
         }
     }
 }
@@ -208,8 +233,8 @@ impl<T: PartialEq> PartialEq for Locatable<T> {
 
 impl<T: Eq> Eq for Locatable<T> {}
 
-impl<T> Locatable<T> {
-    pub fn new(data: T, location: Location) -> Locatable<T> {
+impl<T, L: LocationTrait> Locatable<T, L> {
+    pub fn new(data: T, location: L) -> Locatable<T, L> {
         location.with(data)
     }
 }
@@ -280,13 +305,11 @@ impl AssignmentToken {
 }
 
 #[cfg(test)]
-impl Default for Location {
+impl Default for DefaultLocation {
     fn default() -> Self {
-        let mut files = crate::Files::default();
-        let id = files.add("<test suite>", String::new().into());
         Self {
             span: (0..1).into(),
-            file: id,
+            file: (),
         }
     }
 }
@@ -408,33 +431,5 @@ impl From<AssignmentToken> for Token {
 impl From<ComparisonToken> for Token {
     fn from(a: ComparisonToken) -> Self {
         Token::Comparison(a)
-    }
-}
-
-#[cfg(test)]
-pub(crate) mod test {
-    use crate::*;
-    /// Create a new preprocessor with `s` as the input
-    pub(crate) fn cpp(s: &str) -> PreProcessor {
-        let newline = format!("{}\n", s).into_boxed_str();
-        cpp_no_newline(Box::leak(newline))
-    }
-    /// Create a new preprocessor with `s` as the input, but without a trailing newline
-    pub(crate) fn cpp_no_newline(s: &str) -> PreProcessor {
-        let mut files: Files = Default::default();
-        let id = files.add("<test suite>", String::new().into());
-        PreProcessor::new(id, s, false, vec![], Box::leak(Box::new(files)))
-    }
-
-    #[test]
-    fn assignment_display() {
-        let tokens = [
-            "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", ">>=", "<<=", "^=",
-        ];
-        for token in &tokens {
-            let mut lexer = cpp(token);
-            let first = lexer.next().unwrap().unwrap().data;
-            assert_eq!(&first.to_string(), *token);
-        }
     }
 }

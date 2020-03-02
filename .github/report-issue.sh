@@ -63,7 +63,7 @@ editor() {
 	fallback editor "$EDITOR" "$VISUAL" xdg-open open
 }
 browser() {
-	fallback browser xdg-open sensible-browser x-www-browser firefox chromium-browser
+	fallback browser "$BROWSER" xdg-open sensible-browser x-www-browser firefox chromium-browser
 }
 
 # running from git
@@ -106,6 +106,7 @@ if exists xclip; then
 	xclip < "$T/template"
 	echo "copied to clipboard"
 fi
+
 TITLE="$(grep '^title: ' < "$T/template" | tail -c +8 | tr -d '"')"
 LABELS="$(grep '^labels: ' < "$T/template" | tail -c +9 | tr -d '"')"
 # https://stackoverflow.com/questions/59257913/remove-header-yaml-with-sed-from-a-markdown-file

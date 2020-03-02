@@ -102,7 +102,7 @@ else
 fi
 
 cat "$SOURCE" "$T/stdout" "$T/stderr" > "$T/combined"
-python -c '
+python3 -c '
 import sys
 
 with open(sys.argv[1]) as fd:

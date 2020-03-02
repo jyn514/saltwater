@@ -1,6 +1,6 @@
 #!/bin/sh
 
-set -euv
+set -eu
 
 if [ $# -lt 2 ]; then
 	echo "usage: $0 <issue type> <file>"
@@ -30,7 +30,6 @@ abort_unless_override() {
 	fi
 }
 fallback() {
-	set -x
 	prompt="$1"
 	shift
 	while [ $# -gt 0 ]; do
@@ -50,24 +49,6 @@ editor() {
 browser() {
 	fallback browser xdg-open sensible-browser x-www-browser firefox chromium-browser
 }
-#editor() {
-#	exists "$EDITOR"; then
-#		echo "$EDITOR"
-#	elif exists "$VISUAL"; then
-#		echo "$VISUAL"
-#	# linux
-#	elif exists xdg-open; then
-#		echo xdg-open
-#	# mac
-#	elif exists open; then
-#		echo open;
-#	# lol who even knows
-#	else
-#		echo "What is your preferred editor? (ctrl+c to exit): " >/dev/tty
-#		read -r
-#		echo "$REPLY"
-#	fi
-#}
 
 # running from git
 if exists git && exists cargo \
@@ -95,7 +76,7 @@ fi
 T="$(mktemp -d /tmp/rcc-XXXXXX)"
 $RCC "$SOURCE" >"$T/stdout" 2>"$T/stderr"
 
-if grep RUST_BACKTRACE "$TEMPLATE"; then
+if grep -q RUST_BACKTRACE "$TEMPLATE"; then
 	RUST_BACKTRACE=1 $RCC "$SOURCE" > "$T/backtrace"
 else
 	touch "$T/backtrace"

@@ -1,3 +1,7 @@
+mod decl;
+mod expr;
+mod stmt;
+
 use std::collections::VecDeque;
 use std::fmt;
 use std::iter::Iterator;
@@ -5,10 +9,6 @@ use std::mem;
 use std::rc::Rc;
 
 use crate::data::{prelude::*, Scope};
-
-mod decl;
-mod expr;
-mod stmt;
 
 type Lexeme = CompileResult<Locatable<Token>>;
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;

@@ -32,6 +32,8 @@ color-backtrace = { version = "0.3", default-features = false, optional = true }
 [dev-dependencies]
 criterion = "0.3.1"
 walkdir = "2"
+proptest = "0.9"
+proptest-derive = "0.1"
 
 [features]
 default = ["bin"]

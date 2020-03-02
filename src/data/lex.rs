@@ -1,8 +1,12 @@
-use crate::intern::InternedStr;
+use std::cmp::Ordering;
 
 use codespan::{FileId, Span};
+use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
+#[cfg(test)] use proptest_derive::Arbitrary;
 
-use std::cmp::Ordering;
+use crate::intern::InternedStr;
+
+#[cfg(test)] use self::test::arb_interned_str;
 
 // holds where a piece of code came from
 // should almost always be immutable
@@ -28,6 +32,7 @@ impl<T> Locatable<T> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum Keyword {
     // statements
     If,
@@ -89,6 +94,7 @@ pub enum Keyword {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum AssignmentToken {
     Equal,
     PlusEqual,
@@ -104,6 +110,7 @@ pub enum AssignmentToken {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum ComparisonToken {
     Less,
     Greater,
@@ -114,6 +121,7 @@ pub enum ComparisonToken {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum Literal {
     // literals
     Int(i64),
@@ -124,6 +132,7 @@ pub enum Literal {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum Token {
     PlusPlus,
     MinusMinus,
@@ -159,6 +168,7 @@ pub enum Token {
 
     Keyword(Keyword),
     Literal(Literal),
+    #[cfg_attr(test, proptest(strategy(arb_interned_str)))]
     Id(InternedStr),
 
     // Misc
@@ -222,7 +232,6 @@ impl Literal {
     }
 }
 
-use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
 impl ComparisonToken {
     pub fn to_int_compare(self, signed: bool) -> IntCC {
         use ComparisonToken::*;
@@ -404,7 +413,10 @@ impl From<ComparisonToken> for Token {
 
 #[cfg(test)]
 pub(crate) mod test {
+    use proptest::prelude::*;
+
     use crate::*;
+
     /// Create a new preprocessor with `s` as the input
     pub(crate) fn cpp(s: &str) -> PreProcessor {
         let newline = format!("{}\n", s).into_boxed_str();
@@ -427,5 +439,9 @@ pub(crate) mod test {
             let first = lexer.next().unwrap().unwrap().data;
             assert_eq!(&first.to_string(), *token);
         }
+    }
+
+    pub(crate) fn arb_interned_str() -> impl Strategy<Value = Token> {
+        ".*".prop_map(|s| Token::Id(InternedStr::from(s)))
     }
 }

@@ -54,6 +54,8 @@ and it will print the URL instead.
 Be aware that the URL contains the entire contents of the issue,
 so it will be _very_ long.
 
+If you want to run the script non-interactively, use `EDITOR=true`.
+
 ## Reference
 
 You may find the following references useful.

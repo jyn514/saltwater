@@ -1,7 +1,3 @@
-mod decl;
-mod expr;
-mod stmt;
-
 use std::collections::VecDeque;
 use std::fmt;
 use std::iter::Iterator;
@@ -9,6 +5,10 @@ use std::mem;
 use std::rc::Rc;
 
 use crate::data::{prelude::*, Scope};
+
+mod decl;
+mod expr;
+mod stmt;
 
 type Lexeme = CompileResult<Locatable<Token>>;
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
@@ -382,11 +382,13 @@ impl Token {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::Parser;
+    use proptest::prelude::*;
+
     use crate::data::prelude::*;
     use crate::lex::PreProcessor as Lexer;
 
     pub(crate) use super::expr::tests::parse_expr;
+    use super::Parser;
 
     pub(crate) type ParseType = CompileResult<Locatable<Declaration>>;
     pub(crate) fn parse(input: &str) -> Option<ParseType> {
@@ -487,5 +489,40 @@ pub(crate) mod tests {
         buf.resize(10_000, ';');
         let buf: String = buf.into_iter().collect();
         assert!(parse(&buf).is_none());
+    }
+
+    prop_compose! {
+        fn arb_vec_result_locatable_token()(tokens in any::<Vec<Token>>()) -> Vec<CompileResult<Locatable<Token>>> {
+            tokens.into_iter().map(|token| Ok(Locatable { data: token, location: Location::default()})).collect()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_peek_equals_token(
+            first in any::<Token>(),
+            tokens in arb_vec_result_locatable_token()
+            ) {
+            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), false);
+
+            let peek = parser.peek_token().cloned();
+            let next = parser.next_token().map(|l| l.data);
+
+            prop_assert_eq!(peek, next);
+        }
+
+        #[test]
+        fn proptest_peek_next_equals_2_next_token(
+            first in any::<Token>(),
+            tokens in arb_vec_result_locatable_token()
+            ) {
+            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), false);
+
+            let peek = parser.peek_next_token().cloned();
+            parser.next_token();
+            let next = parser.next_token().map(|l| l.data);
+
+            prop_assert_eq!(peek, next);
+        }
     }
 }

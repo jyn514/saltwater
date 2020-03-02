@@ -33,7 +33,7 @@ exists() {
 	command -v "$1" >/dev/null 2>&1
 }
 abort_unless_override() {
-	read -r
+	read -r REPLY
 	if ! [ "$REPLY" = y ]; then
 		echo "aborting"
 		exit 1
@@ -50,7 +50,7 @@ fallback() {
 		shift
 	done
 	echo "What is your preferred $prompt? (ctrl+c to exit): " >/dev/tty
-	read -r
+	read -r REPLY
 	echo "$REPLY"
 }
 editor() {
@@ -61,8 +61,8 @@ browser() {
 }
 
 # running from git
-if exists git && exists cargo \
-	&& git remote -v | grep -q https://github.com/jyn514/rcc; then
+# NOTE: allows ssh urls too
+if exists git && exists cargo && git remote -v | grep -q 'github\.com.jyn514/rcc'; then
 	BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 	if ! [ "$BRANCH" = master ]; then
 		printf "You are on '%s', not master. Continue? y/[n] " "$BRANCH"
@@ -70,7 +70,8 @@ if exists git && exists cargo \
 	fi
 	# https://stackoverflow.com/a/2659808
 	if ! git diff-index --quiet HEAD --; then
-		printf "You have staged or unstaged changes relative to master. Continue? y/[n]"
+		printf "You have staged or unstaged changes relative to master. Continue? y/[n] "
+		abort_unless_override
 	fi
 	cargo build
 	RCC="cargo run --quiet"
@@ -84,18 +85,16 @@ else
 fi
 
 T="$(mktemp -d /tmp/rcc-XXXXXX)"
-$RCC "$SOURCE" >"$T/stdout" 2>"$T/stderr"
+$RCC "$SOURCE" >"$T/stdout" 2>"$T/stderr" || true
 
 if grep -q RUST_BACKTRACE "$TEMPLATE"; then
-	RUST_BACKTRACE=1 $RCC "$SOURCE" > "$T/backtrace"
+	RUST_BACKTRACE=pretty $RCC "$SOURCE" 2> "$T/backtrace" || true
 else
 	touch "$T/backtrace"
 fi
 
-"$ROOT/.github/sub.py" "$T/backtrace" "$SOURCE" < "$TEMPLATE" > "$T/template-backtrace"
-TEMPLATE="$T/template-backtrace"
-
-cp "$TEMPLATE" "$T/template"
+cat "$SOURCE" "$T/stdout" "$T/stderr" > "$T/combined"
+"$ROOT/.github/sub.py" "$T/backtrace" "$T/combined" < "$TEMPLATE" > "$T/template"
 $(editor) "$T/template"
 if exists xclip; then
 	xclip < "$T/template"
@@ -107,3 +106,4 @@ LABELS="$(grep '^labels: ' < "$T/template" | tail -c +9 | tr -d '"')"
 BODY="$(sed '/^---$/,/^---$/d' "$T/template" | python3 -c "import urllib.parse; import sys; print(urllib.parse.quote(sys.stdin.read()))")"
 URL="https://github.com/jyn514/rcc/issues/new?template=$TYPE.md&title=$TITLE&labels=$LABELS&body=$BODY"
 $(browser) "$URL"
+rm -rf "$T"

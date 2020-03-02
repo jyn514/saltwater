@@ -3,7 +3,7 @@
 set -eu
 
 if [ $# -lt 2 ]; then
-	echo "usage: $0 <issue type> <file>"
+	echo "usage: $0 <issue type> <file> [-f]"
 	exit 1
 fi
 
@@ -18,6 +18,12 @@ esac
 ROOT="$(git rev-parse --show-toplevel)"
 TEMPLATE="$ROOT/.github/ISSUE_TEMPLATE/$TYPE.md"
 SOURCE="$2"
+if [ $# = 3 ] && [ "$3" = "-f" ]; then
+	FORCE=1
+else
+	echo $#
+	FORCE=0
+fi
 
 if ! [ -e "$TEMPLATE" ]; then
 	echo "INTERNAL error: template $TEMPLATE does not exist"
@@ -64,12 +70,12 @@ browser() {
 # NOTE: allows ssh urls too
 if exists git && exists cargo && git remote -v | grep -q 'github\.com.jyn514/rcc'; then
 	BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-	if ! [ "$BRANCH" = master ]; then
+	if [ $FORCE = 0 ] && ! [ "$BRANCH" = master ]; then
 		printf "You are on '%s', not master. Continue? y/[n] " "$BRANCH"
 		abort_unless_override
 	fi
 	# https://stackoverflow.com/a/2659808
-	if ! git diff-index --quiet HEAD --; then
+	if [ $FORCE = 0 ] && ! git diff-index --quiet HEAD --; then
 		printf "You have staged or unstaged changes relative to master. Continue? y/[n] "
 		abort_unless_override
 	fi

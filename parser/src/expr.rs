@@ -48,30 +48,31 @@ impl BinaryPrecedence {
             _ => true,
         }
     }
-    fn constructor(&self) -> Box<dyn Fn(Expr, Expr) -> ExprType> {
+    fn constructor(&self) -> impl Fn(Expr, Expr) -> ExprType {
         use BinaryPrecedence::*;
         use ExprType::*;
         use crate::data::lex::ComparisonToken;
-        let func = match self {
-            Self::Mul => ExprType::Mul,
-            Self::Div => ExprType::Div,
-            Self::Mod => ExprType::Mod,
-            Self::Add => ExprType::Add,
-            Self::Sub => ExprType::Sub,
-            Shl => |a, b| Shift(a, b, true),
-            Shr => |a, b| Shift(a, b, false),
-            Less => |a, b| Compare(a, b, ComparisonToken::Less),
-            Greater => |a, b| Compare(a, b, ComparisonToken::Greater),
-            LessEq => |a, b| Compare(a, b, ComparisonToken::LessEqual),
-            GreaterEq => |a, b| Compare(a, b, ComparisonToken::GreaterEqual),
-            Eq => |a, b| Compare(a, b, ComparisonToken::EqualEqual),
-            Ne => |a, b| Compare(a, b, ComparisonToken::NotEqual),
-            BitAnd => BitwiseAnd,
-            BitXor => Xor,
-            BitOr => BitwiseOr,
-            LogAnd => LogicalAnd,
-            LogOr => LogicalOr,
-            Self::Ternary | Self::Assignment => panic!("lol no"),
+        let func: Box<dyn Fn(_, _) -> _> = match self {
+            Self::Mul => Box::new(ExprType::Mul) as _,
+            Self::Div => Box::new(ExprType::Div) as _,
+            Self::Mod => Box::new(ExprType::Mod) as _,
+            Self::Add => Box::new(ExprType::Add),
+            Self::Sub => Box::new(ExprType::Sub),
+            Shl => Box::new(|a, b| Shift(a, b, true)),
+            Shr => Box::new(|a, b| Shift(a, b, false)),
+            Less => Box::new(|a, b| Compare(a, b, ComparisonToken::Less)),
+            Greater => Box::new(|a, b| Compare(a, b, ComparisonToken::Greater)),
+            LessEq => Box::new(|a, b| Compare(a, b, ComparisonToken::LessEqual)),
+            GreaterEq => Box::new(|a, b| Compare(a, b, ComparisonToken::GreaterEqual)),
+            Eq => Box::new(|a, b| Compare(a, b, ComparisonToken::EqualEqual)),
+            Ne => Box::new(|a, b| Compare(a, b, ComparisonToken::NotEqual)),
+            BitAnd => Box::new(BitwiseAnd),
+            BitXor => Box::new(Xor),
+            BitOr => Box::new(BitwiseOr),
+            LogAnd => Box::new(LogicalAnd),
+            LogOr => Box::new(LogicalOr),
+            &Self::Assignment(token) => Box::new(move |a, b| Assign(a, b, token)),
+            Self::Ternary => panic!("lol no"),
         };
         move |a, b| func(Box::new(a), Box::new(b))
     }

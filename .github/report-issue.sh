@@ -60,10 +60,12 @@ fallback() {
 	echo "$REPLY"
 }
 editor() {
-	fallback editor "$EDITOR" "$VISUAL" xdg-open open
+	EDITOR=${EDITOR:-${VISUAL:-xdg-open}}
+	fallback editor "$EDITOR" open
 }
 browser() {
-	fallback browser "$BROWSER" xdg-open sensible-browser x-www-browser firefox chromium-browser
+	BROWSER=${BROWSER:-xdg-open}
+	fallback browser "$BROWSER" sensible-browser x-www-browser firefox chromium-browser
 }
 
 # running from git
@@ -100,7 +102,29 @@ else
 fi
 
 cat "$SOURCE" "$T/stdout" "$T/stderr" > "$T/combined"
-"$ROOT/.github/sub.py" "$T/backtrace" "$T/combined" < "$TEMPLATE" > "$T/template"
+python -c '
+import sys
+
+with open(sys.argv[1]) as fd:
+    backtrace = fd.read()
+with open(sys.argv[2]) as fd:
+    source = fd.read()
+
+for line in sys.stdin:
+    print(line, end="")
+    if "RUST_BACKTRACE=1" in line:
+        line = input()
+        while line == "":
+            print()
+            line = input()
+        print(line)
+        if "```" not in line:
+            continue
+        print(backtrace, end="")
+    # source code for file
+    elif "```c" in line:
+        print(source, end="")
+' "$T/backtrace" "$T/combined" < "$TEMPLATE" > "$T/template"
 $(editor) "$T/template"
 if exists xclip; then
 	xclip < "$T/template"

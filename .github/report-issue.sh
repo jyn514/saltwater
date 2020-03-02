@@ -131,7 +131,18 @@ if exists xclip; then
 	echo "copied to clipboard"
 fi
 
-TITLE="$(grep '^title: ' < "$T/template" | tail -c +8 | tr -d '"')"
+if grep -q panicked "$T/stderr"; then
+	# add the panic message to the title
+	TITLE="$(grep "^Message: " "$T/stderr" | tail -c +11)"
+	echo "$TITLE"
+fi
+TEMPLATE_TITLE="$(grep '^title: ' < "$T/template" | tail -c +8 | tr -d '"')"
+if [ -z "$TITLE" ]; then
+	TITLE="$TEMPLATE_TITLE"
+else
+	TITLE="$TEMPLATE_TITLE $TITLE"
+fi
+
 LABELS="$(grep '^labels: ' < "$T/template" | tail -c +9 | tr -d '"')"
 # https://stackoverflow.com/questions/59257913/remove-header-yaml-with-sed-from-a-markdown-file
 BODY="$(sed '/^---$/,/^---$/d' "$T/template" | python3 -c "import urllib.parse; import sys; print(urllib.parse.quote(sys.stdin.read()))")"

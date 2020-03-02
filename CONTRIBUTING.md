@@ -48,6 +48,12 @@ unrecognized issue type (options are panic, codegen, parse), aborting
 After you close your editor, `report-issue` will open your browser to a 'new issue' GitHub page with the contents of the now-complete template.
 You can still edit the issue browser if you like.
 
+If you don't like this behavior of opening the browser,
+you can instead run the script with `BROWSER=echo`
+and it will print the URL instead.
+Be aware that the URL contains the entire contents of the issue,
+so it will be _very_ long.
+
 ## Reference
 
 You may find the following references useful.

@@ -14,7 +14,9 @@ use std::iter::Iterator;
 use std::mem;
 use std::rc::Rc;
 
-use crate::data::{prelude::*, ast::Declaration, Scope};
+pub use crate::data::prelude::*;
+pub use crate::lex::Lexer;
+use crate::data::{ast::Declaration, Scope};
 
 type Lexeme<L = Location> = CompileResult<Locatable<Token, L>, L>;
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;

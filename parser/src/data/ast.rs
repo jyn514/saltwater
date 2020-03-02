@@ -44,7 +44,11 @@ pub enum TypeSpecifier {
     Unsigned,
     Struct(StructSpecifier),
     Union(StructSpecifier),
-    Enum(EnumSpecifier),
+    // enum name? { A = 1, B = 2, C }
+    Enum {
+        name: Option<InternedStr>,
+        members: Vec<(InternedStr, Expr)>,
+    },
     Typedef(InternedStr),
 }
 
@@ -54,13 +58,6 @@ pub struct StructSpecifier {
     // Some([]): `struct s {}`
     // None: `struct s;`
     members: Option<Vec<Declaration>>,
-}
-
-// enum name? { A = 1, B = 2, C }
-#[derive(Clone, Debug, PartialEq)]
-pub struct EnumSpecifier {
-    name: Option<InternedStr>,
-    members: Vec<(InternedStr, Expr)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -84,7 +81,7 @@ pub enum Initializer {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Declarator {
     Pointer(Box<Declarator>),
-    Array { of: Box<Declarator>, size: Box<Expr> },
+    Array { of: Box<Declarator>, size: Option<Box<Expr>> },
     Id(InternedStr),
 }
 
@@ -159,6 +156,66 @@ impl Display for TypeSpecifier {
             Double => write!(f, "double"),
             Signed => write!(f, "signed"),
             Unsigned => write!(f, "unsigned"),
+            Enum { name: Some(ident), .. } => write!(f, "enum {}", ident),
+            // TODO: maybe print the body too?
+            Enum { name: None, .. } => write!(f, "<anonymous enum>"),
+            Union(spec) => write!(f, "union {}", spec),
+            Struct(spec) => write!(f, "struct {}", spec),
+            Typedef(name) => write!(f, "{}", name),
+        }
+    }
+}
+
+impl Display for StructSpecifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(ident) = self.name {
+            write!(f, "{} ", ident)
+        } else if let Some(body) = &self.members {
+            writeln!(f, "{{")?;
+            for decl in body {
+                writeln!(f, "    {}", decl)?;
+            }
+            writeln!(f, "}}")
+        } else {
+            // what are we supposed to do for `struct;` lol
+            Ok(())
+        }
+    }
+}
+
+impl Display for Declaration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for spec in &self.specifiers {
+            write!(f, "{} ", spec)?;
+        }
+        for decl in &self.declarators {
+            write!(f, "{}", decl)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for InitDeclarator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.declarator)?;
+        if let Some(init) = &self.init {
+            write!(f, " = {}", init)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for Initializer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Initializer::Scalar(expr) => write!(f, "{}", expr),
+            Initializer::Aggregate(items) => {
+                write!(f, "{{")?;
+                for item in items {
+                    write!(f, "{} ", item)?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -177,21 +234,52 @@ impl Declarator {
     fn print_pre(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Declarator::*;
         match self {
-            Pointer(inner) | Array { .. } => inner.print_pre(f),
+            Pointer(inner) | Array { of: inner, .. } => inner.print_pre(f),
             //Function(ftype) => write!(f, "{}", ftype.return_type),
+            Id(_) => Ok(()),
         }
     }
-    fn print_mid(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unimplemented!()
+    fn print_mid(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
+        use Declarator::*;
+        match self {
+            Pointer(inner) => {
+                inner.print_mid(None, f)?;
+                let name = name.unwrap_or_default();
+                match **inner {
+                    Array { .. } | Pointer(_) => write!(f, "(*{})", name),
+                    _ => write!(f, "*{}", inner),
+                }
+            }
+            Array { of, .. } => of.print_mid(name, f),
+            _ => {
+                if let Some(name) = name {
+                    write!(f, " {}", name)?;
+                }
+                Ok(())
+            }
+        }
     }
     fn print_post(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unimplemented!()
+        use Declarator::*;
+        match self {
+            Pointer(to) => to.print_post(f),
+            // TODO: maybe print the array size too?
+            Array { of , size } => {
+                write!(f, "[")?;
+                if let Some(expr) = size {
+                    write!(f, "{}", expr)?;
+                }
+                write!(f, "]")?;
+                of.print_post(f)
+            }
+            Id(id) => write!(f, "{}", id),
+        }
     }
 }
 impl Display for Declarator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.print_pre(f)?;
-        self.print_mid(f)?;
+        self.print_mid(None, f)?;
         self.print_post(f)
         /*
         match self {
@@ -210,7 +298,7 @@ impl Display for Declarator {
 
 impl Display for TypeName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for s in self.specifiers {
+        for s in &self.specifiers {
             write!(f, "{} ", s)?;
         }
         write!(f, "{}", self.declarator)
@@ -234,6 +322,8 @@ impl Display for Expr {
             ExprType::BitwiseNot(expr) => write!(f, "(~{})", expr),
             ExprType::Deref(expr) => write!(f, "*({})", expr),
             ExprType::Negate(expr) => write!(f, "-({})", expr),
+            ExprType::UnaryPlus(expr) => write!(f, "+({})", expr),
+            ExprType::LogicalNot(expr) => write!(f, "!({})", expr),
             ExprType::LogicalOr(left, right) => write!(f, "({}) || ({})", left, right),
             ExprType::LogicalAnd(left, right) => write!(f, "({}) && ({})", left, right),
             ExprType::Shift(val, by, left) => {
@@ -244,15 +334,21 @@ impl Display for Expr {
             ExprType::Ternary(cond, left, right) => {
                 write!(f, "({}) ? ({}) : ({})", cond, left, right)
             }
-            ExprType::FuncCall(left, params) => write!(f, "({})({})", left, join(params)),
+            ExprType::FuncCall(left, params) => write!(f, "({})({})", left, super::join(params)),
             ExprType::Cast(ctype, expr) => write!(f, "({})({})", ctype, expr),
-            ExprType::SizeofType(ty) => write!(f, "sizeof({})", ty),
             ExprType::Member(compound, id) => write!(f, "({}).{}", compound, id),
+            ExprType::PreIncrement(expr, inc) => {
+                write!(f, "{}({})", if *inc { "++" } else { "--" }, expr)
+            }
             ExprType::PostIncrement(expr, inc) => {
                 write!(f, "({}){}", expr, if *inc { "++" } else { "--" })
             }
+            // hacks
             ExprType::StaticRef(expr) => write!(f, "&{}", expr),
             ExprType::Noop(expr) => write!(f, "{}", expr),
+            ExprType::AddressOf(expr) => write!(f, "&({})", expr),
+            ExprType::SizeofExpr(expr) => write!(f, "sizeof({})", expr),
+            ExprType::SizeofType(ty) => write!(f, "sizeof({})", ty),
         }
     }
 }

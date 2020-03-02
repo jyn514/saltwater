@@ -91,8 +91,9 @@ if exists xclip; then
 	xclip < "$T/template"
 	echo "copied to clipboard"
 fi
-TITLE="$(grep '^title: ' < "$T/template" | tail -c +8)"
+TITLE="$(grep '^title: ' < "$T/template" | tail -c +8 | tr -d '"')"
+LABELS="$(grep '^labels: ' < "$T/template" | tail -c +9 | tr -d '"')"
 # https://stackoverflow.com/questions/59257913/remove-header-yaml-with-sed-from-a-markdown-file
-BODY="$(sed '/^---$/,/^---$/d' "$T/template")"
-URL="https://github.com/jyn514/rcc/issues/new?template=$TYPE&title=$TITLE&body=$BODY"
+BODY="$(sed '/^---$/,/^---$/d' "$T/template" | python3 -c "import urllib.parse; import sys; print(urllib.parse.quote(sys.stdin.read()))")"
+URL="https://github.com/jyn514/rcc/issues/new?template=$TYPE.md&title=$TITLE&labels=$LABELS&body=$BODY"
 $(browser) "$URL"

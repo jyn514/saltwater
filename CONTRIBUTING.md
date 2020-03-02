@@ -33,7 +33,7 @@ If you contribute a lot of bug reports, you may find the `.github/report-issue.s
 It's used like so:
 
 ```
-usage: ./report-issue.sh <issue type> <file>
+usage: ./report-issue.sh <issue type> <file> [-f]
 ```
 
 `<issue type>` is the name of one of the issue templates, currently:

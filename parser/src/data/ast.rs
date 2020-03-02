@@ -1,3 +1,5 @@
+use std::fmt::{self, Display};
+
 use crate::data::lex::{AssignmentToken, ComparisonToken, Literal, Locatable};
 use crate::intern::InternedStr;
 
@@ -105,7 +107,7 @@ pub enum ExprType {
 
     // prefix
     PreIncrement(Box<Expr>, bool),
-    Cast(Box<Expr>),
+    Cast(TypeName, Box<Expr>),
     SizeofType(TypeName),
     SizeofExpr(Box<Expr>),
     Deref(Box<Expr>),
@@ -142,4 +144,115 @@ pub enum ExprType {
     StaticRef(Box<Expr>),
     // used to work around various bugs, see places this is constructed for details
     Noop(Box<Expr>),
+}
+
+impl Display for TypeSpecifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use TypeSpecifier::*;
+        match self {
+            Void => write!(f, "void"),
+            Char => write!(f, "char"),
+            Short => write!(f, "short"),
+            Int => write!(f, "int"),
+            Long => write!(f, "long"),
+            Float => write!(f, "float"),
+            Double => write!(f, "double"),
+            Signed => write!(f, "signed"),
+            Unsigned => write!(f, "unsigned"),
+        }
+    }
+}
+
+impl Display for DeclarationSpecifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DeclarationSpecifier::Const => write!(f, "const"),
+            DeclarationSpecifier::Type(ctype) => write!(f, "{}", ctype),
+        }
+    }
+}
+
+
+impl Declarator {
+    fn print_pre(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Declarator::*;
+        match self {
+            Pointer(inner) | Array { .. } => inner.print_pre(f),
+            //Function(ftype) => write!(f, "{}", ftype.return_type),
+        }
+    }
+    fn print_mid(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unimplemented!()
+    }
+    fn print_post(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unimplemented!()
+    }
+}
+impl Display for Declarator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.print_pre(f)?;
+        self.print_mid(f)?;
+        self.print_post(f)
+        /*
+        match self {
+            Declarator::Id(id) => write!(f, "{}", id),
+            Declarator::Array(of, size) => write!(f, "{}[{}]", of, size)
+            Declarator::Pointer(inner) => {
+                match *inner {
+                    Declarator::Id(_) | Declarator::Pointer(_) => write!(f, "*{}", inner),
+                    _ => write!(f, "(*){}", inner),
+                }
+            }
+        }
+        */
+    }
+}
+
+impl Display for TypeName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for s in self.specifiers {
+            write!(f, "{} ", s)?;
+        }
+        write!(f, "{}", self.declarator)
+    }
+}
+
+impl Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.data {
+            ExprType::Comma(left, right) => write!(f, "{}, {}", *left, *right),
+            ExprType::Literal(token) => write!(f, "{}", token),
+            ExprType::Id(symbol) => write!(f, "{}", symbol),
+            ExprType::Add(left, right) => write!(f, "({}) + ({})", left, right),
+            ExprType::Sub(left, right) => write!(f, "({}) - ({})", left, right),
+            ExprType::Mul(left, right) => write!(f, "({}) * ({})", left, right),
+            ExprType::Div(left, right) => write!(f, "({}) / ({})", left, right),
+            ExprType::Mod(left, right) => write!(f, "({}) % ({})", left, right),
+            ExprType::Xor(left, right) => write!(f, "({}) ^ ({})", left, right),
+            ExprType::BitwiseOr(left, right) => write!(f, "({}) | ({})", left, right),
+            ExprType::BitwiseAnd(left, right) => write!(f, "({}) & ({})", left, right),
+            ExprType::BitwiseNot(expr) => write!(f, "(~{})", expr),
+            ExprType::Deref(expr) => write!(f, "*({})", expr),
+            ExprType::Negate(expr) => write!(f, "-({})", expr),
+            ExprType::LogicalOr(left, right) => write!(f, "({}) || ({})", left, right),
+            ExprType::LogicalAnd(left, right) => write!(f, "({}) && ({})", left, right),
+            ExprType::Shift(val, by, left) => {
+                write!(f, "({}) {} ({})", val, if *left { "<<" } else { ">>" }, by)
+            }
+            ExprType::Compare(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
+            ExprType::Assign(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
+            ExprType::Ternary(cond, left, right) => {
+                write!(f, "({}) ? ({}) : ({})", cond, left, right)
+            }
+            ExprType::FuncCall(left, params) => write!(f, "({})({})", left, join(params)),
+            ExprType::Cast(ctype, expr) => write!(f, "({})({})", ctype, expr),
+            ExprType::SizeofType(ty) => write!(f, "sizeof({})", ty),
+            ExprType::Member(compound, id) => write!(f, "({}).{}", compound, id),
+            ExprType::PostIncrement(expr, inc) => {
+                write!(f, "({}){}", expr, if *inc { "++" } else { "--" })
+            }
+            ExprType::StaticRef(expr) => write!(f, "&{}", expr),
+            ExprType::Noop(expr) => write!(f, "{}", expr),
+        }
+    }
 }

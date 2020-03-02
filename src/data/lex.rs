@@ -2,11 +2,13 @@ use std::cmp::Ordering;
 
 use codespan::{FileId, Span};
 use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
-#[cfg(test)] use proptest_derive::Arbitrary;
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
+#[cfg(test)]
+use test::arb_interned_str;
 
 use crate::intern::InternedStr;
-
-#[cfg(test)] use self::test::arb_interned_str;
 
 // holds where a piece of code came from
 // should almost always be immutable

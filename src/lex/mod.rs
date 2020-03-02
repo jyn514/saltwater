@@ -33,6 +33,8 @@ struct Lexer {
     /// used for preprocessing (e.g. `#line 5` is a directive
     /// but `int main() { # line 5` is not)
     seen_line_token: bool,
+    /// counts _logical_ lines, not physical lines
+    /// used for the preprocessor (mostly for `tokens_until_newline()`)
     line: usize,
     error_handler: ErrorHandler,
     /// Whether or not to display each token as it is processed
@@ -206,11 +208,7 @@ impl Lexer {
     /// Before: u8s{"blah `invalid tokens``\nhello // blah"}
     /// After:  chars{"hello // blah"}
     fn consume_line_comment(&mut self) {
-        while let Some(c) = self.next_char() {
-            if c == b'\n' {
-                break;
-            }
-        }
+        while self.next_char() != Some(b'\n') {}
     }
     /// Remove a multi-line C-style comment, i.e. until the next '*/'.
     ///

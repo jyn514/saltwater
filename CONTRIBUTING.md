@@ -29,21 +29,24 @@ making the compiler incrementally more frustrating to work on.
 
 ## Contributing Bug Reports
 
-If both `tcc` and `gcc` compile it and `rcc` doesn't, it's probably a bug.
-If just `gcc` and `clang` (but not `tcc`) compile it, it's probably a compiler extension.
-Use your own judgement, but please read the GCC documentation before saying an unimplemented extension is a bug.
+If you contribute a lot of bug reports, you may find the `.github/report-issue.sh` script useful.
+It's used like so:
 
-If you find something `rcc` doesn't recognize (that's not a GCC extension), please report it,
-including the code that doesn't work and the expected behavior in English (or at least pseudo-code).
+```
+usage: ./report-issue.sh <issue type> <file>
+```
 
-If you find a panic ('thread main panicked at ...'), it's always a bug. Please report it!
-The compiler is completely deterministic, so give at least one input that will crash it.
-Smaller inputs are prefered but if you don't have time to minimize the test case that's fine.
+`<issue type>` is the name of one of the issue templates, currently:
 
-If you find a miscompilation, it's a serious bug.
-Please post the code as well as the expected and actual outputs.
-I expect these bugs to be rare until I have more users
-(not because the compiler isn't buggy, but because no one will notice the bugs).
+```
+./report-issue.sh a README.md
+unrecognized issue type (options are panic, codegen, parse), aborting
+```
+
+`<file>` is the path to the file with the relevant C source code.
+`report-issue` will open your editor with a partially-filled out template, including a backtrace if appropriate.
+After you close your editor, `report-issue` will open your browser to a 'new issue' GitHub page with the contents of the now-complete template.
+You can still edit the issue browser if you like.
 
 ## Reference
 

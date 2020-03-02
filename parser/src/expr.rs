@@ -3,7 +3,9 @@ use std::convert::{TryFrom, TryInto};
 use super::*;
 use crate::data::prelude::*;
 use crate::data::ast::{Expr, ExprType};
+use crate::data::lex::AssignmentToken;
 
+#[derive(Copy, Clone, Debug)]
 enum BinaryPrecedence {
     Mul, Div, Mod,
     Add, Sub,
@@ -16,10 +18,12 @@ enum BinaryPrecedence {
     LogAnd,
     LogOr,
     Ternary, // TODO: will this work with pratt parsing?
-    Assignment,
+    Assignment(AssignmentToken),
 }
 
 impl BinaryPrecedence {
+    const MAX_PREC: usize = std::usize::MAX;
+
     fn prec(&self) -> usize {
         use BinaryPrecedence::*;
         match self {
@@ -34,17 +38,17 @@ impl BinaryPrecedence {
             LogAnd => 8,
             LogOr => 9,
             Ternary => 10, // TODO: will this work with pratt parsing?
-            Assignment => 11,
+            Assignment(_) => 11,
         }
     }
     fn left_associative(&self) -> bool {
         use BinaryPrecedence::*;
         match self {
-            Ternary | Assignment => false,
+            Ternary | Assignment(_) => false,
             _ => true,
         }
     }
-    fn constructor(&self) -> impl Fn(Expr, Expr) -> ExprType {
+    fn constructor(&self) -> Box<dyn Fn(Expr, Expr) -> ExprType> {
         use BinaryPrecedence::*;
         use ExprType::*;
         use crate::data::lex::ComparisonToken;
@@ -98,7 +102,7 @@ impl TryFrom<&Token> for BinaryPrecedence {
             BitwiseOr => BitOr,
             LogicalAnd => LogAnd,
             LogicalOr => LogOr,
-            Token::Assignment(_) => Bin::Assignment,
+            Token::Assignment(x) => Bin::Assignment(*x),
             Question => Ternary,
             _ => return Err(())
         })
@@ -108,26 +112,32 @@ impl TryFrom<&Token> for BinaryPrecedence {
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     #[inline]
     pub fn expr(&mut self) -> SyntaxResult<Expr> {
-        self.binary_expr(0)
+        self.binary_expr(BinaryPrecedence::MAX_PREC)
     }
+    // see `BinaryPrecedence` for all possible binary expressions
     fn binary_expr(&mut self, max_precedence: usize) -> SyntaxResult<Expr> {
         let mut expr = self.unary_expr()?;
         while let Some(binop) = self.peek_token()
                                     .and_then(|tok| BinaryPrecedence::try_from(tok).ok())
         {
             let prec = binop.prec();
-            if prec < max_precedence {
+            if prec >= max_precedence {
                 break;
             }
-            // by some strange coincidence, the left associative ones are exactly the ones that `constructor` works for
-            if binop.left_associative() {
-                let constructor = binop.constructor();
-                let right = self.binary_expr(prec + 1)?;
-                let location = expr.location.merge(&right.location);
-                expr = location.with(constructor(expr, right));
+            self.next_token();
+            dbg!(binop);
+            let right = if binop.left_associative() {
+                self.binary_expr(prec + 1)?
+            } else if let BinaryPrecedence::Ternary = binop {
+                unimplemented!("ternary");
             } else {
-                panic!("not implemented: =, ?, etc.")
-            }
+                self.binary_expr(prec)?
+            };
+            println!("finished recursive call, right is {}", right);
+
+            let constructor = binop.constructor();
+            let location = expr.location.merge(&right.location);
+            expr = location.with(constructor(expr, right));
         }
         Ok(expr)
     }
@@ -146,7 +156,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             inner.location = paren.location.merge(&end_loc);
             Ok(inner)
         } else if let Some(Locatable { data: constructor, location }) = self.match_unary_operator() {
-            println!("saw unary operator");
             let inner = self.unary_expr()?;
             let location = location.merge(&inner.location);
             Ok(location.with(constructor(inner)))

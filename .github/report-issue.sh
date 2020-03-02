@@ -19,6 +19,16 @@ ROOT="$(git rev-parse --show-toplevel)"
 TEMPLATE="$ROOT/.github/ISSUE_TEMPLATE/$TYPE.md"
 SOURCE="$2"
 
+if ! [ -e "$TEMPLATE" ]; then
+	echo "INTERNAL error: template $TEMPLATE does not exist"
+	exit 3
+fi
+
+if ! [ -f "$SOURCE" ]; then
+	echo "error: C source code file $SOURCE does not exist or is not a file"
+	exit 4
+fi
+
 exists() {
 	command -v "$1" >/dev/null 2>&1
 }

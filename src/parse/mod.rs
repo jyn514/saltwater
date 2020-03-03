@@ -186,11 +186,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             );
             if !self.error_handler.is_empty() {
                 println!("pending errors:");
-                // we're about to crash, no point worrying about performance
-                for error in self.error_handler.clone() {
+                // needs a clone since we take `&self`
+                let mut handler = self.error_handler.clone();
+                for error in &mut handler {
                     println!("- error: {}", error.data);
                 }
-                for warning in self.error_handler.clone().warnings {
+                for warning in handler.warnings {
                     println!("- warning: {}", warning.data);
                 }
             }

@@ -232,16 +232,25 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     // '[' expr ']' | '(' argument* ')' | '.' ID | '->' ID | '++' | '--'
     fn match_postfix_op(&mut self) -> SyntaxResult<Option<Locatable<impl Fn(Expr) -> ExprType>>> {
+        let next_location = |this: &mut Parser<_>| this.next_token().unwrap().location;
         let needs_id = |this: &mut Self, constructor: fn(Box<Expr>, InternedStr) -> ExprType| {
-            let start = this.next_token().unwrap().location;
+            let start = next_location(this);
             let Locatable { data: id, location } = this.expect_id()?;
             let location = start.merge(&location);
-            Ok((move |expr| constructor(expr, id), location))
+            Ok((Box::new(move |expr| constructor(expr, id)) as _, location))
         };
         // prefix operator
-        let (func, location) = match self.peek_token() {
+        let (func, location): (Box<dyn Fn(_) -> _>, _) = match self.peek_token() {
             Some(Token::Dot) => needs_id(self, ExprType::Member)?,
             Some(Token::StructDeref) => needs_id(self, ExprType::DerefMember)?,
+            Some(Token::PlusPlus) => (
+                Box::new(|expr| ExprType::PostIncrement(expr, true)) as _,
+                next_location(self),
+            ),
+            Some(Token::MinusMinus) => (
+                Box::new(|expr| ExprType::PostIncrement(expr, false)) as _,
+                next_location(self),
+            ),
             _ => return Ok(None),
         };
         Ok(Some(Locatable {

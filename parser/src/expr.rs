@@ -267,8 +267,9 @@ mod test {
 
     #[test]
     fn lots_of_parens() {
-        // should take no more than 1000 stack frames
-        let the_biggun = format!("{}1 + 2{}", "(".repeat(1000), ")".repeat(1000));
+        // should take no more than n stack frames
+        let n = 3000;
+        let the_biggun = format!("{}1 + 2{}", "(".repeat(n), ")".repeat(n));
         assert_eq!(expr(&the_biggun).unwrap().to_string(), "(1) + (2)");
     }
 }

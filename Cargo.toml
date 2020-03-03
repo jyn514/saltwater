@@ -20,7 +20,7 @@ cranelift-module = "0.59"
 cranelift-object = "0.59"
 cranelift-simplejit = { version = "0.59", optional = true }
 env_logger = { version = "0.7", default-features = false, optional = true }
-hexf-parse = "0.1"
+hexponent = "0.2"
 thiserror = ">=1.0.9"
 log = "0.4"
 target-lexicon = "0.10"

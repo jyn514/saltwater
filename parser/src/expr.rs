@@ -172,7 +172,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         } else if let Some(Locatable {
             data: constructor,
             location,
-        }) = self.match_unary_operator()
+        }) = self.match_prefix_operator()
         {
             let inner = self.unary_expr()?;
             let location = location.merge(&inner.location);
@@ -188,7 +188,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
     }
     // '*' | '~' | '!' | '+' | '-' | '&'
-    fn match_unary_operator(&mut self) -> Option<Locatable<impl Fn(Expr) -> ExprType>> {
+    fn match_prefix_operator(&mut self) -> Option<Locatable<impl Fn(Expr) -> ExprType>> {
         // prefix operator
         let func = match self.peek_token()? {
             Token::Star => ExprType::Deref,

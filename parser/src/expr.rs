@@ -264,12 +264,4 @@ mod test {
         assert_expr_display("1||2 ? 3||4 : 5", "((1) || (2)) ? ((3) || (4)) : (5)");
         assert_expr_display("1||2 ? 3?4:5 : 6", "((1) || (2)) ? ((3) ? (4) : (5)) : (6)");
     }
-
-    #[test]
-    fn lots_of_parens() {
-        // should take no more than n stack frames
-        let n = 3000;
-        let the_biggun = format!("{}1 + 2{}", "(".repeat(n), ")".repeat(n));
-        assert_eq!(expr(&the_biggun).unwrap().to_string(), "(1) + (2)");
-    }
 }

@@ -13,3 +13,10 @@ lazy_static = "*"
 codespan = "0.8"
 hexf-parse = "0.1"
 #rcc = { path = "../" }
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "parens"
+harness = false

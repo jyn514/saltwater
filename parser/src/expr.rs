@@ -53,9 +53,9 @@ impl BinaryPrecedence {
         use ExprType::*;
         use crate::data::lex::ComparisonToken;
         let func: Box<dyn Fn(_, _) -> _> = match self {
-            Self::Mul => Box::new(ExprType::Mul) as _,
-            Self::Div => Box::new(ExprType::Div) as _,
-            Self::Mod => Box::new(ExprType::Mod) as _,
+            Self::Mul => Box::new(ExprType::Mul),
+            Self::Div => Box::new(ExprType::Div),
+            Self::Mod => Box::new(ExprType::Mod),
             Self::Add => Box::new(ExprType::Add),
             Self::Sub => Box::new(ExprType::Sub),
             Shl => Box::new(|a, b| Shift(a, b, true)),
@@ -122,17 +122,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                                     .and_then(|tok| BinaryPrecedence::try_from(tok).ok())
         {
             let prec = binop.prec();
-            if prec >= max_precedence {
+            if prec > max_precedence {
                 break;
             }
             self.next_token();
             dbg!(binop);
             let right = if binop.left_associative() {
-                self.binary_expr(prec + 1)?
+                self.binary_expr(prec - 1)?
             } else if let BinaryPrecedence::Ternary = binop {
                 unimplemented!("ternary");
             } else {
-                self.binary_expr(prec)?
+                let right = self.binary_expr(prec)?;
+                println!("saw rhs {} for assignment", right);
+                right
             };
             println!("finished recursive call, right is {}", right);
 

@@ -23,7 +23,7 @@ enum Precedence {
 }
 
 impl Precedence {
-    fn prec(&self) -> usize {
+    fn prec(self) -> usize {
         use Precedence::*;
         match self {
             Mul | Div | Mod => 11,
@@ -36,18 +36,18 @@ impl Precedence {
             BitOr => 4,
             LogAnd => 3,
             LogOr => 2,
-            Ternary => 1, // TODO: will this work with pratt parsing?
+            Ternary => 1,
             Assignment(_) => 0,
         }
     }
-    fn left_associative(&self) -> bool {
+    fn left_associative(self) -> bool {
         use Precedence::*;
         match self {
             Ternary | Assignment(_) => false,
             _ => true,
         }
     }
-    fn constructor(&self) -> impl Fn(Expr, Expr) -> ExprType {
+    fn constructor(self) -> impl Fn(Expr, Expr) -> ExprType {
         use crate::data::lex::ComparisonToken;
         use ExprType::*;
         use Precedence::*;
@@ -70,7 +70,7 @@ impl Precedence {
             BitOr => Box::new(BitwiseOr),
             LogAnd => Box::new(LogicalAnd),
             LogOr => Box::new(LogicalOr),
-            &Self::Assignment(token) => Box::new(move |a, b| Assign(a, b, token)),
+            Self::Assignment(token) => Box::new(move |a, b| Assign(a, b, token)),
             Self::Ternary => panic!("lol no"),
         };
         move |a, b| func(Box::new(a), Box::new(b))
@@ -263,6 +263,28 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location,
                 )
             }
+            Some(Token::LeftParen) => {
+                let mut start = next_location(self);
+                let mut args = Vec::new();
+                if let Some(token) = self.match_next(&Token::RightParen) {
+                    start = start.merge(&token.location);
+                } else {
+                    loop {
+                        // TODO: maybe we could do some error handling here and consume the end right paren
+                        let arg = self.expr()?;
+                        start.merge(&arg.location);
+                        args.push(arg);
+                        if let Some(token) = self.match_next(&Token::Comma) {
+                            start.merge(token.location);
+                        } else {
+                            let token = self.expect(Token::RightParen)?;
+                            start = start.merge(token.location);
+                            break;
+                        }
+                    }
+                };
+                (Box::new(move |expr| ExprType::FuncCall(expr, args)), start)
+            }
             _ => return Ok(None),
         };
         Ok(Some(Locatable {
@@ -327,6 +349,9 @@ mod test {
         assert_expr_display("a--", "(a)--");
         assert_expr_display("a--", "(a)--");
         assert_expr_display("a++--->b.c[d]", "(((((a)++)--)->b).c)[d]");
+        assert_expr_display("a(1, 2)(3)(4+5)", "(((a)(1, 2))(3))((4) + (5))");
+        // lol why not
+        assert_expr_display("1()()()", "(((1)())())()");
     }
     #[test]
     fn parse_binary() {

@@ -2,6 +2,7 @@ use crate::intern::InternedStr;
 
 //use codespan::{FileId, Span};
 
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 
 /*
@@ -20,7 +21,7 @@ pub struct Span {
     end: u32,
 }
 pub trait LocationTrait: Copy + std::fmt::Debug + PartialEq + Sized {
-    fn merge(&self, other: &Self) -> Self;
+    fn merge<O: Borrow<Self>>(&self, other: O) -> Self;
 
     fn with<T>(self, data: T) -> Locatable<T, Self> {
         Locatable {
@@ -217,9 +218,10 @@ impl PartialOrd for DefaultLocation {
 }
 
 impl LocationTrait for DefaultLocation {
-    fn merge(&self, other: &Self) -> Self {
+    fn merge<O: Borrow<Self>>(&self, other: O) -> Self {
         use std::cmp::{max, min};
 
+        let other = other.borrow();
         DefaultLocation {
             span: Span {
                 start: min(self.span.start, other.span.start),

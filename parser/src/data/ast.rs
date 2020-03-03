@@ -81,7 +81,10 @@ pub enum Initializer {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Declarator {
     Pointer(Box<Declarator>),
-    Array { of: Box<Declarator>, size: Option<Box<Expr>> },
+    Array {
+        of: Box<Declarator>,
+        size: Option<Box<Expr>>,
+    },
     Id(InternedStr),
 }
 
@@ -131,7 +134,7 @@ pub enum ExprType {
     Compare(Box<Expr>, Box<Expr>, ComparisonToken),
     // Token: allow extended assignment
     Assign(Box<Expr>, Box<Expr>, AssignmentToken),
-    
+
     // misfits
     // Ternary: if ? then : else
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
@@ -156,7 +159,9 @@ impl Display for TypeSpecifier {
             Double => write!(f, "double"),
             Signed => write!(f, "signed"),
             Unsigned => write!(f, "unsigned"),
-            Enum { name: Some(ident), .. } => write!(f, "enum {}", ident),
+            Enum {
+                name: Some(ident), ..
+            } => write!(f, "enum {}", ident),
             // TODO: maybe print the body too?
             Enum { name: None, .. } => write!(f, "<anonymous enum>"),
             Union(spec) => write!(f, "union {}", spec),
@@ -229,7 +234,6 @@ impl Display for DeclarationSpecifier {
     }
 }
 
-
 impl Declarator {
     fn print_pre(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Declarator::*;
@@ -264,7 +268,7 @@ impl Declarator {
         match self {
             Pointer(to) => to.print_post(f),
             // TODO: maybe print the array size too?
-            Array { of , size } => {
+            Array { of, size } => {
                 write!(f, "[")?;
                 if let Some(expr) = size {
                     write!(f, "{}", expr)?;

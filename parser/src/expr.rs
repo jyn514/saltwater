@@ -1,11 +1,12 @@
 use std::convert::{TryFrom, TryInto};
 
 use super::*;
-use crate::data::prelude::*;
 use crate::data::ast::{Expr, ExprType};
 use crate::data::lex::AssignmentToken;
+use crate::data::prelude::*;
 
 #[derive(Copy, Clone, Debug)]
+#[rustfmt::skip]
 enum BinaryPrecedence {
     Mul, Div, Mod,
     Add, Sub,
@@ -47,9 +48,9 @@ impl BinaryPrecedence {
         }
     }
     fn constructor(&self) -> impl Fn(Expr, Expr) -> ExprType {
+        use crate::data::lex::ComparisonToken;
         use BinaryPrecedence::*;
         use ExprType::*;
-        use crate::data::lex::ComparisonToken;
         let func: Box<dyn Fn(_, _) -> _> = match self {
             Self::Mul => Box::new(ExprType::Mul),
             Self::Div => Box::new(ExprType::Div),
@@ -79,8 +80,8 @@ impl BinaryPrecedence {
 impl TryFrom<&Token> for BinaryPrecedence {
     type Error = ();
     fn try_from(t: &Token) -> Result<BinaryPrecedence, ()> {
-        use BinaryPrecedence::{*, self as Bin};
-        use crate::data::lex::ComparisonToken::{*, self as Compare};
+        use crate::data::lex::ComparisonToken::{self as Compare, *};
+        use BinaryPrecedence::{self as Bin, *};
         use Token::*;
         Ok(match t {
             Star => Bin::Mul,
@@ -103,7 +104,7 @@ impl TryFrom<&Token> for BinaryPrecedence {
             LogicalOr => LogOr,
             Token::Assignment(x) => Bin::Assignment(*x),
             Question => Ternary,
-            _ => return Err(())
+            _ => return Err(()),
         })
     }
 }
@@ -116,8 +117,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     // see `BinaryPrecedence` for all possible binary expressions
     fn binary_expr(&mut self, mut left: Expr, max_precedence: usize) -> SyntaxResult<Expr> {
-        while let Some(binop) = self.peek_token()
-                                    .and_then(|tok| BinaryPrecedence::try_from(tok).ok())
+        while let Some(binop) = self
+            .peek_token()
+            .and_then(|tok| BinaryPrecedence::try_from(tok).ok())
         {
             let prec = binop.prec();
             if prec < max_precedence {
@@ -167,7 +169,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let end_loc = self.expect(Token::RightParen)?.location;
             inner.location = paren.location.merge(&end_loc);
             Ok(inner)
-        } else if let Some(Locatable { data: constructor, location }) = self.match_unary_operator() {
+        } else if let Some(Locatable {
+            data: constructor,
+            location,
+        }) = self.match_unary_operator()
+        {
             let inner = self.unary_expr()?;
             let location = location.merge(&inner.location);
             Ok(location.with(constructor(inner)))
@@ -200,10 +206,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
 #[cfg(test)]
 mod test {
-    use crate::test::*;
-    use crate::*;
-    use crate::SyntaxResult;
     use crate::data::ast::{Expr, ExprType};
+    use crate::test::*;
+    use crate::SyntaxResult;
+    use crate::*;
 
     fn assert_same(left: &str, right: &str) {
         assert_eq!(parse_all(left), parse_all(right))
@@ -220,9 +226,7 @@ mod test {
     #[test]
     fn parse_unary() {
         let expr_data = |s| expr(s).unwrap().data;
-        let x = || {
-            Box::new(Location::default().with(ExprType::Id("x".into())))
-        };
+        let x = || Box::new(Location::default().with(ExprType::Id("x".into())));
         fn int() -> Box<Expr> {
             Box::new(Location::default().with(ExprType::Literal(Literal::Int(1))))
         }
@@ -250,8 +254,10 @@ mod test {
     }
     #[test]
     fn parse_binary() {
-        assert_eq!(expr("1 = 2 = 3 + 4*5 + 6 + 7").unwrap().to_string(),
-                   "(1) = ((2) = ((((3) + ((4) * (5))) + (6)) + (7)))");
+        assert_eq!(
+            expr("1 = 2 = 3 + 4*5 + 6 + 7").unwrap().to_string(),
+            "(1) = ((2) = ((((3) + ((4) * (5))) + (6)) + (7)))"
+        );
     }
     #[test]
     fn parse_ternary() {

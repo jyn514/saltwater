@@ -1,7 +1,11 @@
 use std::collections::VecDeque;
 use thiserror::Error;
 
-use super::{lex::Token, Expr, Locatable, prelude::{Location, LocationTrait}};
+use super::{
+    lex::Token,
+    prelude::{Location, LocationTrait},
+    Expr, Locatable,
+};
 use crate::intern::InternedStr;
 
 /// RecoverableResult is a type that represents a Result that can be recovered from.
@@ -101,7 +105,7 @@ pub enum SemanticError {
     #[error("{0}")]
     Generic(String),
 
-/*
+    /*
     #[error("cannot have empty program")]
     EmptyProgram,
 
@@ -152,7 +156,6 @@ pub enum SemanticError {
     #[error("initializers cannot be empty")]
     EmptyInitializer,
     */
-
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

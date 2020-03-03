@@ -11,7 +11,7 @@ pub mod prelude {
     pub(crate) use super::error::{ErrorHandler, Recover, RecoverableResult};
     pub use super::{
         error::{CompileError, CompileResult, CompileWarning, Error, SemanticError, SyntaxError},
-        lex::{Literal, Locatable, LocationTrait, DefaultLocation as Location, Token},
+        lex::{DefaultLocation as Location, Literal, Locatable, LocationTrait, Token},
         types::{StructRef, StructType},
         Declaration, Expr, ExprType, Stmt, StmtType, Symbol,
     };

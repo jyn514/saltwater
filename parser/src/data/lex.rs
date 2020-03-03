@@ -14,9 +14,11 @@ pub struct Location {
 }
 */
 
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Span { start: u32, end: u32 }
+pub struct Span {
+    start: u32,
+    end: u32,
+}
 pub trait LocationTrait: Copy + std::fmt::Debug + PartialEq + Sized {
     fn merge(&self, other: &Self) -> Self;
 
@@ -32,7 +34,10 @@ pub trait LocationTrait: Copy + std::fmt::Debug + PartialEq + Sized {
     }
 }
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct DefaultLocation { pub span: Span, pub file: () }
+pub struct DefaultLocation {
+    pub span: Span,
+    pub file: (),
+}
 
 use std::ops::Range;
 impl From<Range<u32>> for Span {
@@ -213,7 +218,7 @@ impl PartialOrd for DefaultLocation {
 
 impl LocationTrait for DefaultLocation {
     fn merge(&self, other: &Self) -> Self {
-        use std::cmp::{min, max};
+        use std::cmp::{max, min};
 
         DefaultLocation {
             span: Span {

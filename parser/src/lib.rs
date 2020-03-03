@@ -15,8 +15,8 @@ use std::mem;
 use std::rc::Rc;
 
 pub use crate::data::prelude::*;
-pub use crate::lex::Lexer;
 use crate::data::{ast::Declaration, Scope};
+pub use crate::lex::Lexer;
 
 type Lexeme<L = Location> = CompileResult<Locatable<Token, L>, L>;
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
@@ -268,7 +268,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn match_literal(&mut self) -> Option<Locatable<Literal>> {
         let next = self.next_token();
-        if let Some(Locatable { data: Token::Literal(lit), location }) = next {
+        if let Some(Locatable {
+            data: Token::Literal(lit),
+            location,
+        }) = next
+        {
             Some(location.with(lit))
         } else {
             self.unput(next);
@@ -391,8 +395,8 @@ impl Token {
 #[cfg(test)]
 pub(crate) mod test {
     use super::Parser;
-    use crate::data::prelude::*;
     use crate::data::ast::Declaration;
+    use crate::data::prelude::*;
     use crate::lex::Lexer;
 
     pub(crate) type ParseType = CompileResult<Locatable<Declaration>>;

@@ -315,6 +315,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             };
         }
     }
+    fn expect_id(&mut self) -> SyntaxResult<Locatable<InternedStr>> {
+        if let Some(id) = self.match_id() {
+            Ok(id)
+        } else {
+            use std::borrow::Cow;
+
+            let err = Err(Locatable {
+                data: SyntaxError::ExpectedId(self.peek_token().cloned()),
+                location: self.next_location(),
+            });
+            self.panic();
+            err
+        }
+    }
     fn expect(&mut self, next: Token) -> SyntaxResult<Locatable<Token>> {
         let token = match self.peek_token() {
             Some(t) => t,

@@ -7,13 +7,13 @@ assignees: ''
 
 ---
 
-**Expected behavior**
+### Expected behavior
 <!-- A description of what you expected to happen -->
 
-**Actual Behavior**
+### Actual Behavior
 <!-- A description of what actually happened -->
 
-**Code**
+### Code
 <!-- The code that's broken or doesn't do what you expect goes here -->
 
 ```c

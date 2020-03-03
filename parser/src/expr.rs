@@ -22,23 +22,21 @@ enum BinaryPrecedence {
 }
 
 impl BinaryPrecedence {
-    const MAX_PREC: usize = std::usize::MAX;
-
     fn prec(&self) -> usize {
         use BinaryPrecedence::*;
         match self {
-            Mul | Div | Mod => 0,
-            Add | Sub => 1,
-            Shl | Shr => 2,
-            Less | Greater | LessEq | GreaterEq => 3,
-            Eq | Ne => 4,
-            BitAnd => 5,
-            BitXor => 6,
-            BitOr => 7,
-            LogAnd => 8,
-            LogOr => 9,
-            Ternary => 10, // TODO: will this work with pratt parsing?
-            Assignment(_) => 11,
+            Mul | Div | Mod => 11,
+            Add | Sub => 10,
+            Shl | Shr => 9,
+            Less | Greater | LessEq | GreaterEq => 8,
+            Eq | Ne => 7,
+            BitAnd => 6,
+            BitXor => 5,
+            BitOr => 4,
+            LogAnd => 3,
+            LogOr => 2,
+            Ternary => 1, // TODO: will this work with pratt parsing?
+            Assignment(_) => 0,
         }
     }
     fn left_associative(&self) -> bool {
@@ -113,7 +111,7 @@ impl TryFrom<&Token> for BinaryPrecedence {
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     #[inline]
     pub fn expr(&mut self) -> SyntaxResult<Expr> {
-        self.binary_expr(BinaryPrecedence::MAX_PREC)
+        self.binary_expr(0)
     }
     // see `BinaryPrecedence` for all possible binary expressions
     fn binary_expr(&mut self, max_precedence: usize) -> SyntaxResult<Expr> {
@@ -122,21 +120,18 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                                     .and_then(|tok| BinaryPrecedence::try_from(tok).ok())
         {
             let prec = binop.prec();
-            if prec > max_precedence {
+            if prec < max_precedence {
                 break;
             }
             self.next_token();
-            dbg!(binop);
             let right = if binop.left_associative() {
-                self.binary_expr(prec - 1)?
+                self.binary_expr(prec + 1)?
             } else if let BinaryPrecedence::Ternary = binop {
                 unimplemented!("ternary");
             } else {
                 let right = self.binary_expr(prec)?;
-                println!("saw rhs {} for assignment", right);
                 right
             };
-            println!("finished recursive call, right is {}", right);
 
             let constructor = binop.constructor();
             let location = expr.location.merge(&right.location);
@@ -234,5 +229,13 @@ mod test {
         assert_eq!(expr_data("~x"), ExprType::BitwiseNot(x()));
         assert_eq!(expr_data("!x"), ExprType::LogicalNot(x()));
         assert_eq!(expr_data("&x"), ExprType::AddressOf(x()));
+    }
+    #[test]
+    fn parse_binary() {
+        assert_eq!(expr("1 = 2 = 3 + 4*5 + 6 + 7").unwrap().to_string(),
+                   "(1) = ((2) = ((((3) + ((4) * (5))) + (6)) + (7)))");
+        // should take no more than 1000 stack frames
+        let the_biggun = format!("{}1 + 2{}", "(".repeat(1000), ")".repeat(1000));
+        assert_eq!(expr(&the_biggun).unwrap().to_string(), "(1) + (2)");
     }
 }

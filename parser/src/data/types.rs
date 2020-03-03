@@ -53,8 +53,8 @@ mod struct_ref {
         /// Returns the definition for a given struct.
         ///
         /// Examples:
-        /// ```
-        /// use rcc::data::types::StructRef;
+        /// ```ignore
+        /// use parser::data::types::StructRef;
         /// let struct_ref = StructRef::new();
         /// let members = struct_ref.get();
         /// for symbol in members.iter() {

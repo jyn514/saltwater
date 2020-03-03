@@ -7,12 +7,12 @@ assignees: ''
 
 ---
 
-**Expected behavior**
+### Expected behavior
 <!-- A description of what you expected to happen.
      You could also paste the output of another compiler,
      I like `clang -x c - -Wall -Wextra -pedantic` -->
 
-**Code**
+### Code
 <!-- The code that was not interpreted correctly goes here.
      This should also include the error message you got. -->
 

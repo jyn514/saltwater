@@ -1,17 +1,16 @@
 ---
-name: Bad Parse
-about: Report code that was not parsed correctly
-title: Misparse
+name: Incorrect error
+about: Report code that should have been valid but was marked as an error
+title: Incorrect error
 labels: bug, parser
 assignees: ''
 
 ---
 
 **Expected behavior**
-<!-- A description of what you expected to happen -->
-
-**Actual Behavior**
-<!-- A description of what actually happened -->
+<!-- A description of what you expected to happen.
+     You could also paste the output of another compiler,
+     I like `clang -x c - -Wall -Wextra -pedantic` -->
 
 **Code**
 <!-- The code that was not interpreted correctly goes here.

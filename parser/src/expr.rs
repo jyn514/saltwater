@@ -7,7 +7,7 @@ use crate::data::prelude::*;
 
 #[derive(Copy, Clone, Debug)]
 #[rustfmt::skip]
-enum BinaryPrecedence {
+enum Precedence {
     Mul, Div, Mod,
     Add, Sub,
     Shl, Shr,
@@ -22,9 +22,9 @@ enum BinaryPrecedence {
     Assignment(AssignmentToken),
 }
 
-impl BinaryPrecedence {
+impl Precedence {
     fn prec(&self) -> usize {
-        use BinaryPrecedence::*;
+        use Precedence::*;
         match self {
             Mul | Div | Mod => 11,
             Add | Sub => 10,
@@ -41,7 +41,7 @@ impl BinaryPrecedence {
         }
     }
     fn left_associative(&self) -> bool {
-        use BinaryPrecedence::*;
+        use Precedence::*;
         match self {
             Ternary | Assignment(_) => false,
             _ => true,
@@ -49,8 +49,8 @@ impl BinaryPrecedence {
     }
     fn constructor(&self) -> impl Fn(Expr, Expr) -> ExprType {
         use crate::data::lex::ComparisonToken;
-        use BinaryPrecedence::*;
         use ExprType::*;
+        use Precedence::*;
         let func: Box<dyn Fn(_, _) -> _> = match self {
             Self::Mul => Box::new(ExprType::Mul),
             Self::Div => Box::new(ExprType::Div),
@@ -77,11 +77,11 @@ impl BinaryPrecedence {
     }
 }
 
-impl TryFrom<&Token> for BinaryPrecedence {
+impl TryFrom<&Token> for Precedence {
     type Error = ();
-    fn try_from(t: &Token) -> Result<BinaryPrecedence, ()> {
+    fn try_from(t: &Token) -> Result<Precedence, ()> {
         use crate::data::lex::ComparisonToken::{self as Compare, *};
-        use BinaryPrecedence::{self as Bin, *};
+        use Precedence::{self as Bin, *};
         use Token::*;
         Ok(match t {
             Star => Bin::Mul,
@@ -119,7 +119,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn binary_expr(&mut self, mut left: Expr, max_precedence: usize) -> SyntaxResult<Expr> {
         while let Some(binop) = self
             .peek_token()
-            .and_then(|tok| BinaryPrecedence::try_from(tok).ok())
+            .and_then(|tok| Precedence::try_from(tok).ok())
         {
             let prec = binop.prec();
             if prec < max_precedence {
@@ -130,7 +130,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let right = if binop.left_associative() {
                 let inner_left = self.unary_expr()?;
                 self.binary_expr(inner_left, prec + 1)?
-            } else if let BinaryPrecedence::Ternary = binop {
+            } else if let Precedence::Ternary = binop {
                 // conditional_expression
                 // : logical_or_expression
                 // | logical_or_expression '?' expression ':' conditional_expression
@@ -138,7 +138,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let inner = self.expr()?;
                 self.expect(Token::Colon)?;
                 let right_start = self.unary_expr()?;
-                let right = self.binary_expr(right_start, BinaryPrecedence::Ternary.prec())?;
+                let right = self.binary_expr(right_start, Precedence::Ternary.prec())?;
 
                 let location = left.location.merge(&inner.location).merge(&right.location);
                 let ternary = ExprType::Ternary(Box::new(left), Box::new(inner), Box::new(right));
@@ -189,7 +189,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     // '*' | '~' | '!' | '+' | '-' | '&'
     fn match_unary_operator(&mut self) -> Option<Locatable<impl Fn(Expr) -> ExprType>> {
-        //Some(Locatable::new(|e| ExprType::Deref(Box::new(e)), self.last_location))
+        // prefix operator
         let func = match self.peek_token()? {
             Token::Star => ExprType::Deref,
             Token::BinaryNot => ExprType::BitwiseNot,

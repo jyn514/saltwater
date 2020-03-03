@@ -102,6 +102,7 @@ pub enum ExprType {
     // postfix
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, InternedStr),
+    DerefMember(Box<Expr>, InternedStr),
     // post increment/decrement
     PostIncrement(Box<Expr>, bool),
 
@@ -341,6 +342,7 @@ impl Display for Expr {
             ExprType::FuncCall(left, params) => write!(f, "({})({})", left, super::join(params)),
             ExprType::Cast(ctype, expr) => write!(f, "({})({})", ctype, expr),
             ExprType::Member(compound, id) => write!(f, "({}).{}", compound, id),
+            ExprType::DerefMember(compound, id) => write!(f, "({})->{}", compound, id),
             ExprType::PreIncrement(expr, inc) => {
                 write!(f, "{}({})", if *inc { "++" } else { "--" }, expr)
             }

@@ -111,11 +111,11 @@ impl TryFrom<&Token> for BinaryPrecedence {
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     #[inline]
     pub fn expr(&mut self) -> SyntaxResult<Expr> {
-        self.binary_expr(0)
+        let start = self.unary_expr()?;
+        self.binary_expr(start, 0)
     }
     // see `BinaryPrecedence` for all possible binary expressions
-    fn binary_expr(&mut self, max_precedence: usize) -> SyntaxResult<Expr> {
-        let mut expr = self.unary_expr()?;
+    fn binary_expr(&mut self, mut left: Expr, max_precedence: usize) -> SyntaxResult<Expr> {
         while let Some(binop) = self.peek_token()
                                     .and_then(|tok| BinaryPrecedence::try_from(tok).ok())
         {
@@ -124,20 +124,34 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 break;
             }
             self.next_token();
+            let location = left.location;
             let right = if binop.left_associative() {
-                self.binary_expr(prec + 1)?
+                let inner_left = self.unary_expr()?;
+                self.binary_expr(inner_left, prec + 1)?
             } else if let BinaryPrecedence::Ternary = binop {
-                unimplemented!("ternary");
+                // conditional_expression
+                // : logical_or_expression
+                // | logical_or_expression '?' expression ':' conditional_expression
+                // ;
+                let inner = self.expr()?;
+                self.expect(Token::Colon)?;
+                let right_start = self.unary_expr()?;
+                let right = self.binary_expr(right_start, BinaryPrecedence::Ternary.prec())?;
+
+                let location = left.location.merge(&inner.location).merge(&right.location);
+                let ternary = ExprType::Ternary(Box::new(left), Box::new(inner), Box::new(right));
+                left = Expr::new(ternary, location);
+                continue;
             } else {
-                let right = self.binary_expr(prec)?;
-                right
+                let inner_left = self.unary_expr()?;
+                self.binary_expr(inner_left, prec)?
             };
 
             let constructor = binop.constructor();
-            let location = expr.location.merge(&right.location);
-            expr = location.with(constructor(expr, right));
+            let location = location.merge(&right.location);
+            left = location.with(constructor(left, right));
         }
-        Ok(expr)
+        Ok(left)
     }
     // | '(' expr ')'
     // | unary_operator unary_expr
@@ -195,6 +209,10 @@ mod test {
         assert_eq!(parse_all(left), parse_all(right))
     }
 
+    fn assert_expr_display(left: &str, right: &str) {
+        assert_eq!(expr(left).unwrap().to_string(), right);
+    }
+
     fn expr(e: &str) -> SyntaxResult<Expr> {
         parser(e).expr()
     }
@@ -234,6 +252,15 @@ mod test {
     fn parse_binary() {
         assert_eq!(expr("1 = 2 = 3 + 4*5 + 6 + 7").unwrap().to_string(),
                    "(1) = ((2) = ((((3) + ((4) * (5))) + (6)) + (7)))");
+    }
+    #[test]
+    fn parse_ternary() {
+        assert_expr_display("1||2 ? 3||4 : 5", "((1) || (2)) ? ((3) || (4)) : (5)");
+        assert_expr_display("1||2 ? 3?4:5 : 6", "((1) || (2)) ? ((3) ? (4) : (5)) : (6)");
+    }
+
+    #[test]
+    fn lots_of_parens() {
         // should take no more than 1000 stack frames
         let the_biggun = format!("{}1 + 2{}", "(".repeat(1000), ")".repeat(1000));
         assert_eq!(expr(&the_biggun).unwrap().to_string(), "(1) + (2)");

@@ -105,6 +105,8 @@ pub enum ExprType {
     DerefMember(Box<Expr>, InternedStr),
     // post increment/decrement
     PostIncrement(Box<Expr>, bool),
+    // a[i]
+    Index(Box<Expr>, Box<Expr>),
 
     // prefix
     PreIncrement(Box<Expr>, bool),
@@ -349,6 +351,7 @@ impl Display for Expr {
             ExprType::PostIncrement(expr, inc) => {
                 write!(f, "({}){}", expr, if *inc { "++" } else { "--" })
             }
+            ExprType::Index(array, index) => write!(f, "({})[{}]", array, index),
             // hacks
             ExprType::StaticRef(expr) => write!(f, "&{}", expr),
             ExprType::Noop(expr) => write!(f, "{}", expr),

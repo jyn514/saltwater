@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-# Code
+### Code
 
 <!-- The code that caused the panic goes here.
      This should also include the error message you got. -->
@@ -16,7 +16,7 @@ assignees: ''
 
 ```
 
-# Expected behavior
+### Expected behavior
 <!-- A description of what you expected to happen.
      If you're not sure (e.g. this is invalid code),
      paste the output of another compiler

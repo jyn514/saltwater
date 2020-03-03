@@ -376,10 +376,11 @@ impl Lexer {
             buf.push(c);
             self.next_char();
         }
-        let float = if hex {
-            // Leaving as generic because it will be replaced shortly.
-            hexf_parse::parse_hexf64(&buf, false)
-                .map_err(|err| LexError::Generic(err.to_string()))?
+        let float: f64 = if hex {
+            let float_literal: hexponent::FloatLiteral = buf
+                .parse()
+                .map_err(|err: hexponent::ParseError| LexError::Generic(err.to_string()))?;
+            float_literal.into()
         } else {
             buf.parse::<f64>()?
         };

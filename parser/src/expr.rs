@@ -292,7 +292,7 @@ mod test {
     }
 
     #[test]
-    fn parse_unary() {
+    fn parse_prefix() {
         let expr_data = |s| expr(s).unwrap().data;
         let x = || Box::new(Location::default().with(ExprType::Id("x".into())));
         fn int() -> Box<Expr> {
@@ -319,6 +319,14 @@ mod test {
         assert_eq!(expr_data("~x"), ExprType::BitwiseNot(x()));
         assert_eq!(expr_data("!x"), ExprType::LogicalNot(x()));
         assert_eq!(expr_data("&x"), ExprType::AddressOf(x()));
+    }
+    #[test]
+    fn parse_postfix() {
+        assert_expr_display("a[1]", "(a)[1]");
+        assert_expr_display("a++", "(a)++");
+        assert_expr_display("a--", "(a)--");
+        assert_expr_display("a--", "(a)--");
+        assert_expr_display("a++--->b.c[d]", "(((((a)++)--)->b).c)[d]");
     }
     #[test]
     fn parse_binary() {

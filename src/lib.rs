@@ -41,7 +41,7 @@ pub type Product = <ObjectBackend as Backend>::Product;
 
 use data::prelude::CompileError;
 pub use data::prelude::*;
-pub use lex::{Lexer, PreProcessor};
+pub use lex::PreProcessor;
 pub use parse::Parser;
 
 #[macro_use]

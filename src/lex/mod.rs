@@ -22,7 +22,7 @@ pub use cpp::PreProcessor;
 /// Lexer implements iterator, so you can loop over the tokens.
 /// ```
 #[derive(Debug)]
-pub struct Lexer {
+struct Lexer {
     location: SingleLocation,
     chars: Rc<str>,
     /// used for 2-character tokens

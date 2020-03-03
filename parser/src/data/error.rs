@@ -177,6 +177,11 @@ pub enum SyntaxError {
     #[error("expected variable, literal, or '('")]
     MissingPrimary,
 
+    #[error("expected identifier, got '{}'",
+        .0.as_ref().map_or("<end-of-file>".into(),
+                           |t| std::borrow::Cow::Owned(t.to_string())))]
+    ExpectedId(Option<Token>),
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

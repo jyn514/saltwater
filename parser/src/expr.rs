@@ -155,6 +155,34 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         Ok(left)
     }
+    fn unary_expr(&mut self) -> SyntaxResult<Expr> {
+        let prefix = self.prefix_expr()?;
+        self.postfix_expr(prefix)
+    }
+
+    // postfix_expression
+    // : primary_expression
+    // | postfix_expression '[' expression ']'
+    // | postfix_expression '(' ')'
+    // | postfix_expression '(' argument_expression_list ')'
+    // | postfix_expression '.' IDENTIFIER
+    // | postfix_expression PTR_OP IDENTIFIER
+    // | postfix_expression INC_OP
+    // | postfix_expression DEC_OP
+    // ;
+    fn postfix_expr(&mut self, mut expr: Expr) -> SyntaxResult<Expr> {
+        // fortunately, they're all the same precedence
+        while let Some(Locatable {
+            data: postfix_op,
+            location,
+        }) = self.match_postfix_op()?
+        {
+            let location = expr.location.merge(&location);
+            expr = location.with(postfix_op(expr));
+        }
+        Ok(expr)
+    }
+
     // | '(' expr ')'
     // | unary_operator unary_expr
     // | "sizeof" '(' type_name ')'
@@ -163,7 +191,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // | "--" unary_expr
     // | ID
     // | LITERAL
-    fn unary_expr(&mut self) -> SyntaxResult<Expr> {
+    fn prefix_expr(&mut self) -> SyntaxResult<Expr> {
         if let Some(paren) = self.match_next(&Token::LeftParen) {
             let mut inner = self.expr()?;
             let end_loc = self.expect(Token::RightParen)?.location;
@@ -201,6 +229,23 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
         let loc = self.next_token().unwrap().location;
         Some(Locatable::new(move |e| func(Box::new(e)), loc))
+    }
+    // '[' expr ']' | '(' argument* ')' | '.' ID | '->' ID | '++' | '--'
+    fn match_postfix_op(&mut self) -> SyntaxResult<Option<Locatable<impl Fn(Expr) -> ExprType>>> {
+        // prefix operator
+        let (func, location) = match self.peek_token() {
+            Some(Token::Dot) => {
+                let start = self.next_token().unwrap().location;
+                let Locatable { data: id, location } = self.expect_id()?;
+                let location = start.merge(&location);
+                (move |expr| ExprType::Member(expr, id), location)
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(Locatable {
+            data: move |e| func(Box::new(e)),
+            location,
+        }))
     }
 }
 

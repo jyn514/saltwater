@@ -30,18 +30,13 @@ fn run_all() -> Result<(), io::Error> {
 
 fn run_one(path: &path::Path) -> Result<(), io::Error> {
     println!("testing {}", path.display());
-    let program_bytes = utils::cpp()
-        .arg(path.as_os_str())
-        .output()
-        .expect("failed to run preprocessor")
-        .stdout;
-    let program = std::str::from_utf8(&program_bytes).expect("program should be valid utf8");
-
+    let program = std::fs::read_to_string(path).unwrap();
     let mut reader = io::BufReader::new(std::fs::File::open(path)?);
     let mut first_line = String::new();
     reader.read_line(&mut first_line)?;
     // remove trailing \n
     first_line.pop();
+    let path = path.into();
     let test_func = match first_line.as_str() {
         "// compile" => utils::assert_compiles,
         "// no-main" => utils::assert_compiles_no_main,
@@ -54,13 +49,13 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
                 let code = line["// code: ".len()..]
                     .parse()
                     .expect("tests should have an integer after code:");
-                utils::assert_code(&program, code);
+                utils::assert_code(&program, path, code);
                 return Ok(());
             } else if line.starts_with("// errors: ") {
                 let errors = line["// errors: ".len()..]
                     .parse()
                     .expect("tests should have an integer after code:");
-                utils::assert_num_errs(&program, errors);
+                utils::assert_num_errs(&program, path, errors);
                 return Ok(());
             } else if line.starts_with("// ignore: ") {
                 let url = &line["// ignore: ".len()..];
@@ -70,7 +65,7 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
                 );
                 return Ok(());
             } else if line.starts_with("// output: ") {
-                return output_test(&line["// output: ".len()..], &mut reader, &program);
+                return output_test(&line["// output: ".len()..], &mut reader, &program, path);
             } else {
                 // seems like a reasonable default
                 utils::assert_succeeds
@@ -78,7 +73,7 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
         }
     };
 
-    test_func(&program);
+    test_func(&program, path);
     Ok(())
 }
 
@@ -86,7 +81,12 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
 /// syntax: '// output: ' expected_output
 /// expected_output: '[^\n]*' | 'BEGIN: ' (comment_line* '\n' | [^\n]+) 'END'
 /// comment_line: '\n// ' [^\n+]
-fn output_test<B: BufRead>(line: &str, reader: &mut B, program: &str) -> Result<(), io::Error> {
+fn output_test<B: BufRead>(
+    line: &str,
+    reader: &mut B,
+    program: &str,
+    path: path::PathBuf,
+) -> Result<(), io::Error> {
     const BEGIN: &str = "BEGIN: ";
     const END: &str = "END";
     let tmp_str;
@@ -110,7 +110,7 @@ fn output_test<B: BufRead>(line: &str, reader: &mut B, program: &str) -> Result<
             &tmp_str
         }
     };
-    utils::assert_output(program, expected);
+    utils::assert_output(program, path, expected);
     Ok(())
 }
 

@@ -1,0 +1,22 @@
+strict digraph if_state {
+   IF [label="self.nested_ifs.push(If)"];
+   ELIF [label="self.nested_ifs.push(Elif)"];
+   ELSE [label="self.nested_ifs.push(Else)"];
+   END [label="self.nested_ifs.pop()"];
+
+   start -> IF [label="#if 1"]
+   IF -> END [label="#endif"]
+   IF -> consume_all [label="#elif ... / #else"]
+   consume_all -> END [label="#endif"]
+
+   start -> consume_if [label="#if 0"]
+   consume_if -> consume_if [label="#elif 0"]
+   consume_if -> ELIF [label="#elif 1"]
+   consume_if -> ELSE [label="#else"]
+   consume_if -> END  [label="#endif"]
+
+   ELIF -> consume_all [label="#elif ... / #else"]
+   ELIF -> END         [label="#endif"]
+
+   ELSE -> END [label="#endif"]
+}

@@ -1,0 +1,2 @@
+// compile-fail
+#define f(

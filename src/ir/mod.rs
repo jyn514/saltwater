@@ -6,7 +6,6 @@ use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
 use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
-use crate::utils;
 use cranelift::codegen::{
     self,
     ir::{
@@ -136,7 +135,7 @@ impl<B: Backend> Compiler<B> {
         let func_id = self
             .module
             .declare_function(get_str!(id), linkage, &signature)
-            .unwrap_or_else(|err| utils::fatal(err, 6));
+            .unwrap_or_else(|err| panic!("{}", err));
         self.scope.insert(id, Id::Function(func_id));
         Ok(func_id)
     }
@@ -309,14 +308,18 @@ impl<B: Backend> Compiler<B> {
         }
 
         if let Err(err) = codegen::verify_function(&func, &flags) {
-            println!("{}", func);
-            utils::fatal(err, 3);
+            panic!(
+                "verification error: {}\nnote: while compiling {}",
+                err, func
+            );
         }
 
         let mut ctx = codegen::Context::for_function(func);
         if let Err(err) = self.module.define_function(func_id, &mut ctx) {
-            println!("{}", ctx.func);
-            utils::fatal(err, 4);
+            panic!(
+                "definition error: {}\nnote: while compiling {}",
+                err, ctx.func
+            );
         }
 
         Ok(())

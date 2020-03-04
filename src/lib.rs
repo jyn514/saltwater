@@ -11,12 +11,35 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::rc::Rc;
 
+use codespan::FileId;
 use cranelift::codegen::settings::{Configurable, Flags};
 use cranelift_module::{Backend, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
 #[cfg(feature = "jit")]
 use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
+
+/// The `Source` type for `codespan::Files`.
+///
+/// Used to store extra metadata about the file, like the absolute filename.
+///
+/// NOTE: If `path` is empty (e.g. by using `my_string.into()`),
+/// then the path will be relative to the _compiler_, not to the current file.
+/// This is recommended only for test code and proof of concepts,
+/// since it does not adhere to the C standard.
+pub struct Source {
+    pub code: Rc<str>,
+    pub path: PathBuf,
+}
+
+impl AsRef<str> for Source {
+    fn as_ref(&self) -> &str {
+        self.code.as_ref()
+    }
+}
+
+pub type Files = codespan::Files<Source>;
 pub type Product = <ObjectBackend as Backend>::Product;
 
 use data::prelude::CompileError;
@@ -25,7 +48,7 @@ pub use lex::PreProcessor;
 pub use parse::Parser;
 
 #[macro_use]
-pub mod utils;
+mod macros;
 mod arch;
 pub mod data;
 mod fold;
@@ -34,17 +57,14 @@ mod ir;
 mod lex;
 mod parse;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("{}", .0.iter().map(|err| err.data.to_string()).collect::<Vec<_>>().join("\n"))]
     Source(VecDeque<CompileError>),
+    #[error("platform-specific error: {0}")]
     Platform(String),
-    IO(io::Error),
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Error {
-        Error::IO(err)
-    }
+    #[error("io error: {0}")]
+    IO(#[from] io::Error),
 }
 
 impl From<CompileError> for Error {
@@ -59,11 +79,8 @@ impl From<VecDeque<CompileError>> for Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Opt {
-    /// The file where the C source came from
-    pub filename: PathBuf,
-
     /// If set, print all tokens found by the lexer in addition to compiling.
     pub debug_lex: bool,
 
@@ -80,20 +97,9 @@ pub struct Opt {
     /// The maximum number of errors to allow before giving up.
     /// If None, allows an unlimited number of errors.
     pub max_errors: Option<std::num::NonZeroUsize>,
-}
 
-impl Default for Opt {
-    fn default() -> Self {
-        Opt {
-            filename: "<default>".into(),
-            debug_lex: false,
-            debug_ast: false,
-            debug_asm: false,
-            no_link: false,
-            max_errors: None,
-            jit: false,
-        }
-    }
+    /// The directories to consider as part of the search path.
+    pub search_path: Vec<PathBuf>,
 }
 
 /// Preprocess the source and return the tokens.
@@ -108,12 +114,14 @@ impl Default for Opt {
 pub fn preprocess(
     buf: &str,
     opt: &Opt,
+    file: FileId,
+    files: &mut Files,
 ) -> (
     Result<VecDeque<Locatable<Token>>, VecDeque<CompileError>>,
     VecDeque<CompileWarning>,
 ) {
-    let filename = opt.filename.to_string_lossy();
-    let mut cpp = PreProcessor::new(filename, &buf, opt.debug_lex);
+    let path = opt.search_path.iter().map(|p| p.into());
+    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
 
     let mut tokens = VecDeque::new();
     let mut errs = VecDeque::new();
@@ -159,7 +167,7 @@ pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
     let flags = get_flags(true);
 
     let isa = cranelift::codegen::isa::lookup(arch::TARGET)
-        .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", arch::TARGET), 5))
+        .unwrap_or_else(|_| panic!("platform not supported: {}", arch::TARGET))
         .finish(flags);
 
     let builder = SimpleJITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
@@ -170,7 +178,7 @@ pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
     let flags = get_flags(false);
 
     let isa = cranelift::codegen::isa::lookup(arch::TARGET)
-        .unwrap_or_else(|_| utils::fatal(format!("platform not supported: {}", arch::TARGET), 5))
+        .unwrap_or_else(|_| panic!("platform not supported: {}", arch::TARGET))
         .finish(flags);
 
     let builder = ObjectBuilder::new(
@@ -178,8 +186,7 @@ pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
         name,
         ObjectTrapCollection::Disabled,
         cranelift_module::default_libcall_names(),
-    )
-    .expect("unknown error creating module");
+    );
     Module::new(builder)
 }
 
@@ -188,11 +195,11 @@ pub fn compile<B: Backend>(
     module: Module<B>,
     buf: &str,
     opt: &Opt,
+    file: FileId,
+    files: &mut Files,
 ) -> (Result<Module<B>, Error>, VecDeque<CompileWarning>) {
-    let filename = opt.filename.to_string_lossy();
-    let filename_ref = InternedStr::get_or_intern(filename.as_ref());
-    let mut cpp = PreProcessor::new(filename, &buf, opt.debug_lex);
-
+    let path = opt.search_path.iter().map(|p| p.into());
+    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
     let mut errs = VecDeque::new();
 
     macro_rules! handle_err {
@@ -214,7 +221,7 @@ pub fn compile<B: Backend>(
     };
     let eof = || Location {
         span: (buf.len() as u32..buf.len() as u32).into(),
-        filename: filename_ref,
+        file,
     };
 
     let first = match first {
@@ -370,16 +377,26 @@ impl JIT {
     }
 }
 
+impl<T: Into<Rc<str>>> From<T> for Source {
+    fn from(src: T) -> Self {
+        Self {
+            code: src.into(),
+            path: PathBuf::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     fn compile(src: &str) -> Result<Product, Error> {
-        let options = Opt {
-            filename: "<test-suite>".into(),
-            ..Default::default()
-        };
+        let options = Opt::default();
         let module = initialize_aot_module("RccAOT".to_owned());
-        super::compile(module, src, &options).0.map(|x| x.finish())
+        let mut files: Files = Default::default();
+        let id = files.add("<test suite>", src.into());
+        super::compile(module, src, &options, id, &mut files)
+            .0
+            .map(|x| x.finish())
     }
     fn compile_err(src: &str) -> VecDeque<CompileError> {
         match compile(src).err().unwrap() {
@@ -389,7 +406,7 @@ mod tests {
     }
     #[test]
     fn empty() {
-        let mut lex_errs = compile_err("`");
+        let mut lex_errs = compile_err("`\n");
         assert!(lex_errs.pop_front().unwrap().data.is_lex_err());
         assert!(lex_errs.is_empty());
 
@@ -399,7 +416,7 @@ mod tests {
         assert!(err.is_semantic_err());
         assert!(empty_errs.is_empty());
 
-        let mut parse_err = compile_err("+++");
+        let mut parse_err = compile_err("+++\n");
         let err = parse_err.pop_front();
         assert!(parse_err.is_empty());
         assert!(err.unwrap().data.is_syntax_err());

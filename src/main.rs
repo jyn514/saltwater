@@ -4,6 +4,7 @@ use std::io::{self, Read};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 extern crate ansi_term;
@@ -16,7 +17,7 @@ extern crate pico_args;
 extern crate rcc;
 
 use ansi_term::{ANSIString, Colour};
-use codespan::{FileId, Files};
+use codespan::FileId;
 use pico_args::Arguments;
 use rcc::{
     assemble, compile,
@@ -24,7 +25,7 @@ use rcc::{
         error::{CompileWarning, RecoverableResult},
         lex::Location,
     },
-    link, preprocess, utils, Error, Opt,
+    link, preprocess, Error, Files, Opt,
 };
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
@@ -58,6 +59,7 @@ OPTIONS:
     -o, --output <output>    The output file to use. [default: a.out]
         --max-errors <max>   The maximum number of errors to allow before giving up.
                              Use 0 to allow unlimited errors. [default: 10]
+    -I, --include <dir>      Add a directory to the local include path (`#include \"file.h\"`)
 
 ARGS:
     <file>    The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
@@ -65,7 +67,7 @@ ARGS:
 
 const USAGE: &str = "\
 usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
-           [--debug-lex] [--jit] [--no-link | -c] [<file>]";
+           [--debug-lex] [--jit] [--no-link | -c] [-I <dir>] [<file>]";
 
 struct BinOpt {
     /// The options that will be passed to `compile()`
@@ -75,24 +77,27 @@ struct BinOpt {
     /// Note that preprocessing discards whitespace and comments.
     /// There is not currently a way to disable this behavior.
     preprocess_only: bool,
+    /// The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
+    /// Only one file at a time is currently accepted. [default: -]
+    filename: PathBuf,
 }
 
 // TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
 fn real_main(
-    file_db: &Files<String>,
+    buf: Rc<str>,
+    file_db: &mut Files,
     file_id: FileId,
     opt: &BinOpt,
     output: &Path,
 ) -> Result<(), Error> {
     env_logger::init();
 
-    let buf = file_db.source(file_id);
     let opt = if opt.preprocess_only {
         use std::io::{BufWriter, Write};
 
-        let (tokens, warnings) = preprocess(buf, &opt.opt);
-        handle_warnings(warnings, file_id, file_db);
+        let (tokens, warnings) = preprocess(&buf, &opt.opt, file_id, file_db);
+        handle_warnings(warnings, file_db);
 
         let stdout = io::stdout();
         let mut stdout_buf = BufWriter::new(stdout.lock());
@@ -121,7 +126,7 @@ fn real_main(
         }
     }
     #[cfg(not(jit))]
-    aot_main(buf, &opt, file_id, file_db, output)
+    aot_main(&buf, &opt, file_id, file_db, output)
 }
 
 #[inline]
@@ -129,12 +134,12 @@ fn aot_main(
     buf: &str,
     opt: &Opt,
     file_id: FileId,
-    file_db: &Files<String>,
+    file_db: &mut Files,
     output: &Path,
 ) -> Result<(), Error> {
     let module = rcc::initialize_aot_module("rccmain".to_owned());
-    let (result, warnings) = compile(module, buf, opt);
-    handle_warnings(warnings, file_id, file_db);
+    let (result, warnings) = compile(module, buf, opt, file_id, file_db);
+    handle_warnings(warnings, file_db);
 
     let product = result.map(|x| x.finish())?;
     if opt.no_link {
@@ -145,13 +150,13 @@ fn aot_main(
     link(tmp_file.as_ref(), output).map_err(io::Error::into)
 }
 
-fn handle_warnings(warnings: VecDeque<CompileWarning>, file: FileId, file_db: &Files<String>) {
+fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files) {
     WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
     let tag = Colour::Yellow.bold().paint("warning");
     for warning in warnings {
         print!(
             "{}",
-            pretty_print(tag.clone(), warning.data, warning.location, file, file_db)
+            pretty_print(tag.clone(), warning.data, warning.location, file_db)
         );
     }
 }
@@ -176,31 +181,31 @@ fn main() {
     };
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
-    opt.opt.filename = if opt.opt.filename == PathBuf::from("-") {
+    opt.filename = if opt.filename == PathBuf::from("-") {
         io::stdin().read_to_string(&mut buf).unwrap_or_else(|err| {
             eprintln!("Failed to read stdin: {}", err);
             process::exit(1);
         });
         PathBuf::from("<stdin>")
     } else {
-        File::open(opt.opt.filename.as_path())
+        File::open(opt.filename.as_path())
             .and_then(|mut file| file.read_to_string(&mut buf))
             .unwrap_or_else(|err| {
-                eprintln!(
-                    "Failed to read {}: {}",
-                    opt.opt.filename.to_string_lossy(),
-                    err
-                );
+                eprintln!("Failed to read {}: {}", opt.filename.to_string_lossy(), err);
                 process::exit(1);
             });
-        opt.opt.filename
+        opt.filename
+    };
+    let buf: Rc<_> = buf.into();
+    let source = rcc::Source {
+        path: opt.filename.clone(),
+        code: Rc::clone(&buf),
     };
 
     let mut file_db = Files::new();
-    // TODO: remove `lossy` call
-    let file_id = file_db.add(opt.opt.filename.to_string_lossy(), buf);
-    real_main(&file_db, file_id, &opt, &output)
-        .unwrap_or_else(|err| err_exit(err, opt.opt.max_errors, file_id, &file_db));
+    let file_id = file_db.add(&opt.filename, source);
+    real_main(buf, &mut file_db, file_id, &opt, &output)
+        .unwrap_or_else(|err| err_exit(err, opt.opt.max_errors, &file_db));
 }
 
 fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
@@ -247,6 +252,12 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             usize::from_str_radix(s, 10).map(NonZeroUsize::new)
         })?
         .unwrap_or_else(|| Some(NonZeroUsize::new(10).unwrap()));
+    let mut search_path = Vec::new();
+    while let Some(include) =
+        input.opt_value_from_os_str(["-I", "--include"], os_str_to_path_buf)?
+    {
+        search_path.push(include);
+    }
     Ok((
         BinOpt {
             preprocess_only: input.contains(["-E", "--preprocess-only"]),
@@ -257,26 +268,22 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
                 no_link: input.contains(["-c", "--no-link"]),
                 jit: input.contains("--jit"),
                 max_errors,
-                filename: input
-                    .free_from_os_str(os_str_to_path_buf)?
-                    .unwrap_or_else(|| "-".into()),
+                search_path,
             },
+            filename: input
+                .free_from_os_str(os_str_to_path_buf)?
+                .unwrap_or_else(|| "-".into()),
         },
         output,
     ))
 }
 
-fn err_exit(
-    err: Error,
-    max_errors: Option<NonZeroUsize>,
-    file: FileId,
-    file_db: &Files<String>,
-) -> ! {
+fn err_exit(err: Error, max_errors: Option<NonZeroUsize>, file_db: &Files) -> ! {
     use Error::*;
     match err {
         Source(errs) => {
             for err in &errs {
-                error(&err.data, err.location(), file, file_db);
+                error(&err.data, err.location(), file_db);
             }
             if let Some(max) = max_errors {
                 if usize::from(max) <= errs.len() {
@@ -290,8 +297,8 @@ fn err_exit(
             print_issues(num_warnings, num_errors);
             process::exit(2);
         }
-        IO(err) => utils::fatal(&err, 3),
-        Platform(err) => utils::fatal(&err, 4),
+        IO(err) => fatal(&err, 3),
+        Platform(err) => fatal(&err, 4),
     }
 }
 
@@ -309,34 +316,28 @@ fn print_issues(warnings: usize, errors: usize) {
     eprintln!("{} generated", msg);
 }
 
-fn error<T: std::fmt::Display>(msg: T, location: Location, file: FileId, file_db: &Files<String>) {
+fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
     print!(
         "{}",
-        pretty_print(
-            Colour::Red.bold().paint("error"),
-            msg,
-            location,
-            file,
-            file_db,
-        )
+        pretty_print(Colour::Red.bold().paint("error"), msg, location, file_db,)
     );
 }
 
 #[must_use]
-fn pretty_print<T: std::fmt::Display, S: AsRef<str>>(
+fn pretty_print<T: std::fmt::Display>(
     prefix: ANSIString,
     msg: T,
     location: Location,
-    file: FileId,
-    file_db: &Files<S>,
+    file_db: &Files,
 ) -> String {
+    let file = location.file;
     let start = file_db
         .location(file, location.span.start())
         .expect("start location should be in bounds");
     let buf = format!(
         "{}:{}:{} {}: {}\n",
-        file_db.name(file),
+        file_db.name(file).to_string_lossy(),
         start.line.number(),
         start.column.number(),
         prefix,
@@ -375,22 +376,27 @@ fn get_errors() -> usize {
     ERRORS.load(Ordering::SeqCst)
 }
 
+fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
+    eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
+    process::exit(code);
+}
+
 #[cfg(test)]
 mod test {
     use super::{Files, Location};
     use ansi_term::Style;
     use codespan::Span;
-    use rcc::intern::InternedStr;
 
     fn pp<S: Into<Span>>(span: S, source: &str) -> String {
+        let mut file_db = Files::new();
+        let source = String::from(source).into();
+        let file = file_db.add("<test-suite>", source);
         let location = Location {
-            filename: InternedStr::get_or_intern("<test-suite>"),
+            file,
             span: span.into(),
         };
-        let mut file_db = Files::new();
-        let file = file_db.add("<test-suite>", source);
         let ansi_str = Style::new().paint("");
-        super::pretty_print(ansi_str, "", location, file, &file_db)
+        super::pretty_print(ansi_str, "", location, &file_db)
     }
     #[test]
     fn pretty_print() {

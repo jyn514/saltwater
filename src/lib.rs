@@ -298,12 +298,19 @@ impl From<Module<SimpleJITBackend>> for JIT {
 #[cfg(feature = "jit")]
 impl JIT {
     /// Compile string and return JITed code.
-    pub fn from_string(
-        program: &str,
+    pub fn from_string<R: Into<Rc<str>>>(
+        program: R,
         opt: &Opt,
     ) -> (Result<Self, Error>, VecDeque<CompileWarning>) {
+        let program = program.into();
         let module = initialize_jit_module();
-        let (result, warnings) = compile::<SimpleJITBackend>(module, program, opt);
+        let mut files = Files::new();
+        let source = Source {
+            path: PathBuf::new(),
+            code: Rc::clone(&program),
+        };
+        let file = files.add("<jit>", source);
+        let (result, warnings) = compile(module, &program, opt, file, &mut files);
         let result = result.map(JIT::from);
         (result, warnings)
     }
@@ -366,7 +373,7 @@ impl JIT {
         // and **guaranteed** to be non-null
         let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 = std::mem::transmute(main);
         // though transmute is safe, invoking this function is unsafe because we invoke C code.
-        Some(main(argc, argv.as_ptr() as *const *const u8));
+        Some(main(argc, argv.as_ptr() as *const *const u8))
     }
 }
 

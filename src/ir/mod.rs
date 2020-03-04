@@ -50,7 +50,7 @@ pub(crate) fn compile<B: Backend>(
 ) -> (Result<Module<B>, CompileError>, VecDeque<CompileWarning>) {
     // really we'd like to have all errors but that requires a refactor
     let mut err = None;
-    let mut compiler = Compiler::<B>::new(module, debug);
+    let mut compiler = Compiler::new(module, debug);
     for decl in program {
         let current = match (decl.data.symbol.ctype.clone(), decl.data.init) {
             (Type::Function(func_type), None) => compiler

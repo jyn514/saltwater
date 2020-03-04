@@ -184,6 +184,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 "fatal: maximum recursion depth exceeded ({} > {})",
                 depth, MAX_DEPTH
             );
+            if !self.error_handler.is_empty() {
+                println!("pending errors:");
+                // needs a clone since we take `&self`
+                let mut handler = self.error_handler.clone();
+                for error in &mut handler {
+                    println!("- error: {}", error.data);
+                }
+                for warning in handler.warnings {
+                    println!("- warning: {}", warning.data);
+                }
+            }
             std::process::exit(102);
         }
         guard
@@ -382,11 +393,13 @@ impl Token {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::Parser;
+    use proptest::prelude::*;
+
     use crate::data::prelude::*;
     use crate::lex::PreProcessor as Lexer;
 
     pub(crate) use super::expr::tests::parse_expr;
+    use super::Parser;
 
     pub(crate) type ParseType = CompileResult<Locatable<Declaration>>;
     pub(crate) fn parse(input: &str) -> Option<ParseType> {
@@ -446,7 +459,7 @@ pub(crate) mod tests {
     }
     #[inline]
     pub(crate) fn parser(input: &str) -> Parser<Lexer> {
-        let mut lexer = Lexer::new("<test suite>".to_string(), input, false);
+        let mut lexer = cpp(input);
         let first = lexer.next().unwrap().unwrap();
         Parser::new(first, lexer, false)
     }
@@ -487,5 +500,40 @@ pub(crate) mod tests {
         buf.resize(10_000, ';');
         let buf: String = buf.into_iter().collect();
         assert!(parse(&buf).is_none());
+    }
+
+    prop_compose! {
+        fn arb_vec_result_locatable_token()(tokens in any::<Vec<Token>>()) -> Vec<CompileResult<Locatable<Token>>> {
+            tokens.into_iter().map(|token| Ok(Locatable { data: token, location: Location::default()})).collect()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_peek_equals_token(
+            first in any::<Token>(),
+            tokens in arb_vec_result_locatable_token()
+            ) {
+            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), false);
+
+            let peek = parser.peek_token().cloned();
+            let next = parser.next_token().map(|l| l.data);
+
+            prop_assert_eq!(peek, next);
+        }
+
+        #[test]
+        fn proptest_peek_next_equals_2_next_token(
+            first in any::<Token>(),
+            tokens in arb_vec_result_locatable_token()
+            ) {
+            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), false);
+
+            let peek = parser.peek_next_token().cloned();
+            parser.next_token();
+            let next = parser.next_token().map(|l| l.data);
+
+            prop_assert_eq!(peek, next);
+        }
     }
 }

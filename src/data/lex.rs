@@ -1,15 +1,21 @@
-use crate::intern::InternedStr;
-
-use codespan::Span;
-
 use std::cmp::Ordering;
+
+use codespan::{FileId, Span};
+use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
+#[cfg(test)]
+use test::arb_interned_str;
+
+use crate::intern::InternedStr;
 
 // holds where a piece of code came from
 // should almost always be immutable
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Location {
     pub span: Span,
-    pub filename: InternedStr,
+    pub file: FileId,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -28,6 +34,7 @@ impl<T> Locatable<T> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum Keyword {
     // statements
     If,
@@ -89,6 +96,7 @@ pub enum Keyword {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum AssignmentToken {
     Equal,
     PlusEqual,
@@ -104,6 +112,7 @@ pub enum AssignmentToken {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum ComparisonToken {
     Less,
     Greater,
@@ -114,6 +123,7 @@ pub enum ComparisonToken {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum Literal {
     // literals
     Int(i64),
@@ -124,6 +134,7 @@ pub enum Literal {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum Token {
     PlusPlus,
     MinusMinus,
@@ -159,6 +170,7 @@ pub enum Token {
 
     Keyword(Keyword),
     Literal(Literal),
+    #[cfg_attr(test, proptest(strategy(arb_interned_str)))]
     Id(InternedStr),
 
     // Misc
@@ -185,7 +197,7 @@ impl Location {
 impl PartialOrd for Location {
     /// NOTE: this only compares the start of the spans, it ignores the end
     fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
-        if self.filename == other.filename {
+        if self.file == other.file {
             Some(self.span.cmp(&other.span))
         } else {
             None
@@ -222,7 +234,6 @@ impl Literal {
     }
 }
 
-use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
 impl ComparisonToken {
     pub fn to_int_compare(self, signed: bool) -> IntCC {
         use ComparisonToken::*;
@@ -273,9 +284,11 @@ impl AssignmentToken {
 #[cfg(test)]
 impl Default for Location {
     fn default() -> Self {
+        let mut files = crate::Files::default();
+        let id = files.add("<test suite>", String::new().into());
         Self {
             span: (0..1).into(),
-            filename: Default::default(),
+            file: id,
         }
     }
 }
@@ -401,11 +414,23 @@ impl From<ComparisonToken> for Token {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
+    use proptest::prelude::*;
+
     use crate::*;
-    fn cpp(s: &str) -> PreProcessor {
-        PreProcessor::new("<integration-test>", s, false)
+
+    /// Create a new preprocessor with `s` as the input
+    pub(crate) fn cpp(s: &str) -> PreProcessor {
+        let newline = format!("{}\n", s).into_boxed_str();
+        cpp_no_newline(Box::leak(newline))
     }
+    /// Create a new preprocessor with `s` as the input, but without a trailing newline
+    pub(crate) fn cpp_no_newline(s: &str) -> PreProcessor {
+        let mut files: Files = Default::default();
+        let id = files.add("<test suite>", String::new().into());
+        PreProcessor::new(id, s, false, vec![], Box::leak(Box::new(files)))
+    }
+
     #[test]
     fn assignment_display() {
         let tokens = [
@@ -416,5 +441,9 @@ mod test {
             let first = lexer.next().unwrap().unwrap().data;
             assert_eq!(&first.to_string(), *token);
         }
+    }
+
+    pub(crate) fn arb_interned_str() -> impl Strategy<Value = Token> {
+        ".*".prop_map(|s| Token::Id(InternedStr::from(s)))
     }
 }

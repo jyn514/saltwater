@@ -1,4 +1,7 @@
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
+use std::rc::Rc;
+
+use codespan::FileId;
 
 use super::data::{error::LexError, lex::*, prelude::*};
 use super::intern::InternedStr;
@@ -19,9 +22,9 @@ pub use cpp::PreProcessor;
 /// Lexer implements iterator, so you can loop over the tokens.
 /// ```
 #[derive(Debug)]
-struct Lexer<'a> {
+struct Lexer {
     location: SingleLocation,
-    chars: &'a [u8],
+    chars: Rc<str>,
     /// used for 2-character tokens
     current: Option<u8>,
     /// used for 3-character tokens
@@ -30,8 +33,12 @@ struct Lexer<'a> {
     /// used for preprocessing (e.g. `#line 5` is a directive
     /// but `int main() { # line 5` is not)
     seen_line_token: bool,
+    /// counts _logical_ lines, not physical lines
+    /// used for the preprocessor (mostly for `tokens_until_newline()`)
     line: usize,
     error_handler: ErrorHandler,
+    /// Whether or not to display each token as it is processed
+    debug: bool,
 }
 
 // returned when lexing a string literal
@@ -39,23 +46,23 @@ enum CharError {
     Eof,
     Newline,
     Terminator,
+    OctalTooLarge,
+    HexTooLarge,
 }
 
 #[derive(Debug)]
 struct SingleLocation {
     offset: u32,
-    filename: InternedStr,
+    file: FileId,
 }
 
-impl<'a> Lexer<'a> {
+impl Lexer {
     /// Creates a Lexer from a filename and the contents of a file
-    fn new<T: AsRef<str> + Into<String>>(file: T, chars: &'a [u8]) -> Lexer<'a> {
+    fn new<S: Into<Rc<str>>>(file: FileId, chars: S, debug: bool) -> Lexer {
         Lexer {
-            location: SingleLocation {
-                offset: 0,
-                filename: InternedStr::get_or_intern(file),
-            },
-            chars,
+            debug,
+            location: SingleLocation { offset: 0, file },
+            chars: chars.into(),
             seen_line_token: false,
             line: 0,
             current: None,
@@ -80,35 +87,73 @@ impl<'a> Lexer<'a> {
     ///
     /// This function should never set `self.location.offset` to an out-of-bounds location
     fn next_char(&mut self) -> Option<u8> {
-        let next = if let Some(c) = self.current {
+        let mut c = self._next_char();
+        // Section 5.1.1.2 phase 2: discard backslashes before newlines
+        while c == Some(b'\\') && self.peek() == Some(b'\n') {
+            self._next_char(); // discard \n
+            self.consume_whitespace();
+            c = self._next_char();
+        }
+        if c == Some(b'\n') {
+            self.seen_line_token = false;
+            self.line += 1;
+        }
+        c
+    }
+    // Internal use only, use `next_char()` instead.
+    // This gets the next token from the buffer
+    // and updates the current offset and relevant fields.
+    fn _next_char(&mut self) -> Option<u8> {
+        if let c @ Some(_) = self.current {
             self.current = self.lookahead.take();
-            Some(c)
+            c
         } else {
-            self.chars.get(self.location.offset as usize).copied()
-        };
-        next.map(|c| {
+            assert!(self.lookahead.is_none());
+            self.chars
+                .as_bytes()
+                .get(self.location.offset as usize)
+                .copied()
+        }
+        .map(|c| {
             self.location.offset += 1;
-            if c == b'\n' {
-                self.seen_line_token = false;
-                self.line += 1;
-            }
             c
         })
     }
     /// Return the character that would be returned by `next_char`.
     /// Can be called any number of the times and will still return the same result.
     fn peek(&mut self) -> Option<u8> {
-        self.current = self
-            .current
-            .or_else(|| self.lookahead.take())
-            .or_else(|| self.chars.get(self.location.offset as usize).copied());
+        self.current = self.current.or_else(|| self.lookahead.take()).or_else(|| {
+            self.chars
+                .as_bytes()
+                .get(self.location.offset as usize)
+                .copied()
+        });
         self.current
     }
+    /// Return the character that would be returned if you called `next_char()` twice in a row.
+    /// Can be called any number of the times and will still return the same result.
     fn peek_next(&mut self) -> Option<u8> {
-        self.lookahead = self
-            .lookahead
-            .or_else(|| self.chars.get((self.location.offset + 1) as usize).copied());
+        self.lookahead = self.lookahead.or_else(|| {
+            self.chars
+                .as_bytes()
+                .get((self.location.offset + 1) as usize)
+                .copied()
+        });
         self.lookahead
+    }
+    /// Return a single token to the stream.
+    /// Can be called at most once before running out of space to store the token.
+    ///
+    /// # Panics
+    /// This function will panic if called twice in a row
+    /// or when `self.lookahead.is_some()`.
+    fn unput(&mut self, byte: u8) {
+        assert!(self.lookahead.is_none());
+        self.lookahead = self.current.take();
+        self.current = Some(byte);
+        // TODO: this is not right,
+        // it will break if someone calls `span()` before consuming the newline
+        self.location.offset -= 1;
     }
     /// If the next character is `item`, consume it and return true.
     /// Otherwise, return false.
@@ -125,16 +170,37 @@ impl<'a> Lexer<'a> {
     fn span(&self, start: u32) -> Location {
         Location {
             span: (start..self.location.offset).into(),
-            filename: self.location.filename,
+            file: self.location.file,
         }
     }
     /// Remove all consecutive whitespace pending in the stream.
+    /// This includes comments.
     ///
-    /// Before: u8s{"    hello   "}
-    /// After:  chars{"hello   "}
+    /// Before: b"    // some comment\n /*multi comment*/hello   "
+    /// After:  b"hello   "
     fn consume_whitespace(&mut self) {
-        while self.peek().map_or(false, |c| c.is_ascii_whitespace()) {
-            self.next_char();
+        // there may be comments following whitespace
+        loop {
+            // whitespace
+            while self.peek().map_or(false, |c| c.is_ascii_whitespace()) {
+                self.next_char();
+            }
+            // comments
+            if self.peek() == Some(b'/') {
+                match self.peek_next() {
+                    Some(b'/') => self.consume_line_comment(),
+                    Some(b'*') => {
+                        self.next_char();
+                        self.next_char();
+                        if let Err(err) = self.consume_multi_comment() {
+                            self.error_handler.push_back(err);
+                        }
+                    }
+                    _ => break,
+                }
+            } else {
+                break;
+            }
         }
     }
     /// Remove all characters between now and the next b'\n' character.
@@ -142,11 +208,7 @@ impl<'a> Lexer<'a> {
     /// Before: u8s{"blah `invalid tokens``\nhello // blah"}
     /// After:  chars{"hello // blah"}
     fn consume_line_comment(&mut self) {
-        while let Some(c) = self.next_char() {
-            if c == b'\n' {
-                break;
-            }
-        }
+        while self.next_char() != Some(b'\n') {}
     }
     /// Remove a multi-line C-style comment, i.e. until the next '*/'.
     ///
@@ -401,19 +463,32 @@ impl<'a> Lexer<'a> {
                     Ok(match c {
                         // escaped newline: "a\
                         // b"
-                        b'\n' => return self.parse_single_char(string),
+                        b'\n' => unreachable!("should be handled earlier"),
                         b'n' => b'\n',   // embedded newline: "a\nb"
                         b'r' => b'\r',   // carriage return
                         b't' => b'\t',   // tab
                         b'"' => b'"',    // escaped "
                         b'\'' => b'\'',  // escaped '
                         b'\\' => b'\\',  // \
-                        b'0' => b'\0',   // null character: "\0"
                         b'a' => b'\x07', // bell
                         b'b' => b'\x08', // backspace
                         b'v' => b'\x0b', // vertical tab
                         b'f' => b'\x0c', // form feed
                         b'?' => b'?',    // a literal b'?', for trigraphs
+                        b'0'..=b'9' => {
+                            return self.parse_octal_char_escape(c).map_err(|err| {
+                                // try to avoid extraneous errors, but don't try too hard
+                                self.match_next(b'\'');
+                                err
+                            });
+                        }
+                        b'x' => {
+                            return self.parse_hex_char_escape().map_err(|err| {
+                                // try to avoid extraneous errors, but don't try too hard
+                                self.match_next(b'\'');
+                                err
+                            });
+                        }
                         _ => {
                             self.error_handler.warn(
                                 &format!("unknown character escape '\\{}'", c),
@@ -436,6 +511,41 @@ impl<'a> Lexer<'a> {
             Err(CharError::Eof)
         }
     }
+    fn parse_octal_char_escape(&mut self, start: u8) -> Result<u8, CharError> {
+        let mut base: u16 = (start - b'0').into();
+        // at most 3 digits in an octal constant, `start` is the first so only 2 possible left
+        for _ in 0..2 {
+            match self.peek() {
+                Some(c) if b'0' <= c && c < b'8' => {
+                    self.next_char();
+                    base <<= 3; // base *= 8
+                    base += u16::from(c - b'0');
+                }
+                _ => break,
+            }
+        }
+        base.try_into().map_err(|_| CharError::OctalTooLarge)
+    }
+    fn parse_hex_char_escape(&mut self) -> Result<u8, CharError> {
+        let mut base = 0_u64;
+        let mut update = |this: &mut Self, c: u8| {
+            this.next_char();
+            // NOTE: this can't overflow, it will just shift in a 0
+            // base *= 16
+            base <<= 4;
+            // NOTE: because we shifted in a 0 and c < 16, this can't overflow
+            base += u64::from(c);
+        };
+        loop {
+            match self.peek() {
+                Some(c) if b'0' <= c && c <= b'9' => update(self, c - b'0'),
+                Some(c) if b'a' <= c && c <= b'z' => update(self, c - b'a' + 10),
+                Some(c) if b'A' <= c && c <= b'Z' => update(self, c - b'A' + 10),
+                _ => break,
+            }
+        }
+        base.try_into().map_err(|_| CharError::HexTooLarge)
+    }
     /// Parse a character literal, starting after the opening quote.
     ///
     /// Before: chars{"\0' blah"}
@@ -457,7 +567,7 @@ impl<'a> Lexer<'a> {
             Err(String::from("Illegal newline while parsing char literal")),
         );
         match self.parse_single_char(false) {
-            Ok(c) if c.is_ascii() => match self.next_char() {
+            Ok(c) => match self.next_char() {
                 Some(b'\'') => Ok(Literal::Char(c as u8).into()),
                 Some(b'\n') => newline_err,
                 None => term_err,
@@ -466,13 +576,13 @@ impl<'a> Lexer<'a> {
                     Err(String::from("Multi-character character literal"))
                 }
             },
-            Ok(_) => {
-                consume_until_quote(self);
-                Err(String::from("Multi-byte unicode character literal"))
-            }
             Err(CharError::Eof) => term_err,
             Err(CharError::Newline) => newline_err,
             Err(CharError::Terminator) => Err(String::from("Empty character constant")),
+            Err(CharError::HexTooLarge) => Err(String::from("hex character escape out of range")),
+            Err(CharError::OctalTooLarge) => {
+                Err(String::from("octal character escape out of range"))
+            }
         }
     }
     /// Parse a string literal, starting before the opening quote.
@@ -499,9 +609,25 @@ impl<'a> Lexer<'a> {
                         return Err(String::from("Illegal newline while parsing string literal"))
                     }
                     Err(CharError::Terminator) => break,
+                    Err(CharError::HexTooLarge) => {
+                        return Err(String::from("hex character escape out of range"))
+                    }
+                    Err(CharError::OctalTooLarge) => {
+                        return Err(String::from("octal character escape out of range"))
+                    }
                 }
             }
+            let old_saw_token = self.seen_line_token;
             self.consume_whitespace();
+            // we're in a quandry here: we saw a newline, which reset `seen_line_token`,
+            // but we're about to return a string, which will mistakenly reset it again.
+            // HACK: `unput()` a newline, so that we'll reset `seen_line_token` again
+            // HACK: on the following call to `next()`.
+            // NOTE: since we saw a newline, we must have consumed at least one token,
+            // NOTE: so this can't possibly discard `self.lookahead`.
+            if self.seen_line_token != old_saw_token {
+                self.unput(b'\n');
+            }
         }
         literal.push(b'\0');
         Ok(Literal::Str(literal).into())
@@ -525,7 +651,7 @@ impl<'a> Lexer<'a> {
     }
 }
 
-impl<'a> Iterator for Lexer<'a> {
+impl Iterator for Lexer {
     // option: whether the stream is exhausted
     // result: whether the next lexeme is an error
     type Item = CompileResult<Locatable<Token>>;
@@ -538,34 +664,13 @@ impl<'a> Iterator for Lexer<'a> {
     /// Any item may be an error, but items will always have an associated location.
     /// The file may be empty to start, in which case the iterator will return None.
     fn next(&mut self) -> Option<Self::Item> {
+        // sanity check
+        if self.chars.len() == 0 {
+            return None;
+        }
+
         self.consume_whitespace();
-        let mut c = self.next_char();
-        // Section 5.1.1.2 phase 2: discard backslashes before newlines
-        while c == Some(b'\\') && self.match_next(b'\n') {
-            self.consume_whitespace();
-            c = self.next_char();
-        }
-        // avoid stack overflow on lots of comments
-        while c == Some(b'/') {
-            c = match self.peek() {
-                Some(b'/') => {
-                    self.consume_line_comment();
-                    self.consume_whitespace();
-                    self.next_char()
-                }
-                Some(b'*') => {
-                    // discard b'*' so /*/ doesn't look like a complete comment
-                    self.next_char();
-                    if let Err(err) = self.consume_multi_comment() {
-                        return Some(Err(err));
-                    }
-                    self.consume_whitespace();
-                    self.next_char()
-                }
-                _ => break,
-            }
-        }
-        let c = c.and_then(|c| {
+        let c = self.next_char().and_then(|c| {
             let span_start = self.location.offset - 1;
             // this giant switch is most of the logic
             let data = match c {
@@ -744,8 +849,7 @@ impl<'a> Iterator for Lexer<'a> {
                     }
                 },
                 b'"' => {
-                    self.current = Some(b'"');
-                    self.location.offset -= 1;
+                    self.unput(b'"');
                     match self.parse_string() {
                         Ok(id) => id,
                         Err(err) => {
@@ -767,7 +871,25 @@ impl<'a> Iterator for Lexer<'a> {
                 location: self.span(span_start),
             }))
         });
+        if c.is_none()
+            && self.location.offset as usize == self.chars.len()
+            && self.chars.as_bytes()[self.chars.len() - 1] != b'\n'
+        {
+            let err = Some(Err(CompileError::new(
+                LexError::NoNewlineAtEOF.into(),
+                self.span(self.chars.len() as u32 - 1),
+            )));
+            // HACK: avoid infinite loop
+            self.location.offset += 1;
+            return err;
+        }
+        if self.debug {
+            if let Some(Ok(token)) = &c {
+                println!("token: {}", token.data);
+            }
+        }
         // oof
         c.map(|result| result.map_err(|err| err.map(|err| LexError::Generic(err).into())))
+            .or_else(|| self.error_handler.pop_front().map(Err))
     }
 }

@@ -1,4 +1,5 @@
-use super::{CompileResult, Lexer, Literal, Locatable, Location, Token};
+use super::{CompileResult, Literal, Locatable, Token};
+use crate::data::lex::test::{cpp, cpp_no_newline};
 use crate::intern::InternedStr;
 
 type LexType = CompileResult<Locatable<Token>>;
@@ -14,7 +15,7 @@ fn lex(input: &str) -> Option<LexType> {
     lexed.pop()
 }
 fn lex_all(input: &str) -> Vec<LexType> {
-    Lexer::new("<test suite>".to_string(), input.as_bytes()).collect()
+    cpp(input).collect()
 }
 
 fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
@@ -88,10 +89,7 @@ fn test_plus() {
         parse,
         Some(Ok(Locatable {
             data: Token::Plus,
-            location: Location {
-                filename: InternedStr::get_or_intern("<stdin>"),
-                span: (0..1).into(),
-            }
+            location: Default::default(),
         }))
     )
 }
@@ -225,7 +223,11 @@ fn test_comments() {
         3
     );
     let bad_comment = lex("/* unterminated comments are an error ");
-    assert!(bad_comment.is_some() && bad_comment.unwrap().is_err());
+    assert!(
+        bad_comment.is_some() && bad_comment.as_ref().unwrap().is_err(),
+        "expected unterminated comment err, got {:?}",
+        bad_comment
+    );
     // check for stack overflow
     assert_eq!(lex(&"//".repeat(10_000)), None);
     assert_eq!(lex(&"/* */".repeat(10_000)), None);
@@ -246,6 +248,22 @@ fn test_characters() {
     assert!(match_char(lex("'\\f'"), b'\x0c'));
     assert!(match_char(lex("'\\t'"), b'\t'));
     assert!(match_char(lex("'\\?'"), b'?'));
+    assert!(match_char(lex("'\\x00'"), b'\0'));
+    // extra digits are allowed for hex escapes
+    assert!(match_char(lex("'\\x00001'"), b'\x01'));
+    // invalid ascii is allowed
+    assert!(match_char(lex("'\\xff'"), b'\xff'));
+    // out of range escapes should be caught
+    assert!(lex("'\\xfff'").unwrap().unwrap_err().is_lex_err());
+    assert!(lex("'\\777'").unwrap().unwrap_err().is_lex_err());
+    // extra digits are not allowed for octal escapes
+    assert!(lex("'\\0001'").unwrap().unwrap_err().is_lex_err());
+    // should catch overflow in hex escapes
+    assert!(lex("'\\xfff'").unwrap().unwrap_err().is_lex_err());
+    assert!(lex("'\\xfffffffffffffffffffffffffff'")
+        .unwrap()
+        .unwrap_err()
+        .is_lex_err());
 }
 #[test]
 fn test_strings() {
@@ -258,7 +276,16 @@ fn test_strings() {
         "consecutive strings"
     ));
     assert!(match_str(lex("\"string with \\0\""), "string with \0"));
-    assert_eq!(lex("\"").unwrap().unwrap_err().location.span, (0..1).into());
+    // 2 for newline
+    assert_eq!(lex("\"").unwrap().unwrap_err().location.span, (0..2).into());
+}
+
+#[test]
+fn test_no_newline() {
+    assert!(cpp_no_newline("").next().is_none());
+    let mut tokens: Vec<_> = cpp_no_newline(" ").collect();
+    assert_eq!(tokens.len(), 1);
+    assert!(tokens.remove(0).unwrap_err().is_lex_err());
 }
 
 // Integration tests

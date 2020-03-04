@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 extern crate env_logger;
@@ -34,19 +34,23 @@ pub fn cpp() -> std::process::Command {
     cpp
 }
 
-pub fn compile_and_run(program: &str, args: &[&str]) -> Result<Output, Error> {
-    let output = compile(program, false)?;
+pub fn compile_and_run(program: &str, path: PathBuf, args: &[&str]) -> Result<Output, Error> {
+    let output = compile(program, path, false)
+        .unwrap_or_else(|err| panic!("failed to compile program '{}': {}", program, err));
     info!("running file {:?}", output);
     run(&output, args).map_err(Error::IO)
 }
 
-pub fn compile(program: &str, no_link: bool) -> Result<tempfile::TempPath, Error> {
-    let opts = rcc::Opt {
-        filename: "<integration-test>".into(),
-        ..Default::default()
+pub fn compile(program: &str, path: PathBuf, no_link: bool) -> Result<tempfile::TempPath, Error> {
+    let opts = Default::default();
+    let mut files = rcc::Files::default();
+    let source = rcc::Source {
+        code: String::from(program).into(),
+        path,
     };
+    let id = files.add("<test-suite>", source);
     let module = rcc::initialize_aot_module(program.to_owned());
-    let (result, _warnings) = rcc::compile(module, program, &opts);
+    let (result, _warnings) = rcc::compile(module, program, &opts, id, &mut files);
     let module = result?.finish();
     let output = tempfile::NamedTempFile::new()
         .expect("cannot create tempfile")
@@ -69,26 +73,26 @@ pub fn run(program: &Path, args: &[&str]) -> Result<Output, std::io::Error> {
     Command::new(program).args(args).output()
 }
 
-pub fn assert_compiles(program: &str) {
+pub fn assert_compiles(program: &str, path: PathBuf) {
     assert!(
-        compile(program, true).is_err(),
+        compile(program, path, true).is_err(),
         "{} failed to compile",
         program
     );
 }
 
-pub fn assert_compiles_no_main(fragment: &str) {
+pub fn assert_compiles_no_main(fragment: &str, path: PathBuf) {
     let program = format!("int main() {{}}\n{}", fragment);
     assert!(
-        compile(&program, true).is_ok(),
+        compile(&program, path, true).is_ok(),
         "{} failed to compile",
         fragment
     );
 }
 
-pub fn assert_compile_error(program: &str) {
+pub fn assert_compile_error(program: &str, path: PathBuf) {
     assert!(
-        match compile(program, true) {
+        match compile(program, path, true) {
             Err(Error::Source(_)) => true,
             _ => false,
         },
@@ -97,8 +101,8 @@ pub fn assert_compile_error(program: &str) {
     );
 }
 
-pub fn assert_crash(program: &str) {
-    let output = compile(program, false).expect("could not compile program");
+pub fn assert_crash(program: &str, path: PathBuf) {
+    let output = compile(program, path, false).expect("could not compile program");
     log::debug!("running compiled program at {:?}", output);
     let path: &Path = output.as_ref();
     let mut handle = Command::new(path)
@@ -121,21 +125,22 @@ pub fn assert_crash(program: &str) {
     }
 }
 
-pub fn assert_output(program: &str, output: &str) {
-    assert!(
-        match compile_and_run(program, &[]) {
-            Err(_) => false,
-            Ok(actual) => actual.stdout == output.as_bytes(),
-        },
-        "{} should have the output {}",
-        program,
-        output
-    );
+pub fn assert_output(program: &str, path: PathBuf, output: &str) {
+    match compile_and_run(program, path, &[]) {
+        Err(_) => panic!("program failed to compile or run: {}", program),
+        Ok(actual) => assert_eq!(
+            actual.stdout,
+            output.as_bytes(),
+            "{} should have the output {} (got {})",
+            program,
+            output,
+            String::from_utf8_lossy(&actual.stdout),
+        ),
+    }
 }
-
-pub fn assert_succeeds(program: &str) {
+pub fn assert_succeeds(program: &str, path: PathBuf) {
     assert!(
-        match compile_and_run(program, &[]) {
+        match compile_and_run(program, path, &[]) {
             Err(_) => false,
             Ok(output) => output.status.success(),
         },
@@ -144,9 +149,9 @@ pub fn assert_succeeds(program: &str) {
     );
 }
 
-pub fn assert_code(program: &str, code: i32) {
+pub fn assert_code(program: &str, path: PathBuf, code: i32) {
     assert!(
-        match compile_and_run(program, &[]) {
+        match compile_and_run(program, path, &[]) {
             Err(_) => false,
             Ok(output) => match output.status.code() {
                 Some(actual) => actual == code,
@@ -159,8 +164,8 @@ pub fn assert_code(program: &str, code: i32) {
     );
 }
 
-pub fn assert_num_errs<S: AsRef<str>>(program: S, n: usize) {
-    match compile(program.as_ref(), true) {
+pub fn assert_num_errs<S: AsRef<str>>(program: S, path: PathBuf, n: usize) {
+    match compile(program.as_ref(), path, true) {
         Err(Error::Source(errs)) => assert!(errs.len() == n),
         _ => panic!("program should have an error"),
     }

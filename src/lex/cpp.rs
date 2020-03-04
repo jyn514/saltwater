@@ -1,13 +1,20 @@
 use lazy_static::lazy_static;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+
+use codespan::FileId;
 
 use super::{Lexer, Token};
+use crate::arch::TARGET;
 use crate::data::error::CppError;
 use crate::data::lex::{Keyword, Literal};
 use crate::data::prelude::*;
 use crate::get_str;
+use crate::Files;
 
 /// A preprocessor does textual substitution and deletion on a C source file.
 ///
@@ -23,75 +30,133 @@ use crate::get_str;
 /// Variables can only be defined as strings, or more accurately, token sequences.
 ///
 /// It is possible to tell the difference between an undefined variable
-/// and a variable defined to be empty using
-/// `#ifdef var` and `#if var`.
-/// Note that `#if defined(...)` is not currently implemented.
+/// and a variable defined to be empty using `#ifdef var` and `#if var`.
 ///
 /// Examples:
 ///
 /// ```
-/// use rcc::PreProcessor;
+/// use rcc::{Files, PreProcessor, Source};
 ///
-/// let cpp = PreProcessor::new("<stdin>".to_string(),
-///                        "int main(void) { char *hello = \"hi\"; }",
-///                         false);
+/// let mut files = Files::new();
+/// let code = String::from("int main(void) { char *hello = \"hi\"; }\n").into();
+/// let src = Source { path: "example.c".into(), code: std::rc::Rc::clone(&code) };
+/// let file = files.add("example.c", src);
+/// let cpp = PreProcessor::new(file, code, false, vec![], &mut files);
 /// for token in cpp {
 ///     assert!(token.is_ok());
 /// }
+/// ```
 pub struct PreProcessor<'a> {
     /// The preprocessor collaborates extremely closely with the lexer,
     /// since it sometimes needs to know if a token is followed by whitespace.
-    lexer: Lexer<'a>,
+    first_lexer: Lexer,
+    /// Each lexer represents a separate source file that is currently being processed.
+    includes: Vec<Lexer>,
+    /// All known files, including files which have already been read.
+    files: &'a mut Files,
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
-    definitions: HashMap<InternedStr, Vec<Token>>,
+    definitions: HashMap<InternedStr, Definition>,
     error_handler: ErrorHandler,
-    /// Whether or not to display each token as it is processed
-    debug: bool,
-    /// Keeps track of the _start_ of all `#if` directives
-    /// bool: whether we've seen an `else`
-    nested_ifs: Vec<bool>,
+    /// Keeps track of current `#if` directives
+    nested_ifs: Vec<IfState>,
     /// The tokens that have been `#define`d and are currently being substituted
-    pending: VecDeque<Locatable<Token>>,
+    pending: VecDeque<Locatable<PendingToken>>,
+    /// The paths to search for `#include`d files
+    search_path: Vec<Cow<'a, Path>>,
+}
+
+#[derive(Clone)]
+enum PendingToken {
+    Replacement(Token),
+    Cyclic(Token),
+}
+
+impl PendingToken {
+    fn token(&self) -> &Token {
+        match self {
+            PendingToken::Replacement(t) => t,
+            PendingToken::Cyclic(t) => t,
+        }
+    }
+}
+
+enum Definition {
+    Object(Vec<Token>),
+    Function {
+        params: Vec<InternedStr>,
+        body: Vec<Token>,
+    },
+}
+
+/// Keeps track of the state of a conditional inclusion directive.
+///
+/// `If` means we are currently processing an `#if`,
+/// `Elif` means an `#elif`, and `Else` means an `#else`.
+///
+/// There are more states, but they are tracked internally to `consume_directive()`.
+/// The state diagram looks like this (pipe to `xdot -` for visualization):
+///
+/// ```dot
+/// strict digraph if_state {
+///    IF [label="self.nested_ifs.push(If)"];
+///    ELIF [label="self.nested_ifs.push(Elif)"];
+///    ELSE [label="self.nested_ifs.push(Else)"];
+///    END [label="self.nested_ifs.pop()"];
+///
+///    start -> IF [label="#if 1"]
+///    IF -> END [label="#endif"]
+///    IF -> consume_all [label="#elif ... / #else"]
+///    consume_all -> END [label="#endif"]
+///
+///    start -> consume_if [label="#if 0"]
+///    consume_if -> consume_if [label="#elif 0"]
+///    consume_if -> ELIF [label="#elif 1"]
+///    consume_if -> ELSE [label="#else"]
+///    consume_if -> END  [label="#endif"]
+///
+///    ELIF -> consume_all [label="#elif ... / #else"]
+///    ELIF -> END         [label="#endif"]
+///
+///    ELSE -> END [label="#endif"]
+///  }
+/// ```
+#[derive(Debug)]
+enum IfState {
+    If,
+    Elif,
+    Else,
 }
 
 type CppResult<T> = Result<Locatable<T>, CompileError>;
-
-macro_rules! ret_err {
-    ($result: expr) => {
-        match $result {
-            Ok(data) => data,
-            Err(err) => return Some(Err(err)),
-        }
-    };
-}
 
 impl Iterator for PreProcessor<'_> {
     /// The preprocessor hides all internal complexity and returns only tokens.
     type Item = CppResult<Token>;
     fn next(&mut self) -> Option<Self::Item> {
-        let next_token = if let Some(err) = self.error_handler.pop_front() {
-            Some(Err(err))
-        } else if let Some(token) = self.pending.pop_front() {
-            Some(Ok(token))
-        } else {
-            match self.next_cpp_token()? {
-                Err(err) => return Some(Err(err)),
-                Ok(loc) => match loc.data {
-                    CppToken::Directive(directive) => {
-                        let start = loc.location.span.start().to_usize() as u32;
-                        self.directive(directive, start)
-                    }
-                    CppToken::Token(token) => self.handle_token(token, loc.location),
-                },
-            }
-        };
-        if self.debug {
-            if let Some(Ok(token)) = &next_token {
-                println!("token: {}", token.data);
+        loop {
+            if let Some(err) = self.error_handler.pop_front() {
+                break Some(Err(err));
+            } else if let Some(token) = self.pending.pop_front() {
+                break self.handle_token(token.data, token.location);
+            } else {
+                match self.next_cpp_token()? {
+                    Err(err) => return Some(Err(err)),
+                    Ok(loc) => match loc.data {
+                        CppToken::Directive(directive) => {
+                            let start = loc.location.span.start().to_usize() as u32;
+                            match self.directive(directive, start) {
+                                Err(err) => break Some(Err(err)),
+                                Ok(()) => continue,
+                            }
+                        }
+                        CppToken::Token(token) => {
+                            break self.handle_token(PendingToken::Replacement(token), loc.location)
+                        }
+                    },
+                }
             }
         }
-        next_token
     }
 }
 
@@ -103,10 +168,82 @@ impl Iterator for PreProcessor<'_> {
 // let seen_newline = line == self.lexer.line;
 // ```
 impl<'a> PreProcessor<'a> {
-    // possibly recursively replace tokens
-    fn handle_token(&mut self, token: Token, location: Location) -> Option<CppResult<Token>> {
+    /// Since there could potentially be multiple lexers (for multiple files),
+    /// this is a convenience function that returns the lexer for the current file.
+    fn lexer(&self) -> &Lexer {
+        self.includes.last().unwrap_or(&self.first_lexer)
+    }
+    /// Same as `lexer()` but `&mut self -> &mut Lexer`.
+    fn lexer_mut(&mut self) -> &mut Lexer {
+        self.includes.last_mut().unwrap_or(&mut self.first_lexer)
+    }
+    /// Return the next token, taking into account replacements
+    fn next_replacement_token(&mut self) -> Option<CppResult<PendingToken>> {
+        if let Some(replacement) = self.pending.pop_front() {
+            return Some(Ok(replacement));
+        }
+        match self.lexer_mut().next()? {
+            Err(err) => Some(Err(err)),
+            Ok(token) => Some(Ok(token.map(PendingToken::Replacement))),
+        }
+    }
+    /// If the next token is a `token`, consume it and return its location.
+    /// Note: this takes into account token replacement.
+    fn match_next(&mut self, token: Token) -> Result<Option<Location>, CompileError> {
+        match self.next_replacement_token() {
+            None => Ok(None),
+            Some(Err(err)) => Err(err),
+            Some(Ok(next)) => {
+                if next.data.token() == &token {
+                    Ok(Some(next.location))
+                } else {
+                    self.pending.push_front(next);
+                    Ok(None)
+                }
+            }
+        }
+    }
+    /* Convenience functions */
+    #[inline]
+    fn line(&self) -> usize {
+        self.lexer().line
+    }
+    #[inline]
+    fn next_token(&mut self) -> Option<CppResult<Token>> {
+        self.lexer_mut().next()
+    }
+    #[inline]
+    fn span(&self, start: u32) -> Location {
+        self.lexer().span(start)
+    }
+    #[inline]
+    fn consume_whitespace(&mut self) {
+        self.lexer_mut().consume_whitespace()
+    }
+    #[inline]
+    fn seen_line_token(&self) -> bool {
+        self.lexer().seen_line_token
+    }
+    #[inline]
+    fn offset(&self) -> u32 {
+        self.lexer().location.offset
+    }
+    /// Possibly recursively replace tokens. This also handles turning identifiers into keywords.
+    fn handle_token(
+        &mut self,
+        token: PendingToken,
+        location: Location,
+    ) -> Option<CppResult<Token>> {
+        let (token, needs_replacement) = match token {
+            PendingToken::Replacement(tok) => (tok, true),
+            PendingToken::Cyclic(tok) => (tok, false),
+        };
         if let Token::Id(id) = token {
-            let mut token = self.replace_id(id, location);
+            let mut token = if needs_replacement {
+                self.replace_id(id, location)
+            } else {
+                Some(Ok(Locatable::new(token, location)))
+            };
             if let Some(Ok(Locatable {
                 data: data @ Token::Id(_),
                 ..
@@ -123,15 +260,56 @@ impl<'a> PreProcessor<'a> {
             Some(Ok(Locatable::new(token, location)))
         }
     }
-    /// Wrapper around [`Lexer::new`]
-    pub fn new<T: AsRef<str> + Into<String>>(file: T, chars: &'a str, debug: bool) -> Self {
+    /// Create a new preprocessor for the file identified by `file`.
+    ///
+    /// Note that the preprocessor may add arbitrarily many `#include`d files to `files`,
+    /// but will never delete a file.
+    ///
+    /// The `debug` parameter specifies whether to print out tokens before replacement.
+    pub fn new<
+        'files: 'a,
+        'search: 'a,
+        I: IntoIterator<Item = Cow<'search, Path>>,
+        S: Into<Rc<str>>,
+    >(
+        file: FileId,
+        chars: S,
+        debug: bool,
+        user_search_path: I,
+        files: &'files mut Files,
+    ) -> Self {
+        let system_path = format!(
+            "{}-{}-{}",
+            TARGET.architecture, TARGET.operating_system, TARGET.environment
+        );
+        let int = |i| Definition::Object(vec![Token::Literal(Literal::Int(i))]);
+        let mut search_path = vec![
+            PathBuf::from(format!("/usr/local/include/{}", system_path)).into(),
+            Path::new("/usr/local/include").into(),
+            PathBuf::from(format!("/usr/include/{}", system_path)).into(),
+            Path::new("/usr/include").into(),
+        ];
+        search_path.extend(user_search_path.into_iter());
+        #[allow(clippy::inconsistent_digit_grouping)]
         Self {
-            lexer: Lexer::new(file, chars.as_bytes()),
-            definitions: Default::default(),
-            debug,
+            first_lexer: Lexer::new(file, chars, debug),
+            includes: Default::default(),
+            definitions: map! {
+                format!("__{}__", TARGET.architecture).into() => int(1),
+                format!("__{}__", TARGET.operating_system).into() => int(1),
+                "__STDC__".into() => int(1),
+                "__STDC_HOSTED__".into() => int(1),
+                "__STDC_VERSION__".into() => int(2011_12),
+                "__STDC_NO_ATOMICS__".into() => int(1),
+                "__STDC_NO_COMPLEX__".into() => int(1),
+                "__STDC_NO_THREADS__".into() => int(1),
+                "__STDC_NO_VLA__".into() => int(1),
+            },
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
+            files,
+            search_path,
         }
     }
     /// Return the first valid token in the file,
@@ -158,15 +336,23 @@ impl<'a> PreProcessor<'a> {
     }
 
     /* internal functions */
+    /// Return all tokens from the current position until the end of the current line.
+    ///
+    /// Note that these are _tokens_ and not bytes, so if there are invalid tokens
+    /// on the current line, this will return a lex error.
     fn tokens_until_newline(&mut self) -> Vec<CompileResult<Locatable<Token>>> {
         let mut tokens = Vec::new();
-        let line = self.lexer.line;
+        let line = self.line();
         loop {
-            self.lexer.consume_whitespace();
-            if self.lexer.line != line {
+            self.consume_whitespace();
+            if self.line() != line {
+                // lines should end with a newline, but in case they don't, don't crash
+                assert!(!self.lexer().seen_line_token || self.lexer_mut().peek().is_none(),
+                    "expected `tokens_until_newline()` to reset `seen_line_token`, but `lexer.peek()` is {:?}",
+                    self.lexer_mut().peek());
                 break;
             }
-            match self.lexer.next() {
+            match self.next_token() {
                 Some(token) => tokens.push(token),
                 None => break,
             }
@@ -174,39 +360,63 @@ impl<'a> PreProcessor<'a> {
         tokens
     }
 
+    /// If at the start of the line and we see `#directive`, return that directive.
+    /// Otherwise, if we see a token (or error), return that error.
+    /// Otherwise, return `None`.
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
-        let next_token = self.lexer.next();
+        let next_token = loop {
+            // we have to duplicate a bit of code here to avoid borrow errors
+            let lexer = self.includes.last_mut().unwrap_or(&mut self.first_lexer);
+            match lexer.next() {
+                Some(token) => break token,
+                // finished this file, go on to the next one
+                None => {
+                    self.error_handler.append(&mut lexer.error_handler);
+                    // this is the original source file
+                    if self.includes.is_empty() {
+                        return None;
+                    } else {
+                        self.includes.pop();
+                    }
+                }
+            }
+        };
         let is_hash = match next_token {
-            Some(Ok(Locatable {
+            Ok(Locatable {
                 data: Token::Hash, ..
-            })) => true,
+            }) => true,
             _ => false,
         };
-        if is_hash && !self.lexer.seen_line_token {
-            let line = self.lexer.line;
-            Some(match self.lexer.next()? {
+        Some(if is_hash && !self.seen_line_token() {
+            let line = self.line();
+            match self.next_token()? {
                 Ok(Locatable {
                     data: Token::Id(id),
                     location,
-                }) if self.lexer.line == line => {
+                }) if self.line() == line => {
                     if let Ok(directive) = DirectiveKind::try_from(get_str!(id)) {
                         Ok(Locatable::new(CppToken::Directive(directive), location))
                     } else {
                         Err(Locatable::new(CppError::InvalidDirective.into(), location))
                     }
                 }
-                Ok(other) if self.lexer.line == line => {
-                    Err(other.map(|tok| CppError::UnexpectedToken("directive", tok).into()))
+                Ok(other) => {
+                    if self.line() == line {
+                        Err(other.map(|tok| CppError::UnexpectedToken("directive", tok).into()))
+                    } else {
+                        Ok(other.into())
+                    }
                 }
                 other => other.map(Locatable::from),
-            })
+            }
         } else {
-            next_token.map(|maybe_err| maybe_err.map(Locatable::from))
-        }
+            next_token.map(Locatable::from)
+        })
     }
+    // this function does _not_ perform macro substitution
     fn expect_id(&mut self) -> CppResult<InternedStr> {
-        let location = self.lexer.span(self.lexer.location.offset);
-        match self.lexer.next() {
+        let location = self.span(self.offset());
+        match self.next_token() {
             Some(Ok(Locatable {
                 data: Token::Id(name),
                 location,
@@ -221,104 +431,125 @@ impl<'a> PreProcessor<'a> {
             }),
         }
     }
-    fn directive(&mut self, kind: DirectiveKind, start: u32) -> Option<CppResult<Token>> {
+    // Handle a directive. This assumes we have consumed the directive (e.g. `#if`),
+    // but not the rest of the tokens on the current line.
+    fn directive(&mut self, kind: DirectiveKind, start: u32) -> Result<(), CompileError> {
         use crate::data::error::Warning as WarningDiagnostic;
         use DirectiveKind::*;
         match kind {
             If => {
-                let condition = ret_err!(self.boolean_expr());
+                let condition = self.boolean_expr()?;
                 self.if_directive(condition, start)
             }
             IfNDef => {
-                let name = ret_err!(self.expect_id());
+                let name = self.expect_id()?;
                 self.if_directive(!self.definitions.contains_key(&name.data), start)
             }
             IfDef => {
-                let name = ret_err!(self.expect_id());
+                let name = self.expect_id()?;
                 self.if_directive(self.definitions.contains_key(&name.data), start)
             }
+            // No matter what happens here, we will not read the tokens from this `#elif`.
+            // Either we have been reading an `#if` or an `#elif` or an `#else`;
+            // in any case, this `#elif` will be ignored.
+            Elif => match self.nested_ifs.last() {
+                None => Err(CompileError::new(
+                    CppError::UnexpectedElif { early: true }.into(),
+                    self.span(start),
+                )),
+                // saw a previous #if or #elif, consume all following directives
+                // `If` / `Elif` -> `consume_all`
+                Some(IfState::If) | Some(IfState::Elif) => self.consume_directive(start, false),
+                Some(IfState::Else) => Err(CompileError::new(
+                    CppError::UnexpectedElif { early: false }.into(),
+                    self.span(start),
+                )),
+            },
             Else => match self.nested_ifs.last() {
-                None => Some(Err(CompileError::new(
+                None => Err(CompileError::new(
                     CppError::UnexpectedElse.into(),
-                    self.lexer.span(start),
-                ))),
+                    self.span(start),
+                )),
                 // we already took the `#if` condition,
                 // `#else` should just be ignored
-                Some(true) => {
-                    ret_err!(self.consume_directive(start, DirectiveKind::Else));
-                    self.next()
-                }
+                // `Else` -> `consume_all`
+                Some(IfState::If) | Some(IfState::Elif) => self.consume_directive(start, false),
                 // we saw an `#else` before, seeing it again is an error
-                Some(false) => Some(Err(CompileError::new(
+                Some(IfState::Else) => Err(CompileError::new(
                     CppError::UnexpectedElse.into(),
-                    self.lexer.span(start),
-                ))),
+                    self.span(start),
+                )),
             },
             EndIf => {
                 if self.nested_ifs.pop().is_none() {
-                    Some(Err(CompileError::new(
+                    Err(CompileError::new(
                         CppError::UnexpectedEndIf.into(),
-                        self.lexer.span(start),
-                    )))
+                        self.span(start),
+                    ))
                 } else {
-                    self.next()
+                    Ok(())
                 }
             }
-            Define => {
-                ret_err!(self.define(start));
-                self.next()
-            }
+            Define => self.define(start),
             Undef => {
-                let name = ret_err!(self.expect_id());
+                let name = self.expect_id()?;
                 self.definitions.remove(&name.data);
-                self.next()
+                Ok(())
             }
             Pragma => {
                 self.error_handler
-                    .warn(WarningDiagnostic::IgnoredPragma, self.lexer.span(start));
+                    .warn(WarningDiagnostic::IgnoredPragma, self.span(start));
                 drop(self.tokens_until_newline());
-                self.next()
+                Ok(())
             }
             // NOTE: #warning is a non-standard extension, but is implemented
             // by most major compilers including clang and gcc.
             Warning => {
-                let tokens: Vec<_> = ret_err!(self
+                let tokens: Vec<_> = self
                     .tokens_until_newline()
                     .into_iter()
                     .map(|res| res.map(|l| l.data))
-                    .collect());
+                    .collect::<Result<_, _>>()?;
                 self.error_handler
-                    .warn(WarningDiagnostic::User(tokens), self.lexer.span(start));
-                self.next()
+                    .warn(WarningDiagnostic::User(tokens), self.span(start));
+                Ok(())
             }
             Error => {
-                let tokens: Vec<_> = ret_err!(self
+                let tokens: Vec<_> = self
                     .tokens_until_newline()
                     .into_iter()
                     .map(|res| res.map(|l| l.data))
-                    .collect());
+                    .collect::<Result<_, _>>()?;
                 self.error_handler
-                    .error(CppError::User(tokens), self.lexer.span(start));
-                self.next()
+                    .error(CppError::User(tokens), self.span(start));
+                Ok(())
             }
             Line => {
                 self.error_handler.warn(
                     WarningDiagnostic::Generic("#line is not yet implemented".into()),
-                    self.lexer.span(start),
+                    self.span(start),
                 );
                 drop(self.tokens_until_newline());
-                self.next()
+                Ok(())
             }
-            Include => unimplemented!("#include"),
+            Include => self.include(start),
         }
     }
+    /// Recursively replace the current identifier with its definitions.
+    ///
+    /// This does cycle detection by replacing the repeating identifier at least once;
+    /// see the `recursive_macros` test for more details.
+    // TODO: this needs to have an idea of 'pending chars', not just pending tokens
     fn replace_id(
         &mut self,
         mut name: InternedStr,
         location: Location,
     ) -> Option<CppResult<Token>> {
-        let start = self.lexer.location.offset;
-        while let Some(def) = self.definitions.get(&name) {
+        let start = self.offset();
+        let mut ids_seen = std::collections::HashSet::new();
+        // first step: perform substitution on the ID
+        while let Some(Definition::Object(def)) = self.definitions.get(&name) {
+            ids_seen.insert(name);
             if def.is_empty() {
                 // TODO: recursion is bad and I should feel bad
                 return self.next();
@@ -328,9 +559,21 @@ impl<'a> PreProcessor<'a> {
             if def.len() > 1 {
                 // prepend the new tokens to the pending tokens
                 let mut new_pending = VecDeque::new();
-                new_pending.extend(def[1..].iter().map(|token| Locatable {
-                    data: token.clone(),
-                    location,
+                new_pending.extend(def[1..].iter().map(|token| {
+                    let pending_tok = if let Token::Id(id) = token {
+                        if ids_seen.contains(id) {
+                            PendingToken::Cyclic
+                        } else {
+                            PendingToken::Replacement
+                        }
+                    } else {
+                        PendingToken::Replacement
+                        // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
+                    }(token.clone());
+                    Locatable {
+                        data: pending_tok,
+                        location,
+                    }
                 }));
                 new_pending.append(&mut self.pending);
                 self.pending = new_pending;
@@ -338,11 +581,80 @@ impl<'a> PreProcessor<'a> {
 
             if let Token::Id(new_name) = first {
                 name = *new_name;
+                // recursive definition, stop now and return the current name.
+                if ids_seen.contains(&name) {
+                    break;
+                }
             } else {
-                return Some(Ok(Locatable::new(first.clone(), self.lexer.span(start))));
+                return Some(Ok(Locatable::new(first.clone(), self.span(start))));
             }
         }
-        Some(Ok(Locatable::new(Token::Id(name), self.lexer.span(start))))
+        // second step: perform function macro replacement
+        self.replace_function(name, start)
+    }
+    fn replace_function(&mut self, name: InternedStr, start: u32) -> Option<CppResult<Token>> {
+        use std::mem;
+        let no_replacement =
+            |this: &mut PreProcessor| Some(Ok(Locatable::new(Token::Id(name), this.span(start))));
+        // check if this should be a function at all
+        if let Some(Definition::Function { .. }) = self.definitions.get(&name) {
+        } else {
+            return no_replacement(self);
+        };
+        loop {
+            match self.match_next(Token::LeftParen) {
+                Err(err) => self.error_handler.push_back(err),
+                Ok(None) => return no_replacement(self),
+                Ok(Some(_)) => break,
+            }
+        }
+
+        let location = self.span(start);
+        let mut args = Vec::new();
+        let mut current_arg = Vec::new();
+        // now, expand all arguments
+        loop {
+            let next = match self.next_replacement_token() {
+                None => return None,
+                Some(Err(err)) => return Some(Err(err)),
+                Some(Ok(token)) => token,
+            };
+            if next.data.token() == &Token::Comma {
+                args.push(mem::replace(&mut current_arg, Vec::new()));
+                continue;
+            } else if next.data.token() == &Token::RightParen {
+                args.push(mem::replace(&mut current_arg, Vec::new()));
+                break;
+            } else {
+                current_arg.push(next);
+            }
+        }
+        let (params, body) = match self.definitions.get(&name) {
+            Some(Definition::Function { params, body }) => (params, body),
+            _ => unreachable!("already checked this above"),
+        };
+        if args.len() != params.len() {
+            return Some(Err(CompileError::new(
+                CppError::TooFewArguments(args.len(), params.len()).into(),
+                self.span(start),
+            )));
+        }
+        for token in body {
+            if let Token::Id(id) = *token {
+                // #define f(a) { a + 1 } \n f(b) => b + 1
+                if let Some(index) = params.iter().position(|&param| param == id) {
+                    let replacement = args[index].clone();
+                    self.pending.extend(replacement);
+                } else {
+                    self.pending
+                        .push_back(location.with(PendingToken::Replacement(token.clone())));
+                }
+            } else {
+                self.pending
+                    .push_back(location.with(PendingToken::Replacement(token.clone())));
+            }
+        }
+        self.next()
     }
     // convienience function around cpp_expr
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
@@ -352,47 +664,144 @@ impl<'a> PreProcessor<'a> {
             _ => unreachable!("bug in const_fold or parser: cpp cond should be boolean"),
         }
     }
+    // `#if defined(a)` or `#if defined a`
+    // http://port70.net/~nsz/c/c11/n1570.html#6.10.1p1
+    fn defined(
+        lex_tokens: &mut impl Iterator<Item = Result<Locatable<Token>, CompileError>>,
+        cpp_tokens: &mut Vec<Result<Locatable<Token>, CompileError>>,
+        location: Location,
+    ) -> Result<InternedStr, CompileError> {
+        enum State {
+            Start,
+            SawParen,
+            SawId(InternedStr),
+        };
+        use State::*;
+        let mut state = Start;
+        loop {
+            return match lex_tokens.next() {
+                None => Err(CompileError::new(
+                    CppError::EndOfFile("defined(identifier)").into(),
+                    location,
+                )),
+                Some(Err(err)) => {
+                    cpp_tokens.push(Err(err));
+                    continue;
+                }
+                Some(Ok(Locatable {
+                    data: Token::Id(def),
+                    location,
+                })) => match state {
+                    Start => Ok(def),
+                    SawParen => {
+                        state = SawId(def);
+                        continue;
+                    }
+                    SawId(_) => Err(CompileError::new(
+                        CppError::UnexpectedToken("right paren", Token::Id(def)).into(),
+                        location,
+                    )),
+                },
+                Some(Ok(Locatable {
+                    data: Token::LeftParen,
+                    location,
+                })) => match state {
+                    Start => {
+                        state = SawParen;
+                        continue;
+                    }
+                    _ => Err(CompileError::new(
+                        CppError::UnexpectedToken("identifier or right paren", Token::LeftParen)
+                            .into(),
+                        location,
+                    )),
+                },
+                Some(Ok(Locatable {
+                    data: Token::RightParen,
+                    location,
+                })) => match state {
+                    Start => Err(CompileError::new(
+                        CppError::UnexpectedToken("identifier or left paren", Token::RightParen)
+                            .into(),
+                        location,
+                    )),
+                    SawParen => Err(CompileError::new(
+                        CppError::UnexpectedToken("identifier", Token::RightParen).into(),
+                        location,
+                    )),
+                    SawId(def) => Ok(def),
+                },
+                Some(Ok(other)) => Err(CompileError::new(
+                    CppError::UnexpectedToken("identifier", other.data).into(),
+                    other.location,
+                )),
+            };
+        }
+    }
     /// A C expression on a single line. Used for `#if` directives.
     ///
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn cpp_expr(&mut self) -> Result<Expr, CompileError> {
-        let start = self.lexer.location.offset;
-        let mut line_tokens = self
-            .tokens_until_newline()
-            .into_iter()
-            .map(|result| match result {
+        let start = self.offset();
+        let defined = InternedStr::get_or_intern("defined");
+
+        let lex_tokens = self.tokens_until_newline();
+        let mut cpp_tokens = Vec::with_capacity(lex_tokens.len());
+        let mut lex_tokens = lex_tokens.into_iter();
+        while let Some(token) = lex_tokens.next() {
+            let token = match token {
+                Ok(Locatable {
+                    data: Token::Id(name),
+                    location,
+                }) if name == defined => {
+                    let def = Self::defined(&mut lex_tokens, &mut cpp_tokens, location)?;
+                    let literal = if self.definitions.contains_key(&def) {
+                        Literal::Int(1)
+                    } else {
+                        Literal::Int(0)
+                    };
+                    Ok(location.with(Token::Literal(literal)))
+                }
                 Ok(Locatable {
                     data: Token::Id(_),
                     location,
                 }) => Ok(location.with(Token::Literal(Literal::Int(0)))),
-                _ => result,
-            });
-        // NOTE: This only returns the first error because anything else requires a refactor
-        let first = line_tokens.next().unwrap_or_else(|| {
-            Err(CompileError::new(
+                _ => token,
+            };
+            cpp_tokens.push(token);
+        }
+        if cpp_tokens.is_empty() {
+            return Err(CompileError::new(
                 CppError::EmptyExpression.into(),
-                self.lexer.span(start),
-            ))
-        })?;
-        let mut parser = crate::Parser::new(first, line_tokens, self.debug);
+                self.span(start),
+            ));
+        }
+        // TODO: remove(0) is bad and I should feel bad
+        // TODO: this only returns the first error because anything else requires a refactor
+        let first = cpp_tokens.remove(0)?;
+        let mut parser = crate::Parser::new(first, cpp_tokens.into_iter(), false);
         // TODO: catch expressions that aren't allowed
         // (see https://github.com/jyn514/rcc/issues/5#issuecomment-575339427)
         // TODO: can semantic errors happen here? should we check?
         parser.expr().map_err(CompileError::from)
     }
-    /// We've already seen an `#if` or `#ifdef` and are processing the
-    /// lines that follow.
-    fn if_directive(&mut self, condition: bool, start: u32) -> Option<CppResult<Token>> {
+    /// We saw an `#if`, `#ifdef`, or `#ifndef` token at the start of the line
+    /// and want to either take the branch or ignore the tokens within the directive.
+    fn if_directive(&mut self, condition: bool, start: u32) -> Result<(), CompileError> {
         if condition {
-            self.nested_ifs.push(true);
+            // start -> IF
+            self.nested_ifs.push(IfState::If);
+            Ok(())
         } else {
-            ret_err!(self.consume_directive(start, DirectiveKind::If));
+            // `start` -> `consume_if`
+            self.consume_directive(start, true)
         }
-        self.next()
     }
-    /// Assuming we've just seen `#if 0`, keep consuming tokens until `#endif`
+    /// Keep consuming tokens until `#endif`.
     /// This has to take into account nesting of #if directives.
+    ///
+    /// `consume_if` indicates whether this is the `consume_if` or `consume_all` state.
     ///
     /// Example:
     /// ```c
@@ -405,80 +814,316 @@ impl<'a> PreProcessor<'a> {
     /// int g() { return 0; }
     /// ```
     /// should yield `int` as the next token, not `void`.
-    fn consume_directive(&mut self, start: u32, kind: DirectiveKind) -> Result<(), CompileError> {
-        fn match_directive(
-            token: &CppResult<CppToken>,
-            expected: DirectiveKind,
-        ) -> Option<Location> {
-            match token {
-                Ok(Locatable {
-                    data: CppToken::Directive(directive),
-                    location,
-                }) => {
-                    if *directive == expected {
-                        Some(*location)
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        }
+    fn consume_directive(&mut self, start: u32, consume_if: bool) -> Result<(), CompileError> {
         let mut depth = 1;
         while depth > 0 {
-            let token = match self.next_cpp_token() {
-                Some(token) => token,
+            let directive = match self.next_cpp_token() {
+                Some(Ok(Locatable {
+                    data: CppToken::Directive(d),
+                    ..
+                })) => d,
+                Some(_) => continue,
                 None => {
-                    return Err(Locatable::new(
-                        CppError::UnterminatedIf {
-                            ifdef: kind == DirectiveKind::IfDef,
-                        },
-                        self.lexer.span(start),
-                    )
-                    .into())
+                    return Err(Locatable::new(CppError::UnterminatedIf, self.span(start)).into())
                 }
             };
-            if match_directive(&token, DirectiveKind::If).is_some()
-                || match_directive(&token, DirectiveKind::IfDef).is_some()
+            if directive == DirectiveKind::If
+                || directive == DirectiveKind::IfDef
+                || directive == DirectiveKind::IfNDef
             {
                 depth += 1;
-            } else if match_directive(&token, DirectiveKind::EndIf).is_some() {
+            } else if directive == DirectiveKind::EndIf {
                 depth -= 1;
-            } else if let Some(location) = match_directive(&token, DirectiveKind::Else) {
-                if kind == DirectiveKind::If {
-                    if depth == 1 {
-                        self.nested_ifs.push(false);
-                        break;
+            // Note the only directives left are #elif and #else.
+            // If depth >= 2, they are just ignored.
+            } else if depth == 1 {
+                // `consume_if` from the state diagram
+                if consume_if {
+                    if directive == DirectiveKind::Elif {
+                        let condition = self.boolean_expr()?;
+                        if !condition {
+                            // stay in the same `consume_if` state
+                            continue;
+                        } else {
+                            // go to `Elif` state
+                            self.nested_ifs.push(IfState::Elif);
+                            return Ok(());
+                        }
+                    // go to `Else` state
+                    } else if directive == DirectiveKind::Else {
+                        self.nested_ifs.push(IfState::Else);
+                        return Ok(());
                     }
-                } else {
-                    assert_eq!(kind, DirectiveKind::Else);
-                    self.nested_ifs.pop();
-                    return Err(CompileError::new(CppError::UnexpectedElse.into(), location));
+                    // otherwise, keep consuming tokens
                 }
-                // otherwise, discard #else
+                // `consume_all` from the state diagram: all directives ignored
             }
         }
         Ok(())
     }
-    fn define(&mut self, start: u32) -> Result<(), Locatable<Error>> {
-        let line = self.lexer.line;
-        self.lexer.consume_whitespace();
-        if self.lexer.line != line {
-            return Err(self.lexer.span(start).error(CppError::EmptyDefine));
+    // Consumes tokens like this:
+    // before:
+    // #define f(a, b, c) a + b + c
+    //           ^
+    // after:
+    // #define f(a, b, c) a + b + c
+    //                   ^
+    fn fn_args(&mut self, start: u32) -> Result<Vec<InternedStr>, Locatable<Error>> {
+        let mut arguments = Vec::new();
+        loop {
+            match self.next_token() {
+                None => {
+                    return Err(CompileError::new(
+                        CppError::EndOfFile("identifier or ')'").into(),
+                        // TODO: I think this will be wrong if the file
+                        // the macro started in was not the same as the one it ended in
+                        self.lexer().span(start),
+                    ));
+                }
+                Some(Err(err)) => {
+                    self.error_handler.push_back(err);
+                    continue;
+                }
+                Some(Ok(Locatable {
+                    data: Token::Ellipsis,
+                    ..
+                })) => self.error_handler.warn(
+                    crate::data::error::Warning::IgnoredVariadic,
+                    self.lexer().span(start),
+                ),
+                Some(Ok(Locatable {
+                    data: Token::Id(id),
+                    ..
+                })) => arguments.push(id),
+                Some(Ok(Locatable {
+                    data: other,
+                    location,
+                })) => self.error_handler.error(
+                    CppError::UnexpectedToken("identifier or ')'", other),
+                    location,
+                ),
+            }
+            // either `,` or `)`
+            if self.lexer_mut().match_next(b')') {
+                return Ok(arguments);
+            }
+            if self.lexer_mut().match_next(b',') {
+                continue;
+            }
+            // some other token
+            match self.next_token() {
+                None => {
+                    return Err(CompileError::new(
+                        CppError::EndOfFile("identifier or ')'").into(),
+                        self.lexer().span(start),
+                    ))
+                }
+                Some(Err(err)) => return Err(err),
+                Some(Ok(other)) => self.error_handler.error(
+                    CppError::UnexpectedToken("',' or ')'", other.data),
+                    other.location,
+                ),
+            }
         }
-        let id = self.expect_id()?;
-        if self.lexer.peek() == Some(b'(') {
-            // function macro
-            unimplemented!("function macros")
-        } else {
-            // object macro
-            let tokens = self
-                .tokens_until_newline()
+    }
+    // http://port70.net/~nsz/c/c11/n1570.html#6.10.3
+    // `#define a b` - object macro
+    // `#define f(a) a` - function macro
+    // `#define f (a) - object macro
+    fn define(&mut self, start: u32) -> Result<(), Locatable<Error>> {
+        let body = |this: &mut PreProcessor| {
+            this.tokens_until_newline()
                 .into_iter()
                 .map(|res| res.map(|loc| loc.data))
-                .collect::<Result<_, Locatable<Error>>>()?;
-            self.definitions.insert(id.data, tokens);
+                .collect::<Result<Vec<_>, Locatable<Error>>>()
+        };
+
+        let line = self.line();
+        self.consume_whitespace();
+        if self.line() != line {
+            return Err(self.span(start).error(CppError::EmptyDefine));
+        }
+        let id = self.expect_id()?;
+        // NOTE: does _not_ discard whitespace
+        if self.lexer_mut().match_next(b'(') {
+            // function macro
+            // first, parse the arguments:
+            // # define identifier lparen identifier-listopt ) replacement-list new-line
+            // # define identifier lparen ... ) replacement-list new-line
+            // # define identifier lparen identifier-list , ... ) replacement-list new-line
+            self.lexer_mut().consume_whitespace();
+            let params = if !self.lexer_mut().match_next(b')') {
+                self.fn_args(start)?
+            } else {
+                Vec::new()
+            };
+            let body = body(self)?;
+            self.definitions
+                .insert(id.data, Definition::Function { params, body });
             Ok(())
+        } else {
+            // object macro
+            let tokens = body(self)?;
+            self.definitions.insert(id.data, Definition::Object(tokens));
+            Ok(())
+        }
+    }
+    // http://port70.net/~nsz/c/c11/n1570.html#6.10.2
+    // `#include <file>` - system include
+    // `#include "file"` - local include, but falls back to system include if `file` is not found.
+    fn include(&mut self, start: u32) -> Result<(), Locatable<Error>> {
+        use crate::data::lex::ComparisonToken;
+        let lexer = self.lexer_mut();
+        lexer.consume_whitespace();
+        let local = if lexer.match_next(b'"') {
+            true
+        } else if lexer.match_next(b'<') {
+            false
+        } else {
+            let (id, location) = match self.next_token() {
+                Some(Ok(Locatable {
+                    data: Token::Id(id),
+                    location,
+                })) => (id, location),
+                Some(Err(err)) => return Err(err),
+                Some(Ok(other)) => {
+                    return Err(CompileError::new(
+                        CppError::UnexpectedToken("include file", other.data).into(),
+                        other.location,
+                    ))
+                }
+                None => {
+                    return Err(CompileError::new(
+                        CppError::EndOfFile("include file").into(),
+                        self.span(start),
+                    ))
+                }
+            };
+            match self.replace_id(id, location) {
+                // local
+                Some(Ok(Locatable {
+                    data: Token::Literal(Literal::Str(_)),
+                    ..
+                })) => unimplemented!("#include for macros"), //return self.include_path(id, true, start),
+                // system
+                Some(Ok(Locatable {
+                    data: Token::Comparison(ComparisonToken::Less),
+                    ..
+                })) => false,
+                Some(Ok(other)) => {
+                    return Err(CompileError::new(
+                        CppError::UnexpectedToken("include file", other.data).into(),
+                        other.location,
+                    ))
+                }
+                Some(Err(err)) => return Err(err),
+                None => {
+                    return Err(CompileError::new(
+                        CppError::EndOfFile("include file").into(),
+                        self.span(start),
+                    ))
+                }
+            }
+        };
+
+        let filename = self.bytes_until(if local { b'"' } else { b'>' });
+        self.include_path(filename, local, start)
+    }
+    // we've done the parsing for an `#include`,
+    // now we want to figure what file on disk it corresponds to
+    fn find_include_path(
+        &mut self,
+        filename: String,
+        local: bool,
+        start: u32,
+    ) -> Result<PathBuf, Locatable<Error>> {
+        log::debug!("in search path");
+
+        if filename.is_empty() {
+            return Err(CompileError::new(
+                CppError::EmptyInclude.into(),
+                self.span(start),
+            ));
+        }
+        // can't be a closure because of borrowck
+        macro_rules! not_found {
+            () => {
+                Err(CompileError::new(
+                    CppError::FileNotFound(filename).into(),
+                    self.span(start),
+                ))
+            };
+        }
+        // absolute path, ignore everything except the filename
+        // e.g `#include </usr/local/include/stdio.h>`
+        if filename.as_bytes()[0] == b'/' {
+            let path = &std::path::Path::new(&filename);
+            return if path.exists() {
+                Ok(PathBuf::from(filename))
+            } else {
+                not_found!()
+            };
+        }
+        // local include: #include "dict.h"
+        if local {
+            let current_path = &self.files.source(self.lexer().location.file).path;
+            let relative_path = &current_path
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new(""));
+            let resolved = relative_path.join(&filename);
+            if resolved.exists() {
+                return Ok(resolved);
+            }
+        }
+        // if we don't find it locally, we fall back to system headers
+        // this is part of the spec! http://port70.net/~nsz/c/c11/n1570.html#6.10.2p3
+        for path in &self.search_path {
+            let mut buf = PathBuf::from(path.as_ref());
+            buf.push(&filename);
+            if buf.exists() {
+                return Ok(buf);
+            }
+        }
+        return not_found!();
+    }
+    // we've done the parsing for an `#include`,
+    // now we want to do the dirty work of reading it into memory
+    fn include_path(
+        &mut self,
+        filename: Vec<u8>,
+        local: bool,
+        start: u32,
+    ) -> Result<(), Locatable<Error>> {
+        // Recall that the original file was valid UTF8.
+        // Since in UTF8 no ASCII character can occur
+        // within a multi-byte sequence, `filename` must be valid UTF8.
+        let filename = String::from_utf8(filename).expect("passed invalid utf8 to start");
+        let resolved = self.find_include_path(filename.clone(), local, start)?;
+        let src = std::fs::read_to_string(&resolved)
+            .map_err(|err| Locatable {
+                data: CppError::IO(err.to_string()),
+                location: self.span(start),
+            })?
+            .into();
+        let source = crate::Source {
+            path: resolved,
+            code: Rc::clone(&src),
+        };
+        let id = self.files.add(filename, source);
+        self.includes
+            .push(Lexer::new(id, src, self.first_lexer.debug));
+        Ok(())
+    }
+    // Returns every byte between the current position and the next `byte`.
+    // Consumes and does not return the final `byte`.
+    fn bytes_until(&mut self, byte: u8) -> Vec<u8> {
+        log::debug!("in bytes_until");
+        let mut bytes = Vec::new();
+        loop {
+            match self.lexer_mut().next_char() {
+                Some(c) if c != byte => bytes.push(c),
+                _ => return bytes,
+            }
         }
     }
 }
@@ -486,10 +1131,11 @@ impl<'a> PreProcessor<'a> {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum DirectiveKind {
     If,
-    EndIf,
-    Else,
     IfDef,
     IfNDef,
+    Elif,
+    Else,
+    EndIf,
     Include,
     Define,
     Undef,
@@ -517,6 +1163,7 @@ impl TryFrom<&str> for DirectiveKind {
         use DirectiveKind::*;
         Ok(match s {
             "if" => If,
+            "elif" => Elif,
             "endif" => EndIf,
             "else" => Else,
             "ifdef" => IfDef,
@@ -596,11 +1243,9 @@ lazy_static! {
 
 #[cfg(test)]
 mod tests {
-    use super::{CppError, CppResult, Keyword, PreProcessor, KEYWORDS};
-    use crate::data::prelude::*;
-    fn cpp(input: &str) -> PreProcessor {
-        PreProcessor::new("<test suite>", input, false)
-    }
+    use super::*;
+    use crate::data::lex::test::{cpp, cpp_no_newline};
+
     macro_rules! assert_err {
         ($src: expr, $err: pat, $description: expr $(,)?) => {
             match cpp($src).next().unwrap().unwrap_err().data {
@@ -726,8 +1371,31 @@ int f() BEGIN return 5; END";
         assert_same(opdef, "int f() { return 5; }");
     }
     #[test]
+    fn recursive_macros() {
+        assert_same("#define a a\na", "a");
+        assert_same("#define a a + b\na", "a + b");
+        let mutual_recursion = "
+#define a b
+#define b a
+a";
+        assert_same(mutual_recursion, "a");
+        let mutual_recursion_2 = "
+#define a b
+#define b c
+#define c a
+a";
+        assert_same(mutual_recursion_2, "a");
+        let mutual_recursion_3 = "
+#define a b
+#define b c
+#define c b
+a";
+        assert_same(mutual_recursion_3, "b");
+        assert_same("#define a \n a", "");
+    }
+    #[test]
     fn empty_def() {
-        assert_err!("#define", CppError::EndOfFile(_), "empty define",);
+        assert_err!("#define", CppError::EmptyDefine, "empty define");
         assert_err!(
             "#define
             int",
@@ -736,16 +1404,34 @@ int f() BEGIN return 5; END";
         );
     }
     #[test]
+    fn redefinition() {
+        let src = "
+#define a b
+#define a c
+a
+";
+        assert_same(src, "c");
+        let src = "
+#define a b
+#define a
+a
+";
+        assert_same(src, "");
+    }
+    #[test]
     fn undef() {
         let src = "
 #define a b
 a
 #undef a
 a";
-        let cpp_src = "
-b
-a";
-        assert_same(src, cpp_src);
+        assert_same(src, "b a");
+        let src = "
+#define a
+#undef a
+a
+";
+        assert_same(src, "a");
     }
     #[test]
     fn else_directive() {
@@ -761,6 +1447,19 @@ d
 #endif
 ";
         assert_err!(src, CppError::UnexpectedElse, "duplicate else",);
+    }
+    #[test]
+    fn function_body_replacement() {
+        let src = "#define a b
+        #define f(c) a
+        f(1)";
+        assert_same(src, "b")
+    }
+    #[test]
+    fn object_body_replacement() {
+        let src = "#define NULL ((void*)0)
+        int *p = NULL;";
+        assert_same(src, "int *p = ((void*)0);")
     }
     #[test]
     fn pragma() {
@@ -789,5 +1488,55 @@ d
     fn invalid_directive() {
         assert_err!("#wrong", CppError::InvalidDirective, "invalid directive",);
         assert_err!("#1", CppError::UnexpectedToken(_, _), "unexpected token",);
+        assert_err!("#include", CppError::EndOfFile(_), "end of file");
+        assert_err!("#if defined", CppError::EndOfFile(_), "end of file");
+        for s in &[
+            "#if defined()",
+            "#if defined(+)",
+            "#if defined)",
+            "#if defined(()",
+            "#if defined(a a",
+        ] {
+            assert_err!(s, CppError::UnexpectedToken(_, _), "unexpected token");
+        }
+        assert_err!("#if", CppError::EmptyExpression, "empty expression");
+    }
+    #[test]
+    // make sure that `"b"` doesn't accidentally consume the newline token
+    // without resetting `self.seen_line_token`
+    fn str_at_eol() {
+        let src = r#"
+#define a "b"
+#define c a
+c
+"#;
+        assert_same(src, "\"b\"");
+    }
+    #[test]
+    fn test_comment_newline() {
+        let tokens: Vec<_> = cpp_no_newline(
+            "
+#if 1 //
+int main() {}
+#endif
+",
+        )
+        .collect();
+        assert_eq!(tokens, cpp("int main() {}").collect::<Vec<_>>());
+        assert_same(
+            "
+#if 1 /**//**/
+int main(){}
+#endif
+",
+            "int main() {}",
+        );
+    }
+    #[test]
+    fn cycle_detection() {
+        let src = "
+        #define sa_handler   __sa_handler.sa_handler
+        s.sa_handler";
+        assert_same(src, "s.__sa_handler.sa_handler");
     }
 }

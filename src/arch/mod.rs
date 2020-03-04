@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 use std::cmp::max;
 use std::convert::TryInto;
 
@@ -17,14 +19,24 @@ use crate::data::{
 };
 use Type::*;
 
-// NOTE: this is required by the standard to always be one
+/// Size of a `char` in bytes
+///
+/// Note: The standard requires this to always be one.
+/// http://port70.net/~nsz/c/c11/n1570.html#6.5.3.5
 const CHAR_SIZE: u16 = 1;
 
 // TODO: allow this to be configured at runtime
+/// The target triple for the host.
+///
+/// A "target triple" is used to represent information about a compiler target.
+/// Traditionaly, the target triple uses this format: `<architecture>-<vendor>-<operating system>`
+/// The target triple is represented as a struct and contains additional
+/// information like ABI and endianness.
 pub(crate) const TARGET: Triple = Triple::host();
 // TODO: make this const when const_if_match is stabilized
 // TODO: see https://github.com/rust-lang/rust/issues/49146
 lazy_static! {
+    /// The calling convention for the current target.
     pub(crate) static ref CALLING_CONVENTION: CallConv = CallConv::triple_default(&TARGET);
 }
 
@@ -60,9 +72,17 @@ impl StructType {
     pub(crate) fn struct_size(&self) -> Result<SIZE_T, &'static str> {
         let symbols = &self.members();
 
-        symbols.iter().try_fold(0, |offset, symbol| {
-            Ok(StructType::next_offset(offset, &symbol.ctype)?)
-        })
+        symbols
+            .iter()
+            .try_fold(0, |offset, symbol| {
+                Ok(StructType::next_offset(offset, &symbol.ctype)?)
+            })
+            .and_then(|size_t| {
+                let align_minus_one = self.align()? - 1;
+
+                // Rounds up to the next multiple of `align`
+                Ok((size_t + align_minus_one) & !align_minus_one)
+            })
     }
     /// Calculate the size of a union: the max of all member sizes
     pub(crate) fn union_size(&self) -> Result<SIZE_T, &'static str> {
@@ -83,6 +103,7 @@ impl StructType {
 }
 
 impl Type {
+    /// Returns true if `other` can be converted to `self` without losing infomation.
     pub fn can_represent(&self, other: &Type) -> bool {
         self == other
             || *self == Type::Double && *other == Type::Float
@@ -91,6 +112,9 @@ impl Type {
                     || self.sizeof() == other.sizeof() && self.is_signed() == other.is_signed())
     }
 
+    /// Get the size of a type in bytes.
+    ///
+    /// This is the `sizeof` operator in C.
     pub fn sizeof(&self) -> Result<SIZE_T, &'static str> {
         match self {
             Bool => Ok(BOOL_SIZE.into()),
@@ -126,6 +150,7 @@ impl Type {
             Error => Err("cannot take `sizeof` <type error>"),
         }
     }
+    /// Get the alignment of a type in bytes.
     pub fn alignof(&self) -> Result<SIZE_T, &'static str> {
         match self {
             Bool
@@ -149,9 +174,11 @@ impl Type {
             Error => Err("cannot take `alignof` <type error>"),
         }
     }
+    /// Return an IR integer type large enough to contain a pointer.
     pub fn ptr_type() -> IrType {
         IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
     }
+    /// Return an IR type which can represent this C type
     pub fn as_ir_type(&self) -> IrType {
         match self {
             // Integers
@@ -186,6 +213,7 @@ impl Type {
 }
 
 impl FunctionType {
+    /// Generate the IR function signature for `self`
     pub fn signature(&self, isa: &dyn TargetIsa) -> Signature {
         let mut params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
             // no arguments
@@ -224,7 +252,7 @@ impl FunctionType {
 mod tests {
     use super::*;
     use crate::data::{
-        types::{ArrayType, StructType, Type},
+        types::{StructType, Type},
         Qualifiers, StorageClass, Symbol,
     };
 
@@ -235,32 +263,10 @@ mod tests {
             SHORT_SIZE => Type::Short(true),
             INT_SIZE => Type::Int(true),
             LONG_SIZE => Type::Long(true),
-            _ => complex_type_for_size(size),
+            _ => struct_for_types(vec![Type::Char(true); size as usize]),
         }
     }
-    fn complex_type_for_size(size: u16) -> Type {
-        let mut types = vec![];
 
-        let (div, mut rem) = (size / 8, size % 8);
-        if div != 0 {
-            types.push(Type::Array(
-                Box::new(Type::Long(true)),
-                ArrayType::Fixed(div.into()),
-            ));
-        }
-
-        for i in [4, 2, 1].iter() {
-            let div = rem / i;
-            rem %= i;
-            if div == 1 {
-                types.push(type_for_size(*i));
-            } else {
-                assert_eq!(div, 0);
-            }
-        }
-        assert_eq!(rem, 0);
-        struct_for_types(types)
-    }
     fn symbol_for_type(ctype: Type, id: InternedStr) -> Symbol {
         Symbol {
             id,
@@ -329,8 +335,13 @@ mod tests {
     #[test]
     fn char_struct() {
         let char_struct = type_for_size(5);
-        assert_eq!(char_struct.alignof().unwrap(), 4);
+        assert_eq!(char_struct.alignof().unwrap(), 1);
         assert_offset(vec![Type::Int(true), Type::Char(true)], 1, 4);
         assert_eq!(char_struct.sizeof().unwrap(), 5);
+    }
+    #[test]
+    fn align_of_non_char_struct() {
+        let ty = struct_for_types(vec![Pointer(Box::new(Int(true))), Int(true)]);
+        assert_eq!(ty.alignof(), Ok(8));
     }
 }

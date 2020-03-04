@@ -221,9 +221,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
     }
     fn declare_typedef(&mut self, id: Locatable<InternedStr>, ctype: Type, qualifiers: Qualifiers) {
-        if qualifiers.inline {
-            self.semantic_err(
-                "`inline` is only allowed on function declarations",
+        if qualifiers.has_func_qualifiers() {
+            self.error_handler.error(
+                SemanticError::InvalidFuncQualifiers(qualifiers.func),
                 id.location,
             );
         }
@@ -443,12 +443,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(ctype) => ctype,
             None => {
                 if signed.is_none() {
-                    // if it's not an id, it's invalid anyway
-                    // other parts of the parser will have a better error message
-                    if let Some(Token::Id(_)) = self.peek_token() {
-                        let loc = self.next_location();
-                        self.error_handler
-                            .warn("type specifier missing, defaults to int", loc);
+                    // these are the only tokens that can come before an id in a declarator
+                    // if it's not a declarator, it's invalid anyway
+                    // other parts of the parser will have a better error
+                    // message
+                    match self.peek_token() {
+                        Some(Token::Id(_)) | Some(Token::Star) | Some(Token::LeftParen) => {
+                            let loc = self.next_location();
+                            self.error_handler
+                                .warn("type specifier missing, defaults to int", loc);
+                        }
+                        _ => {}
                     }
                 }
                 Type::Int(signed.unwrap_or(true))
@@ -631,7 +636,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             // TODO: this is such a hack
             let tmp_symbol = Symbol {
                 id: name,
-                qualifiers: Qualifiers::CONST,
+                qualifiers: Qualifiers {
+                    c_const: true,
+                    ..Default::default()
+                },
                 storage_class: StorageClass::Register,
                 init: true,
                 ctype: Type::Enum(None, vec![(name, current)]),
@@ -1054,9 +1062,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }) = prefix
         {
             // `inline` is allowed on function declarations
-        } else if qualifiers.inline {
-            self.semantic_err(
-                "`inline` is only allowed on function declarations",
+        } else if qualifiers.has_func_qualifiers() {
+            self.error_handler.error(
+                SemanticError::InvalidFuncQualifiers(qualifiers.func),
                 self.last_location,
             );
         }
@@ -1446,7 +1454,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         } else if keyword == Keyword::Volatile {
             qualifiers.volatile = true;
         } else if keyword == Keyword::Inline {
-            qualifiers.inline = true;
+            qualifiers.func.inline = true;
+        } else if keyword == Keyword::NoReturn {
+            qualifiers.func.no_return = true;
         } else if keyword == Keyword::Signed || keyword == Keyword::Unsigned {
             if *ctype == Some(Type::Float) || *ctype == Some(Type::Double) {
                 self.semantic_err(
@@ -1833,7 +1843,9 @@ mod tests {
         Declaration, Initializer, Qualifiers, Symbol,
     };
     use crate::intern::InternedStr;
-    use crate::parse::tests::{match_all, match_data, parse, parse_all, ParseType};
+    use crate::parse::tests::{
+        assert_errs_decls, match_all, match_data, parse, parse_all, ParseType,
+    };
     use std::boxed::Box;
     use Type::*;
 
@@ -2238,6 +2250,25 @@ mod tests {
             assert!(parse(err).unwrap().is_err());
         }
     }
+
+    #[test]
+    fn default_type_specifier_warns() {
+        let default_type_decls = &[
+            "i;",
+            "f();",
+            "a[1];",
+            "(*fp)();",
+            "(i);",
+            "((*f)());",
+            "(a[1]);",
+            "(((((((((i)))))))));",
+        ];
+
+        for decl in default_type_decls {
+            assert_errs_decls(decl, 0, 1, 1);
+        }
+    }
+
     #[test]
     fn enum_declaration() {
         assert!(parse("enum;").unwrap().is_err());

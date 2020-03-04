@@ -1,6 +1,6 @@
 [package]
 name = "rcc"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Joshua Nelson <jyn514@gmail.com>", "Graham Scheaffer <me@gisch.dev>"]
 edition = "2018"
 description = "A C compiler written in Rust, with a focus on good error messages."
@@ -10,31 +10,41 @@ categories = ["development-tools", "parser-implementations"]
 license = "BSD-3-Clause"
 keywords = ["C", "compiler", "recursive-descent", "cranelift"]
 default-run = "rcc"
+documentation = "https://docs.rs/rcc"
 
 [dependencies]
 lazy_static = "1"
-ansi_term = "0.12"
-cranelift = "0.58"
-cranelift-module = "0.58"
-cranelift-object = "0.58"
-cranelift-simplejit = { version = "0.58", optional = true }
-env_logger = { version = "0.7", default-features = false }
+ansi_term = { version = "0.12", optional = true }
+cranelift = "0.59"
+cranelift-module = "0.59"
+cranelift-object = "0.59"
+cranelift-simplejit = { version = "0.59", optional = true }
+env_logger = { version = "0.7", default-features = false, optional = true }
 hexf-parse = "0.1"
 thiserror = ">=1.0.9"
 log = "0.4"
 target-lexicon = "0.10"
-tempfile = "3"
-pico-args = "0.3"
+tempfile = { version = "3", optional = true }
+pico-args = { version = "0.3", optional = true }
 string-interner = "0.7"
-codespan = "0.7"
-color-backtrace = { version = "0.3", default-features = false }
+codespan = "0.8"
+color-backtrace = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
 criterion = "0.3.1"
 walkdir = "2"
+proptest = "0.9"
+proptest-derive = "0.1"
 
 [features]
+default = ["bin"]
+bin = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "env_logger"]
 jit = ["cranelift-simplejit"]
+
+[[bin]]
+name = "rcc"
+path = "src/main.rs"
+required-features = ["bin"]
 
 [[bench]]
 name = "examples"
@@ -55,7 +65,3 @@ debug-assertions = false
 codegen-units = 1
 incremental = false
 overflow-checks = false
-
-[[bin]]
-name = "rcc"
-path = "src/bin/rcc.rs"

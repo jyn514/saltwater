@@ -396,7 +396,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 mod tests {
     use super::super::tests::*;
     use crate::data::prelude::*;
-    use crate::intern::InternedStr;
+
     fn parse_stmt(stmt: &str) -> CompileResult<Stmt> {
         let mut p = parser(stmt);
         let exp = p.statement();
@@ -414,7 +414,7 @@ mod tests {
         let expected = Ok(Stmt {
             data: StmtType::Expr(parser("1").expr().unwrap()),
             location: Location {
-                filename: InternedStr::get_or_intern("<test suite>"),
+                file: Location::default().file,
                 // TODO: this should really be 0..2
                 // but I haven't implemented merging spans yet
                 span: (1..2).into(),

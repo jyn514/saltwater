@@ -1,13 +1,3 @@
-use std::process;
-
-use ansi_term::Colour;
-
-// TODO: this should only be the binary, not the library
-pub fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
-    eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
-    process::exit(code);
-}
-
 /// ensure that a condition is true at compile time
 /// thanks to https://nikolaivazquez.com/posts/programming/rust-static-assertions/
 macro_rules! const_assert {

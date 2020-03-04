@@ -312,7 +312,7 @@ impl JIT {
     pub fn finalize(&mut self) {
         self.module.finalize_definitions();
     }
-    /// Get compiled function, if this function doesn't exist then `None` is returned, otherwise it's address returned.
+    /// Get a compiled function. If this function doesn't exist then `None` is returned, otherwise its address returned.
     ///
     /// # Panics
     /// Panics if function is not compiled (finalized). Try to invoke `finalize` before using `get_compiled_function`.
@@ -326,7 +326,7 @@ impl JIT {
             None
         }
     }
-    /// Get compiled static data, if this data doesn't exit then `None` is returned, otherwise it's andress and size returned.
+    /// Get compiled static data. If this data doesn't exist then `None` is returned, otherwise its address and size are returned.
     pub fn get_compiled_data(&mut self, name: &str) -> Option<(*mut u8, usize)> {
         use cranelift_module::FuncOrDataId;
 

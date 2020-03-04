@@ -2,12 +2,12 @@ use std::convert::{TryFrom, TryInto};
 
 use super::*;
 use crate::data::ast::{Expr, ExprType};
-use crate::data::lex::AssignmentToken;
+use crate::data::lex::{AssignmentToken, Keyword};
 use crate::data::prelude::*;
 
 #[derive(Copy, Clone, Debug)]
 #[rustfmt::skip]
-enum Precedence {
+enum BinaryPrecedence {
     Mul, Div, Mod,
     Add, Sub,
     Shl, Shr,
@@ -18,13 +18,13 @@ enum Precedence {
     BitOr,
     LogAnd,
     LogOr,
-    Ternary, // TODO: will this work with pratt parsing?
+    Ternary,
     Assignment(AssignmentToken),
 }
 
-impl Precedence {
+impl BinaryPrecedence {
     fn prec(self) -> usize {
-        use Precedence::*;
+        use BinaryPrecedence::*;
         match self {
             Mul | Div | Mod => 11,
             Add | Sub => 10,
@@ -41,7 +41,7 @@ impl Precedence {
         }
     }
     fn left_associative(self) -> bool {
-        use Precedence::*;
+        use BinaryPrecedence::*;
         match self {
             Ternary | Assignment(_) => false,
             _ => true,
@@ -50,7 +50,7 @@ impl Precedence {
     fn constructor(self) -> impl Fn(Expr, Expr) -> ExprType {
         use crate::data::lex::ComparisonToken;
         use ExprType::*;
-        use Precedence::*;
+        use BinaryPrecedence::*;
         let func: Box<dyn Fn(_, _) -> _> = match self {
             Self::Mul => Box::new(ExprType::Mul),
             Self::Div => Box::new(ExprType::Div),
@@ -77,11 +77,11 @@ impl Precedence {
     }
 }
 
-impl TryFrom<&Token> for Precedence {
+impl TryFrom<&Token> for BinaryPrecedence {
     type Error = ();
-    fn try_from(t: &Token) -> Result<Precedence, ()> {
+    fn try_from(t: &Token) -> Result<BinaryPrecedence, ()> {
         use crate::data::lex::ComparisonToken::{self as Compare, *};
-        use Precedence::{self as Bin, *};
+        use BinaryPrecedence::{self as Bin, *};
         use Token::*;
         Ok(match t {
             Star => Bin::Mul,
@@ -109,6 +109,37 @@ impl TryFrom<&Token> for Precedence {
     }
 }
 
+/*
+enum PrefixPrecedence {
+    Primary = 0,
+    // this is only ops that do _not_ allow a trailing cast
+    Unary = 1,
+    // this includes all ops which allows a following cast
+    Cast = 2,
+}
+
+impl TryFrom<Token> for PrefixPrecedence {
+    type Error = ();
+
+    fn try_from(token: Token) -> Result<Self, Self::Error> {
+        use PrefixPrecedence::*;
+        Ok(match token {
+            Token::Keyword(Keyword::Sizeof)
+            | Token::Keyword(Keyword::Alignof)
+            | Token::PlusPlus | Token::MinusMinus => Unary,
+            Token::Star
+            | Token::BinaryNot
+            | Token::LogicalNot
+            | Token::Plus
+            | Token::Minus
+            | Token::Ampersand => Cast,
+            Token::Literal(_) => 
+            _ => return Err(()),
+        })
+    }
+}
+*/
+
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     #[inline]
     pub fn expr(&mut self) -> SyntaxResult<Expr> {
@@ -119,7 +150,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn binary_expr(&mut self, mut left: Expr, max_precedence: usize) -> SyntaxResult<Expr> {
         while let Some(binop) = self
             .peek_token()
-            .and_then(|tok| Precedence::try_from(tok).ok())
+            .and_then(|tok| BinaryPrecedence::try_from(tok).ok())
         {
             let prec = binop.prec();
             if prec < max_precedence {
@@ -130,7 +161,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let right = if binop.left_associative() {
                 let inner_left = self.unary_expr()?;
                 self.binary_expr(inner_left, prec + 1)?
-            } else if let Precedence::Ternary = binop {
+            } else if let BinaryPrecedence::Ternary = binop {
                 // conditional_expression
                 // : logical_or_expression
                 // | logical_or_expression '?' expression ':' conditional_expression
@@ -138,7 +169,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let inner = self.expr()?;
                 self.expect(Token::Colon)?;
                 let right_start = self.unary_expr()?;
-                let right = self.binary_expr(right_start, Precedence::Ternary.prec())?;
+                let right = self.binary_expr(right_start, BinaryPrecedence::Ternary.prec())?;
 
                 let location = left.location.merge(&inner.location).merge(&right.location);
                 let ternary = ExprType::Ternary(Box::new(left), Box::new(inner), Box::new(right));
@@ -155,7 +186,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         Ok(left)
     }
+    // this serves the role of `cast_expr` in the yacc grammar (http://www.quut.com/c/ANSI-C-grammar-y.html)
+    #[inline(always)]
     fn unary_expr(&mut self) -> SyntaxResult<Expr> {
+        self.cast_expr()
+    }
+    fn cast_expr(&mut self) -> SyntaxResult<Expr> {
+        loop {
+            // slight ambiguity here between '(' expr ')' and '(' type_name ')'
+            if self.peek_token() == Some(&Token::LeftParen) {
+                let lookahead = self.peek_next_token();
+                if lookahead.is_decl_specifier() || self.typedefs.contains(lookahead) {
+                }
+            }
+            unimplemented!()
+        }
         let prefix = self.prefix_expr()?;
         self.postfix_expr(prefix)
     }
@@ -184,14 +229,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
 
     // | '(' expr ')'
-    // | unary_operator unary_expr
+    // | unary_operator cast_expr
     // | "sizeof" '(' type_name ')'
     // | "sizeof" unary_expr
     // | "++" unary_expr
     // | "--" unary_expr
     // | ID
     // | LITERAL
-    fn prefix_expr(&mut self) -> SyntaxResult<Expr> {
+    fn prefix_expr(&mut self, max_prec: usize) -> SyntaxResult<Expr> {
         if let Some(paren) = self.match_next(&Token::LeftParen) {
             let mut inner = self.expr()?;
             let end_loc = self.expect(Token::RightParen)?.location;
@@ -202,15 +247,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             location,
         }) = self.match_prefix_operator()
         {
-            let inner = self.unary_expr()?;
+            let inner = self.cast_expr()?;
             let location = location.merge(&inner.location);
+            Ok(location.with(constructor(inner)))
+        // these expressions do not allow a following cast expression
+        } else if let Some(token) = self.match_any(&[
+            &Token::Keyword(Keyword::Sizeof), &Token::Keyword(Keyword::Alignof), 
+            &Token::PlusPlus, &Token::MinusMinus,
+        ]) {
+            let inner = self.prefix_expr()?;
+            let location = token.location.merge(&inner.location);
             Ok(location.with(constructor(inner)))
         } else if let Some(loc) = self.match_id() {
             Ok(loc.map(ExprType::Id))
         } else if let Some(literal) = self.match_literal() {
             Ok(literal.map(ExprType::Literal))
-        // TODO: cast expression, sizeof, ++, --
-        // that will require distinguishing precedence for unary ops too
         } else {
             Err(self.next_location().with(SyntaxError::MissingPrimary))
         }

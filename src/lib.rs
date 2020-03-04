@@ -15,6 +15,7 @@ use std::rc::Rc;
 
 use codespan::FileId;
 use cranelift::codegen::settings::{Configurable, Flags};
+use cranelift::prelude::isa::TargetIsa;
 use cranelift_module::{Backend, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
 #[cfg(feature = "jit")]
@@ -139,7 +140,7 @@ pub fn preprocess(
     (res, cpp.warnings())
 }
 
-fn get_flags(jit: bool) -> Flags {
+fn get_isa(jit: bool) -> Box<dyn TargetIsa + 'static> {
     let mut flags_builder = cranelift::codegen::settings::builder();
     if !jit {
         // allow creating shared libraries
@@ -159,35 +160,25 @@ fn get_flags(jit: bool) -> Flags {
     flags_builder
         .set("enable_probestack", "false")
         .expect("enable_probestack should be a valid option");
-    Flags::new(flags_builder)
+    let flags = Flags::new(flags_builder);
+    cranelift::codegen::isa::lookup(arch::TARGET)
+        .unwrap_or_else(|_| panic!("platform not supported: {}", arch::TARGET))
+        .finish(flags)
 }
 
 #[cfg(feature = "jit")]
 pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
-    let flags = get_flags(true);
-
-    let isa = cranelift::codegen::isa::lookup(arch::TARGET)
-        .unwrap_or_else(|_| panic!("platform not supported: {}", arch::TARGET))
-        .finish(flags);
-
-    let builder = SimpleJITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-    Module::new(builder)
+    let libcall_names = cranelift_module::default_libcall_names();
+    Module::new(SimpleJITBuilder::with_isa(get_isa(true), libcall_names))
 }
 
 pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
-    let flags = get_flags(false);
-
-    let isa = cranelift::codegen::isa::lookup(arch::TARGET)
-        .unwrap_or_else(|_| panic!("platform not supported: {}", arch::TARGET))
-        .finish(flags);
-
-    let builder = ObjectBuilder::new(
-        isa,
+    Module::new(ObjectBuilder::new(
+        get_isa(false),
         name,
         ObjectTrapCollection::Disabled,
         cranelift_module::default_libcall_names(),
-    );
-    Module::new(builder)
+    ))
 }
 
 /// Compile and return the declarations and warnings.

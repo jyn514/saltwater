@@ -1,9 +1,10 @@
-use super::Compiler;
-use crate::data::prelude::*;
 use cranelift::codegen::cursor::Cursor;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Block, FunctionBuilder, InstBuilder};
 use cranelift_module::Backend;
+
+use super::Compiler;
+use crate::data::prelude::*;
 
 impl<B: Backend> Compiler<B> {
     pub(super) fn compile_all(

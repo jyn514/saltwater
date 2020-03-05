@@ -1,7 +1,14 @@
-use super::Symbol;
+use std::fmt::{self, Formatter};
+
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
+pub use struct_ref::{StructRef, StructType};
+
 use crate::arch::SIZE_T;
 use crate::intern::InternedStr;
-pub use struct_ref::{StructRef, StructType};
+
+use super::Symbol;
 
 mod struct_ref {
     use std::cell::RefCell;
@@ -157,6 +164,7 @@ pub enum Type {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum ArrayType {
     Fixed(SIZE_T),
     Unbounded,
@@ -287,8 +295,6 @@ impl std::fmt::Display for Type {
     }
 }
 
-use std::fmt::{self, Formatter};
-
 pub(super) fn print_type(
     ctype: &Type,
     name: Option<InternedStr>,
@@ -384,5 +390,39 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
 impl FunctionType {
     pub(crate) fn should_return(&self) -> bool {
         *self.return_type != Type::Void
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use proptest::prelude::*;
+
+    use super::Type;
+
+    pub(crate) fn arb_type() -> impl Strategy<Value = Type> {
+        let leaf = prop_oneof![
+            Just(Type::Void),
+            Just(Type::Bool),
+            any::<bool>().prop_map(Type::Char),
+            any::<bool>().prop_map(Type::Short),
+            any::<bool>().prop_map(Type::Int),
+            any::<bool>().prop_map(Type::Long),
+            Just(Type::Float),
+            Just(Type::Double),
+            //Type::Enum(Option<InternedStr>, Vec<(InternedStr, i64)>),
+            Just(Type::VaList),
+            Just(Type::Error),
+        ];
+
+        leaf.prop_recursive(8, 256, 10, |inner| {
+            prop_oneof![
+                inner.prop_map(|t| Type::Pointer(Box::new(t))),
+                //Type::Function(FunctionType),
+                //Type::Union(StructType),
+                //Type::Struct(StructType),
+                //Type::Array(Box<Type>, ArrayType),
+                //Type::Bitfield(Vec<BitfieldType>),
+            ]
+        })
     }
 }

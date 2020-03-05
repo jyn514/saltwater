@@ -10,14 +10,16 @@ use cranelift::codegen::{
     },
     isa::{CallConv, TargetIsa},
 };
-use lazy_static::lazy_static;
 use target_lexicon::Triple;
+
+use lazy_static::lazy_static;
+pub(crate) use x64::*;
+use Type::*;
 
 use crate::data::{
     prelude::*,
     types::{ArrayType, FunctionType, StructType},
 };
-use Type::*;
 
 /// Size of a `char` in bytes
 ///
@@ -41,7 +43,6 @@ lazy_static! {
 }
 
 mod x64;
-pub(crate) use x64::*;
 
 impl StructType {
     /// Get the offset of the given struct member.
@@ -252,11 +253,16 @@ impl FunctionType {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use core::mem::discriminant;
+
+    use proptest::prelude::*;
+
     use crate::data::{
-        types::{StructType, Type},
+        types::{tests::arb_type, StructType, Type},
         Qualifiers, StorageClass, Symbol,
     };
+
+    use super::*;
 
     fn type_for_size(size: u16) -> Type {
         match size {
@@ -345,5 +351,19 @@ mod tests {
     fn align_of_non_char_struct() {
         let ty = struct_for_types(vec![Pointer(Box::new(Int(true))), Int(true)]);
         assert_eq!(ty.alignof(), Ok(8));
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_sizeof_alignof_same_variant(t in arb_type()) {
+            prop_assert_eq!(discriminant(&t.sizeof()), discriminant(&t.alignof()));
+            if let Ok(align) = t.alignof() {
+                prop_assert!(align.is_power_of_two());
+
+                // we asserted previously that both have to have the same discriminants, so sizeof
+                // is also `Ok()` here
+                prop_assert_eq!(t.sizeof().unwrap() % align, 0);
+            }
+        }
     }
 }

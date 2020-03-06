@@ -354,7 +354,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn proptest_sizeof_alignof_same_variant(t in arb_type()) {
+        fn proptest_sizeof_alignof(t in arb_type()) {
             prop_assert_eq!(discriminant(&t.sizeof()), discriminant(&t.alignof()));
             if let Ok(align) = t.alignof() {
                 prop_assert!(align.is_power_of_two());

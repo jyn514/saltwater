@@ -10,16 +10,14 @@ use cranelift::codegen::{
     },
     isa::{CallConv, TargetIsa},
 };
-use target_lexicon::Triple;
-
 use lazy_static::lazy_static;
-pub(crate) use x64::*;
-use Type::*;
+use target_lexicon::Triple;
 
 use crate::data::{
     prelude::*,
     types::{ArrayType, FunctionType, StructType},
 };
+use Type::*;
 
 /// Size of a `char` in bytes
 ///
@@ -43,6 +41,7 @@ lazy_static! {
 }
 
 mod x64;
+pub(crate) use x64::*;
 
 impl StructType {
     /// Get the offset of the given struct member.

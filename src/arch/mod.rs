@@ -126,7 +126,9 @@ impl Type {
             Double => Ok(DOUBLE_SIZE.into()),
             Pointer(_) => Ok(PTR_SIZE.into()),
             // now for the hard ones
-            Array(t, ArrayType::Fixed(l)) => t.sizeof().and_then(|n| Ok(n * l)),
+            Array(t, ArrayType::Fixed(l)) => t
+                .sizeof()
+                .and_then(|n| n.checked_mul(*l).ok_or("overflow in array size")),
             Array(_, ArrayType::Unbounded) => Err("cannot take sizeof variable length array"),
             Enum(_, symbols) => {
                 let uchar = CHAR_BIT as usize;

@@ -94,6 +94,7 @@ pub struct Opt {
     /// If set, compile and assemble but do not link. Object file is machine-dependent.
     pub no_link: bool,
 
+    #[cfg(feature = "jit")]
     /// If set, compile and emit JIT code, and do not emit object files and binaries.
     pub jit: bool,
 

@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
 
+pub use codespan;
 use codespan::FileId;
 use cranelift::codegen::settings::{Configurable, Flags};
 use cranelift::prelude::isa::TargetIsa;

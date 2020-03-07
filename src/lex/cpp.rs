@@ -69,6 +69,10 @@ impl<'a> PreProcessorBuilder<'a> {
         self.search_path.push(path.into());
         self
     }
+    pub fn definition<D: Into<Definition>>(mut self, name: InternedStr, def: D) -> Self {
+        self.definitions.insert(name, def.into());
+        self
+    }
     pub fn build(self) -> PreProcessor<'a> {
         PreProcessor::new(
             self.file,

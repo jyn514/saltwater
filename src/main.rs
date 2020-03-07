@@ -113,7 +113,7 @@ fn real_main(
             aot_main(&buf, opt, file_id, file_db, output)
         } else {
             let module = rcc::initialize_jit_module();
-            let (result, warnings) = compile(module, &buf, &opt, file_id, file_db);
+            let (result, warnings) = compile(module, &buf, opt, file_id, file_db);
             handle_warnings(warnings, file_db);
             let mut rccjit = rcc::JIT::from(result?);
             if let Some(exit_code) = unsafe { rccjit.run_main() } {

@@ -271,11 +271,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             decl.storage_class = StorageClass::Auto;
         }
         if let Some(existing) = self.scope.get_immediate(&decl.id) {
+            let extern_redecl_of_static = match (existing.storage_class, decl.storage_class) {
+                (StorageClass::Static, StorageClass::Extern) => true,
+                _ => false,
+            };
+
             if existing == decl {
                 if decl.init && existing.init {
                     self.semantic_err(format!("redefinition of '{}'", decl.id), *location);
                 }
-            } else {
+            } else if !extern_redecl_of_static {
                 let err = format!(
                     "redeclaration of '{}' with different type or qualifiers (originally {}, now {})",
                     existing.id, existing, decl
@@ -2267,6 +2272,24 @@ mod tests {
         for decl in default_type_decls {
             assert_errs_decls(decl, 0, 1, 1);
         }
+    }
+
+    #[test]
+    fn extern_redeclaration_of_static_fn_does_not_error() {
+        let code = "
+            static int f();
+            extern int f();
+        ";
+
+        assert_errs_decls(code, 0, 0, 2);
+
+        // However the opposite should still error
+        let code = "
+            extern int f();
+            static int f();
+        ";
+
+        assert_errs_decls(code, 1, 0, 2);
     }
 
     #[test]

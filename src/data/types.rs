@@ -397,7 +397,7 @@ impl FunctionType {
 pub(crate) mod tests {
     use proptest::prelude::*;
 
-    use super::{ArrayType, Type};
+    use super::{ArrayType, InternedStr, Type};
 
     pub(crate) fn arb_type() -> impl Strategy<Value = Type> {
         let leaf = prop_oneof![
@@ -409,7 +409,9 @@ pub(crate) mod tests {
             any::<bool>().prop_map(Type::Long),
             Just(Type::Float),
             Just(Type::Double),
-            //Type::Enum(Option<InternedStr>, Vec<(InternedStr, i64)>),
+            // enum
+            any::<(Option<InternedStr>, Vec<(InternedStr, i64)>)>()
+                .prop_map(|(name, members)| Type::Enum(name, members)),
             Just(Type::VaList),
             Just(Type::Error),
         ];

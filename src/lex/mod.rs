@@ -656,7 +656,7 @@ impl Lexer {
 impl Iterator for Lexer {
     // option: whether the stream is exhausted
     // result: whether the next lexeme is an error
-    type Item = Result<Locatable<Token>, Locatable<LexError>>;
+    type Item = LexResult<Locatable<Token>>;
 
     /// Return the next token in the stream.
     ///

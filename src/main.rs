@@ -110,14 +110,14 @@ fn real_main(
     } else {
         &opt.opt
     };
-    #[cfg(jit)]
+    #[cfg(feature = "jit")]
     {
         if !opt.jit {
-            aot_main(buf, &opt, file_id, file_db, output)
+            aot_main(&buf, &opt, file_id, file_db, output)
         } else {
             let module = rcc::initialize_jit_module();
-            let (result, warnings) = compile(module, buf, &opt);
-            handle_warnings(warnings, file_id, file_db);
+            let (result, warnings) = compile(module, &buf, &opt, file_id, file_db);
+            handle_warnings(warnings, file_db);
             let mut rccjit = rcc::JIT::from(result?);
             if let Some(exit_code) = unsafe { rccjit.run_main() } {
                 std::process::exit(exit_code);
@@ -125,7 +125,7 @@ fn real_main(
             Ok(())
         }
     }
-    #[cfg(not(jit))]
+    #[cfg(not(feature = "jit"))]
     aot_main(&buf, &opt, file_id, file_db, output)
 }
 
@@ -266,6 +266,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
                 debug_asm: input.contains("--debug-asm"),
                 debug_ast: input.contains(["-a", "--debug-ast"]),
                 no_link: input.contains(["-c", "--no-link"]),
+                #[cfg(feature = "jit")]
                 jit: input.contains("--jit"),
                 max_errors,
                 search_path,

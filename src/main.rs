@@ -45,12 +45,15 @@ FLAGS:
         --debug-asm        If set, print the intermediate representation of the program in addition to compiling
     -a, --debug-ast        If set, print the parsed abstract syntax tree in addition to compiling
         --debug-lex        If set, print all tokens found by the lexer in addition to compiling.
+        --jit              If set, will use JIT compilation for C code and instantly run compiled code (No files produced).
+                           NOTE: this option only works if rcc was compiled with the `jit` feature.
     -h, --help             Prints help information
     -c, --no-link          If set, compile and assemble but do not link. Object file is machine-dependent.
     -E, --preprocess-only  If set, preprocess only, but do not do anything else.
                             Note that preprocessing discards whitespace and comments.
                             There is not currently a way to disable this behavior.
     -V, --version          Prints version information
+    
 
 OPTIONS:
     -o, --output <output>    The output file to use. [default: a.out]
@@ -64,7 +67,7 @@ ARGS:
 
 const USAGE: &str = "\
 usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
-           [--debug-lex] [--no-link | -c] [-I <dir>] [<file>]";
+           [--debug-lex] [--jit] [--no-link | -c] [-I <dir>] [<file>]";
 
 struct BinOpt {
     /// The options that will be passed to `compile()`
@@ -107,10 +110,38 @@ fn real_main(
     } else {
         &opt.opt
     };
-    let (result, warnings) = compile(&buf, &opt, file_id, file_db);
+    #[cfg(feature = "jit")]
+    {
+        if !opt.jit {
+            aot_main(&buf, &opt, file_id, file_db, output)
+        } else {
+            let module = rcc::initialize_jit_module();
+            let (result, warnings) = compile(module, &buf, &opt, file_id, file_db);
+            handle_warnings(warnings, file_db);
+            let mut rccjit = rcc::JIT::from(result?);
+            if let Some(exit_code) = unsafe { rccjit.run_main() } {
+                std::process::exit(exit_code);
+            }
+            Ok(())
+        }
+    }
+    #[cfg(not(feature = "jit"))]
+    aot_main(&buf, &opt, file_id, file_db, output)
+}
+
+#[inline]
+fn aot_main(
+    buf: &str,
+    opt: &Opt,
+    file_id: FileId,
+    file_db: &mut Files,
+    output: &Path,
+) -> Result<(), Error> {
+    let module = rcc::initialize_aot_module("rccmain".to_owned());
+    let (result, warnings) = compile(module, buf, opt, file_id, file_db);
     handle_warnings(warnings, file_db);
 
-    let product = result?;
+    let product = result.map(|x| x.finish())?;
     if opt.no_link {
         return assemble(product, output);
     }
@@ -235,6 +266,8 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
                 debug_asm: input.contains("--debug-asm"),
                 debug_ast: input.contains(["-a", "--debug-ast"]),
                 no_link: input.contains(["-c", "--no-link"]),
+                #[cfg(feature = "jit")]
+                jit: input.contains("--jit"),
                 max_errors,
                 search_path,
             },

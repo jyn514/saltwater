@@ -4,7 +4,7 @@
 use std::convert::{TryFrom, TryInto};
 
 use cranelift::codegen::ir::types;
-use cranelift_module::{DataContext, DataId, Linkage};
+use cranelift_module::{Backend, DataContext, DataId, Linkage};
 
 use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
@@ -14,7 +14,7 @@ use crate::data::{lex::Literal, types::ArrayType, Initializer, StorageClass};
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
 
-impl Compiler {
+impl<B: Backend> Compiler<B> {
     pub(super) fn store_static(
         &mut self,
         mut symbol: Symbol,

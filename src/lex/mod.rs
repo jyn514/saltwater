@@ -10,7 +10,7 @@ mod cpp;
 #[cfg(test)]
 mod tests;
 // https://github.com/rust-lang/rust/issues/64762
-//#[allow(unreachable_pub)]
+#[allow(unreachable_pub)]
 pub use cpp::{Definition, PreProcessor, PreProcessorBuilder};
 
 type LexResult<T = Token> = Result<T, Locatable<LexError>>;

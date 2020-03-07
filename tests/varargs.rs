@@ -32,6 +32,7 @@ fn printf_helper(format: &str, args: &[&str]) {
     let mut all_args: Vec<_> = std::iter::once(format).chain(new_args).collect();
     let expected = Command::new("printf")
         .args(&all_args)
+        .env("LC_ALL", "C")
         .output()
         .expect("printf is not installed or syntax is incorrect");
     info!(

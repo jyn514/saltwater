@@ -81,7 +81,7 @@ struct BinOpt {
     filename: PathBuf,
 }
 
-// TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
+// TODO: when std::process::termination is stable, make err_exit an impl for CompileError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
 fn real_main(
     buf: Rc<str>,
@@ -268,11 +268,15 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         use std::convert::TryInto;
 
         let mut iter = arg.splitn(2, '=');
-        let key = iter.next().unwrap();
+        let key = iter
+            .next()
+            .expect("apparently I don't understand pico_args");
         let val = iter.next().unwrap_or("1");
         let def = val
             .try_into()
-            .expect("error handling for defines not implemented");
+            .map_err(|err: rcc::data::Error| pico_args::Error::ArgumentParsingFailed {
+                cause: err.to_string(),
+            })?;
         definitions.insert(key.into(), def);
     }
     Ok((

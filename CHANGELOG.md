@@ -3,6 +3,51 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2020-03-06
+
+### Added
+
+- rcc now has a Just-In-Time compiler (JIT)!
+This feature is turned off by default as it adds a dependency on `cranelift-simplejit`.
+To use it, add `features = ["jit"]` to your `Cargo.toml`.
+As a side effect, rcc now has proper benchmarks using in-memory compilation to avoid noise from IO.
+A giant thank you to @playx for implementing this!
+
+- The `-I` flag has been implemented. No more will you have to play silly games with symbolic links!
+(See `--help` for a full description)
+
+- There is now a `.github/report-issue.sh` script in case you report issues a lot.
+See `CONTRIBUTING.md` for more details as well as how to use it.
+
+### Changed
+
+- The long-neglected README has been updated to reflect the currently implemented features and TODOs.
+
+### Fixed
+
+- rcc no longer crashes on structs where the size without padding is not a multiple of the alignment
+([#278](https://github.com/jyn514/rcc/issues/278). Thanks to @repnop for fixing this!
+- rcc no longer crashes on many unary operators in a row ([#329](https://github.com/jyn514/rcc/pull/329))
+- The README proclaims support for 1.37, but the preprocessor in 0.6 used features from 1.40.
+This release rewrote those changes in a way that's backwards-compatible with 1.37.
+Merges to master have now been gated on the 1.37 build succeeding to avoid accidents like this in the future.
+- More cycle detection has been implemented ([#293](https://github.com/jyn514/rcc/issues/298)).
+For example, the following code no longer goes into an infinite loop:
+
+```c
+// from real code in <signal.h> !!
+#define sa_handler   __sa_handler.sa_handler
+#define sa_sigaction __sa_handler.sa_sigaction
+int main() {
+    struct sigaction handler;
+    handler.sa_handler = 0;
+}
+```
+
+However, function macros which expand to themselves will still loop forever ([#312](https://github.com/jyn514/rcc/issues/312)).
+
+- `*p;` now gives a warning that the type of `p` defaults to `int *`. Thank you to @repnop for implementing this.
+
 ## [0.6.0] - 2020-02-25
 
 ### Added

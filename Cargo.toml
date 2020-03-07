@@ -51,6 +51,10 @@ name = "examples"
 harness = false
 required-features = ["jit"]
 
+[[test]]
+name = "jit"
+required-features = ["jit"]
+
 [profile.release]
 lto = true
 

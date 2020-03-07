@@ -208,7 +208,12 @@ impl Lexer {
     /// Before: u8s{"blah `invalid tokens``\nhello // blah"}
     /// After:  chars{"hello // blah"}
     fn consume_line_comment(&mut self) {
-        while self.next_char() != Some(b'\n') {}
+        loop {
+            match self.next_char() {
+                None | Some(b'\n') => return,
+                _ => {}
+            }
+        }
     }
     /// Remove a multi-line C-style comment, i.e. until the next '*/'.
     ///

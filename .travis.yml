@@ -1,9 +1,16 @@
 language: rust
 
+branches:
+    only:
+        - master
+
 jobs:
     fast_finish: true
     include:
         - rust: stable
+          branches:
+              exclude:
+                  - master
           install:
             - rustup component add rustfmt
             - rustup component add clippy
@@ -42,6 +49,9 @@ jobs:
           script: cargo test
 
         - rust: nightly
+          branches:
+              exclude:
+                  - master
           # afl needs nightly
           script:
             - cargo test

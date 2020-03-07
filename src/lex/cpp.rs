@@ -210,11 +210,7 @@ impl<'a> PreProcessor<'a> {
     }
     #[inline]
     fn next_token(&mut self) -> Option<CppResult<Token>> {
-        match self.lexer_mut().next() {
-            Some(Err(err)) => Some(Err(err.into())),
-            Some(Ok(ok)) => Some(Ok(ok)),
-            None => None,
-        }
+        Some(self.lexer_mut().next()?.map_err(CompileError::from))
     }
     #[inline]
     fn span(&self, start: u32) -> Location {

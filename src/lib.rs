@@ -340,7 +340,7 @@ mod jit {
     impl TryFrom<Rc<str>> for JIT {
         type Error = Error;
         fn try_from(program: Rc<str>) -> Result<JIT, Self::Error> {
-            JIT::from_string(program, &Opt::default()).0
+            JIT::from_string(program, Opt::default()).0
         }
     }
 
@@ -348,7 +348,7 @@ mod jit {
         /// Compile string and return JITed code.
         pub fn from_string<R: Into<Rc<str>>>(
             program: R,
-            opt: &Opt,
+            opt: Opt,
         ) -> (Result<Self, Error>, VecDeque<CompileWarning>) {
             let program = program.into();
             let module = initialize_jit_module();

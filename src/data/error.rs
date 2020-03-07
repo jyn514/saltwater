@@ -324,7 +324,7 @@ impl<T: Into<String>> From<T> for Warning {
 
 impl CompileError {
     pub(crate) fn semantic(err: Locatable<String>) -> Self {
-        From::from(err)
+        Self::from(err)
     }
     pub fn location(&self) -> Location {
         self.location

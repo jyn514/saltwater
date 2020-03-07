@@ -14,8 +14,10 @@ use std::process::Command;
 use std::rc::Rc;
 
 use codespan::FileId;
-use cranelift_module::Backend;
-use cranelift_object::ObjectBackend;
+use cranelift::codegen::settings::{Configurable, Flags};
+use cranelift::prelude::isa::TargetIsa;
+use cranelift_module::{Backend, Module};
+use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
 
 /// The `Source` type for `codespan::Files`.
 ///
@@ -90,6 +92,10 @@ pub struct Opt {
     /// If set, compile and assemble but do not link. Object file is machine-dependent.
     pub no_link: bool,
 
+    #[cfg(feature = "jit")]
+    /// If set, compile and emit JIT code, and do not emit object files and binaries.
+    pub jit: bool,
+
     /// The maximum number of errors to allow before giving up.
     /// If None, allows an unlimited number of errors.
     pub max_errors: Option<std::num::NonZeroUsize>,
@@ -135,16 +141,52 @@ pub fn preprocess(
     (res, cpp.warnings())
 }
 
+fn get_isa(jit: bool) -> Box<dyn TargetIsa + 'static> {
+    let mut flags_builder = cranelift::codegen::settings::builder();
+    // `simplejit` requires non-PIC code
+    if !jit {
+        // allow creating shared libraries
+        flags_builder
+            .enable("is_pic")
+            .expect("is_pic should be a valid option");
+    }
+    // use debug assertions
+    flags_builder
+        .enable("enable_verifier")
+        .expect("enable_verifier should be a valid option");
+    // minimal optimizations
+    flags_builder
+        .set("opt_level", "speed")
+        .expect("opt_level: speed should be a valid option");
+    // don't emit call to __cranelift_probestack
+    flags_builder
+        .set("enable_probestack", "false")
+        .expect("enable_probestack should be a valid option");
+    let flags = Flags::new(flags_builder);
+    cranelift::codegen::isa::lookup(arch::TARGET)
+        .unwrap_or_else(|_| panic!("platform not supported: {}", arch::TARGET))
+        .finish(flags)
+}
+
+pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
+    Module::new(ObjectBuilder::new(
+        get_isa(false),
+        name,
+        ObjectTrapCollection::Disabled,
+        cranelift_module::default_libcall_names(),
+    ))
+}
+
 /// Compile and return the declarations and warnings.
-pub fn compile(
+pub fn compile<B: Backend>(
+    module: Module<B>,
     buf: &str,
     opt: &Opt,
     file: FileId,
     files: &mut Files,
-) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
+) -> (Result<Module<B>, Error>, VecDeque<CompileWarning>) {
     let path = opt.search_path.iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
-
     let mut errs = VecDeque::new();
 
     macro_rules! handle_err {
@@ -196,8 +238,7 @@ pub fn compile(
     if !errs.is_empty() {
         return (Err(Error::Source(errs)), warnings);
     }
-    let name = files.name(file).to_string_lossy();
-    let (result, ir_warnings) = ir::compile(hir, name.into_owned(), opt.debug_asm);
+    let (result, ir_warnings) = ir::compile(module, hir, opt.debug_asm);
     warnings.extend(ir_warnings);
     (result.map_err(Error::from), warnings)
 }
@@ -232,6 +273,129 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
     }
 }
 
+#[cfg(feature = "jit")]
+pub use jit::*;
+
+#[cfg(feature = "jit")]
+mod jit {
+    use super::*;
+    use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
+    use std::convert::TryFrom;
+
+    pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
+        let libcall_names = cranelift_module::default_libcall_names();
+        Module::new(SimpleJITBuilder::with_isa(get_isa(true), libcall_names))
+    }
+
+    /// Structure used to handle compiling C code to memory instead of to disk.
+    ///
+    /// You can use [`from_string`] to create a JIT instance.
+    /// Alternatively, if you don't care about compile warnings, you can use `JIT::try_from` instead.
+    /// If you already have a `Module`, you can use `JIT::from` to avoid having to `unwrap()`.
+    ///
+    /// JIT stands for 'Just In Time' compiled, the way that Java and JavaScript work.
+    ///
+    /// [`from_string`]: #method.from_string
+    pub struct JIT {
+        module: Module<SimpleJITBackend>,
+    }
+
+    impl From<Module<SimpleJITBackend>> for JIT {
+        fn from(module: Module<SimpleJITBackend>) -> Self {
+            Self { module }
+        }
+    }
+
+    impl TryFrom<Rc<str>> for JIT {
+        type Error = Error;
+        fn try_from(program: Rc<str>) -> Result<JIT, Self::Error> {
+            JIT::from_string(program, &Opt::default()).0
+        }
+    }
+
+    impl JIT {
+        /// Compile string and return JITed code.
+        pub fn from_string<R: Into<Rc<str>>>(
+            program: R,
+            opt: &Opt,
+        ) -> (Result<Self, Error>, VecDeque<CompileWarning>) {
+            let program = program.into();
+            let module = initialize_jit_module();
+            let mut files = Files::new();
+            let source = Source {
+                path: PathBuf::new(),
+                code: Rc::clone(&program),
+            };
+            let file = files.add("<jit>", source);
+            let (result, warnings) = compile(module, &program, opt, file, &mut files);
+            let result = result.map(JIT::from);
+            (result, warnings)
+        }
+
+        /// Invoke this function before trying to get access to "new" compiled functions.
+        pub fn finalize(&mut self) {
+            self.module.finalize_definitions();
+        }
+        /// Get a compiled function. If this function doesn't exist then `None` is returned, otherwise its address returned.
+        ///
+        /// # Panics
+        /// Panics if function is not compiled (finalized). Try to invoke `finalize` before using `get_compiled_function`.
+        pub fn get_compiled_function(&mut self, name: &str) -> Option<*const u8> {
+            use cranelift_module::FuncOrDataId;
+
+            let name = self.module.get_name(name);
+            if let Some(FuncOrDataId::Func(id)) = name {
+                Some(self.module.get_finalized_function(id))
+            } else {
+                None
+            }
+        }
+        /// Get compiled static data. If this data doesn't exist then `None` is returned, otherwise its address and size are returned.
+        pub fn get_compiled_data(&mut self, name: &str) -> Option<(*mut u8, usize)> {
+            use cranelift_module::FuncOrDataId;
+
+            let name = self.module.get_name(name);
+            if let Some(FuncOrDataId::Data(id)) = name {
+                Some(self.module.get_finalized_data(id))
+            } else {
+                None
+            }
+        }
+        /// Given a module, run the `main` function.
+        ///
+        /// This automatically calls `self.finalize()`.
+        /// If `main()` does not exist in the module, returns `None`; otherwise returns the exit code.
+        ///
+        /// # Safety
+        /// This function runs arbitrary C code.
+        /// It can segfault, access out-of-bounds memory, cause data races, or do anything else C can do.
+        #[allow(unsafe_code)]
+        pub unsafe fn run_main(&mut self) -> Option<i32> {
+            self.finalize();
+            let main = self.get_compiled_function("main")?;
+            let args = std::env::args().skip(1);
+            let argc = args.len() as i32;
+            // CString should be alive if we want to pass its pointer to another function,
+            // otherwise this may lead to UB.
+            let vec_args = args
+                .map(|string| std::ffi::CString::new(string).unwrap())
+                .collect::<Vec<_>>();
+            // This vec needs to be stored so we aren't passing a pointer to a freed temporary.
+            let argv = vec_args
+                .iter()
+                .map(|cstr| cstr.as_ptr() as *const u8)
+                .collect::<Vec<_>>();
+            assert_ne!(main, std::ptr::null());
+            // this transmute is safe: this function is finalized (`self.finalize()`)
+            // and **guaranteed** to be non-null
+            let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 =
+                std::mem::transmute(main);
+            // though transmute is safe, invoking this function is unsafe because we invoke C code.
+            Some(main(argc, argv.as_ptr() as *const *const u8))
+        }
+    }
+}
+
 impl<T: Into<Rc<str>>> From<T> for Source {
     fn from(src: T) -> Self {
         Self {
@@ -246,9 +410,12 @@ mod tests {
     use super::*;
     fn compile(src: &str) -> Result<Product, Error> {
         let options = Opt::default();
+        let module = initialize_aot_module("RccAOT".to_owned());
         let mut files: Files = Default::default();
         let id = files.add("<test suite>", src.into());
-        super::compile(src, &options, id, &mut files).0
+        super::compile(module, src, &options, id, &mut files)
+            .0
+            .map(|x| x.finish())
     }
     fn compile_err(src: &str) -> VecDeque<CompileError> {
         match compile(src).err().unwrap() {

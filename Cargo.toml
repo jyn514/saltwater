@@ -18,6 +18,7 @@ ansi_term = { version = "0.12", optional = true }
 cranelift = "0.59"
 cranelift-module = "0.59"
 cranelift-object = "0.59"
+cranelift-simplejit = { version = "0.59", optional = true }
 env_logger = { version = "0.7", default-features = false, optional = true }
 hexf-parse = "0.1"
 thiserror = ">=1.0.9"
@@ -38,6 +39,7 @@ proptest-derive = "0.1"
 [features]
 default = ["bin"]
 bin = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "env_logger"]
+jit = ["cranelift-simplejit"]
 
 [[bin]]
 name = "rcc"
@@ -47,6 +49,11 @@ required-features = ["bin"]
 [[bench]]
 name = "examples"
 harness = false
+required-features = ["jit"]
+
+[[test]]
+name = "jit"
+required-features = ["jit"]
 
 [profile.release]
 lto = true

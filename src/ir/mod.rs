@@ -5,6 +5,7 @@ mod stmt;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
+use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
 use cranelift::codegen::{
     self,
     ir::{
@@ -13,18 +14,11 @@ use cranelift::codegen::{
         stackslot::{StackSlotData, StackSlotKind},
         ExternalName, InstBuilder, MemFlags,
     },
-    isa,
-    settings::{self, Configurable},
+    settings,
 };
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Block, FunctionBuilder, FunctionBuilderContext, Signature};
-use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule};
-use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct, ObjectTrapCollection};
-
-use crate::arch::TARGET;
-use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
-
-type Module = CraneliftModule<ObjectBackend>;
+use cranelift_module::{self, Backend, DataId, FuncId, Linkage, Module};
 
 enum Id {
     Function(FuncId),
@@ -32,8 +26,8 @@ enum Id {
     Local(StackSlot),
 }
 
-struct Compiler {
-    module: Module,
+struct Compiler<T: Backend> {
+    module: Module<T>,
     scope: Scope<InternedStr, Id>,
     debug: bool,
     // if false, we last saw a switch
@@ -49,17 +43,14 @@ struct Compiler {
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
-pub(crate) fn compile(
+pub(crate) fn compile<B: Backend>(
+    module: Module<B>,
     program: Vec<Locatable<Declaration>>,
-    name: String,
     debug: bool,
-) -> (
-    Result<ObjectProduct, CompileError>,
-    VecDeque<CompileWarning>,
-) {
+) -> (Result<Module<B>, CompileError>, VecDeque<CompileWarning>) {
     // really we'd like to have all errors but that requires a refactor
     let mut err = None;
-    let mut compiler = Compiler::new(name, debug);
+    let mut compiler = Compiler::new(module, debug);
     for decl in program {
         let current = match (decl.data.symbol.ctype.clone(), decl.data.init) {
             (Type::Function(func_type), None) => compiler
@@ -93,43 +84,14 @@ pub(crate) fn compile(
     if let Some(err) = err {
         (Err(err), warns)
     } else {
-        (Ok(compiler.module.finish()), warns)
+        (Ok(compiler.module), warns)
     }
 }
 
-impl Compiler {
-    fn new(name: String, debug: bool) -> Compiler {
-        let mut flags_builder = settings::builder();
-        // allow creating shared libraries
-        flags_builder
-            .enable("is_pic")
-            .expect("is_pic should be a valid option");
-        // use debug assertions
-        flags_builder
-            .enable("enable_verifier")
-            .expect("enable_verifier should be a valid option");
-        // minimal optimizations
-        flags_builder
-            .set("opt_level", "speed")
-            .expect("opt_level: speed should be a valid option");
-        // don't emit call to __cranelift_probestack
-        flags_builder
-            .set("enable_probestack", "false")
-            .expect("enable_probestack should be a valid option");
-
-        let isa = isa::lookup(TARGET)
-            .unwrap_or_else(|_| panic!("platform not supported: {}", TARGET))
-            .finish(settings::Flags::new(flags_builder));
-
-        let builder = ObjectBuilder::new(
-            isa,
-            name,
-            ObjectTrapCollection::Disabled,
-            cranelift_module::default_libcall_names(),
-        );
-
+impl<B: Backend> Compiler<B> {
+    fn new(module: Module<B>, debug: bool) -> Compiler<B> {
         Compiler {
-            module: Module::new(builder),
+            module,
             scope: Scope::new(),
             loops: Vec::new(),
             switches: Vec::new(),

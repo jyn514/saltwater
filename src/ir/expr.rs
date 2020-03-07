@@ -1,5 +1,6 @@
 use cranelift::codegen::ir::{condcodes, types, MemFlags};
 use cranelift::prelude::{FunctionBuilder, InstBuilder, Type as IrType, Value as IrValue};
+use cranelift_module::Backend;
 use log::debug;
 
 use super::{Compiler, Id};
@@ -23,7 +24,7 @@ enum FuncCall {
     Indirect(Value),
 }
 
-impl Compiler {
+impl<B: Backend> Compiler<B> {
     // clippy doesn't like big match statements, but this is kind of essential complexity,
     // it can't be any smaller without supporting fewer features
     #[allow(clippy::cognitive_complexity)]

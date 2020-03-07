@@ -429,14 +429,7 @@ pub(crate) mod test {
     pub(crate) fn cpp_no_newline(s: &str) -> PreProcessor {
         let mut files: Files = Default::default();
         let id = files.add("<test suite>", String::new().into());
-        PreProcessor::new(
-            id,
-            s,
-            false,
-            vec![],
-            Default::default(),
-            Box::leak(Box::new(files)),
-        )
+        PreProcessorBuilder::new(s, id, Box::leak(Box::new(files))).build()
     }
 
     #[test]

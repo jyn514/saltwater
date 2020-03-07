@@ -69,3 +69,6 @@ debug-assertions = false
 codegen-units = 1
 incremental = false
 overflow-checks = false
+
+[package.metadata.docs.rs]
+all-features = true

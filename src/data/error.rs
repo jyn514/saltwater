@@ -511,6 +511,11 @@ mod tests {
     }
 
     #[test]
+    fn test_compile_error_from_locatable_string() {
+        let _ = CompileError::from(Location::default().with("apples".to_string()));
+    }
+
+    #[test]
     fn test_compile_error_from_syntax_error() {
         let _ = Location::default().error(SyntaxError::from("oranges".to_string()));
     }

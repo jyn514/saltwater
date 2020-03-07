@@ -54,6 +54,7 @@ pub type WarningResult<T> = (Result<T, VecDeque<CompileError>>, VecDeque<Compile
 pub use analyze::Analyzer;
 pub use data::*;
 // https://github.com/rust-lang/rust/issues/64762
+#[allow(unreachable_pub)]
 pub use lex::{Lexer, Definition, PreProcessor, PreProcessorBuilder};
 pub use parse::Parser;
 

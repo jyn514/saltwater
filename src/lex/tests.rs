@@ -171,8 +171,6 @@ fn test_float_literals() {
 fn test_num_errors() {
     assert_err("1e");
     assert_err("1e.");
-    assert_err("1e100000");
-    assert_err("1e-100000");
     assert_eq!(lex_all("1e1.0").len(), 2);
 }
 

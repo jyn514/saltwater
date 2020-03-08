@@ -275,6 +275,43 @@ pub enum CppError {
     __Nonexhaustive,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Radix {
+    Binary,
+    Octal,
+    Decimal,
+    Hexadecimal,
+}
+
+use std::fmt;
+impl fmt::Display for Radix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Radix::Binary => "binary",
+                Radix::Octal => "octal",
+                Radix::Decimal => "decimal",
+                Radix::Hexadecimal => "hexadecimal",
+            }
+        )
+    }
+}
+
+impl std::convert::TryFrom<u32> for Radix {
+    type Error = ();
+    fn try_from(int: u32) -> Result<Radix, ()> {
+        match int {
+            2 => Ok(Radix::Binary),
+            8 => Ok(Radix::Octal),
+            10 => Ok(Radix::Decimal),
+            16 => Ok(Radix::Hexadecimal),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Lex errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum LexError {
@@ -286,6 +323,45 @@ pub enum LexError {
 
     #[error("no newline at end of file")]
     NoNewlineAtEOF,
+
+    #[error("unknown token: {0:?}")]
+    UnknownToken(u8),
+
+    #[error("missing terminating \" character in string literal")]
+    StringMissingEndQuote,
+
+    #[error("illegal newline while parsing string literal")]
+    NewlineInString,
+
+    #[error("{0} character escape out of range")]
+    InvalidNumericCharEscape(Radix),
+
+    #[error("overflow while parsing integer literal")]
+    IntegerOverflow,
+
+    #[error("exponent for floating literal has no digits")]
+    FloatExponentMissingDigits,
+
+    #[error("missing digits to {0} integer constant")]
+    MissingDigits(Radix),
+
+    #[error("{0}")]
+    ParseFloat(#[from] std::num::ParseFloatError),
+
+    #[error("invalid digit {digit} in {radix} constant")]
+    InvalidDigit { digit: u32, radix: Radix },
+
+    #[error("multi-character character literal")]
+    MultiCharCharLiteral,
+
+    #[error("missing terminating ' character in char literal")]
+    CharMissingEndQuote,
+
+    #[error("illegal newline while parsing char literal")]
+    NewlineInChar,
+
+    #[error("empty character constant")]
+    EmptyChar,
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

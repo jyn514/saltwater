@@ -293,10 +293,14 @@ impl Lexer {
             return float.map(float_literal);
         }
         let literal = if self.match_next(b'u') || self.match_next(b'U') {
-            let unsigned = u64::try_from(digits).map_err(|_| LexError::IntegerOverflow)?;
+            let unsigned = u64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
+                is_signed: Some(false),
+            })?;
             Literal::UnsignedInt(unsigned)
         } else {
-            let long = i64::try_from(digits).map_err(|_| LexError::IntegerOverflow)?;
+            let long = i64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
+                is_signed: Some(true),
+            })?;
             Literal::Int(long)
         };
         // get rid of b'l' and 'll' suffixes, we don't handle them
@@ -436,7 +440,7 @@ impl Lexer {
             }
         }
         if err {
-            Err(LexError::IntegerOverflow)
+            Err(LexError::IntegerOverflow { is_signed: None })
         } else if !saw_digit {
             Ok(None)
         } else {

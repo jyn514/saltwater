@@ -243,7 +243,7 @@ impl Lexer {
     /// TODO: return an error enum instead of Strings
     ///
     /// I spent way too much time on this.
-    fn parse_num(&mut self, start: u8) -> Result<Token, String> {
+    fn parse_num(&mut self, start: u8) -> Result<Token, LexError> {
         // start - b'0' breaks for hex digits
         assert!(
             b'0' <= start && start <= b'9',
@@ -279,10 +279,7 @@ impl Lexer {
                 if radix == 8 || radix == 10 || self.peek() == Some(b'.') {
                     start
                 } else {
-                    return Err(format!(
-                        "missing digits to {} integer constant",
-                        if radix == 2 { "binary" } else { "hexadecimal" }
-                    ));
+                    return Err(LexError::MissingDigits(radix.try_into().unwrap()));
                 }
             }
         };
@@ -296,12 +293,10 @@ impl Lexer {
             return float.map(float_literal);
         }
         let literal = if self.match_next(b'u') || self.match_next(b'U') {
-            let unsigned = u64::try_from(digits)
-                .map_err(|_| "overflow while parsing unsigned integer literal")?;
+            let unsigned = u64::try_from(digits).map_err(|_| LexError::IntegerOverflow)?;
             Literal::UnsignedInt(unsigned)
         } else {
-            let long = i64::try_from(digits)
-                .map_err(|_| "overflow while parsing signed integer literal")?;
+            let long = i64::try_from(digits).map_err(|_| LexError::IntegerOverflow)?;
             Literal::Int(long)
         };
         // get rid of b'l' and 'll' suffixes, we don't handle them
@@ -318,7 +313,7 @@ impl Lexer {
         Ok(Token::Literal(literal))
     }
     // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, radix: u32, mut buf: String) -> Result<f64, String> {
+    fn parse_float(&mut self, radix: u32, mut buf: String) -> Result<f64, LexError> {
         buf.push('.');
         // parse fraction: second {digits} in regex
         while let Some(c) = self.peek() {
@@ -344,7 +339,7 @@ impl Lexer {
         }
     }
     // should only be called at the end of a number. mostly error handling
-    fn parse_exponent(&mut self, hex: bool, mut buf: String) -> Result<f64, String> {
+    fn parse_exponent(&mut self, hex: bool, mut buf: String) -> Result<f64, LexError> {
         let is_digit = |c: Option<u8>| {
             c.map_or(false, |c| {
                 (c as char).is_digit(10) || c == b'+' || c == b'-'
@@ -353,14 +348,18 @@ impl Lexer {
         if hex {
             if self.match_next(b'p') || self.match_next(b'P') {
                 if !is_digit(self.peek()) {
-                    return Err(String::from("exponent for floating literal has no digits"));
+                    // I'm leaving this as a generic error because I will get
+                    // rid of it with hexponent.
+                    return Err(LexError::Generic(
+                        "exponent for floating literal has no digits".to_string(),
+                    ));
                 }
                 buf.push('p');
                 buf.push(self.next_char().unwrap() as char);
             }
         } else if self.match_next(b'e') || self.match_next(b'E') {
             if !is_digit(self.peek()) {
-                return Err(String::from("exponent for floating literal has no digits"));
+                return Err(LexError::FloatExponentMissingDigits);
             }
             buf.push('e');
             buf.push(self.next_char().unwrap() as char);
@@ -374,23 +373,13 @@ impl Lexer {
             self.next_char();
         }
         let float = if hex {
-            hexf_parse::parse_hexf64(&buf, false).map_err(|err| err.to_string())
+            // Leaving as generic because it will be replaced shortly.
+            hexf_parse::parse_hexf64(&buf, false)
+                .map_err(|err| LexError::Generic(err.to_string()))?
         } else {
-            buf.parse()
-                .map_err(|err: std::num::ParseFloatError| err.to_string())
-        }?;
-        if float.is_infinite() {
-            return Err("overflow parsing floating literal".into());
-        }
-        let should_be_zero = buf.bytes().all(|c| match c {
-            b'.' | b'+' | b'-' | b'e' | b'p' | b'0' => true,
-            _ => false,
-        });
-        if float == 0.0 && !should_be_zero {
-            Err("underflow parsing floating literal".into())
-        } else {
-            Ok(float)
-        }
+            buf.parse::<f64>()?
+        };
+        Ok(float)
     }
     // returns None if there are no digits at the current position
     fn parse_int(
@@ -398,7 +387,7 @@ impl Lexer {
         mut acc: u64,
         radix: u32,
         buf: &mut String,
-    ) -> Result<Option<u64>, String> {
+    ) -> Result<Option<u64>, LexError> {
         let parse_digit = |c: char| match c.to_digit(16) {
             None => Ok(None),
             Some(digit) if digit < radix => Ok(Some(digit)),
@@ -407,17 +396,10 @@ impl Lexer {
             // if we see b'f' it could be a float suffix
             // we only get this far if it's not a valid digit for the radix, i.e. radix != 16
             Some(11) | Some(14) | Some(15) => Ok(None),
-            Some(digit) => Err(format!(
-                "invalid digit {} in {} constant",
+            Some(digit) => Err(LexError::InvalidDigit {
                 digit,
-                match radix {
-                    2 => "binary",
-                    8 => "octal",
-                    10 => "decimal",
-                    16 => "hexadecimal",
-                    _ => unreachable!(),
-                }
-            )),
+                radix: radix.try_into().unwrap(),
+            }),
         };
         // we keep going on error so we don't get more errors from unconsumed input
         // for example, if we stopped halfway through 10000000000000000000 because of
@@ -449,7 +431,7 @@ impl Lexer {
             }
         }
         if err {
-            Err("overflow parsing integer literal".into())
+            Err(LexError::IntegerOverflow)
         } else if !saw_digit {
             Ok(None)
         } else {
@@ -557,7 +539,7 @@ impl Lexer {
     ///
     /// Before: chars{"\0' blah"}
     /// After:  chars{" blah"}
-    fn parse_char(&mut self) -> Result<Token, String> {
+    fn parse_char(&mut self) -> Result<Token, LexError> {
         fn consume_until_quote(lexer: &mut Lexer) {
             loop {
                 match lexer.parse_single_char(false) {
@@ -568,10 +550,8 @@ impl Lexer {
             }
         }
         let (term_err, newline_err) = (
-            Err(String::from(
-                "Missing terminating ' character in char literal",
-            )),
-            Err(String::from("Illegal newline while parsing char literal")),
+            Err(LexError::CharMissingEndQuote),
+            Err(LexError::NewlineInChar),
         );
         match self.parse_single_char(false) {
             Ok(c) => match self.next_char() {
@@ -580,16 +560,16 @@ impl Lexer {
                 None => term_err,
                 Some(_) => {
                     consume_until_quote(self);
-                    Err(String::from("Multi-character character literal"))
+                    Err(LexError::MultiCharCharLiteral)
                 }
             },
             Err(CharError::Eof) => term_err,
             Err(CharError::Newline) => newline_err,
-            Err(CharError::Terminator) => Err(String::from("Empty character constant")),
-            Err(CharError::HexTooLarge) => Err(String::from("hex character escape out of range")),
-            Err(CharError::OctalTooLarge) => {
-                Err(String::from("octal character escape out of range"))
+            Err(CharError::Terminator) => Err(LexError::EmptyChar),
+            Err(CharError::HexTooLarge) => {
+                Err(LexError::InvalidNumericCharEscape(Radix::Hexadecimal))
             }
+            Err(CharError::OctalTooLarge) => Err(LexError::InvalidNumericCharEscape(Radix::Octal)),
         }
     }
     /// Parse a string literal, starting before the opening quote.
@@ -599,7 +579,7 @@ impl Lexer {
     ///
     /// Before: u8s{"hello" "you" "it's me" mary}
     /// After:  chars{mary}
-    fn parse_string(&mut self) -> Result<Token, String> {
+    fn parse_string(&mut self) -> Result<Token, LexError> {
         let mut literal = Vec::new();
         // allow multiple adjacent strings
         while self.peek() == Some(b'"') {
@@ -608,19 +588,17 @@ impl Lexer {
                 match self.parse_single_char(true) {
                     Ok(c) => literal.push(c),
                     Err(CharError::Eof) => {
-                        return Err(String::from(
-                            "Missing terminating \" character in string literal",
-                        ))
+                        return Err(LexError::StringMissingEndQuote);
                     }
                     Err(CharError::Newline) => {
-                        return Err(String::from("Illegal newline while parsing string literal"))
+                        return Err(LexError::NewlineInString);
                     }
                     Err(CharError::Terminator) => break,
                     Err(CharError::HexTooLarge) => {
-                        return Err(String::from("hex character escape out of range"))
+                        return Err(LexError::InvalidNumericCharEscape(Radix::Hexadecimal));
                     }
                     Err(CharError::OctalTooLarge) => {
-                        return Err(String::from("octal character escape out of range"))
+                        return Err(LexError::InvalidNumericCharEscape(Radix::Octal));
                     }
                 }
             }
@@ -642,7 +620,7 @@ impl Lexer {
     /// Parse an identifier or keyword, given the starting letter.
     ///
     /// Identifiers match the following regex: `[a-zA-Z_][a-zA-Z0-9_]*`
-    fn parse_id(&mut self, start: u8) -> Result<Token, String> {
+    fn parse_id(&mut self, start: u8) -> Result<Token, LexError> {
         let mut id = String::new();
         id.push(start.into());
         while let Some(c) = self.peek() {
@@ -866,10 +844,7 @@ impl Iterator for Lexer {
                     }
                 }
                 x => {
-                    return Some(Err(Locatable {
-                        data: format!("unknown token {:?}", x),
-                        location: self.span(span_start),
-                    }))
+                    return Some(Err(self.span(span_start).with(LexError::UnknownToken(x))));
                 }
             };
             self.seen_line_token |= data != Token::Hash;
@@ -893,7 +868,6 @@ impl Iterator for Lexer {
             }
         }
         // oof
-        c.map(|result| result.map_err(|err| err.map(LexError::Generic)))
-            .or_else(|| self.error_handler.pop_front().map(Err))
+        c.or_else(|| self.error_handler.pop_front().map(Err))
     }
 }

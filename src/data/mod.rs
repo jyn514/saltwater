@@ -11,7 +11,10 @@ pub mod prelude {
     #[cfg(test)]
     pub(crate) use super::lex::test::cpp;
     pub use super::{
-        error::{CompileError, CompileResult, CompileWarning, Error, SemanticError, SyntaxError},
+        error::{
+            CompileError, CompileResult, CompileWarning, Error, LexError, Radix, SemanticError,
+            SyntaxError,
+        },
         lex::{Literal, Locatable, Location, Token},
         types::{StructRef, StructType, Type},
         Declaration, Expr, ExprType, Stmt, StmtType, Symbol,

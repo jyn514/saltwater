@@ -354,9 +354,7 @@ impl Lexer {
                 if !is_digit(self.peek()) {
                     // I'm leaving this as a generic error because I will get
                     // rid of it with hexponent.
-                    return Err(LexError::Generic(
-                        "exponent for floating literal has no digits".to_string(),
-                    ));
+                    return Err(LexError::ExponentMissingDigits);
                 }
                 buf.push('p');
                 buf.push(self.next_char().unwrap() as char);
@@ -377,9 +375,8 @@ impl Lexer {
             self.next_char();
         }
         let float: f64 = if hex {
-            let float_literal: hexponent::FloatLiteral = buf
-                .parse()
-                .map_err(|err: hexponent::ParseError| LexError::Generic(err.to_string()))?;
+            let float_literal: hexponent::FloatLiteral =
+                buf.parse().map_err(LexError::InvalidHexFloat)?;
             float_literal.into()
         } else {
             buf.parse::<f64>()?

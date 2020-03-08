@@ -280,9 +280,6 @@ pub enum CppError {
 /// Lex errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum LexError {
-    #[error("{0}")]
-    Generic(String),
-
     #[error("unterminated /* comment")]
     UnterminatedComment,
 
@@ -332,6 +329,9 @@ pub enum LexError {
 
     #[error("underflow parsing floating literal")]
     FloatUnderflow,
+
+    #[error("{0}")]
+    InvalidHexFloat(hexponent::ParseError),
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_compile_error_is_kind() {
-        let e = Error::Lex(LexError::Generic("".to_string()));
+        let e = Error::Lex(LexError::UnterminatedComment);
         assert!(e.is_lex_err());
         assert!(!e.is_semantic_err());
         assert!(!e.is_syntax_err());

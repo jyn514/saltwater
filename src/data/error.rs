@@ -293,7 +293,7 @@ pub enum LexError {
     UnknownToken(char),
 
     #[error("missing terminating {} character in {} literal",
-        if *(.string) { "\"" } else { "\'" },
+        if *(.string) { "\"" } else { "'" },
         if *(.string) { "string" } else { "character" })]
     MissingEndQuote { string: bool },
 
@@ -303,8 +303,11 @@ pub enum LexError {
     #[error("{0} character escape out of range")]
     CharEscapeOutOfRange(Radix),
 
-    #[error("overflow while parsing integer literal")]
-    IntegerOverflow,
+    #[error("overflow while parsing {}integer literal",
+        if let &Some(signed) = .is_signed {
+            if signed { "signed "} else { "unsigned "}
+        } else { "" })]
+    IntegerOverflow { is_signed: Option<bool> },
 
     #[error("exponent for floating literal has no digits")]
     ExponentMissingDigits,

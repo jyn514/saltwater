@@ -4,6 +4,8 @@ use thiserror::Error;
 use super::{lex::Token, Expr, Locatable, Location, Type};
 use crate::intern::InternedStr;
 
+use super::Radix;
+
 /// RecoverableResult is a type that represents a Result that can be recovered from.
 ///
 /// See the [`Recover`] trait for more information.
@@ -275,40 +277,6 @@ pub enum CppError {
     __Nonexhaustive,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Radix {
-    Binary,
-    Octal,
-    Decimal,
-    Hexadecimal,
-}
-
-use std::fmt;
-impl fmt::Display for Radix {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let word = match self {
-            Radix::Binary => "binary",
-            Radix::Octal => "octal",
-            Radix::Decimal => "decimal",
-            Radix::Hexadecimal => "hexadecimal",
-        };
-        write!(f, "{}", word)
-    }
-}
-
-impl std::convert::TryFrom<u32> for Radix {
-    type Error = ();
-    fn try_from(int: u32) -> Result<Radix, ()> {
-        match int {
-            2 => Ok(Radix::Binary),
-            8 => Ok(Radix::Octal),
-            10 => Ok(Radix::Decimal),
-            16 => Ok(Radix::Hexadecimal),
-            _ => Err(()),
-        }
-    }
-}
-
 /// Lex errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum LexError {
@@ -321,8 +289,8 @@ pub enum LexError {
     #[error("no newline at end of file")]
     NoNewlineAtEOF,
 
-    #[error("unknown token: {0:?}")]
-    UnknownToken(u8),
+    #[error("unknown token: '{0}'")]
+    UnknownToken(char),
 
     #[error("missing terminating {} character in {} literal",
         if *(.string) { "\"" } else { "\'" },
@@ -333,7 +301,7 @@ pub enum LexError {
     NewlineInString,
 
     #[error("{0} character escape out of range")]
-    InvalidNumericCharEscape(Radix),
+    CharEscapeOutOfRange(Radix),
 
     #[error("overflow while parsing integer literal")]
     IntegerOverflow,

@@ -404,10 +404,7 @@ impl Lexer {
             // if we see b'f' it could be a float suffix
             // we only get this far if it's not a valid digit for the radix, i.e. radix != 16
             Some(11) | Some(14) | Some(15) => Ok(None),
-            Some(digit) => Err(LexError::InvalidDigit {
-                digit,
-                radix: radix.try_into().unwrap(),
-            }),
+            Some(digit) => Err(LexError::InvalidDigit { digit, radix }),
         };
         // we keep going on error so we don't get more errors from unconsumed input
         // for example, if we stopped halfway through 10000000000000000000 because of

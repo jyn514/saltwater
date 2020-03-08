@@ -286,16 +286,13 @@ pub enum Radix {
 use std::fmt;
 impl fmt::Display for Radix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Radix::Binary => "binary",
-                Radix::Octal => "octal",
-                Radix::Decimal => "decimal",
-                Radix::Hexadecimal => "hexadecimal",
-            }
-        )
+        let word = match self {
+            Radix::Binary => "binary",
+            Radix::Octal => "octal",
+            Radix::Decimal => "decimal",
+            Radix::Hexadecimal => "hexadecimal",
+        };
+        write!(f, "{}", word)
     }
 }
 
@@ -327,8 +324,10 @@ pub enum LexError {
     #[error("unknown token: {0:?}")]
     UnknownToken(u8),
 
-    #[error("missing terminating \" character in string literal")]
-    StringMissingEndQuote,
+    #[error("missing terminating {} character in {} literal",
+        if *(.string) { "\"" } else { "\'" },
+        if *(.string) { "string" } else { "character" })]
+    MissingEndQuote { string: bool },
 
     #[error("illegal newline while parsing string literal")]
     NewlineInString,
@@ -340,7 +339,7 @@ pub enum LexError {
     IntegerOverflow,
 
     #[error("exponent for floating literal has no digits")]
-    FloatExponentMissingDigits,
+    ExponentMissingDigits,
 
     #[error("missing digits to {0} integer constant")]
     MissingDigits(Radix),
@@ -354,14 +353,14 @@ pub enum LexError {
     #[error("multi-character character literal")]
     MultiCharCharLiteral,
 
-    #[error("missing terminating ' character in char literal")]
-    CharMissingEndQuote,
-
     #[error("illegal newline while parsing char literal")]
     NewlineInChar,
 
     #[error("empty character constant")]
     EmptyChar,
+
+    #[error("underflow parsing floating literal")]
+    FloatUnderflow,
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

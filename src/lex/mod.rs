@@ -256,19 +256,19 @@ impl Lexer {
         // check for radix other than 10 - but if we see b'.', use 10
         let radix = if start == b'0' {
             if self.match_next(b'b') {
-                2
+                Radix::Binary
             } else if self.match_next(b'x') {
                 buf.push('x');
-                16
+                Radix::Hexadecimal
             } else if self.match_next(b'.') {
                 // float: 0.431
-                return self.parse_float(10, buf).map(float_literal);
+                return self.parse_float(Radix::Decimal, buf).map(float_literal);
             } else {
                 // octal: 0755 => 493
-                8
+                Radix::Octal
             }
         } else {
-            10
+            Radix::Decimal
         };
         let start = start as u64 - b'0' as u64;
 
@@ -276,7 +276,7 @@ impl Lexer {
         let digits = match self.parse_int(start, radix, &mut buf)? {
             Some(int) => int,
             None => {
-                if radix == 8 || radix == 10 || self.peek() == Some(b'.') {
+                if radix == Radix::Octal || radix == Radix::Decimal || self.peek() == Some(b'.') {
                     start
                 } else {
                     return Err(LexError::MissingDigits(radix.try_into().unwrap()));
@@ -288,7 +288,7 @@ impl Lexer {
         }
         if let Some(b'e') | Some(b'E') | Some(b'p') | Some(b'P') = self.peek() {
             buf.push_str(".0"); // hexf doesn't like floats without a decimal point
-            let float = self.parse_exponent(radix == 16, buf);
+            let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
             self.consume_float_suffix();
             return float.map(float_literal);
         }
@@ -305,7 +305,7 @@ impl Lexer {
         } else if self.match_next(b'L') {
             self.match_next(b'L');
         }
-        if radix == 2 {
+        if radix == Radix::Binary {
             let span = self.span(span_start);
             self.error_handler
                 .warn("binary number literals are an extension", span);
@@ -313,12 +313,12 @@ impl Lexer {
         Ok(Token::Literal(literal))
     }
     // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, radix: u32, mut buf: String) -> Result<f64, LexError> {
+    fn parse_float(&mut self, radix: Radix, mut buf: String) -> Result<f64, LexError> {
         buf.push('.');
         // parse fraction: second {digits} in regex
         while let Some(c) = self.peek() {
             let c = c as char;
-            if c.is_digit(radix) {
+            if c.is_digit(radix.as_u8() as u32) {
                 self.next_char();
                 buf.push(c);
             } else {
@@ -328,7 +328,7 @@ impl Lexer {
         // in case of an empty mantissa, hexf doesn't like having the exponent right after the .
         // if the mantissa isn't empty, .12 is the same as .120
         //buf.push(b'0');
-        let float = self.parse_exponent(radix == 16, buf);
+        let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
         self.consume_float_suffix();
         float
     }
@@ -393,12 +393,12 @@ impl Lexer {
     fn parse_int(
         &mut self,
         mut acc: u64,
-        radix: u32,
+        radix: Radix,
         buf: &mut String,
     ) -> Result<Option<u64>, LexError> {
         let parse_digit = |c: char| match c.to_digit(16) {
             None => Ok(None),
-            Some(digit) if digit < radix => Ok(Some(digit)),
+            Some(digit) if digit < (radix.as_u8() as u32) => Ok(Some(digit)),
             // if we see b'e' or b'E', it's the end of the int, don't treat it as an error
             // if we see b'b' this could be part of a binary constant (0b1)
             // if we see b'f' it could be a float suffix
@@ -431,7 +431,7 @@ impl Lexer {
             };
             buf.push(c as char);
             let maybe_digits = acc
-                .checked_mul(radix.into())
+                .checked_mul(radix.as_u8() as u64)
                 .and_then(|a| a.checked_add(digit.into()));
             match maybe_digits {
                 Some(digits) => acc = digits,
@@ -570,10 +570,8 @@ impl Lexer {
             Err(CharError::Eof) => Err(LexError::MissingEndQuote { string: false }),
             Err(CharError::Newline) => Err(LexError::NewlineInChar),
             Err(CharError::Terminator) => Err(LexError::EmptyChar),
-            Err(CharError::HexTooLarge) => {
-                Err(LexError::InvalidNumericCharEscape(Radix::Hexadecimal))
-            }
-            Err(CharError::OctalTooLarge) => Err(LexError::InvalidNumericCharEscape(Radix::Octal)),
+            Err(CharError::HexTooLarge) => Err(LexError::CharEscapeOutOfRange(Radix::Hexadecimal)),
+            Err(CharError::OctalTooLarge) => Err(LexError::CharEscapeOutOfRange(Radix::Octal)),
         }
     }
     /// Parse a string literal, starting before the opening quote.
@@ -599,10 +597,10 @@ impl Lexer {
                     }
                     Err(CharError::Terminator) => break,
                     Err(CharError::HexTooLarge) => {
-                        return Err(LexError::InvalidNumericCharEscape(Radix::Hexadecimal));
+                        return Err(LexError::CharEscapeOutOfRange(Radix::Hexadecimal));
                     }
                     Err(CharError::OctalTooLarge) => {
-                        return Err(LexError::InvalidNumericCharEscape(Radix::Octal));
+                        return Err(LexError::CharEscapeOutOfRange(Radix::Octal));
                     }
                 }
             }
@@ -795,15 +793,17 @@ impl Iterator for Lexer {
                 b';' => Token::Semicolon,
                 b',' => Token::Comma,
                 b'.' => match self.peek() {
-                    Some(c) if c.is_ascii_digit() => match self.parse_float(10, String::new()) {
-                        Ok(f) => Literal::Float(f).into(),
-                        Err(err) => {
-                            return Some(Err(Locatable {
-                                data: err,
-                                location: self.span(span_start),
-                            }))
+                    Some(c) if c.is_ascii_digit() => {
+                        match self.parse_float(Radix::Decimal, String::new()) {
+                            Ok(f) => Literal::Float(f).into(),
+                            Err(err) => {
+                                return Some(Err(Locatable {
+                                    data: err,
+                                    location: self.span(span_start),
+                                }))
+                            }
                         }
-                    },
+                    }
                     Some(b'.') => {
                         if self.peek_next() == Some(b'.') {
                             self.next_char();
@@ -848,7 +848,9 @@ impl Iterator for Lexer {
                     }
                 }
                 x => {
-                    return Some(Err(self.span(span_start).with(LexError::UnknownToken(x))));
+                    return Some(Err(self
+                        .span(span_start)
+                        .with(LexError::UnknownToken(x as char))));
                 }
             };
             self.seen_line_token |= data != Token::Hash;

@@ -322,7 +322,7 @@ impl Lexer {
         // parse fraction: second {digits} in regex
         while let Some(c) = self.peek() {
             let c = c as char;
-            if c.is_digit(radix.as_u8() as u32) {
+            if c.is_digit(radix.as_u8().into()) {
                 self.next_char();
                 buf.push(c);
             } else {
@@ -402,7 +402,7 @@ impl Lexer {
     ) -> Result<Option<u64>, LexError> {
         let parse_digit = |c: char| match c.to_digit(16) {
             None => Ok(None),
-            Some(digit) if digit < (radix.as_u8() as u32) => Ok(Some(digit)),
+            Some(digit) if digit < radix.as_u8().into() => Ok(Some(digit)),
             // if we see b'e' or b'E', it's the end of the int, don't treat it as an error
             // if we see b'b' this could be part of a binary constant (0b1)
             // if we see b'f' it could be a float suffix
@@ -432,7 +432,7 @@ impl Lexer {
             };
             buf.push(c as char);
             let maybe_digits = acc
-                .checked_mul(radix.as_u8() as u64)
+                .checked_mul(radix.as_u8().into())
                 .and_then(|a| a.checked_add(digit.into()));
             match maybe_digits {
                 Some(digits) => acc = digits,

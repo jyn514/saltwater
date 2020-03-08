@@ -359,7 +359,7 @@ impl Lexer {
             }
         } else if self.match_next(b'e') || self.match_next(b'E') {
             if !is_digit(self.peek()) {
-                return Err(LexError::FloatExponentMissingDigits);
+                return Err(LexError::ExponentMissingDigits);
             }
             buf.push('e');
             buf.push(self.next_char().unwrap() as char);
@@ -379,7 +379,15 @@ impl Lexer {
         } else {
             buf.parse::<f64>()?
         };
-        Ok(float)
+        let should_be_zero = buf.bytes().all(|c| match c {
+            b'.' | b'+' | b'-' | b'e' | b'p' | b'0' => true,
+            _ => false,
+        });
+        if float == 0.0 && !should_be_zero {
+            Err(LexError::FloatUnderflow)
+        } else {
+            Ok(float)
+        }
     }
     // returns None if there are no digits at the current position
     fn parse_int(
@@ -549,22 +557,18 @@ impl Lexer {
                 }
             }
         }
-        let (term_err, newline_err) = (
-            Err(LexError::CharMissingEndQuote),
-            Err(LexError::NewlineInChar),
-        );
         match self.parse_single_char(false) {
             Ok(c) => match self.next_char() {
                 Some(b'\'') => Ok(Literal::Char(c as u8).into()),
-                Some(b'\n') => newline_err,
-                None => term_err,
+                Some(b'\n') => Err(LexError::NewlineInChar),
+                None => Err(LexError::MissingEndQuote { string: false }),
                 Some(_) => {
                     consume_until_quote(self);
                     Err(LexError::MultiCharCharLiteral)
                 }
             },
-            Err(CharError::Eof) => term_err,
-            Err(CharError::Newline) => newline_err,
+            Err(CharError::Eof) => Err(LexError::MissingEndQuote { string: false }),
+            Err(CharError::Newline) => Err(LexError::NewlineInChar),
             Err(CharError::Terminator) => Err(LexError::EmptyChar),
             Err(CharError::HexTooLarge) => {
                 Err(LexError::InvalidNumericCharEscape(Radix::Hexadecimal))
@@ -588,7 +592,7 @@ impl Lexer {
                 match self.parse_single_char(true) {
                     Ok(c) => literal.push(c),
                     Err(CharError::Eof) => {
-                        return Err(LexError::StringMissingEndQuote);
+                        return Err(LexError::MissingEndQuote { string: true });
                     }
                     Err(CharError::Newline) => {
                         return Err(LexError::NewlineInString);
@@ -867,7 +871,6 @@ impl Iterator for Lexer {
                 println!("token: {}", token.data);
             }
         }
-        // oof
         c.or_else(|| self.error_handler.pop_front().map(Err))
     }
 }

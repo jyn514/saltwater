@@ -491,7 +491,7 @@ pub enum Radix {
 }
 
 impl Radix {
-    pub fn as_u8(&self) -> u8 {
+    pub fn as_u8(self) -> u8 {
         match self {
             Radix::Binary => 2,
             Radix::Octal => 8,

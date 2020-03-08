@@ -304,8 +304,8 @@ pub enum LexError {
     CharEscapeOutOfRange(Radix),
 
     #[error("overflow while parsing {}integer literal",
-        if let &Some(signed) = .is_signed {
-            if signed { "signed "} else { "unsigned "}
+        if let Some(signed) = .is_signed {
+            if *signed { "signed "} else { "unsigned "}
         } else { "" })]
     IntegerOverflow { is_signed: Option<bool> },
 

@@ -352,8 +352,6 @@ impl Lexer {
         if hex {
             if self.match_next(b'p') || self.match_next(b'P') {
                 if !is_digit(self.peek()) {
-                    // I'm leaving this as a generic error because I will get
-                    // rid of it with hexponent.
                     return Err(LexError::ExponentMissingDigits);
                 }
                 buf.push('p');

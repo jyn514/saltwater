@@ -252,8 +252,6 @@ impl FunctionType {
 
 #[cfg(test)]
 mod tests {
-    use core::mem::discriminant;
-
     use proptest::prelude::*;
 
     use crate::data::{
@@ -355,7 +353,8 @@ mod tests {
     proptest! {
         #[test]
         fn proptest_sizeof_alignof(t in arb_type()) {
-            prop_assert_eq!(discriminant(&t.sizeof()), discriminant(&t.alignof()));
+            // https://github.com/jyn514/rcc/pull/325#issuecomment-596297785
+            //prop_assert_eq!(discriminant(&t.sizeof()), discriminant(&t.alignof()));
             if let Ok(align) = t.alignof() {
                 prop_assert!(align.is_power_of_two());
 

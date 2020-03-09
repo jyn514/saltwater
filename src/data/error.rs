@@ -331,7 +331,7 @@ pub enum LexError {
     FloatUnderflow,
 
     #[error("{0}")]
-    InvalidHexFloat(hexponent::ParseError),
+    InvalidHexFloat(#[from] hexponent::ParseError),
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

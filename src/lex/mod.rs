@@ -379,7 +379,7 @@ impl Lexer {
                 buf.parse().map_err(LexError::InvalidHexFloat)?;
             float_literal.into()
         } else {
-            buf.parse::<f64>()?
+            buf.parse()?
         };
         let should_be_zero = buf.bytes().all(|c| match c {
             b'.' | b'+' | b'-' | b'e' | b'p' | b'0' => true,

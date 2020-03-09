@@ -375,8 +375,7 @@ impl Lexer {
             self.next_char();
         }
         let float: f64 = if hex {
-            let float_literal: hexponent::FloatLiteral =
-                buf.parse().map_err(LexError::InvalidHexFloat)?;
+            let float_literal: hexponent::FloatLiteral = buf.parse()?;
             float_literal.into()
         } else {
             buf.parse()?

@@ -351,16 +351,20 @@ mod tests {
     }
 
     proptest! {
+        // https://github.com/jyn514/rcc/pull/325#issuecomment-596297785
+        // prop_assert_eq!(discriminant(&t.sizeof()), discriminant(&t.alignof()));
+
         #[test]
-        fn proptest_sizeof_alignof(t in arb_type()) {
-            // https://github.com/jyn514/rcc/pull/325#issuecomment-596297785
-            //prop_assert_eq!(discriminant(&t.sizeof()), discriminant(&t.alignof()));
+        fn proptest_align_power_of_two(t in arb_type()) {
             if let Ok(align) = t.alignof() {
                 prop_assert!(align.is_power_of_two());
+            }
+        }
 
-                // we asserted previously that both have to have the same discriminants, so sizeof
-                // is also `Ok()` here
-                prop_assert_eq!(t.sizeof().unwrap() % align, 0);
+        #[test]
+        fn proptest_sizeof_multiple_of_alignof(t in arb_type()) {
+            if let Ok(sizeof) = t.sizeof() {
+                prop_assert_eq!(sizeof % t.alignof().unwrap(), 0);
             }
         }
     }

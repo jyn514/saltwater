@@ -111,6 +111,8 @@ pub enum ExprType {
     // prefix
     PreIncrement(Box<Expr>, bool),
     Cast(TypeName, Box<Expr>),
+    AlignofType(TypeName),
+    AlignofExpr(Box<Expr>),
     SizeofType(TypeName),
     SizeofExpr(Box<Expr>),
     Deref(Box<Expr>),
@@ -358,6 +360,8 @@ impl Display for Expr {
             ExprType::AddressOf(expr) => write!(f, "&({})", expr),
             ExprType::SizeofExpr(expr) => write!(f, "sizeof({})", expr),
             ExprType::SizeofType(ty) => write!(f, "sizeof({})", ty),
+            ExprType::AlignofExpr(expr) => write!(f, "alignof({})", expr),
+            ExprType::AlignofType(ty) => write!(f, "alignof({})", ty),
         }
     }
 }

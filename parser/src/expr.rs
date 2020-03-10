@@ -1,7 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 
 use super::*;
-use crate::data::ast::{Expr, ExprType};
+use crate::data::ast::{Expr, ExprType, TypeName};
 use crate::data::lex::{AssignmentToken, Keyword};
 use crate::data::prelude::*;
 
@@ -49,8 +49,8 @@ impl BinaryPrecedence {
     }
     fn constructor(self) -> impl Fn(Expr, Expr) -> ExprType {
         use crate::data::lex::ComparisonToken;
-        use ExprType::*;
         use BinaryPrecedence::*;
+        use ExprType::*;
         let func: Box<dyn Fn(_, _) -> _> = match self {
             Self::Mul => Box::new(ExprType::Mul),
             Self::Div => Box::new(ExprType::Div),
@@ -133,7 +133,7 @@ impl TryFrom<Token> for PrefixPrecedence {
             | Token::Plus
             | Token::Minus
             | Token::Ampersand => Cast,
-            Token::Literal(_) => 
+            Token::Literal(_) =>
             _ => return Err(()),
         })
     }
@@ -186,22 +186,45 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         Ok(left)
     }
-    // this serves the role of `cast_expr` in the yacc grammar (http://www.quut.com/c/ANSI-C-grammar-y.html)
+    /*
     #[inline(always)]
     fn unary_expr(&mut self) -> SyntaxResult<Expr> {
         self.cast_expr()
     }
-    fn cast_expr(&mut self) -> SyntaxResult<Expr> {
-        loop {
-            // slight ambiguity here between '(' expr ')' and '(' type_name ')'
-            if self.peek_token() == Some(&Token::LeftParen) {
-                let lookahead = self.peek_next_token();
-                if lookahead.is_decl_specifier() || self.typedefs.contains(lookahead) {
+    */
+    // ambiguity between '(' expr ')' and '(' type_name ')'
+    // NOTE: there is no distinction between EOF and a non-parenthesized type here
+    fn parenthesized_type(&mut self) -> SyntaxResult<Option<Locatable<TypeName>>> {
+        if self.peek_token() == Some(&Token::LeftParen) {
+            if let Some(lookahead) = self.peek_next_token() {
+                if lookahead.is_decl_specifier() {
+                    let left_paren = self.next_token().unwrap().location;
+                    let mut ctype = self.type_name()?;
+                    let right_paren = self.expect(Token::RightParen)?.location;
+                    ctype.location = left_paren.merge(right_paren);
+                    return Ok(Some(ctype));
                 }
             }
-            unimplemented!()
         }
-        let prefix = self.prefix_expr()?;
+        Ok(None)
+    }
+    // this serves the role of `cast_expr` in the yacc grammar (http://www.quut.com/c/ANSI-C-grammar-y.html)
+    fn unary_expr(&mut self) -> SyntaxResult<Expr> {
+        let mut casts = Vec::new();
+        loop {
+            // slight ambiguity here between '(' expr ')' and '(' type_name ')'
+            if let Some(ctype) = self.parenthesized_type()? {
+                casts.push(ctype);
+            } else {
+                break;
+            }
+        }
+        println!("saw all casts: {:?}", casts);
+        let mut prefix = self.prefix_expr()?;
+        for cast in casts.into_iter().rev() {
+            let location = prefix.location.merge(cast.location);
+            prefix = Locatable::new(ExprType::Cast(cast.data, Box::new(prefix)), location);
+        }
         self.postfix_expr(prefix)
     }
 
@@ -236,7 +259,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // | "--" unary_expr
     // | ID
     // | LITERAL
-    fn prefix_expr(&mut self, max_prec: usize) -> SyntaxResult<Expr> {
+    //
+    // this takes the place of `unary_expr` in the yacc grammar
+    fn prefix_expr(&mut self) -> SyntaxResult<Expr> {
+        println!("in prefix_expr");
+        // this must be an expression since we already consumed all the type casts
         if let Some(paren) = self.match_next(&Token::LeftParen) {
             let mut inner = self.expr()?;
             let end_loc = self.expect(Token::RightParen)?.location;
@@ -247,17 +274,36 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             location,
         }) = self.match_prefix_operator()
         {
-            let inner = self.cast_expr()?;
+            let inner = self.unary_expr()?;
             let location = location.merge(&inner.location);
             Ok(location.with(constructor(inner)))
+        // these keywords can be followed by either a type name or an expression
+        } else if let Some(keyword) = self.match_keywords(&[Keyword::Sizeof, Keyword::Alignof]) {
+            if let Some(mut ctype) = self.parenthesized_type()? {
+                ctype.location = keyword.location.merge(ctype.location);
+                let constructor = if keyword.data == Keyword::Sizeof {
+                    ExprType::SizeofType
+                } else {
+                    ExprType::AlignofType
+                };
+                Ok(ctype.map(constructor))
+            } else {
+                let inner = self.prefix_expr()?;
+                let location = keyword.location.merge(inner.location);
+                let constructor = if keyword.data == Keyword::Sizeof {
+                    ExprType::SizeofExpr
+                } else {
+                    ExprType::AlignofExpr
+                };
+                Ok(Locatable::new(constructor(Box::new(inner)), location))
+            }
         // these expressions do not allow a following cast expression
-        } else if let Some(token) = self.match_any(&[
-            &Token::Keyword(Keyword::Sizeof), &Token::Keyword(Keyword::Alignof), 
-            &Token::PlusPlus, &Token::MinusMinus,
-        ]) {
+        } else if let Some(token) = self.match_any(&[&Token::PlusPlus, &Token::MinusMinus]) {
             let inner = self.prefix_expr()?;
             let location = token.location.merge(&inner.location);
-            Ok(location.with(constructor(inner)))
+            let expr = ExprType::PreIncrement(Box::new(inner), token.data == Token::PlusPlus);
+            Ok(location.with(expr))
+        // primary expressions
         } else if let Some(loc) = self.match_id() {
             Ok(loc.map(ExprType::Id))
         } else if let Some(literal) = self.match_literal() {

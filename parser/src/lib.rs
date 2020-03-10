@@ -15,7 +15,7 @@ use std::mem;
 use std::rc::Rc;
 
 pub use crate::data::prelude::*;
-use crate::data::{ast::Declaration, Scope};
+use crate::data::{ast::Declaration, lex::Keyword, Scope};
 pub use crate::lex::Lexer;
 
 type Lexeme<L = Location> = CompileResult<Locatable<Token, L>, L>;
@@ -262,6 +262,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if let Some(&Token::Id(id)) = self.peek_token() {
             let location = self.next_token().unwrap().location;
             Some(Locatable::new(id, location))
+        } else {
+            None
+        }
+    }
+    fn match_keywords(&mut self, keywords: &[Keyword]) -> Option<Locatable<Keyword>> {
+        if let Some(&Token::Keyword(keyword)) = self.peek_token() {
+            for &expected in keywords {
+                if keyword == expected {
+                    let location = self.next_token().unwrap().location;
+                    return Some(Locatable::new(keyword, location));
+                }
+            }
+            None
         } else {
             None
         }

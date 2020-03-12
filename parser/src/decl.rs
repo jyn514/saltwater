@@ -1,21 +1,103 @@
+use std::convert::TryFrom;
 use super::*;
-use crate::data::ast::{Declaration, TypeName};
+use crate::data::ast::{Declarator, Declaration, DeclarationSpecifier, TypeName};
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     pub fn declaration(&mut self) -> SyntaxResult<Locatable<Declaration>> {
         unimplemented!()
     }
     pub fn type_name(&mut self) -> SyntaxResult<Locatable<TypeName>> {
-        /*
         let mut specifiers = Vec::new();
-        while let Some(Token::Keyword(keyword)) = self.peek_token() {
+        while let Some(&Token::Keyword(keyword)) = self.peek_token() {
+            let location = self.next_token().unwrap().location;
             if !keyword.is_decl_specifier() {
-                let err = SyntaxError::ExpectedDeclSpecifier(keyword.data);
-                return Err(keyword.location.with(err));
+                let err = SyntaxError::ExpectedDeclSpecifier(keyword);
+                return Err(location.with(err));
+            }
+            // make a new locatable instead of using next_token() so we don't have to unwrap
+            specifiers.push(Locatable::new(keyword, location));
+        }
+        let specifier_locations = specifiers.iter().fold(None, |all_locs: Option<Location>, spec| {
+            all_locs.map_or(Some(spec.location), |existing| Some(existing.merge(spec.location)))
+        });
+        if let Some(token) = self.match_next(&Token::RightParen) {
+            return if specifiers.is_empty() {
+                Err(token.location.with(SyntaxError::ExpectedType))
+            } else {
+                let location = specifier_locations.expect("just checked there was at least 1 specifier").merge(token.location);
+                unimplemented!("specifiers")
+                //Ok(location.with(TypeName { specifiers, declarator: None }))
+            };
+        }
+        let declarator = self.declarator()?;
+        let location = specifier_locations.map_or(declarator.location, |loc| loc.merge(declarator.location));
+        let type_name = TypeName { specifiers: unimplemented!("specifiers"), declarator: Some(declarator.data) };
+        Ok(Locatable::new(type_name, location))
+    }
+    fn declarator(&mut self) -> SyntaxResult<Locatable<Declarator>> {
+        unimplemented!("declarator")
+    }
+}
+
+impl TryFrom<Keyword> for DeclarationSpecifier {
+    type Error = ();
+    fn try_from(k: Keyword) -> Result<DeclarationSpecifier, ()> {
+        use Keyword::*;
+        use DeclarationSpecifier::*;
+
+        /*
+        if let Ok(t) = TypeSpecifier::try_from(k) {
+            return Ok(DeclarationSpecifier::Type(t));
+        }
+        */
+
+        // TODO: get rid of this macro and store a `enum Keyword { Qualifier(Qualifier), etc. }` instead
+        macro_rules! change_enum {
+            ($val: expr, $source: path, $dest: ident, $($name: ident),* $(,)?) => {
+                match $val {
+                    $(<$source>::$name => Ok($dest::$name),)*
+                    _ => Err(()),
+                }
+            }
+        }
+        change_enum!(k, Keyword, DeclarationSpecifier,
+            Unsigned, Signed,
+            Bool, Char, Short, Int, Long, Float, Double, Void,
+            Complex, Imaginary, VaList,
+            Extern,
+        )
+        /*
+        macro_rules! change_enum {
+            ( $($name: ident),* ) => {
+                    $(Keyword::$name => Ok(DeclarationSpecifier::$name),)*
             }
         }
         */
-        unimplemented!("type_name")
+        /*
+        match k {
+            // type specifier
+            //Unsigned | Signed | Bool | Char | Short | Int | Long | Float | Double | Void
+            // complex type specifier
+            //Struct | Union | Enum | VaList | Complex | Imaginary
+            // storage class
+            Keyword::Extern => DeclarationSpecifier::Extern,
+            Keyword::Static => DeclarationSpecifier::Static,
+            Keyword::Auto => DeclarationSpecifier::Auto,
+            Keyword::Register => DeclarationSpecifier::Register,
+            Keyword::Typedef => DeclarationSpecifier::Typedef,
+            Keyword::Const => DeclarationSpecifier::Const,
+            Keyword::Static => DeclarationSpecifier::Static,
+            //change_enum!(Extern, Static)
+            | Keyword::Auto | Keyword::Register | Keyword::Typedef
+            // qualifier
+            | Keyword::Const | Keyword::Volatile | Keyword::Restrict | Keyword::Atomic | Keyword::ThreadLocal
+            // function qualifier
+            | Inline | NoReturn => true,
+            _ => false,
+            Keyword::Const => DeclarationSpecifier::Const,
+        }
+        */
+        //*/
     }
 }
 

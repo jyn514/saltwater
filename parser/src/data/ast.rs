@@ -20,15 +20,79 @@ pub struct FunctionDefinition {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypeName {
-    specifiers: Vec<DeclarationSpecifier>,
-    declarator: Declarator,
+    pub specifiers: Vec<DeclarationSpecifier>,
+    pub declarator: Option<Declarator>,
 }
 
-// we don't _really_ need other specifiers
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeclarationSpecifier {
+    // types
+    Char,
+    Short,
+    Int,
+    Long,
+    Float,
+    Double,
+    Void,
+    Signed,
+    Unsigned,
+
+    // weird types
+    Bool,
+    Complex,
+    Imaginary,
+    VaList,
+
+    // qualifiers
     Const,
+    Volatile,
+    Restrict,
+    // weird qualifiers
+    Atomic,
+    ThreadLocal,
+    // function qualifiers
+    Inline,
+    NoReturn,
+ 
+    // storage classes
+    Auto,
+    Register,
+    Static,
+    Extern,
+    /*
+    Const,
+    Volatile,
+    Restrict,
+
+    Void,
+    Char,
+    Short,
+    Int,
+    Long,
+    Float,
+    Double,
+    Signed,
+    Unsigned,
+    */
+    Struct(StructSpecifier),
+    Union(StructSpecifier),
+    // enum name? { A = 1, B = 2, C }
+    Enum {
+        name: Option<InternedStr>,
+        members: Vec<(InternedStr, Expr)>,
+    },
+    Typedef(InternedStr),
+    /*
     Type(TypeSpecifier),
+    Qualifier(TypeQualifier),
+    */
+}
+
+/*
+pub enum TypeQualifier {
+    Const,
+    Volatile,
+    Restrict,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -51,6 +115,7 @@ pub enum TypeSpecifier {
     },
     Typedef(InternedStr),
 }
+*/
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructSpecifier {
@@ -151,6 +216,7 @@ pub enum ExprType {
     Noop(Box<Expr>),
 }
 
+/*
 impl Display for TypeSpecifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use TypeSpecifier::*;
@@ -175,6 +241,7 @@ impl Display for TypeSpecifier {
         }
     }
 }
+*/
 
 impl Display for StructSpecifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -234,7 +301,8 @@ impl Display for DeclarationSpecifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             DeclarationSpecifier::Const => write!(f, "const"),
-            DeclarationSpecifier::Type(ctype) => write!(f, "{}", ctype),
+            //DeclarationSpecifier::Type(ctype) => write!(f, "{}", ctype),
+            _ => unimplemented!()
         }
     }
 }
@@ -308,9 +376,12 @@ impl Display for Declarator {
 impl Display for TypeName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for s in &self.specifiers {
-            write!(f, "{} ", s)?;
+            write!(f, "{}", s)?;
         }
-        write!(f, "{}", self.declarator)
+        if let Some(declarator) = &self.declarator {
+            write!(f, " {}", declarator)?;
+        }
+        Ok(())
     }
 }
 

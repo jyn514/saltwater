@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use thiserror::Error;
 
 use super::{
-    lex::Token,
+    lex::{Token, Keyword},
     prelude::{Location, LocationTrait},
     Expr, Locatable,
 };
@@ -181,6 +181,12 @@ pub enum SyntaxError {
         .0.as_ref().map_or("<end-of-file>".into(),
                            |t| std::borrow::Cow::Owned(t.to_string())))]
     ExpectedId(Option<Token>),
+
+    #[error("expected declaration specifier, got keyword '{0}'")]
+    ExpectedDeclSpecifier(Keyword),
+
+    #[error("empty type name")]
+    ExpectedType,
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

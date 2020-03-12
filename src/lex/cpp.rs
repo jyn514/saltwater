@@ -735,12 +735,9 @@ impl<'a> PreProcessor<'a> {
     // convienience function around cpp_expr
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
         // TODO: is this unwrap safe? there should only be scalar types in a cpp directive...
-        match self
-            .cpp_expr()?
-            .truthy(&mut self.error_handler)
-            .constexpr()?
-            .data
-        {
+        // TODO: should this use the target arch or the host arch?
+        let target = target_lexicon::Triple::host();
+        match self.cpp_expr()?.truthy(&mut self.error_handler).constexpr(&target)?.data {
             (Literal::Int(i), Type::Bool) => Ok(i != 0),
             _ => unreachable!("bug in const_fold or parser: cpp cond should be boolean"),
         }

@@ -1,6 +1,7 @@
 use cranelift::codegen::ir::{condcodes, types, MemFlags};
 use cranelift::prelude::{FunctionBuilder, InstBuilder, Type as IrType, Value as IrValue};
 use cranelift_module::Backend;
+use target_lexicon::Triple;
 
 use super::{Compiler, Id};
 use crate::data::*;
@@ -28,12 +29,12 @@ impl<B: Backend> Compiler<B> {
     // it can't be any smaller without supporting fewer features
     #[allow(clippy::cognitive_complexity)]
     pub(super) fn compile_expr(&mut self, expr: Expr, builder: &mut FunctionBuilder) -> IrResult {
-        let expr = expr.const_fold()?;
+        let expr = expr.const_fold(&self.target)?;
         let location = expr.location;
         let ir_type = if expr.lval {
-            Type::ptr_type()
+            Type::ptr_type(&self.target)
         } else {
-            expr.ctype.as_ir_type()
+            expr.ctype.as_ir_type(&self.target)
         };
         match expr.expr {
             ExprType::Literal(token) => {
@@ -92,9 +93,11 @@ impl<B: Backend> Compiler<B> {
                 let ctype = cstruct.ctype.clone();
                 let pointer = self.compile_expr(*cstruct, builder)?;
                 let offset = ctype
-                    .member_offset(id)
+                    .member_offset(id, &self.target)
                     .expect("only structs and unions can have members");
-                let ir_offset = builder.ins().iconst(Type::ptr_type(), offset as i64);
+                let ir_offset = builder
+                    .ins()
+                    .iconst(Type::ptr_type(&self.target), offset as i64);
                 Ok(Value {
                     ir_val: builder.ins().iadd(pointer.ir_val, ir_offset),
                     ir_type,
@@ -107,7 +110,7 @@ impl<B: Backend> Compiler<B> {
                     Type::Pointer(t, _) => *t,
                     _ => lval.ctype,
                 };
-                let ir_type = loaded_ctype.as_ir_type();
+                let ir_type = loaded_ctype.as_ir_type(&self.target);
                 let previous_value = Value {
                     ir_val: builder.ins().load(ir_type, MemFlags::new(), lval.ir_val, 0),
                     ir_type,
@@ -151,7 +154,7 @@ impl<B: Backend> Compiler<B> {
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let target_block = builder.create_block();
-        let target_type = left.ctype.as_ir_type();
+        let target_type = left.ctype.as_ir_type(&self.target);
         builder.append_block_param(target_block, target_type);
 
         let condition = self.compile_expr(condition, builder)?;
@@ -225,7 +228,9 @@ impl<B: Backend> Compiler<B> {
             (Literal::Str(string), _) => {
                 let str_id = self.compile_string(string, location)?;
                 let str_addr = self.module.declare_data_in_func(str_id, builder.func);
-                builder.ins().global_value(Type::ptr_type(), str_addr)
+                builder
+                    .ins()
+                    .global_value(Type::ptr_type(&self.target), str_addr)
             }
             _ => unimplemented!("aggregate literals"),
         };
@@ -261,19 +266,20 @@ impl<B: Backend> Compiler<B> {
             self.compile_expr(left, builder)?,
             self.compile_expr(right, builder)?,
         );
-        Self::binary_assign_ir(left, right, ctype, op, builder)
+        Self::binary_assign_ir(left, right, ctype, op, &self.target, builder)
     }
     fn binary_assign_ir(
         left: Value,
         right: Value,
         ctype: Type,
         op: BinaryOp,
+        target: &Triple,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         use cranelift::codegen::ir::InstBuilder as b;
         use BinaryOp::*;
         assert_eq!(left.ir_type, right.ir_type);
-        let ir_type = ctype.as_ir_type();
+        let ir_type = ctype.as_ir_type(&target);
         let signed = ctype.is_signed();
         let func = match (op, ir_type, signed) {
             (Add, ty, _) if ty.is_int() => b::iadd,
@@ -319,7 +325,7 @@ impl<B: Backend> Compiler<B> {
             // this cast is a no-op, it's just here for the frontend
             return Ok(original);
         }
-        let cast_type = ctype.as_ir_type();
+        let cast_type = ctype.as_ir_type(&self.target);
         let cast = Self::cast_ir(
             original.ir_type,
             cast_type,
@@ -413,7 +419,7 @@ impl<B: Backend> Compiler<B> {
     }
     fn load_addr(&self, var: MetadataRef, builder: &mut FunctionBuilder) -> IrResult {
         let metadata = var.get();
-        let ptr_type = Type::ptr_type();
+        let ptr_type = Type::ptr_type(&self.target);
         let ir_val = match self
             .declarations
             .get(&var)
@@ -472,10 +478,12 @@ impl<B: Backend> Compiler<B> {
         );
         if let Type::Union(_) | Type::Struct(_) = ctype {
             use std::convert::TryInto;
-            let size = ctype.sizeof().map_err(|e| location.with(e.to_string()))?;
+            let size = ctype
+                .sizeof(&self.target)
+                .map_err(|e| location.with(e.to_string()))?;
             let align = ctype
-                .alignof()
-                .expect("if sizeof() succeeds so should alignof()")
+                .alignof(&self.target)
+                .expect("if sizeof(&self.target) succeeds so should alignof()")
                 .try_into()
                 .expect("align should never be more than 255 bytes");
             builder.emit_small_memory_copy(
@@ -564,7 +572,7 @@ impl<B: Backend> Compiler<B> {
                     let abi_params = ftype
                         .params
                         .into_iter()
-                        .map(|param| AbiParam::new(param.get().ctype.as_ir_type()))
+                        .map(|param| AbiParam::new(param.get().ctype.as_ir_type(&self.target)))
                         .chain(std::iter::once(float_arg))
                         .collect();
                     builder.func.dfg.signatures[call_sig].params = abi_params;
@@ -572,7 +580,7 @@ impl<B: Backend> Compiler<B> {
                 call
             }
             FuncCall::Indirect(callee) => {
-                let sig = ftype.signature(self.module.isa());
+                let sig = ftype.signature(self.module.isa(), &self.target);
                 let sigref = builder.import_signature(sig);
                 builder
                     .ins()
@@ -586,7 +594,7 @@ impl<B: Backend> Compiler<B> {
         };
         Ok(Value {
             ir_val,
-            ir_type: ftype.return_type.as_ir_type(),
+            ir_type: ftype.return_type.as_ir_type(&self.target),
             ctype: *ftype.return_type,
         })
     }

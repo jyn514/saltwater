@@ -1,8 +1,9 @@
 use super::Analyzer;
-use crate::arch;
 use crate::data::{hir::*, lex::ComparisonToken, *};
 use crate::intern::InternedStr;
 use crate::parse::Lexer;
+
+use target_lexicon::Triple;
 
 impl<T: Lexer> Analyzer<T> {
     pub fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
@@ -213,7 +214,7 @@ impl<T: Lexer> Analyzer<T> {
         if let Some(ctype) = non_scalar {
             self.err(SemanticError::NonIntegralExpr(ctype.clone()), location);
         }
-        let (promoted_expr, next) = Expr::binary_promote(left, right, &mut self.error_handler);
+        let (promoted_expr, next) = self.binary_promote(left, right);
         Expr {
             ctype: next.ctype.clone(),
             expr: ExprType::Binary(op, Box::new(promoted_expr), Box::new(next)),
@@ -275,7 +276,7 @@ impl<T: Lexer> Analyzer<T> {
 
         // i == i
         if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
-            let tmp = Expr::binary_promote(left, right, &mut self.error_handler);
+            let tmp = self.binary_promote(left, right);
             left = tmp.0;
             right = tmp.1;
         } else {
@@ -336,7 +337,7 @@ impl<T: Lexer> Analyzer<T> {
                 location,
             );
         }
-        let (left, right) = Expr::binary_promote(left, right, &mut self.error_handler);
+        let (left, right) = self.binary_promote(left, right);
         Expr {
             ctype: left.ctype.clone(),
             location,
@@ -370,7 +371,7 @@ impl<T: Lexer> Analyzer<T> {
         };
         // `i + i`
         let (ctype, lval) = if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
-            let tmp = Expr::binary_promote(left, right, &mut self.error_handler);
+            let tmp = self.binary_promote(left, right);
             left = tmp.0;
             right = tmp.1;
             (left.ctype.clone(), false)
@@ -451,7 +452,7 @@ impl<T: Lexer> Analyzer<T> {
             ctype: base.ctype.clone(),
         }
         .rval();
-        let size = match pointee.sizeof() {
+        let size = match pointee.sizeof(&self.target) {
             Ok(s) => s,
             Err(_) => {
                 self.err(
@@ -543,7 +544,7 @@ impl<T: Lexer> Analyzer<T> {
     /// 'default promotions' from 6.5.2.2p6
     fn default_promote(&mut self, expr: Expr) -> Expr {
         let expr = expr.rval();
-        let ctype = expr.ctype.clone().default_promote();
+        let ctype = expr.ctype.clone().default_promote(&self.target);
         expr.implicit_cast(&ctype, &mut self.error_handler)
     }
     // parse a struct member
@@ -653,7 +654,7 @@ impl<T: Lexer> Analyzer<T> {
     }
     // _Alignof(int)
     fn align(&mut self, ctype: Type, location: Location) -> Expr {
-        let align = ctype.alignof().unwrap_or_else(|err| {
+        let align = ctype.alignof(&self.target).unwrap_or_else(|err| {
             self.err(err.into(), location);
             1
         });
@@ -662,7 +663,7 @@ impl<T: Lexer> Analyzer<T> {
     // sizeof(int)
     // 6.5.3.4 The sizeof and _Alignof operators
     fn sizeof(&mut self, ctype: Type, location: Location) -> Expr {
-        let align = ctype.sizeof().unwrap_or_else(|err| {
+        let align = ctype.sizeof(&self.target).unwrap_or_else(|err| {
             self.err(err.into(), location);
             1
         });
@@ -679,7 +680,7 @@ impl<T: Lexer> Analyzer<T> {
             );
             expr
         } else {
-            let expr = expr.integer_promote(&mut self.error_handler);
+            let expr = self.integer_promote(expr);
             Expr {
                 lval: false,
                 ctype: expr.ctype.clone(),
@@ -696,7 +697,7 @@ impl<T: Lexer> Analyzer<T> {
             self.err(SemanticError::NotArithmetic(expr.ctype.clone()), location);
             return expr;
         }
-        let expr = expr.integer_promote(&mut self.error_handler);
+        let expr = self.integer_promote(expr);
         if add {
             Expr {
                 lval: false,
@@ -759,7 +760,7 @@ impl<T: Lexer> Analyzer<T> {
         let mut otherwise = self.parse_expr(otherwise).rval();
 
         if then.ctype.is_arithmetic() && otherwise.ctype.is_arithmetic() {
-            let (tmp1, tmp2) = Expr::binary_promote(then, otherwise, &mut self.error_handler);
+            let (tmp1, tmp2) = self.binary_promote(then, otherwise);
             then = tmp1;
             otherwise = tmp2;
         } else if !pointer_promote(&mut then, &mut otherwise) {
@@ -884,6 +885,34 @@ impl<T: Lexer> Analyzer<T> {
             SubEqual => self.add(left, right, BinaryOp::Sub),
         }
     }
+
+    // Perform a binary conversion, including all relevant casts.
+    //
+    // See `Type::binary_promote` for conversion rules.
+    fn binary_promote(&mut self, left: Expr, right: Expr) -> (Expr, Expr) {
+        let (left, right) = (left.rval(), right.rval());
+        let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone(), &self.target);
+        match ctype {
+            Ok(promoted) => (
+                left.implicit_cast(&promoted, &mut self.error_handler),
+                right.implicit_cast(&promoted, &mut self.error_handler),
+            ),
+            Err(non_int) => {
+                // TODO: this location is wrong
+                self.err(SemanticError::NonIntegralExpr(non_int), right.location);
+                (left, right)
+            }
+        }
+    }
+
+    // Perform an integer conversion, including all relevant casts.
+    //
+    // See `Type::integer_promote` for conversion rules.
+    fn integer_promote(&mut self, expr: Expr) -> Expr {
+        let expr = expr.rval();
+        let ctype = expr.ctype.clone().integer_promote(&self.target);
+        expr.implicit_cast(&ctype, &mut self. error_handler)
+    }
 }
 
 // literal
@@ -896,7 +925,7 @@ pub(super) fn literal(literal: Literal, location: Location) -> Expr {
         Literal::UnsignedInt(_) => Type::Long(false),
         Literal::Float(_) => Type::Double,
         Literal::Str(s) => {
-            let len = s.len() as arch::SIZE_T;
+            let len = s.len() as u64;
             Type::Array(Box::new(Type::Char(true)), ArrayType::Fixed(len))
         }
     };
@@ -991,9 +1020,9 @@ impl Type {
         }
     }
     // Subclause 2 of 6.3.1.1 Boolean, characters, and integers
-    fn integer_promote(self) -> Type {
+    fn integer_promote(self, target: &Triple) -> Type {
         if self.rank() <= Type::Int(true).rank() {
-            if Type::Int(true).can_represent(&self) {
+            if Type::Int(true).can_represent(&self, target) {
                 Type::Int(true)
             } else {
                 Type::Int(false)
@@ -1003,15 +1032,15 @@ impl Type {
         }
     }
     // 6.3.1.8 Usual arithmetic conversions
-    fn binary_promote(mut left: Type, mut right: Type) -> Result<Type, Type> {
+    fn binary_promote(mut left: Type, mut right: Type, target: &Triple) -> Result<Type, Type> {
         use Type::*;
         if left == Double || right == Double {
             return Ok(Double); // toil and trouble
         } else if left == Float || right == Float {
             return Ok(Float);
         }
-        left = left.integer_promote();
-        right = right.integer_promote();
+        left = left.integer_promote(target);
+        right = right.integer_promote(target);
         // TODO: we know that `left` can't be used after a move,
         // but rustc isn't smart enough to figure it out and let us remove the clone
         let signs = (
@@ -1031,7 +1060,7 @@ impl Type {
         } else {
             (right, left)
         };
-        if signed.can_represent(&unsigned) {
+        if signed.can_represent(&unsigned, target) {
             Ok(signed)
         } else {
             Ok(unsigned)
@@ -1042,9 +1071,9 @@ impl Type {
     /// > the integer promotions are performed on each argument,
     /// > and arguments that have type float are promoted to double.
     /// > These are called the default argument promotions.
-    fn default_promote(self) -> Type {
+    fn default_promote(self, target: &Triple) -> Type {
         if self.is_integral() {
-            self.integer_promote()
+            self.integer_promote(target)
         } else if self == Type::Float {
             Type::Double
         } else {
@@ -1132,33 +1161,6 @@ impl Expr {
         }
     }
 
-    // Perform an integer conversion, including all relevant casts.
-    //
-    // See `Type::integer_promote` for conversion rules.
-    fn integer_promote(self, error_handler: &mut ErrorHandler) -> Expr {
-        let expr = self.rval();
-        let ctype = expr.ctype.clone().integer_promote();
-        expr.implicit_cast(&ctype, error_handler)
-    }
-
-    // Perform a binary conversion, including all relevant casts.
-    //
-    // See `Type::binary_promote` for conversion rules.
-    fn binary_promote(left: Expr, right: Expr, error_handler: &mut ErrorHandler) -> (Expr, Expr) {
-        let (left, right) = (left.rval(), right.rval());
-        let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
-        match ctype {
-            Ok(promoted) => (
-                left.implicit_cast(&promoted, error_handler),
-                right.implicit_cast(&promoted, error_handler),
-            ),
-            Err(non_int) => {
-                // TODO: this location is wrong
-                error_handler.error(SemanticError::NonIntegralExpr(non_int), right.location);
-                (left, right)
-            }
-        }
-    }
     // ensure an expression has a value. convert
     // - arrays -> pointers
     // - functions -> pointers

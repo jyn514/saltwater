@@ -2,10 +2,10 @@ mod expr;
 mod static_init;
 mod stmt;
 
+use crate::arch::{Arch, TARGET};
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
-use crate::arch::{CHAR_BIT, PTR_SIZE, SIZE_T, TARGET};
 use crate::data::lex::ComparisonToken;
 use cranelift::codegen::{
     self,
@@ -25,6 +25,7 @@ use cranelift::prelude::{Block, FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{self, Backend, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder};
 use lazy_static::lazy_static;
+use target_lexicon::Triple;
 
 use crate::data::{
     hir::{Declaration, Initializer, MetadataRef, Stmt},
@@ -92,6 +93,7 @@ struct Compiler<T: Backend> {
     // we didn't see a default case
     switches: Vec<(Switch, Option<Block>, Block)>,
     labels: HashMap<InternedStr, Block>,
+    target: Triple,
     error_handler: ErrorHandler,
 }
 
@@ -146,6 +148,7 @@ impl<B: Backend> Compiler<B> {
             // the initial value doesn't really matter
             last_saw_loop: true,
             strings: Default::default(),
+            target: Triple::host(),
             error_handler: Default::default(),
             debug,
         }
@@ -172,7 +175,7 @@ impl<B: Backend> Compiler<B> {
             Type::Function(func_type) => func_type,
             _ => unreachable!("bug in backend: only functions should be passed to `declare_func`"),
         };
-        let signature = func_type.signature(self.module.isa());
+        let signature = func_type.signature(self.module.isa(), &self.target);
         let linkage = match metadata.storage_class {
             StorageClass::Auto | StorageClass::Extern if is_definition => Linkage::Export,
             StorageClass::Auto | StorageClass::Extern => Linkage::Import,
@@ -201,7 +204,7 @@ impl<B: Backend> Compiler<B> {
             self.declare_func(decl.symbol, false)?;
             return Ok(());
         }
-        let u64_size = match meta.ctype.sizeof() {
+        let u64_size = match meta.ctype.sizeof(&self.target) {
             Ok(size) => size,
             Err(err) => {
                 return Err(CompileError::semantic(Locatable {
@@ -241,7 +244,9 @@ impl<B: Backend> Compiler<B> {
                 let val = self.compile_expr(*expr, builder)?;
                 // TODO: replace with `builder.ins().stack_store(val.ir_val, stack_slot, 0);`
                 // when Cranelift implements stack_store for i8 and i16
-                let addr = builder.ins().stack_addr(Type::ptr_type(), stack_slot, 0);
+                let addr = builder
+                    .ins()
+                    .stack_addr(Type::ptr_type(&self.target), stack_slot, 0);
                 builder.ins().store(MemFlags::new(), val.ir_val, addr, 0);
             }
             Initializer::InitializerList(_) => unimplemented!("aggregate dynamic initialization"),
@@ -262,12 +267,12 @@ impl<B: Backend> Compiler<B> {
         let ir_vals: Vec<_> = params
             .iter()
             .map(|param| {
-                let ir_type = param.get().ctype.as_ir_type();
+                let ir_type = param.get().ctype.as_ir_type(&self.target);
                 Ok(builder.append_block_param(func_start, ir_type))
             })
             .collect::<CompileResult<_>>()?;
         for (&param, ir_val) in params.iter().zip(ir_vals) {
-            let u64_size = match param.get().ctype.sizeof() {
+            let u64_size = match param.get().ctype.sizeof(&self.target) {
                 Err(data) => semantic_err!(data.into(), *location),
                 Ok(size) => size,
             };
@@ -291,7 +296,9 @@ impl<B: Backend> Compiler<B> {
             // stores for i8 and i16
             // then this can be replaced with `builder.ins().stack_store(ir_val, slot, 0);`
             // See https://github.com/CraneStation/cranelift/issues/433
-            let addr = builder.ins().stack_addr(Type::ptr_type(), slot, 0);
+            let addr = builder
+                .ins()
+                .stack_addr(Type::ptr_type(&self.target), slot, 0);
             builder.ins().store(MemFlags::new(), ir_val, addr, 0);
             self.declarations.insert(param, Id::Local(slot));
         }
@@ -307,7 +314,7 @@ impl<B: Backend> Compiler<B> {
         let func_id = self.declare_func(symbol, true)?;
         // TODO: make declare_func should take a `signature` after all?
         // This just calculates it twice, it's probably fine
-        let signature = func_type.signature(self.module.isa());
+        let signature = func_type.signature(self.module.isa(), &self.target);
 
         // external name is meant to be a lookup in a symbol table,
         // but we just give it garbage values
@@ -334,7 +341,7 @@ impl<B: Backend> Compiler<B> {
         if !builder.is_filled() {
             let id = symbol.get().id;
             if id == InternedStr::get_or_intern("main") {
-                let ir_int = func_type.return_type.as_ir_type();
+                let ir_int = func_type.return_type.as_ir_type(&self.target);
                 let zero = [builder.ins().iconst(ir_int, 0)];
                 builder.ins().return_(&zero);
             } else if should_ret {
@@ -388,14 +395,14 @@ impl FunctionType {
     }
 
     /// Generate the IR function signature for `self`
-    pub fn signature(&self, isa: &dyn TargetIsa) -> Signature {
+    pub fn signature(&self, isa: &dyn TargetIsa, target: &Triple) -> Signature {
         let mut params = if self.params.len() == 1 && self.params[0].get().ctype == Type::Void {
             // no arguments
             Vec::new()
         } else {
             self.params
                 .iter()
-                .map(|param| AbiParam::new(param.get().ctype.as_ir_type()))
+                .map(|param| AbiParam::new(param.get().ctype.as_ir_type(&isa.triple())))
                 .collect()
         };
         if self.varargs {
@@ -412,7 +419,7 @@ impl FunctionType {
         let return_type = if !self.should_return() {
             vec![]
         } else {
-            vec![AbiParam::new(self.return_type.as_ir_type())]
+            vec![AbiParam::new(self.return_type.as_ir_type(target))]
         };
         Signature {
             call_conv: *CALLING_CONVENTION,
@@ -451,23 +458,23 @@ impl ComparisonToken {
     }
 }
 
-use std::convert::TryInto;
 impl Type {
     /// Return an IR integer type large enough to contain a pointer.
-    pub fn ptr_type() -> IrType {
-        IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
+    pub fn ptr_type(target: &Triple) -> IrType {
+        IrType::triple_pointer_type(&target)
     }
     /// Return an IR type which can represent this C type
-    pub fn as_ir_type(&self) -> IrType {
+    pub fn as_ir_type(&self, target: &Triple) -> IrType {
+        use std::convert::TryInto;
         use Type::*;
 
         match self {
             // Integers
             Bool => types::B1,
             Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_, _) => {
-                let int_size = SIZE_T::from(CHAR_BIT)
+                let int_size = u64::from(target.char_bit())
                     * self
-                        .sizeof()
+                        .sizeof(target)
                         .expect("integers should always have a valid size");
                 IrType::int(int_size.try_into().unwrap_or_else(|_| {
                     panic!(
@@ -485,8 +492,7 @@ impl Type {
 
             // Aggregates
             // arrays and functions decay to pointers
-            Function(_) | Array(_, _) => IrType::int(PTR_SIZE * CHAR_BIT)
-                .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE)),
+            Function(_) | Array(_, _) => Type::ptr_type(target),
             // void cannot be loaded or stored
             _ => types::INVALID,
         }

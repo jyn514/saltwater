@@ -2,6 +2,7 @@ use super::hir::{Metadata, MetadataRef};
 use crate::intern::InternedStr;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
+use target_lexicon::Triple;
 use std::fmt::{self, Formatter};
 pub use struct_ref::{StructRef, StructType};
 
@@ -240,9 +241,9 @@ impl Type {
             _ => false,
         }
     }
-    pub(crate) fn member_offset(&self, member: InternedStr) -> Result<u64, ()> {
+    pub(crate) fn member_offset(&self, member: InternedStr, target: &Triple) -> Result<u64, ()> {
         match self {
-            Type::Struct(stype) => Ok(stype.offset(member)),
+            Type::Struct(stype) => Ok(stype.offset(member, target)),
             Type::Union(_) => Ok(0),
             _ => Err(()),
         }

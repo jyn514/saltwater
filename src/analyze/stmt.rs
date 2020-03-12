@@ -120,7 +120,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
         use super::expr::literal;
         use crate::data::lex::Literal;
 
-        let expr = match self.parse_expr(expr).const_fold() {
+        let expr = match self.parse_expr(expr).const_fold(&self.analyzer.target) {
             Ok(e) => e,
             Err(err) => {
                 self.analyzer.error_handler.push_back(err);

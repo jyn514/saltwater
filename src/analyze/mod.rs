@@ -86,7 +86,7 @@ impl<T: Lexer> Iterator for Analyzer<T> {
 }
 
 impl<I: Lexer> Analyzer<I> {
-    pub fn new(parser: Parser<I>) -> Self {
+    pub fn new(parser: Parser<I>, target: Triple) -> Self {
         Self {
             declarations: parser,
             error_handler: ErrorHandler::new(),
@@ -95,7 +95,7 @@ impl<I: Lexer> Analyzer<I> {
             pending: VecDeque::new(),
             initialized: HashSet::new(),
             // TODO: allow cross-compilation
-            target: Triple::host(),
+            target,
             decl_side_channel: Vec::new(),
         }
     }

@@ -89,6 +89,7 @@ impl TryFrom<u32> for Radix {
 mod tests {
     use crate::analyze::test::analyze;
     use crate::Parser;
+    use target_lexicon::Triple;
 
     #[test]
     fn type_display() {

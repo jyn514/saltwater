@@ -23,6 +23,7 @@ use rcc::{
     link, preprocess, Error, Files, Opt,
 };
 use std::ffi::OsStr;
+use target_lexicon::Triple;
 use tempfile::NamedTempFile;
 
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
@@ -55,6 +56,7 @@ OPTIONS:
         --max-errors <max>   The maximum number of errors to allow before giving up.
                              Use 0 to allow unlimited errors. [default: 10]
     -I, --include <dir>      Add a directory to the local include path (`#include \"file.h\"`)
+        --target  <target>   The target platform to compile to. Allows cross-compilation.
 
 ARGS:
     <file>    The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
@@ -263,6 +265,9 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
                 debug_asm: input.contains("--debug-asm"),
                 debug_ast: input.contains(["-a", "--debug-ast"]),
                 no_link: input.contains(["-c", "--no-link"]),
+                target: dbg!(input
+                    .opt_value_from_str("--target")?
+                    .unwrap_or_else(Triple::host)),
                 #[cfg(feature = "jit")]
                 jit: input.contains("--jit"),
                 max_errors,

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use codespan::FileId;
+use target_lexicon::Triple;
 
 use super::{Lexer, Token};
 use crate::arch::TARGET;
@@ -736,7 +737,7 @@ impl<'a> PreProcessor<'a> {
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
         // TODO: is this unwrap safe? there should only be scalar types in a cpp directive...
         // TODO: should this use the target arch or the host arch?
-        let target = target_lexicon::Triple::host();
+        let target = target_lexicon::HOST;
         match self.cpp_expr()?.truthy(&mut self.error_handler).constexpr(&target)?.data {
             (Literal::Int(i), Type::Bool) => Ok(i != 0),
             _ => unreachable!("bug in const_fold or parser: cpp cond should be boolean"),
@@ -873,7 +874,7 @@ impl<'a> PreProcessor<'a> {
         // TODO: catch expressions that aren't allowed
         // (see https://github.com/jyn514/rcc/issues/5#issuecomment-575339427)
         // TODO: can semantic errors happen here? should we check?
-        Ok(Analyzer::new(parser).parse_expr(expr))
+        Ok(Analyzer::new(parser, Triple::host()).parse_expr(expr))
     }
     /// We saw an `#if`, `#ifdef`, or `#ifndef` token at the start of the line
     /// and want to either take the branch or ignore the tokens within the directive.

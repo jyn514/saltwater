@@ -53,7 +53,7 @@ pub enum DeclarationSpecifier {
     // function qualifiers
     Inline,
     NoReturn,
- 
+
     // storage classes
     Auto,
     Register,
@@ -299,10 +299,44 @@ impl Display for Initializer {
 
 impl Display for DeclarationSpecifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use DeclarationSpecifier::*;
         match self {
-            DeclarationSpecifier::Const => write!(f, "const"),
-            //DeclarationSpecifier::Type(ctype) => write!(f, "{}", ctype),
-            _ => unimplemented!()
+            Static => write!(f, "static"),
+            Extern => write!(f, "extern"),
+            Register => write!(f, "register"),
+            Auto => write!(f, "auto"),
+
+            Const => write!(f, "const"),
+            Volatile => write!(f, "volatile"),
+            Restrict => write!(f, "restrict"),
+            Atomic => write!(f, "_Atomic"),
+            ThreadLocal => write!(f, "_Thread_local"),
+
+            Inline => write!(f, "inline"),
+            NoReturn => write!(f, "_Noreturn"),
+
+            Void => write!(f, "void"),
+            Bool => write!(f, "_Bool"),
+            Char => write!(f, "char"),
+            Short => write!(f, "short"),
+            Int => write!(f, "int"),
+            Long => write!(f, "long"),
+            Float => write!(f, "float"),
+            Double => write!(f, "double"),
+            Signed => write!(f, "signed"),
+            Unsigned => write!(f, "unsigned"),
+            Enum {
+                name: Some(ident), ..
+            } => write!(f, "enum {}", ident),
+            // TODO: maybe print the body too?
+            Enum { name: None, .. } => write!(f, "<anonymous enum>"),
+            Union(spec) => write!(f, "union {}", spec),
+            Struct(spec) => write!(f, "struct {}", spec),
+            Typedef(name) => write!(f, "{}", name),
+
+            Complex => write!(f, "_Complex"),
+            Imaginary => write!(f, "_Imaginary"),
+            VaList => write!(f, "va_list"),
         }
     }
 }

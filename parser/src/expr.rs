@@ -215,7 +215,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         while let Some(ctype) = self.parenthesized_type()? {
             casts.push(ctype);
         }
-        println!("saw all casts: {:?}", casts);
         let mut prefix = self.prefix_expr()?;
         for cast in casts.into_iter().rev() {
             let location = prefix.location.merge(cast.location);
@@ -258,7 +257,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     //
     // this takes the place of `unary_expr` in the yacc grammar
     fn prefix_expr(&mut self) -> SyntaxResult<Expr> {
-        println!("in prefix_expr");
         // this must be an expression since we already consumed all the type casts
         if let Some(paren) = self.match_next(&Token::LeftParen) {
             let mut inner = self.expr()?;
@@ -457,5 +455,16 @@ mod test {
     fn parse_ternary() {
         assert_expr_display("1||2 ? 3||4 : 5", "((1) || (2)) ? ((3) || (4)) : (5)");
         assert_expr_display("1||2 ? 3?4:5 : 6", "((1) || (2)) ? ((3) ? (4) : (5)) : (6)");
+    }
+    #[test]
+    fn parse_casts() {
+        assert_expr_display(
+            "(int)(char)(double)(_Bool)0",
+            "(int)((char)((double)((_Bool)(0))))",
+        );
+        assert_expr_display("(int)&(char)0", "(int)(&((char)(0)))");
+        assert_expr_display("sizeof 1 + 2", "(sizeof(1)) + (2)");
+        // sizeof(int) takes precedence over (int)1
+        assert_expr_display("sizeof (int)1 + 2", "sizeof(int)");
     }
 }

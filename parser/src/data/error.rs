@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use thiserror::Error;
 
 use super::{
-    lex::{Token, Keyword},
+    lex::{Keyword, Token},
     prelude::{Location, LocationTrait},
     Expr, Locatable,
 };

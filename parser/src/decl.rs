@@ -1,38 +1,56 @@
-use std::convert::TryFrom;
 use super::*;
-use crate::data::ast::{Declarator, Declaration, DeclarationSpecifier, TypeName};
+use crate::data::ast::{Declaration, DeclarationSpecifier, Declarator, TypeName};
+use std::convert::{TryFrom, TryInto};
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
     pub fn declaration(&mut self) -> SyntaxResult<Locatable<Declaration>> {
         unimplemented!()
     }
+    // expects to be followed by a ')'
     pub fn type_name(&mut self) -> SyntaxResult<Locatable<TypeName>> {
-        let mut specifiers = Vec::new();
-        while let Some(&Token::Keyword(keyword)) = self.peek_token() {
-            let location = self.next_token().unwrap().location;
-            if !keyword.is_decl_specifier() {
-                let err = SyntaxError::ExpectedDeclSpecifier(keyword);
-                return Err(location.with(err));
-            }
-            // make a new locatable instead of using next_token() so we don't have to unwrap
-            specifiers.push(Locatable::new(keyword, location));
-        }
+        let specifiers = self.specifiers()?;
         let specifier_locations = specifiers.iter().fold(None, |all_locs: Option<Location>, spec| {
             all_locs.map_or(Some(spec.location), |existing| Some(existing.merge(spec.location)))
         });
-        if let Some(token) = self.match_next(&Token::RightParen) {
+        let specifiers: Vec<_> = specifiers.into_iter().map(|s| s.data).collect();
+        if self.peek_token() == Some(&Token::RightParen) {
             return if specifiers.is_empty() {
-                Err(token.location.with(SyntaxError::ExpectedType))
+                Err(self.next_location().with(SyntaxError::ExpectedType))
             } else {
-                let location = specifier_locations.expect("just checked there was at least 1 specifier").merge(token.location);
-                unimplemented!("specifiers")
-                //Ok(location.with(TypeName { specifiers, declarator: None }))
+                let location = specifier_locations.expect("just checked there was at least 1 specifier");
+                Ok(location.with(TypeName { specifiers, declarator: None }))
             };
         }
         let declarator = self.declarator()?;
         let location = specifier_locations.map_or(declarator.location, |loc| loc.merge(declarator.location));
-        let type_name = TypeName { specifiers: unimplemented!("specifiers"), declarator: Some(declarator.data) };
+        let type_name = TypeName { specifiers, declarator: Some(declarator.data) };
         Ok(Locatable::new(type_name, location))
+    }
+    fn specifiers(&mut self) -> SyntaxResult<Vec<Locatable<DeclarationSpecifier>>> {
+        let mut specifiers = Vec::new();
+        while let Some(&Token::Keyword(keyword)) = self.peek_token() {
+            let spec = match keyword {
+                Keyword::Struct | Keyword::Union => self.struct_specifier()?,
+                Keyword::Enum => self.enum_specifier()?,
+                other if !other.is_decl_specifier() => {
+                    let err = SyntaxError::ExpectedDeclSpecifier(keyword);
+                    let location = self.next_token().unwrap().location;
+                    return Err(location.with(err));
+                }
+                _ => {
+                    let location = self.next_token().unwrap().location;
+                    Locatable::new(keyword.try_into().unwrap(), location)
+                }
+            };
+            specifiers.push(spec);
+        }
+        Ok(specifiers)
+    }
+    fn struct_specifier(&mut self) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
+        unimplemented!("struct/union specifiers");
+    }
+    fn enum_specifier(&mut self) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
+        unimplemented!("enum specifiers");
     }
     fn declarator(&mut self) -> SyntaxResult<Locatable<Declarator>> {
         unimplemented!("declarator")
@@ -41,9 +59,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
 impl TryFrom<Keyword> for DeclarationSpecifier {
     type Error = ();
+    #[rustfmt::skip]
     fn try_from(k: Keyword) -> Result<DeclarationSpecifier, ()> {
-        use Keyword::*;
         use DeclarationSpecifier::*;
+        use Keyword::*;
 
         /*
         if let Ok(t) = TypeSpecifier::try_from(k) {

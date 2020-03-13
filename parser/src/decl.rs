@@ -9,21 +9,31 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // expects to be followed by a ')'
     pub fn type_name(&mut self) -> SyntaxResult<Locatable<TypeName>> {
         let specifiers = self.specifiers()?;
-        let specifier_locations = specifiers.iter().fold(None, |all_locs: Option<Location>, spec| {
-            all_locs.map_or(Some(spec.location), |existing| Some(existing.merge(spec.location)))
-        });
+        let fold = |all_locs: Option<Location>, spec: &Locatable<_>| {
+            all_locs.map_or(Some(spec.location), |existing| {
+                Some(existing.merge(spec.location))
+            })
+        };
+        let specifier_locations = specifiers.iter().fold(None, fold);
         let specifiers: Vec<_> = specifiers.into_iter().map(|s| s.data).collect();
         if self.peek_token() == Some(&Token::RightParen) {
             return if specifiers.is_empty() {
                 Err(self.next_location().with(SyntaxError::ExpectedType))
             } else {
-                let location = specifier_locations.expect("just checked there was at least 1 specifier");
-                Ok(location.with(TypeName { specifiers, declarator: None }))
+                let location = specifier_locations.expect("just checked >= 1 specifier");
+                Ok(location.with(TypeName {
+                    specifiers,
+                    declarator: None,
+                }))
             };
         }
         let declarator = self.declarator()?;
-        let location = specifier_locations.map_or(declarator.location, |loc| loc.merge(declarator.location));
-        let type_name = TypeName { specifiers, declarator: Some(declarator.data) };
+        let location =
+            specifier_locations.map_or(declarator.location, |loc| loc.merge(declarator.location));
+        let type_name = TypeName {
+            specifiers,
+            declarator: Some(declarator.data),
+        };
         Ok(Locatable::new(type_name, location))
     }
     fn specifiers(&mut self) -> SyntaxResult<Vec<Locatable<DeclarationSpecifier>>> {

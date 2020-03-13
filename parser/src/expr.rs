@@ -211,13 +211,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // this serves the role of `cast_expr` in the yacc grammar (http://www.quut.com/c/ANSI-C-grammar-y.html)
     fn unary_expr(&mut self) -> SyntaxResult<Expr> {
         let mut casts = Vec::new();
-        loop {
-            // slight ambiguity here between '(' expr ')' and '(' type_name ')'
-            if let Some(ctype) = self.parenthesized_type()? {
-                casts.push(ctype);
-            } else {
-                break;
-            }
+        // slight ambiguity here between '(' expr ')' and '(' type_name ')'
+        while let Some(ctype) = self.parenthesized_type()? {
+            casts.push(ctype);
         }
         println!("saw all casts: {:?}", casts);
         let mut prefix = self.prefix_expr()?;

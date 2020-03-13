@@ -209,11 +209,7 @@ pub enum Token {
 impl PartialOrd for DefaultLocation {
     /// NOTE: this only compares the start of the spans, it ignores the end
     fn partial_cmp(&self, other: &DefaultLocation) -> Option<Ordering> {
-        if self.file == other.file {
-            Some(self.span.cmp(&other.span))
-        } else {
-            None
-        }
+        Some(self.span.cmp(&other.span))
     }
 }
 

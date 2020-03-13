@@ -391,10 +391,7 @@ impl Lexer {
     }
     // returns None if there are no digits at the current position
     fn parse_int(
-        &mut self,
-        mut acc: u64,
-        radix: u32,
-        buf: &mut String,
+        &mut self, mut acc: u64, radix: u32, buf: &mut String,
     ) -> Result<Option<u64>, String> {
         let parse_digit = |c: char| match c.to_digit(16) {
             None => Ok(None),

@@ -34,7 +34,7 @@ static ERRORS: AtomicUsize = AtomicUsize::new(0);
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 
 const HELP: &str = concat!(
-    env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"), "\n",
+    env!("CARGO_PKG_NAME"), " ", env!("RCC_GIT_REV"), "\n",
     "Joshua Nelson <jyn514@gmail.com>\n",
     env!("CARGO_PKG_DESCRIPTION"), "\n",
     "Homepage: ", env!("CARGO_PKG_REPOSITORY"), "\n",
@@ -224,7 +224,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         std::process::exit(1);
     }
     if input.contains(["-V", "--version"]) {
-        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+        println!("{} {}", env!("CARGO_PKG_NAME"), env!("RCC_GIT_REV"));
         std::process::exit(0);
     }
     if input.contains("--print-type-sizes") {

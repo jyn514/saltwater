@@ -188,6 +188,9 @@ pub enum SyntaxError {
     #[error("empty type name")]
     ExpectedType,
 
+    #[error("expected '(', '*', or variable, got '{0}'")]
+    ExpectedDeclarator(Token),
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

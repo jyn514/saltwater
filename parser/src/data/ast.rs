@@ -145,7 +145,10 @@ pub enum Initializer {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Declarator {
-    Pointer(Box<Declarator>),
+    Pointer {
+        to: Box<Declarator>,
+        qualifiers: Vec<DeclarationSpecifier>,
+    },
     Array {
         of: Box<Declarator>,
         size: Option<Box<Expr>>,
@@ -345,7 +348,7 @@ impl Declarator {
     fn print_pre(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Declarator::*;
         match self {
-            Pointer(inner) | Array { of: inner, .. } => inner.print_pre(f),
+            Pointer { to: inner, .. } | Array { of: inner, .. } => inner.print_pre(f),
             //Function(ftype) => write!(f, "{}", ftype.return_type),
             Id(_) => Ok(()),
         }
@@ -353,12 +356,12 @@ impl Declarator {
     fn print_mid(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
         use Declarator::*;
         match self {
-            Pointer(inner) => {
-                inner.print_mid(None, f)?;
+            Pointer { to, .. } => {
+                to.print_mid(None, f)?;
                 let name = name.unwrap_or_default();
-                match **inner {
-                    Array { .. } | Pointer(_) => write!(f, "(*{})", name),
-                    _ => write!(f, "*{}", inner),
+                match **to {
+                    Array { .. } | Pointer { .. } => write!(f, "(*{})", name),
+                    _ => write!(f, "*{}", name),
                 }
             }
             Array { of, .. } => of.print_mid(name, f),
@@ -373,7 +376,7 @@ impl Declarator {
     fn print_post(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Declarator::*;
         match self {
-            Pointer(to) => to.print_post(f),
+            Pointer { to, .. } => to.print_post(f),
             // TODO: maybe print the array size too?
             Array { of, size } => {
                 write!(f, "[")?;

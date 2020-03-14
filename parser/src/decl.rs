@@ -63,7 +63,90 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         unimplemented!("enum specifiers");
     }
     fn declarator(&mut self) -> SyntaxResult<Locatable<Declarator>> {
-        unimplemented!("declarator")
+        let mut pointers = Vec::new();
+        while let Some(Locatable { mut location, .. }) = self.match_next(&Token::Star) {
+            let mut qualifiers = Vec::new();
+            // *const volatile p
+            while let Some(Locatable {
+                location: keyword_loc,
+                data: Token::Keyword(keyword),
+            }) = self.match_any(&[
+                &Token::Keyword(Keyword::Const),
+                &Token::Keyword(Keyword::Volatile),
+                &Token::Keyword(Keyword::Restrict),
+                &Token::Keyword(Keyword::Atomic),
+                &Token::Keyword(Keyword::ThreadLocal),
+            ]) {
+                location = location.merge(keyword_loc);
+                qualifiers.push(keyword.try_into().unwrap());
+            }
+            pointers.push(Locatable::new(qualifiers, location));
+        }
+        let Locatable {
+            data: mut decl,
+            mut location,
+        } = self.direct_declarator()?;
+        for pointer in pointers.into_iter().rev() {
+            decl = Declarator::Pointer {
+                to: Box::new(decl),
+                qualifiers: pointer.data,
+            };
+            location = pointer.location.merge(location);
+        }
+        Ok(Locatable::new(decl, location))
+    }
+    fn direct_declarator(&mut self) -> SyntaxResult<Locatable<Declarator>> {
+        let next = match self.next_token() {
+            Some(x) => x,
+            None => {
+                return Err(Locatable::new(
+                    SyntaxError::EndOfFile("direct declarator"),
+                    self.last_location,
+                ))
+            }
+        };
+        match next.data {
+            Token::Id(id) => Ok(Locatable::new(Declarator::Id(id), next.location)),
+            // []
+            Token::LeftBracket => {
+                let (size, location) = if let Some(right) = self.match_next(&Token::RightBracket) {
+                    (None, next.location.merge(right.location))
+                } else {
+                    let expr = self.expr()?;
+                    let right_loc = self.expect(Token::RightBracket)?.location;
+                    let loc = next.location.merge(expr.location).merge(right_loc);
+                    (Some(Box::new(expr)), loc)
+                };
+                let decl = Declarator::Array {
+                    of: unimplemented!("need to rewrite this"),
+                    size,
+                };
+                Ok(Locatable::new(decl, location))
+            }
+            Token::LeftParen => {
+                // if the next token is a pointer, id, or `(`, it must be a parenthesized declarator
+                // e.g. (*), (p)
+                // otherwise, assume it's a function declaration
+                // this allows such horrors as `int f(());` and `int f((()))`.
+                let inner = match self.peek_token() {
+                    Some(Token::Star) | Some(Token::Id(_)) | Some(Token::LeftParen) => {
+                        self.declarator()
+                    }
+                    // NOTE: parameter_type_list returns a declarator, not just a list of params
+                    _ => self.parameter_type_list(),
+                }?;
+                let right_loc = self.expect(Token::RightParen)?.location;
+                let loc = next.location.merge(inner.location).merge(right_loc);
+                Ok(Locatable::new(inner.data, loc))
+            }
+            other => Err(Locatable::new(
+                SyntaxError::ExpectedDeclarator(other),
+                next.location,
+            )),
+        }
+    }
+    fn parameter_type_list(&mut self) -> SyntaxResult<Locatable<Declarator>> {
+        unimplemented!("function declarations")
     }
 }
 

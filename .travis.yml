@@ -1,22 +1,15 @@
 language: rust
 
-branches:
-    only:
-        - master
-
 jobs:
     fast_finish: true
     include:
         - rust: stable
-          branches:
-              exclude:
-                  - master
           install:
             - rustup component add rustfmt
             - rustup component add clippy
 
           script:
-          - tests/pre-commit.sh
+            - tests/pre-commit.sh
           # upload coverage statistics to codecov.io
           env: RUSTFLAGS="-C link-dead-code"
           addons:
@@ -45,12 +38,11 @@ jobs:
           script: cargo check
 
         - rust: beta
-          # sometimes rustfmt changes its mind about formatting between releases
-          script: cargo test
+          script: cargo check
 
         - rust: nightly
           branches:
-              exclude:
+              include:
                   - master
           # afl needs nightly
           script:

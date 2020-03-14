@@ -3,6 +3,37 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2020-03-14
+
+### Added
+
+- A new `PreProcessorBuilder` API has been exposed. This API allows you to construct a preprocessor without passing in every option explicitly, which gives a much more stable API (`PreProcessor::new` changes its signature regularly).
+
+### Changed
+
+- @pythondude325 has written a crate ([`hexponent`](https://crates.io/crates/hexponent)) for parsing hexadecimal floats!
+This crate has replaced hexf.
+As a result, rcc no longer panics on `0x.000000000000000000102`.
+
+- `rcc` now exports the `codespan` library.
+If you need to use it downstream, you can use the version exported by rcc.
+This is of special importance because the `PreProcessor` takes a `FileId` defined by codespan.
+
+- `rcc` no longer errors on the following code ([#311](https://github.com/jyn514/rcc/issues/311)):
+```c
+static int f();
+int f();
+```
+
+- The `LexError::Generic` field has been removed.
+All lex errors now have a specific cause that can be inspected at runtime.
+Future errors will also have a specific cause.
+
+### Fixed
+
+- The lexer no longer goes into an infinite loop on `//` without a following newline at the end of a file ([#323](https://github.com/jyn514/rcc/issues/323))
+- @Byter09 fixed a crash on array sizes that overflowed ([#327](https://github.com/jyn514/rcc/pull/327))
+
 ## [0.7.0] - 2020-03-06
 
 ### Added

@@ -72,3 +72,5 @@ overflow-checks = false
 
 [package.metadata.docs.rs]
 all-features = true
+# opt-out of non-default targets
+targets = []

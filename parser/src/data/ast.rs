@@ -315,7 +315,7 @@ impl Display for Declaration {
         for decl in &self.declarators {
             write!(f, "{}", decl.data)?;
         }
-        Ok(())
+        write!(f, ";")
     }
 }
 
@@ -426,16 +426,15 @@ impl DeclaratorType {
                     write!(qs, " {}", q)?
                 }
                 let name = name.unwrap_or_default();
+                let pointer = if had_qual && name != InternedStr::default() {
+                    format!("*{} {}", qs, name)
+                } else {
+                    format!("*{}{}", qs, name)
+                };
                 match **to {
-                    Array { .. } | Function { .. } => write!(f, "(*{}{})", qs, name),
+                    Array { .. } | Function { .. } => write!(f, "({})", pointer),
                     End => write!(f, "*{} {}", qs, name),
-                    Pointer { .. } => {
-                        if had_qual && name != InternedStr::default() {
-                            write!(f, "*{} {}", qs, name)
-                        } else {
-                            write!(f, "*{}{}", qs, name)
-                        }
-                    }
+                    Pointer { .. } => write!(f, "{}", pointer),
                 }
             }
             Array { of, .. } => of.print_mid(name, f),

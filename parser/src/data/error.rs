@@ -186,11 +186,14 @@ pub enum SyntaxError {
     #[error("expected declaration specifier, got keyword '{0}'")]
     ExpectedDeclSpecifier(Keyword),
 
+    #[error("expected declarator in declaration")]
+    ExpectedDeclarator,
+
     #[error("empty type name")]
     ExpectedType,
 
     #[error("expected '(', '*', or variable, got '{0}'")]
-    ExpectedDeclarator(Token),
+    ExpectedDeclaratorStart(Token),
 
     #[error("only functions can have a function body (got {0})")]
     NotAFunction(ast::InitDeclarator),

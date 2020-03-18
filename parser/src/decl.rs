@@ -120,17 +120,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if self.match_next(&Token::EQUAL).is_some() {
             unimplemented!("initializers");
         }
-        /*
-        match decl {
-            Some(Locatable {
-                declarator, location
-            }) => Ok(Locatable::new(InitDeclarator {
-                declarator, init: None
-            }, location),
-            None => return Err(self.last_location()
-        }
-        */
-        unimplemented!("init declarator")
+        // TODO: this is wrong
+        let location = self.last_location;
+        let decl = decl.ok_or_else(|| location.with(SyntaxError::ExpectedDeclarator))?;
+        Ok(decl.map(|d| ast::InitDeclarator {
+            declarator: InternalDeclarator::parse_declarator(d),
+            init: None, // lol
+        }))
     }
 
     fn function_body(&mut self, func: Locatable<TypeName>) -> SyntaxResult<Locatable<ExternalDeclaration>> {

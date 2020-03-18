@@ -1,5 +1,6 @@
 use super::*;
-use crate::data::ast::{Declaration, DeclarationSpecifier, Declarator, Expr, TypeName};
+use crate::data::ast::{self, Declaration, DeclarationSpecifier, Declarator, Expr, ExternalDeclaration, TypeName};
+use crate::data::lex::LocationTrait;
 use std::convert::{TryFrom, TryInto};
 
 #[derive(Debug)]
@@ -18,8 +19,43 @@ struct InternalDeclarator {
 }
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
-    pub fn declaration(&mut self) -> SyntaxResult<Locatable<Declaration>> {
-        unimplemented!()
+    /// external_declaration
+    /// : function_definition
+    /// | declaration
+    /// ;
+    /// 
+    /// declaration
+	/// : declaration_specifiers ';'
+	/// | declaration_specifiers init_declarator_list ';'
+	/// ;
+    pub fn declaration(&mut self) -> SyntaxResult<Locatable<ExternalDeclaration>> {
+        let (specifiers, specifier_locations) = self.specifiers()?;
+        // TODO: allow `int;`
+        let declarator = self.init_declarator()?;
+        let mut location = declarator.location.maybe_merge(specifier_locations);
+
+        if let Some(token) = self.match_next(&Token::LeftBrace) {
+            if !declarator.data.declarator.is_function() {
+                return Err(location.with(SyntaxError::NotAFunction(declarator.data)))
+            } else if let Some(init) = declarator.data.init {
+                return Err(location.with(SyntaxError::FunctionInitializer(init)));
+            }
+            let ctype = TypeName { specifiers, declarator: declarator.data.declarator };
+            let func = Locatable::new(ctype, token.location.merge(location));
+            return self.function_body(func);
+        }
+        let mut decls = vec![declarator];
+        while self.match_next(&Token::Semicolon).is_none() {
+            self.expect(Token::Comma)?;
+            let decl = self.init_declarator()?;
+            location = location.merge(decl.location);
+            decls.push(decl);
+        }
+        let declaration = Declaration {
+            specifiers,
+            declarators: decls,
+        };
+        Ok(Locatable::new(ExternalDeclaration::Declaration(declaration), location))
     }
     // expects to be followed by a ')'
     pub fn type_name(&mut self) -> SyntaxResult<Locatable<TypeName>> {
@@ -78,6 +114,29 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn enum_specifier(&mut self) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
         unimplemented!("enum specifiers");
     }
+
+    fn init_declarator(&mut self) -> SyntaxResult<Locatable<ast::InitDeclarator>> {
+        let decl = self.declarator(false)?;
+        if self.match_next(&Token::EQUAL).is_some() {
+            unimplemented!("initializers");
+        }
+        /*
+        match decl {
+            Some(Locatable {
+                declarator, location
+            }) => Ok(Locatable::new(InitDeclarator {
+                declarator, init: None
+            }, location),
+            None => return Err(self.last_location()
+        }
+        */
+        unimplemented!("init declarator")
+    }
+
+    fn function_body(&mut self, func: Locatable<TypeName>) -> SyntaxResult<Locatable<ExternalDeclaration>> {
+        unimplemented!("function body")
+    }
+
     fn merge_decls(current: Locatable<InternalDeclaratorType>, next: Option<Locatable<InternalDeclarator>>) -> Locatable<InternalDeclarator> {
         if let Some(next) = next {
             let location = current.location.merge(next.location);

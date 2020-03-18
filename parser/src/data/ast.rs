@@ -5,11 +5,13 @@ use crate::intern::InternedStr;
 
 pub type Program = Vec<Declaration>;
 
+#[derive(Clone, Debug)]
 pub enum ExternalDeclaration {
     Function(FunctionDefinition),
     Declaration(Declaration),
 }
 
+#[derive(Clone, Debug)]
 pub struct FunctionDefinition {
     specifiers: Vec<DeclarationSpecifier>,
     // TODO: maybe support K&R C?
@@ -127,14 +129,14 @@ pub struct StructSpecifier {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Declaration {
-    specifiers: Vec<DeclarationSpecifier>,
-    declarators: Vec<InitDeclarator>,
+    pub specifiers: Vec<DeclarationSpecifier>,
+    pub declarators: Vec<Locatable<InitDeclarator>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct InitDeclarator {
-    init: Option<Initializer>,
-    declarator: Declarator,
+    pub init: Option<Initializer>,
+    pub declarator: Declarator,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -258,6 +260,15 @@ impl Display for TypeSpecifier {
 }
 */
 
+impl Declarator {
+    pub(crate) fn is_function(&self) -> bool {
+        match self.decl {
+            DeclaratorType::Function { .. } => true,
+            _ => false,
+        }
+    }
+}
+
 impl Display for StructSpecifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(ident) = self.name {
@@ -275,13 +286,34 @@ impl Display for StructSpecifier {
     }
 }
 
+impl Display for ExternalDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ExternalDeclaration::Declaration(decl) => write!(f, "{}", decl),
+            ExternalDeclaration::Function(func) => write!(f, "{}", func),
+        }
+    }
+}
+
+impl Display for FunctionDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for spec in &self.specifiers {
+            write!(f, "{} ", spec)?;
+        }
+        write!(f, "{}", self.declarator)?;
+        write!(f, "{{")?;
+        unimplemented!("printing function body");
+        //write!(f, "}}")?;
+    }
+}
+
 impl Display for Declaration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for spec in &self.specifiers {
             write!(f, "{} ", spec)?;
         }
         for decl in &self.declarators {
-            write!(f, "{}", decl)?;
+            write!(f, "{}", decl.data)?;
         }
         Ok(())
     }

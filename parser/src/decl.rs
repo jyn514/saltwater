@@ -566,13 +566,17 @@ impl InternalDeclarator {
                 }
             }
         }
-        //let mut current = Declarator::Id(get_id(&mut self));
+        let mut id = None;
         let mut current = Declarator::End;
+        //let mut current = Declarator::End;
         //let current = self.current;
         let mut declarator = Some(self);
         while let Some(decl) = declarator {
             current = match decl.current {
-                Id(id) => Declarator::Id { id, next: Box::new(current) },
+                Id(i) => {
+                    id = Some(i);
+                    current //Declarator::Id { id, next: Box::new(current) },
+                }
                 Pointer { qualifiers } => Declarator::Pointer { to: Box::new(current), qualifiers },
                 Array { size } => Declarator::Array { of: Box::new(current), size },
                 Function{ params, varargs } => Declarator::Function {

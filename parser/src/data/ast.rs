@@ -147,7 +147,7 @@ pub enum Initializer {
 pub enum Declarator {
     // No more declarator, e.g. for abstract params
     End,
-    Id { id: InternedStr, next: Box<Declarator> },
+    //Id(InternedStr),
     Pointer {
         to: Box<Declarator>,
         qualifiers: Vec<DeclarationSpecifier>,
@@ -357,18 +357,19 @@ impl Declarator {
         match self {
             Pointer { to: inner, .. } | Array { of: inner, .. } => inner.print_pre(f),
             Function{ return_type, .. } => write!(f, "{}", return_type),
-            Id { next, .. } => next.print_pre(f),
+            //Id { next, .. } => next.print_pre(f),
             End => Ok(()),
         }
     }
-    fn print_mid(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn print_mid(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
         use Declarator::*;
         use std::fmt::Write;
 
         //println!("in print_mid");
         match self {
             Pointer { to, qualifiers } => {
-                //let name = name.unwrap_or_default();
+                to.print_mid(None, f)?;
+                let name = name.unwrap_or_default();
                 let mut qs = String::new();
                 for q in qualifiers {
                     write!(qs, "{} ", q)?
@@ -376,23 +377,23 @@ impl Declarator {
                 match **to {
                     Array { .. } | Function { .. } => {
                         //write!(f, "(*{}{})", qs);
-                        write!(f, "(*{}", qs)?;
-                        to.print_mid(f)?;
-                        write!(f, ")")
+                        write!(f, "(*{}{})", qs, name)
                     }
                     _ => {
-                        write!(f, "*{}", qs)?;
-                        to.print_mid(f)
+                        write!(f, "*{}{}", qs, name)
+                        //to.print_mid(f)
                     }
                 }
                 //to.print_mid(None, f)?;
             }
-            Array { of, .. } => of.print_mid(f),
+            Array { of, .. } => of.print_mid(name, f),
+            /*
             Id { id, next } => {
                 write!(f, "{}", id)?;
                 next.print_mid(f)
             }
-            Function { .. } | End => Ok(()),
+            */
+            End | Function { .. } => Ok(()),
             /*
             _ => {
                 if let Some(name) = name {
@@ -431,7 +432,7 @@ impl Declarator {
                 write!(f, ")")
             }
             //Id { id, .. } => write!(f, "{}", id),
-            Id { next, .. } => next.print_post(f),
+            //Id { next, .. } => next.print_post(f),
             End => Ok(()),
         }
     }
@@ -439,7 +440,7 @@ impl Declarator {
 impl Display for Declarator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.print_pre(f)?;
-        self.print_mid(f)?;
+        self.print_mid(None, f)?;
         self.print_post(f)
         /*
         match self {

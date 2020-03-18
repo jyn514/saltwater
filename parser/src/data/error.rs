@@ -5,6 +5,7 @@ use super::{
     lex::{Keyword, Token},
     prelude::{Location, LocationTrait},
     Expr, Locatable,
+    ast,
 };
 use crate::intern::InternedStr;
 
@@ -190,6 +191,12 @@ pub enum SyntaxError {
 
     #[error("expected '(', '*', or variable, got '{0}'")]
     ExpectedDeclarator(Token),
+
+    #[error("only functions can have a function body (got {0})")]
+    NotAFunction(ast::InitDeclarator),
+
+    #[error("functions cannot be initialized (got {0})")]
+    FunctionInitializer(ast::Initializer),
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

@@ -23,6 +23,11 @@ pub struct Span {
 pub trait LocationTrait: Copy + std::fmt::Debug + PartialEq + Sized {
     fn merge<O: Borrow<Self>>(&self, other: O) -> Self;
 
+    /// WARNING: the location for `original` will be on the _left_, not on the right
+    fn maybe_merge<O: Borrow<Self>>(&self, original: Option<O>) -> Self {
+        original.map_or(*self, |l| l.borrow().merge(self))
+    }
+
     fn with<T>(self, data: T) -> Locatable<T, Self> {
         Locatable {
             data,

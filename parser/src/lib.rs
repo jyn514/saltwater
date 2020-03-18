@@ -15,7 +15,7 @@ use std::mem;
 use std::rc::Rc;
 
 pub use crate::data::prelude::*;
-use crate::data::{ast::Declaration, lex::Keyword, Scope};
+use crate::data::{ast::ExternalDeclaration, lex::Keyword, Scope};
 pub use crate::lex::Lexer;
 
 type Lexeme<L = Location> = CompileResult<Locatable<Token, L>, L>;
@@ -52,7 +52,7 @@ pub struct Parser<I: Iterator<Item = Lexeme<L>>, L: LocationTrait = Location> {
     /// VecDeque supports pop_front with reasonable efficiency
     /// this is useful because there could be multiple declarators
     /// in a single declaration; e.g. `int a, b, c;`
-    pending: VecDeque<Locatable<Declaration, L>>,
+    pending: VecDeque<Locatable<ExternalDeclaration, L>>,
     /// in case we get to the end of the file and want to show an error
     last_location: L,
     /// the last token we saw from the Lexer. None if we haven't looked ahead.
@@ -97,7 +97,7 @@ where
 }
 
 impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
-    type Item = CompileResult<Locatable<Declaration>>;
+    type Item = CompileResult<Locatable<ExternalDeclaration>>;
     /// translation_unit
     /// : external_declaration
     /// | translation_unit external_declaration
@@ -376,7 +376,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn lex_error(&mut self, err: CompileError) {
         self.error_handler.push_back(err);
     }
-    pub fn collect_results(&mut self) -> (Vec<Locatable<Declaration>>, Vec<CompileError>) {
+    pub fn collect_results(&mut self) -> (Vec<Locatable<ExternalDeclaration>>, Vec<CompileError>) {
         let mut decls = Vec::new();
         let mut errs = Vec::new();
         for result in self {
@@ -422,11 +422,11 @@ impl Token {
 #[cfg(test)]
 pub(crate) mod test {
     use super::Parser;
-    use crate::data::ast::Declaration;
+    use crate::data::ast::ExternalDeclaration;
     use crate::data::prelude::*;
     use crate::lex::Lexer;
 
-    pub(crate) type ParseType = CompileResult<Locatable<Declaration>>;
+    pub(crate) type ParseType = CompileResult<Locatable<ExternalDeclaration>>;
     pub(crate) fn parse(input: &str) -> Option<ParseType> {
         let mut all = parse_all(input);
         match all.len() {

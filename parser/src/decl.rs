@@ -23,14 +23,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     // expects to be followed by a ')'
     pub fn type_name(&mut self) -> SyntaxResult<Locatable<TypeName>> {
-        let specifiers = self.specifiers()?;
-        let fold = |all_locs: Option<Location>, spec: &Locatable<_>| {
-            all_locs.map_or(Some(spec.location), |existing| {
-                Some(existing.merge(spec.location))
-            })
-        };
-        let specifier_locations = specifiers.iter().fold(None, fold);
-        let specifiers: Vec<_> = specifiers.into_iter().map(|s| s.data).collect();
+        let (specifiers, specifier_locations) = self.specifiers()?;
         if self.peek_token() == Some(&Token::RightParen) {
             return if specifiers.is_empty() {
                 Err(self.next_location().with(SyntaxError::ExpectedType))
@@ -55,8 +48,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
         Ok(Locatable::new(type_name, location))
     }
-    fn specifiers(&mut self) -> SyntaxResult<Vec<Locatable<DeclarationSpecifier>>> {
+    fn specifiers(&mut self) -> SyntaxResult<(Vec<DeclarationSpecifier>, Option<Location>)> {
         let mut specifiers = Vec::new();
+        let mut all_locs = None;
         while let Some(&Token::Keyword(keyword)) = self.peek_token() {
             let spec = match keyword {
                 Keyword::Struct | Keyword::Union => self.struct_specifier()?,
@@ -71,9 +65,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Locatable::new(keyword.try_into().unwrap(), location)
                 }
             };
-            specifiers.push(spec);
+            all_locs = all_locs.map_or(Some(spec.location), |existing: Location| {
+                Some(existing.merge(spec.location))
+            });
+            specifiers.push(spec.data);
         }
-        Ok(specifiers)
+        Ok((specifiers, all_locs))
     }
     fn struct_specifier(&mut self) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
         unimplemented!("struct/union specifiers");

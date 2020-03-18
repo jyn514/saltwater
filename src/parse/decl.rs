@@ -1662,6 +1662,7 @@ impl Declarator {
     ) -> RecoverableResult<(Option<Locatable<InternedStr>>, Type), Vec<Locatable<SemanticError>>>
     {
         use DeclaratorType::*;
+        dbg!(&self);
         let (mut declarator, mut identifier) = (Some(self), None);
         let mut pending_errs = vec![];
         while let Some(decl) = declarator {

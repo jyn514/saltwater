@@ -3,7 +3,7 @@ use crate::data::ast::{Declaration, DeclarationSpecifier, Declarator, Expr, Type
 use std::convert::{TryFrom, TryInto};
 
 #[derive(Debug)]
-enum DeclaratorType {
+enum InternalDeclaratorType {
     Id(InternedStr),
     Pointer { qualifiers: Vec<DeclarationSpecifier> },
     Array { size: Option<Box<Expr>> },
@@ -13,7 +13,7 @@ enum DeclaratorType {
 
 #[derive(Debug)]
 struct InternalDeclarator {
-    current: DeclaratorType,
+    current: InternalDeclaratorType,
     next: Option<Box<InternalDeclarator>>,
 }
 
@@ -79,7 +79,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn enum_specifier(&mut self) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
         unimplemented!("enum specifiers");
     }
-    fn merge_decls(current: Locatable<DeclaratorType>, next: Option<Locatable<InternalDeclarator>>) -> Locatable<InternalDeclarator> {
+    fn merge_decls(current: Locatable<InternalDeclaratorType>, next: Option<Locatable<InternalDeclarator>>) -> Locatable<InternalDeclarator> {
         if let Some(next) = next {
             let location = current.location.merge(next.location);
             let decl = InternalDeclarator {
@@ -118,7 +118,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 location = location.merge(keyword_loc);
                 qualifiers.push(keyword.try_into().unwrap());
             }
-            let current = Locatable::new(DeclaratorType::Pointer{ qualifiers }, location);
+            let current = Locatable::new(InternalDeclaratorType::Pointer{ qualifiers }, location);
             pointer_decls.push(current);
             //decl = Some(Self::merge_decls(current, decl));
         }
@@ -351,7 +351,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Some(self.next_token().unwrap().map(|data| {
                     match data {
                         Token::Id(id) => InternalDeclarator {
-                            current: DeclaratorType::Id(id),
+                            current: InternalDeclaratorType::Id(id),
                             next: None,
                         },
                         _ => panic!("peek() should always return the same thing as next()"),
@@ -421,11 +421,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Token::LeftBracket => {
                     self.expect(Token::LeftBracket).unwrap();
                     if let Some(token) = self.match_next(&Token::RightBracket) {
-                        Locatable::new(DeclaratorType::Array { size: None }, token.location)
+                        Locatable::new(InternalDeclaratorType::Array { size: None }, token.location)
                     } else {
                         let expr = self.expr()?;
                         let location = self.expect(Token::RightBracket)?.location;
-                        Locatable::new(DeclaratorType::Array { size: Some(Box::new(expr)) }, location)
+                        Locatable::new(InternalDeclaratorType::Array { size: Some(Box::new(expr)) }, location)
                     }
                 }
                 Token::LeftParen => self.parameter_type_list()?,
@@ -456,13 +456,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      ;
      *
      */
-     fn parameter_type_list(&mut self) -> SyntaxResult<Locatable<DeclaratorType>> {
+     fn parameter_type_list(&mut self) -> SyntaxResult<Locatable<InternalDeclaratorType>> {
         let location = self.expect(Token::LeftParen)
             .expect("parameter_type_list should only be called with '(' as the next token")
             .location;
         let mut params = vec![];
         if let Some(right_paren) = self.match_next(&Token::RightParen) {
-            return Ok(Locatable::new(DeclaratorType::Function {
+            return Ok(Locatable::new(InternalDeclaratorType::Function {
                 params,
                 varargs: false,
             }, location.merge(right_paren.location)));
@@ -470,7 +470,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         loop {
             if let Some(locatable) = self.match_next(&Token::Ellipsis) {
                 let right_paren = self.expect(Token::RightParen)?.location;
-                return Ok(Locatable::new(DeclaratorType::Function {
+                return Ok(Locatable::new(InternalDeclaratorType::Function {
                     params,
                     varargs: true,
                 }, location.merge(right_paren)));
@@ -545,7 +545,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             if self.match_next(&Token::Comma).is_none() {
                 let right_paren = self.expect(Token::RightParen)?.location;
                 let location = location.merge(right_paren);
-                return Ok(Locatable::new(DeclaratorType::Function {
+                return Ok(Locatable::new(InternalDeclaratorType::Function {
                     params,
                     varargs: false,
                 }, location));
@@ -556,18 +556,19 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
 impl InternalDeclarator {
     fn parse_declarator(mut self) -> Declarator {
-        use DeclaratorType::*;
+        use crate::data::ast::DeclaratorType;
+        use InternalDeclaratorType::*;
 
         fn get_id(mut declarator: &InternalDeclarator) -> InternedStr {
             loop {
                 match declarator.current {
-                    DeclaratorType::Id(id) => return id,
+                    InternalDeclaratorType::Id(id) => return id,
                     _ => declarator = declarator.next.as_ref().expect("abstract params not supported"),
                 }
             }
         }
         let mut id = None;
-        let mut current = Declarator::End;
+        let mut current = DeclaratorType::End;
         //let mut current = Declarator::End;
         //let current = self.current;
         let mut declarator = Some(self);
@@ -577,9 +578,9 @@ impl InternalDeclarator {
                     id = Some(i);
                     current //Declarator::Id { id, next: Box::new(current) },
                 }
-                Pointer { qualifiers } => Declarator::Pointer { to: Box::new(current), qualifiers },
-                Array { size } => Declarator::Array { of: Box::new(current), size },
-                Function{ params, varargs } => Declarator::Function {
+                Pointer { qualifiers } => DeclaratorType::Pointer { to: Box::new(current), qualifiers },
+                Array { size } => DeclaratorType::Array { of: Box::new(current), size },
+                Function{ params, varargs } => DeclaratorType::Function {
                     return_type: Box::new(current),
                     params,
                     varargs,
@@ -587,7 +588,7 @@ impl InternalDeclarator {
             };
             declarator = decl.next.map(|x| *x);
         }
-        current
+        Declarator { decl: current, id }
     }
 }
 

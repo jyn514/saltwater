@@ -21,7 +21,7 @@ pub struct FunctionDefinition {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypeName {
     pub specifiers: Vec<DeclarationSpecifier>,
-    pub declarator: Option<Declarator>,
+    pub declarator: Declarator,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -357,6 +357,15 @@ impl Display for DeclarationSpecifier {
     }
 }
 
+impl Declarator {
+    fn is_nonempty(&self) -> bool {
+        match self.decl {
+            DeclaratorType::End => self.id.is_some(),
+            _ => true,
+        }
+    }
+}
+
 impl DeclaratorType {
     fn print_pre(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use DeclaratorType::*;
@@ -375,18 +384,34 @@ impl DeclaratorType {
         match self {
             Pointer { to, qualifiers } => {
                 to.print_mid(None, f)?;
-                let name = name.unwrap_or_default();
                 let mut qs = String::new();
-                for q in qualifiers {
-                    write!(qs, "{} ", q)?
+                let mut qualifiers = qualifiers.iter();
+                let mut had_qual = false;
+                if let Some(first) = qualifiers.next() {
+                    write!(qs, "{}", first)?;
+                    had_qual = true;
                 }
+                for q in qualifiers {
+                    write!(qs, " {}", q)?
+                }
+                /*
+                if had_qual && (name.is_some() || **to != DeclaratorType::End) {
+                    write!(qs, " ")?;
+                }
+                */
+                let name = name.unwrap_or_default();
                 match **to {
                     Array { .. } | Function { .. } => {
                         //write!(f, "(*{}{})", qs);
                         write!(f, "(*{}{})", qs, name)
                     }
-                    _ => {
-                        write!(f, "*{}{}", qs, name)
+                    End => write!(f, "*{} {}", qs, name),
+                    Pointer { .. } => {
+                        if had_qual && name != InternedStr::default() {
+                            write!(f, "*{} {}", qs, name)
+                        } else {
+                            write!(f, "*{}{}", qs, name)
+                        }
                         //to.print_mid(f)
                     }
                 }
@@ -479,11 +504,15 @@ impl Display for DeclaratorType {
 
 impl Display for TypeName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for s in &self.specifiers {
-            write!(f, "{}", s)?;
+        let mut specifiers = self.specifiers.iter();
+        if let Some(first) = specifiers.next() {
+            write!(f, "{}", first)?;
         }
-        if let Some(declarator) = &self.declarator {
-            write!(f, " {}", declarator)?;
+        for s in specifiers {
+            write!(f, " {}", s)?;
+        }
+        if self.declarator.is_nonempty() {
+            write!(f, " {}", self.declarator)?;
         }
         Ok(())
     }

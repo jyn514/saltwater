@@ -35,21 +35,23 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             return if specifiers.is_empty() {
                 Err(self.next_location().with(SyntaxError::ExpectedType))
             } else {
+                use crate::data::ast::DeclaratorType;
+
                 let location = specifier_locations.expect("just checked >= 1 specifier");
                 Ok(location.with(TypeName {
                     specifiers,
-                    declarator: None,
+                    declarator: Declarator { id: None, decl: DeclaratorType::End },
                 }))
             };
         }
-        let declarator = self.declarator()?
-            .expect("lol what you want abstract params?")
-            .map(|d| d.parse_declarator());
+        let declarator = self.declarator(true)?
+            .expect("types should have a declarator or syntax error if not followed by ')'")
+            .map(InternalDeclarator::parse_declarator);
         let location =
             specifier_locations.map_or(declarator.location, |loc| loc.merge(declarator.location));
         let type_name = TypeName {
             specifiers,
-            declarator: Some(declarator.data),
+            declarator: declarator.data,
         };
         Ok(Locatable::new(type_name, location))
     }
@@ -94,8 +96,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             })
         }
     }
-    fn declarator(&mut self) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
+    fn declarator(&mut self, allow_abstract: bool) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
         let mut pointer_decls = Vec::new();
+        // NOTE: outdated comment
         // decls coming earlier in the Vec have lower precedence than the ones coming later
         // e.g. `*const *volatile p` would look like `vec![Pointer(const), Pointer(volatile), Id("p")]`
         // and  `*const (*f)()` would look like `vec![Pointer(const), Function, Pointer, Id("f")]`
@@ -120,183 +123,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             let current = Locatable::new(InternalDeclaratorType::Pointer{ qualifiers }, location);
             pointer_decls.push(current);
-            //decl = Some(Self::merge_decls(current, decl));
         }
         // TODO: allow abstract declarators
-        let mut decl = self.direct_declarator(false)?;
+        let mut decl = self.direct_declarator(allow_abstract)?;
         while let Some(pointer) = pointer_decls.pop() {
             decl = Some(Self::merge_decls(pointer, decl));
         }
         Ok(dbg!(decl))
-        /*
-        loop {
-            let mut direct = self.direct_declarator()?;
-            /*
-            if direct.is_empty() {
-                break;
-            }
-            declarators.append(&mut direct);
-            */
-        }
-        */
-        /*
-        while let Some(decl) = self.direct_declarator()? {
-            declarators.push(decl);
-        }
-        */
-        //self.parse_declarator(declarators)
-        /*
-        for pointer in pointers.into_iter().rev() {
-            decl = Declarator::Pointer {
-                to: Box::new(decl),
-                qualifiers: pointer.data,
-            };
-            location = pointer.location.merge(location);
-        }
-        Ok(Locatable::new(decl, location))
-        */
     }
-    // parse a single direct declarator
-    /*
-    fn direct_declarator(&mut self) -> SyntaxResult<InternalDeclarator> {
-        let next = match self.next_token() {
-            Some(x) => x,
-            None => return Ok(Vec::new()),
-        };
-        match next.data {
-            Token::Id(id) => Ok(vec![Locatable::new(InternalDeclarator::Id(id), next.location)]),
-            // []
-            Token::LeftBracket => {
-                let (size, location) = if let Some(right) = self.match_next(&Token::RightBracket) {
-                    (None, next.location.merge(right.location))
-                } else {
-                    let expr = self.expr()?;
-                    let right_loc = self.expect(Token::RightBracket)?.location;
-                    let loc = next.location.merge(expr.location).merge(right_loc);
-                    (Some(Box::new(expr)), loc)
-                };
-                let decl = InternalDeclarator::Array { size };
-                Ok(vec![Locatable::new(decl, location)])
-            }
-            Token::LeftParen => {
-                // if the next token is a pointer, id, or `(`, it must be a parenthesized declarator
-                // e.g. (*), (p)
-                // otherwise, assume it's a function declaration
-                // this allows such horrors as `int f(());` and `int f((()))`.
-                let inner = match self.peek_token() {
-                    // this is why we need the vec to be passed in:
-                    // for `(*f)()` the decls look like `vec![Function, Pointer, Id(f)]`
-                    Some(Token::Star) | Some(Token::Id(_)) | Some(Token::LeftParen) => {
-                        self.declarator()
-                    }
-                    _ => Ok(vec![self.parameter_type_list()?]),
-                }?;
-                let right_loc = self.expect(Token::RightParen)?.location;
-                // I think this should work even if we don't have any intermediate locations
-                let loc = next.location.merge(right_loc);
-                Ok(vec![Locatable::new(inner.data, loc)])
-            }
-            _ => Ok(Vec::new()),
-            /*
-            other => return Err(Locatable::new(
-                SyntaxError::ExpectedDeclarator(other),
-                next.location,
-            )),
-            */
-        }
-    }
-    fn parameter_type_list(&mut self) -> SyntaxResult<Locatable<InternalDeclarator>> {
-        unimplemented!("function declarations")
-    }
-    */
-    /*
-    /* parse everything after declaration specifiers. can be called recursively
-     * allow_abstract: whether to require identifiers in declarators.
-     * NOTE: whenever allow_abstract is `false`,
-     *  either an identifier or an error will be returned.
-     * when allow_abstract is `true`, an identifier may or may not be returned.
-     * reference grammar:
-     *
-     *  declarator
-     *      : direct_declarator
-     *      | pointer declarator
-     *      ;
-     *
-     *  direct_declarator
-     *      : identifier
-     *      | '(' declarator ')'
-     *      | direct_declarator '[' ']'
-     *      | direct_declarator '[' constant_expr ']'
-     *      | direct_declarator '(' parameter_type_list ')'
-     *      | direct_declarator '(' ')'
-     *      ;
-     *
-     *  pointer
-     *      : '*' specifier_qualifier_list_opt
-     *      | '&'   /* C++ only */
-     *      ;
-     *
-     */
-    fn declarator(
-        &mut self,
-        allow_abstract: bool,
-    ) -> SyntaxResult<Option<InternalDeclarator>> {
-        let _guard = self.recursion_check();
-        if let Some(data) = self.peek_token() {
-            match data {
-                Token::Star => {
-                    self.next_token();
-                    while let Some(Locatable {
-                        location,
-                        data: Token::Keyword(keyword),
-                    }) = self.match_any(&[
-                        &Token::Keyword(Keyword::Const),
-                        &Token::Keyword(Keyword::Volatile),
-                        &Token::Keyword(Keyword::Restrict),
-                        &Token::Keyword(Keyword::Atomic),
-                        &Token::Keyword(Keyword::ThreadLocal),
-                    ]) {
-                        if keyword == Keyword::Const {
-                            if pointer_qualifiers.c_const {
-                                self.error_handler
-                                    .warn("duplicate 'const' declaration specifier", location);
-                            } else {
-                                pointer_qualifiers.c_const = true;
-                            }
-                        } else if keyword == Keyword::Volatile {
-                            if pointer_qualifiers.volatile {
-                                self.error_handler
-                                    .warn("duplicate 'volatile' declaration specifier", location);
-                            } else {
-                                pointer_qualifiers.volatile = true;
-                            }
-                        } else {
-                            self.error_handler.warn(
-                                &format!("qualifier '{}' has not yet been implemented", keyword),
-                                location,
-                            );
-                        }
-                    }
-                    // TODO: this is wrong
-                    // const int *i; declares a pointer to const data: the pointer can
-                    // be modified but the data cannot.
-                    // int *const i; declares a const pointer to data: the data can be
-                    // modified but the pointer cannot.
-                    // We have this backwards.
-                    Ok(Some(Declarator {
-                        current: DeclaratorType::Pointer(pointer_qualifiers),
-                        next: self.declarator(allow_abstract, qualifiers)?.map(Box::new),
-                    }))
-                }
-                _ => self.direct_declarator(allow_abstract, qualifiers),
-            }
-        } else {
-            // this is useful for integration tests, even though there's no scenario
-            // where a type followed by EOF is legal in a real program
-            self.direct_declarator(allow_abstract, qualifiers)
-        }
-    }
-    */
     /*
      * Originally written as follows:
      * direct_declarator
@@ -374,7 +208,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         // the one we already matched
                         self.expect(Token::LeftParen)
                             .expect("peek_next_token should be accurate");
-                        let declarator = self.declarator()?;
+                        let declarator = self.declarator(allow_abstract)?;
                         self.expect(Token::RightParen)?;
                         declarator
                     }
@@ -420,13 +254,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // Array; Specified in section 6.7.6.2 of the C11 spec
                 Token::LeftBracket => {
                     self.expect(Token::LeftBracket).unwrap();
-                    if let Some(token) = self.match_next(&Token::RightBracket) {
-                        Locatable::new(InternalDeclaratorType::Array { size: None }, token.location)
+                    let (size, location) = if let Some(token) = self.match_next(&Token::RightBracket) {
+                        (None, token.location)
                     } else {
-                        let expr = self.expr()?;
-                        let location = self.expect(Token::RightBracket)?.location;
-                        Locatable::new(InternalDeclaratorType::Array { size: Some(Box::new(expr)) }, location)
-                    }
+                        let expr = Box::new(self.expr()?);
+                        (Some(expr), self.expect(Token::RightBracket)?.location)
+                    };
+                    Locatable::new(InternalDeclaratorType::Array { size }, location)
                 }
                 Token::LeftParen => self.parameter_type_list()?,
                 _ => break
@@ -457,7 +291,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *
      */
      fn parameter_type_list(&mut self) -> SyntaxResult<Locatable<InternalDeclaratorType>> {
-        let location = self.expect(Token::LeftParen)
+        let left_paren = self.expect(Token::LeftParen)
             .expect("parameter_type_list should only be called with '(' as the next token")
             .location;
         let mut params = vec![];
@@ -465,15 +299,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             return Ok(Locatable::new(InternalDeclaratorType::Function {
                 params,
                 varargs: false,
-            }, location.merge(right_paren.location)));
+            }, left_paren.merge(right_paren.location)));
         }
         loop {
-            if let Some(locatable) = self.match_next(&Token::Ellipsis) {
+            if self.match_next(&Token::Ellipsis).is_some() {
                 let right_paren = self.expect(Token::RightParen)?.location;
                 return Ok(Locatable::new(InternalDeclaratorType::Function {
                     params,
                     varargs: true,
-                }, location.merge(right_paren)));
+                }, left_paren.merge(right_paren)));
             }
             let param = self.type_name()?;
             //unimplemented!("parameters");
@@ -544,7 +378,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             params.push((param.data, InternedStr::default()));
             if self.match_next(&Token::Comma).is_none() {
                 let right_paren = self.expect(Token::RightParen)?.location;
-                let location = location.merge(right_paren);
+                let location = left_paren.merge(right_paren);
                 return Ok(Locatable::new(InternalDeclaratorType::Function {
                     params,
                     varargs: false,
@@ -555,7 +389,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 }
 
 impl InternalDeclarator {
-    fn parse_declarator(mut self) -> Declarator {
+    fn parse_declarator(self) -> Declarator {
         use crate::data::ast::DeclaratorType;
         use InternalDeclaratorType::*;
 

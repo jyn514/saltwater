@@ -144,20 +144,26 @@ pub enum Initializer {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Declarator {
+pub struct Declarator {
+    pub decl: DeclaratorType,
+    pub id: Option<InternedStr>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeclaratorType {
     // No more declarator, e.g. for abstract params
     End,
     //Id(InternedStr),
     Pointer {
-        to: Box<Declarator>,
+        to: Box<DeclaratorType>,
         qualifiers: Vec<DeclarationSpecifier>,
     },
     Array {
-        of: Box<Declarator>,
+        of: Box<DeclaratorType>,
         size: Option<Box<Expr>>,
     },
     Function {
-        return_type: Box<Declarator>,
+        return_type: Box<DeclaratorType>,
         params: Vec<(TypeName, InternedStr)>,
         varargs: bool,
     }
@@ -351,9 +357,9 @@ impl Display for DeclarationSpecifier {
     }
 }
 
-impl Declarator {
+impl DeclaratorType {
     fn print_pre(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use Declarator::*;
+        use DeclaratorType::*;
         match self {
             Pointer { to: inner, .. } | Array { of: inner, .. } => inner.print_pre(f),
             Function{ return_type, .. } => write!(f, "{}", return_type),
@@ -362,7 +368,7 @@ impl Declarator {
         }
     }
     fn print_mid(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
-        use Declarator::*;
+        use DeclaratorType::*;
         use std::fmt::Write;
 
         //println!("in print_mid");
@@ -393,7 +399,12 @@ impl Declarator {
                 next.print_mid(f)
             }
             */
-            End | Function { .. } => Ok(()),
+            End | Function { .. } => {
+                if let Some(name) = name {
+                    write!(f, "{}", name)?;
+                }
+                Ok(())
+            }
             /*
             _ => {
                 if let Some(name) = name {
@@ -405,7 +416,7 @@ impl Declarator {
         }
     }
     fn print_post(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use Declarator::*;
+        use DeclaratorType::*;
         match self {
             Pointer { to, .. } => to.print_post(f),
             // TODO: maybe print the array size too?
@@ -439,6 +450,15 @@ impl Declarator {
 }
 impl Display for Declarator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.decl.print_pre(f)?;
+        self.decl.print_mid(self.id, f)?;
+        self.decl.print_post(f)
+    }
+}
+
+impl Display for DeclaratorType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // declarator with no id
         self.print_pre(f)?;
         self.print_mid(None, f)?;
         self.print_post(f)

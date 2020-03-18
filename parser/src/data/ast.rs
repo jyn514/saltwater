@@ -145,6 +145,9 @@ pub enum Initializer {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Declarator {
+    // No more declarator, e.g. for abstract params
+    End,
+    Id { id: InternedStr, next: Box<Declarator> },
     Pointer {
         to: Box<Declarator>,
         qualifiers: Vec<DeclarationSpecifier>,
@@ -153,7 +156,11 @@ pub enum Declarator {
         of: Box<Declarator>,
         size: Option<Box<Expr>>,
     },
-    Id(InternedStr),
+    Function {
+        return_type: Box<Declarator>,
+        params: Vec<(TypeName, InternedStr)>,
+        varargs: bool,
+    }
 }
 
 type CompoundStatement = Vec<Stmt>;
@@ -349,28 +356,51 @@ impl Declarator {
         use Declarator::*;
         match self {
             Pointer { to: inner, .. } | Array { of: inner, .. } => inner.print_pre(f),
-            //Function(ftype) => write!(f, "{}", ftype.return_type),
-            Id(_) => Ok(()),
+            Function{ return_type, .. } => write!(f, "{}", return_type),
+            Id { next, .. } => next.print_pre(f),
+            End => Ok(()),
         }
     }
-    fn print_mid(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
+    fn print_mid(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Declarator::*;
+        use std::fmt::Write;
+
+        //println!("in print_mid");
         match self {
-            Pointer { to, .. } => {
-                to.print_mid(None, f)?;
-                let name = name.unwrap_or_default();
-                match **to {
-                    Array { .. } | Pointer { .. } => write!(f, "(*{})", name),
-                    _ => write!(f, "*{}", name),
+            Pointer { to, qualifiers } => {
+                //let name = name.unwrap_or_default();
+                let mut qs = String::new();
+                for q in qualifiers {
+                    write!(qs, "{} ", q)?
                 }
+                match **to {
+                    Array { .. } | Function { .. } => {
+                        //write!(f, "(*{}{})", qs);
+                        write!(f, "(*{}", qs)?;
+                        to.print_mid(f)?;
+                        write!(f, ")")
+                    }
+                    _ => {
+                        write!(f, "*{}", qs)?;
+                        to.print_mid(f)
+                    }
+                }
+                //to.print_mid(None, f)?;
             }
-            Array { of, .. } => of.print_mid(name, f),
+            Array { of, .. } => of.print_mid(f),
+            Id { id, next } => {
+                write!(f, "{}", id)?;
+                next.print_mid(f)
+            }
+            Function { .. } | End => Ok(()),
+            /*
             _ => {
                 if let Some(name) = name {
                     write!(f, " {}", name)?;
                 }
                 Ok(())
             }
+            */
         }
     }
     fn print_post(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -386,14 +416,30 @@ impl Declarator {
                 write!(f, "]")?;
                 of.print_post(f)
             }
-            Id(id) => write!(f, "{}", id),
+            Function { params, varargs, .. } => {
+                write!(f, "(")?;
+                let mut params = params.iter();
+                if let Some(first) = params.next() {
+                    write!(f, "{}", first.0)?;
+                }
+                for param in params {
+                    write!(f, ", {}", param.0)?;
+                }
+                if *varargs {
+                    write!(f, ", ...")?;
+                }
+                write!(f, ")")
+            }
+            //Id { id, .. } => write!(f, "{}", id),
+            Id { next, .. } => next.print_post(f),
+            End => Ok(()),
         }
     }
 }
 impl Display for Declarator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.print_pre(f)?;
-        self.print_mid(None, f)?;
+        self.print_mid(f)?;
         self.print_post(f)
         /*
         match self {

@@ -129,7 +129,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         while let Some(pointer) = pointer_decls.pop() {
             decl = Some(Self::merge_decls(pointer, decl));
         }
-        Ok(dbg!(decl))
+        Ok(decl)
     }
     /*
      * Originally written as follows:
@@ -229,7 +229,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 )));
             }
         };
-        self.postfix_type(decl, allow_abstract)
+        self.postfix_type(decl)
     }
     /*
      * not in original reference, see comments to `direct_declarator`
@@ -243,12 +243,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      | /* empty */
      *      ;
      */
+     #[inline]
     fn postfix_type(
         &mut self,
         mut prefix: Option<Locatable<InternalDeclarator>>,
-        allow_abstract: bool,
     ) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
-        // postfix
         while let Some(data) = self.peek_token() {
             let current = match data {
                 // Array; Specified in section 6.7.6.2 of the C11 spec
@@ -310,70 +309,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }, left_paren.merge(right_paren)));
             }
             let param = self.type_name()?;
-            //unimplemented!("parameters");
-            /*
-            let (sc, quals, param_type, _) = self.declaration_specifiers()?;
-            // true: allow abstract_declarators
-            let declarator = self.declarator(true, quals)?;
-            */
-            // int f(void, int);
-            /*
-            if let Some(decl) = declarator {
-                let (id, mut ctype) = decl
-                    .parse_type(param_type, false, &self.last_location)
-                    .recover(&mut self.error_handler);
-                // int f(int a[]) is the same as int f(int *a)
-                // TODO: parse int f(int a[static 5])
-                if let Type::Array(to, _) = ctype {
-                    ctype = Type::Pointer(to);
-                }
-                // I will probably regret this in the future
-                // default() for String is "",
-                // which can never be passed in by the lexer
-                // this also makes checking if the parameter is abstract or not easy to check
-                let Locatable { location, data } = id.unwrap_or(Locatable {
-                    location: self.next_location(),
-                    data: Default::default(),
-                });
-                if data != Default::default() && params.iter().any(|p| p.data.id == data) {
-                    self.semantic_err(
-                        format!(
-                            "duplicate parameter name '{}' in function declaration",
-                            data,
-                        ),
-                        location,
-                    );
-                }
-                params.push(Locatable {
-                    location,
-                    data: Symbol {
-                        id: data,
-                        ctype,
-                        qualifiers: quals,
-                        storage_class: StorageClass::Auto,
-                        init: true,
-                    },
-                });
-            // int f(int, void);
-            } else if param_type == Type::Void && !params.is_empty() {
-                self.error_handler.push_back(
-                    self.last_location
-                        .error(SemanticError::InvalidVoidParameter),
-                );
-            } else {
-                // abstract param
-                params.push(Locatable {
-                    location: self.last_location,
-                    data: Symbol {
-                        id: Default::default(),
-                        ctype: param_type,
-                        qualifiers: quals,
-                        storage_class: StorageClass::Auto,
-                        init: true,
-                    },
-                });
-            }
-            */
             // lol this is so broken
             params.push((param.data, InternedStr::default()));
             if self.match_next(&Token::Comma).is_none() {

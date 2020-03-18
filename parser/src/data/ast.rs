@@ -153,7 +153,6 @@ pub struct Declarator {
 pub enum DeclaratorType {
     // No more declarator, e.g. for abstract params
     End,
-    //Id(InternedStr),
     Pointer {
         to: Box<DeclaratorType>,
         qualifiers: Vec<DeclarationSpecifier>,
@@ -394,17 +393,9 @@ impl DeclaratorType {
                 for q in qualifiers {
                     write!(qs, " {}", q)?
                 }
-                /*
-                if had_qual && (name.is_some() || **to != DeclaratorType::End) {
-                    write!(qs, " ")?;
-                }
-                */
                 let name = name.unwrap_or_default();
                 match **to {
-                    Array { .. } | Function { .. } => {
-                        //write!(f, "(*{}{})", qs);
-                        write!(f, "(*{}{})", qs, name)
-                    }
+                    Array { .. } | Function { .. } => write!(f, "(*{}{})", qs, name),
                     End => write!(f, "*{} {}", qs, name),
                     Pointer { .. } => {
                         if had_qual && name != InternedStr::default() {
@@ -412,32 +403,16 @@ impl DeclaratorType {
                         } else {
                             write!(f, "*{}{}", qs, name)
                         }
-                        //to.print_mid(f)
                     }
                 }
-                //to.print_mid(None, f)?;
             }
             Array { of, .. } => of.print_mid(name, f),
-            /*
-            Id { id, next } => {
-                write!(f, "{}", id)?;
-                next.print_mid(f)
-            }
-            */
             End | Function { .. } => {
                 if let Some(name) = name {
                     write!(f, "{}", name)?;
                 }
                 Ok(())
             }
-            /*
-            _ => {
-                if let Some(name) = name {
-                    write!(f, " {}", name)?;
-                }
-                Ok(())
-            }
-            */
         }
     }
     fn print_post(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -467,8 +442,6 @@ impl DeclaratorType {
                 }
                 write!(f, ")")
             }
-            //Id { id, .. } => write!(f, "{}", id),
-            //Id { next, .. } => next.print_post(f),
             End => Ok(()),
         }
     }
@@ -487,18 +460,6 @@ impl Display for DeclaratorType {
         self.print_pre(f)?;
         self.print_mid(None, f)?;
         self.print_post(f)
-        /*
-        match self {
-            Declarator::Id(id) => write!(f, "{}", id),
-            Declarator::Array(of, size) => write!(f, "{}[{}]", of, size)
-            Declarator::Pointer(inner) => {
-                match *inner {
-                    Declarator::Id(_) | Declarator::Pointer(_) => write!(f, "*{}", inner),
-                    _ => write!(f, "(*){}", inner),
-                }
-            }
-        }
-        */
     }
 }
 

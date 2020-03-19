@@ -28,21 +28,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 	/// : declaration_specifiers ';'
 	/// | declaration_specifiers init_declarator_list ';'
 	/// ;
-    pub fn declaration(&mut self) -> SyntaxResult<Locatable<ExternalDeclaration>> {
+    pub fn external_declaration(&mut self) -> SyntaxResult<Locatable<ExternalDeclaration>> {
         let (specifiers, specifier_locations) = self.specifiers()?;
         // TODO: allow `int;`
         let declarator = self.init_declarator()?;
         let mut location = declarator.location.maybe_merge(specifier_locations);
 
-        if let Some(token) = self.match_next(&Token::LeftBrace) {
+        //if let Some(token) = self.match_next(&Token::LeftBrace) {
+        if self.peek_token() == Some(&Token::LeftBrace) {
             if !declarator.data.declarator.is_function() {
                 return Err(location.with(SyntaxError::NotAFunction(declarator.data)))
             } else if let Some(init) = declarator.data.init {
                 return Err(location.with(SyntaxError::FunctionInitializer(init)));
             }
             let ctype = TypeName { specifiers, declarator: declarator.data.declarator };
-            let func = Locatable::new(ctype, token.location.merge(location));
-            return self.function_body(func);
+            return self.function_body(Locatable::new(ctype, location));
         }
         let mut decls = vec![declarator];
         while self.match_next(&Token::Semicolon).is_none() {
@@ -130,7 +130,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
 
     fn function_body(&mut self, func: Locatable<TypeName>) -> SyntaxResult<Locatable<ExternalDeclaration>> {
-        unimplemented!("function body")
+        use crate::data::ast::FunctionDefinition;
+
+        let body = self.compound_statement()?;
+        let location = func.location.merge(body.location);
+        let def = FunctionDefinition {
+            body: body.data,
+            specifiers: func.data.specifiers,
+            declarator: func.data.declarator,
+        };
+        Ok(Locatable::new(ExternalDeclaration::Function(def), location))
     }
 
     fn merge_decls(current: Locatable<InternalDeclaratorType>, next: Option<Locatable<InternalDeclarator>>) -> Locatable<InternalDeclarator> {

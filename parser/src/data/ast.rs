@@ -141,7 +141,7 @@ pub struct InitDeclarator {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Initializer {
-    Scalar(Expr),
+    Scalar(Box<Expr>),
     Aggregate(Vec<Initializer>),
 }
 
@@ -342,7 +342,7 @@ impl Display for Declaration {
         for decl in &self.declarators {
             write!(f, "{}", decl.data)?;
         }
-        write!(f, ";")
+        writeln!(f, ";")
     }
 }
 

@@ -554,8 +554,14 @@ impl StmtType {
             StmtType::Return(Some(expr)) => write!(f, "return {};", expr),
             StmtType::Break => write!(f, "break;"),
             StmtType::Continue => write!(f, "continue;"),
-            StmtType::Default(stmt) => write!(f, "default:\n{}", stmt.data),
-            StmtType::Case(expr, stmt) => write!(f, "case {}:\n{}", expr, stmt.data),
+            StmtType::Default(stmt) => {
+                write!(f, "default:\n")?;
+                stmt.data.pretty_print(f, depth + 1)
+            }
+            StmtType::Case(expr, stmt) => {
+                write!(f, "case {}:\n", expr)?;
+                stmt.data.pretty_print(f, depth + 1)
+            }
             StmtType::Goto(id) => write!(f, "goto {};", id),
             StmtType::Label(id, inner) => write!(f, "{}: {}", id, inner.data),
             StmtType::While(condition, body) => write!(f, "while ({}) {}", condition, body.data),
@@ -565,23 +571,21 @@ impl StmtType {
                 "if ({}) {} else {}",
                 condition, body.data, otherwise.data
             ),
-            StmtType::Do(body, condition) => {
-                write!(f, "do {:?} while ({:?});", body.data, condition)
-            }
+            StmtType::Do(body, condition) => write!(f, "do {} while ({});", body.data, condition),
             StmtType::For(decls, condition, post_loop, body) => {
                 write!(f, "for (")?;
                 match &decls.data {
-                    StmtType::Decl(decls) => write!(f, "{}", decls)?,
-                    StmtType::Expr(expr) => write!(f, "{}", expr)?,
-                    StmtType::Compound(compound) if compound.is_empty() => {}
+                    StmtType::Decl(decls) => write!(f, "{} ", decls)?,
+                    StmtType::Expr(expr) => write!(f, "{}; ", expr)?,
+                    StmtType::Compound(compound) if compound.is_empty() => write!(f, ";")?,
                     _ => unreachable!("for loop initialization other than decl or expr"),
                 };
                 match condition {
-                    Some(condition) => write!(f, " {}; ", condition)?,
-                    None => write!(f, " ; ")?,
+                    Some(condition) => write!(f, "{};", condition)?,
+                    None => write!(f, ";")?,
                 };
                 match post_loop {
-                    Some(condition) => write!(f, "{}) ", condition)?,
+                    Some(condition) => write!(f, " {}) ", condition)?,
                     None => write!(f, ") ")?,
                 };
                 // don't increase depth in case it's on the same line

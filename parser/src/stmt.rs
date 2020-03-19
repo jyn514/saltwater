@@ -366,6 +366,9 @@ mod tests {
     fn assert_stmt_display(left: &str, right: &str) {
         assert_eq!(stmt(left).unwrap().data.to_string(), right);
     }
+    fn assert_no_change(s: &str) {
+        assert_eq!(stmt(s).unwrap().data.to_string(), s);
+    }
 
     #[test]
     // NOTE: this seems to be one of the few tests that checks that the location
@@ -383,10 +386,58 @@ mod tests {
         assert_eq!(parsed.unwrap().location, expected.unwrap().location);
     }
     #[test]
+    fn test_goto() {
+        assert_no_change("goto a;");
+    }
+    #[test]
+    fn test_do_while() {
+        assert_no_change("do break; while (1);");
+    }
+    #[test]
+    fn test_if() {
+        assert_no_change("if (1) break; else continue;");
+    }
+    #[test]
+    fn test_while() {
+        assert_stmt_display("while(1);", "while (1) {\n}");
+        assert_no_change("while (1) {\n}");
+        assert_stmt_display("while (1) { int i = 1; }", "while (1) {\n    int i = 1;\n}");
+        assert_no_change("while (1) break;");
+    }
+    #[test]
     fn test_for() {
         assert_stmt_display(
             "for (int i = 0; i < 10; ++i);",
             "for (int i = 0; (i) < (10); ++(i)) {\n}",
+        );
+        assert_stmt_display(
+            "for (int i = 0, j = 5; ;);",
+            "for (int i = 0, j = 5; ;) {\n}",
+        );
+        assert_stmt_display("for (;;);", "for (;;) {\n}");
+        assert_no_change("for (;;) {\n}");
+    }
+    #[test]
+    fn test_switch() {
+        assert_stmt_display(
+            "switch(1) { default: ; }",
+            "switch (1) {
+    default:
+        {
+        }
+}",
+        );
+        assert_stmt_display(
+            "switch(1) {
+    case 5: case 6: case 7: ;
+}",
+            "switch (1) {
+    case 5:
+        case 6:
+            case 7:
+                {
+                }
+}",
         );
     }
 }

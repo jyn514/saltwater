@@ -1,6 +1,10 @@
 use super::{Lexeme, Parser, SyntaxResult};
 use crate::data::prelude::*;
-use crate::data::{lex::Keyword, StorageClass, ast::{CompoundStatement, Declaration, ExternalDeclaration, Expr, Stmt, StmtType}};
+use crate::data::{
+    ast::{CompoundStatement, Declaration, Expr, ExternalDeclaration, Stmt, StmtType},
+    lex::Keyword,
+    StorageClass,
+};
 use std::iter::Iterator;
 
 type StmtResult = SyntaxResult<Stmt>;
@@ -182,7 +186,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let ret_token = self.expect(Token::Keyword(Keyword::Return)).unwrap();
         let expr = self.expr_opt(Token::Semicolon)?;
         Ok(Stmt {
-            location: ret_token.location.maybe_merge(expr.as_ref().map(|l| l.location)),
+            location: ret_token
+                .location
+                .maybe_merge(expr.as_ref().map(|l| l.location)),
             data: StmtType::Return(expr),
         })
     }
@@ -343,9 +349,9 @@ impl ExternalDeclaration {
 
 #[cfg(test)]
 mod tests {
-    use crate::test::*;
-    use crate::data::prelude::*;
     use crate::data::ast::*;
+    use crate::data::prelude::*;
+    use crate::test::*;
 
     fn stmt(stmt: &str) -> CompileResult<Stmt> {
         let mut p = parser(stmt);
@@ -378,6 +384,9 @@ mod tests {
     }
     #[test]
     fn test_for() {
-        assert_stmt_display("for (int i = 0; i < 10; ++i);", "for (int i = 0; (i) < (10); ++(i)) {\n}");
+        assert_stmt_display(
+            "for (int i = 0; i < 10; ++i);",
+            "for (int i = 0; (i) < (10); ++(i)) {\n}",
+        );
     }
 }

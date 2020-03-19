@@ -167,7 +167,7 @@ pub enum DeclaratorType {
         return_type: Box<DeclaratorType>,
         params: Vec<(TypeName, InternedStr)>,
         varargs: bool,
-    }
+    },
 }
 
 pub type Stmt = Locatable<StmtType>;
@@ -429,14 +429,14 @@ impl DeclaratorType {
         use DeclaratorType::*;
         match self {
             Pointer { to: inner, .. } | Array { of: inner, .. } => inner.print_pre(f),
-            Function{ return_type, .. } => write!(f, "{}", return_type),
+            Function { return_type, .. } => write!(f, "{}", return_type),
             //Id { next, .. } => next.print_pre(f),
             End => Ok(()),
         }
     }
     fn print_mid(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
-        use DeclaratorType::*;
         use std::fmt::Write;
+        use DeclaratorType::*;
 
         //println!("in print_mid");
         match self {
@@ -486,7 +486,9 @@ impl DeclaratorType {
                 write!(f, "]")?;
                 of.print_post(f)
             }
-            Function { params, varargs, .. } => {
+            Function {
+                params, varargs, ..
+            } => {
                 write!(f, "(")?;
                 let mut params = params.iter();
                 if let Some(first) = params.next() {
@@ -545,7 +547,7 @@ impl Display for StmtType {
 
 const INDENT: &str = "    ";
 
-fn pretty_print_compound(f: &mut fmt::Formatter, stmts: &CompoundStatement, depth: usize) -> fmt::Result {
+fn pretty_print_compound(f: &mut fmt::Formatter, stmts: &[Stmt], depth: usize) -> fmt::Result {
     // NOTE: expects the caller to have already printed the leading whitespace
     writeln!(f, "{{")?;
     for stmt in stmts {
@@ -583,7 +585,7 @@ impl StmtType {
                 match &decls.data {
                     StmtType::Decl(decls) => write!(f, "{}", decls)?,
                     StmtType::Expr(expr) => write!(f, "{}", expr)?,
-                    StmtType::Compound(compound) if compound.is_empty() => {},
+                    StmtType::Compound(compound) if compound.is_empty() => {}
                     _ => unreachable!("for loop initialization other than decl or expr"),
                 };
                 match condition {

@@ -2,10 +2,10 @@ use std::collections::VecDeque;
 use thiserror::Error;
 
 use super::{
+    ast,
     lex::{Keyword, Token},
     prelude::{Location, LocationTrait},
     Expr, Locatable,
-    ast,
 };
 use crate::intern::InternedStr;
 

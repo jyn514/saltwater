@@ -398,10 +398,6 @@ mod test {
     use crate::SyntaxResult;
     use crate::*;
 
-    fn assert_same(left: &str, right: &str) {
-        assert_eq!(parse_all(left), parse_all(right))
-    }
-
     fn assert_expr_display(left: &str, right: &str) {
         assert_eq!(expr(left).unwrap().to_string(), right);
     }

@@ -582,6 +582,7 @@ impl StmtType {
                 match &decls.data {
                     StmtType::Decl(decls) => write!(f, "{}", decls)?,
                     StmtType::Expr(expr) => write!(f, "{}", expr)?,
+                    StmtType::Compound(compound) if compound.is_empty() => {},
                     _ => unreachable!("for loop initialization other than decl or expr"),
                 };
                 match condition {
@@ -592,7 +593,8 @@ impl StmtType {
                     Some(condition) => write!(f, " {})", condition)?,
                     None => write!(f, ")")?,
                 };
-                write!(f, " {}", body.data)
+                // don't increase depth in case it's on the same line
+                body.data.pretty_print(f, depth)
             }
             StmtType::Decl(decls) => write!(f, "{}", decls),
             StmtType::Compound(stmts) => pretty_print_compound(f, stmts, depth),

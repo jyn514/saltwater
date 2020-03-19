@@ -15,9 +15,8 @@ enum InternalDeclaratorType {
     Array {
         size: Option<Box<Expr>>,
     },
-    // TODO: support abstract parameters
     Function {
-        params: Vec<(TypeName, InternedStr)>,
+        params: Vec<TypeName>,
         varargs: bool,
     },
 }
@@ -400,8 +399,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 ));
             }
             let param = self.type_name()?;
-            // lol this is so broken
-            params.push((param.data, InternedStr::default()));
+            params.push(param.data);
             if self.match_next(&Token::Comma).is_none() {
                 let right_paren = self.expect(Token::RightParen)?.location;
                 let location = left_paren.merge(right_paren);

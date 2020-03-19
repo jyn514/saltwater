@@ -146,6 +146,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let start = self.unary_expr()?;
         self.binary_expr(start, 0)
     }
+    #[inline]
+    pub fn assignment_expr(&mut self) -> SyntaxResult<Expr> {
+        let start = self.unary_expr()?;
+        let prec = BinaryPrecedence::Assignment(AssignmentToken::Equal).prec();
+        self.binary_expr(start, prec)
+    }
     // see `BinaryPrecedence` for all possible binary expressions
     fn binary_expr(&mut self, mut left: Expr, max_precedence: usize) -> SyntaxResult<Expr> {
         while let Some(binop) = self

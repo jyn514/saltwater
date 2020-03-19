@@ -1,5 +1,8 @@
 use super::*;
-use crate::data::ast::{self, Declaration, DeclarationSpecifier, Declarator, Expr, ExternalDeclaration, TypeName};
+use crate::data::ast::{self,
+    Declaration, DeclarationSpecifier, Declarator,
+    Expr, ExternalDeclaration, Initializer, TypeName
+};
 use crate::data::lex::LocationTrait;
 use std::convert::{TryFrom, TryInto};
 
@@ -117,15 +120,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
 
     fn init_declarator(&mut self) -> SyntaxResult<Locatable<ast::InitDeclarator>> {
         let decl = self.declarator(false)?;
-        if self.match_next(&Token::EQUAL).is_some() {
-            unimplemented!("initializers");
-        }
+        let init = if self.match_next(&Token::EQUAL).is_some() {
+            Some(self.initializer()?)
+        } else {
+            None
+        };
         // TODO: this is wrong
         let location = self.last_location;
         let decl = decl.ok_or_else(|| location.with(SyntaxError::ExpectedDeclarator))?;
         Ok(decl.map(|d| ast::InitDeclarator {
             declarator: InternalDeclarator::parse_declarator(d),
-            init: None, // lol
+            init,
         }))
     }
 
@@ -381,6 +386,39 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }, location));
             }
         }
+    }
+    fn initializer(&mut self) -> SyntaxResult<Initializer> {
+        // initializer_list
+        if self.match_next(&Token::LeftBrace).is_some() {
+            let ret = self.aggregate_initializer();
+            self.expect(Token::RightBrace)?;
+            return ret;
+        }
+        let expr = self.assignment_expr()?;
+        Ok(Initializer::Scalar(Box::new(expr)))
+    }
+
+    // handle char[][3] = {{1,2,3}}, but also = {1,2,3} and {{1}, 2, 3}
+    // NOTE: this does NOT consume {} except for sub-elements
+    fn aggregate_initializer(&mut self) -> SyntaxResult<Initializer> {
+        let mut elems = vec![];
+        while self.match_next(&Token::RightBrace).is_none() {
+            let next = if self.match_next(&Token::LeftBrace).is_some() {
+                let t = self.aggregate_initializer()?;
+                self.expect(Token::RightBrace)?;
+                t
+            } else {
+                // scalar
+                self.initializer()?
+            };
+            elems.push(next);
+            // NOTE: this allows trailing commas
+            if self.match_next(&Token::Comma).is_none() {
+                self.expect(Token::RightBrace)?;
+                break;
+            };
+        }
+        Ok(Initializer::Aggregate(elems))
     }
 }
 

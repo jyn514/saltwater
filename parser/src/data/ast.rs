@@ -165,7 +165,7 @@ pub enum DeclaratorType {
     },
     Function {
         return_type: Box<DeclaratorType>,
-        params: Vec<(TypeName, InternedStr)>,
+        params: Vec<TypeName>,
         varargs: bool,
     },
 }
@@ -334,15 +334,27 @@ impl Display for FunctionDefinition {
     }
 }
 
+fn joined<I: IntoIterator<Item = T>, T: ToString>(it: I, delim: &str) -> String {
+    it.into_iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+        .join(delim)
+}
+
+fn joined_locatable<'a, I: IntoIterator<Item = &'a Locatable<T>>, T: ToString + 'a>(
+    it: I, delim: &str,
+) -> String {
+    joined(it.into_iter().map(|s| s.data.to_string()), delim)
+}
+
 impl Display for Declaration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for spec in &self.specifiers {
-            write!(f, "{} ", spec)?;
+        let specs = joined(&self.specifiers, " ");
+        write!(f, "{}", specs)?;
+        if !specs.is_empty() {
+            write!(f, " ")?;
         }
-        for decl in &self.declarators {
-            write!(f, "{}", decl.data)?;
-        }
-        write!(f, ";")
+        write!(f, "{};", joined_locatable(&self.declarators, ", "))
     }
 }
 
@@ -425,12 +437,16 @@ impl Declarator {
 }
 
 impl DeclaratorType {
+    fn pretty_print(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
+        self.print_pre(f)?;
+        self.print_mid(name, f)?;
+        self.print_post(f)
+    }
     fn print_pre(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use DeclaratorType::*;
         match self {
             Pointer { to: inner, .. } | Array { of: inner, .. } => inner.print_pre(f),
             Function { return_type, .. } => write!(f, "{}", return_type),
-            //Id { next, .. } => next.print_pre(f),
             End => Ok(()),
         }
     }
@@ -438,22 +454,12 @@ impl DeclaratorType {
         use std::fmt::Write;
         use DeclaratorType::*;
 
-        //println!("in print_mid");
         match self {
             Pointer { to, qualifiers } => {
                 to.print_mid(None, f)?;
-                let mut qs = String::new();
-                let mut qualifiers = qualifiers.iter();
-                let mut had_qual = false;
-                if let Some(first) = qualifiers.next() {
-                    write!(qs, "{}", first)?;
-                    had_qual = true;
-                }
-                for q in qualifiers {
-                    write!(qs, " {}", q)?
-                }
+                let qs = joined(qualifiers, " ");
                 let name = name.unwrap_or_default();
-                let pointer = if had_qual && name != InternedStr::default() {
+                let pointer = if !qs.is_empty() && name != InternedStr::default() {
                     format!("*{} {}", qs, name)
                 } else {
                     format!("*{}{}", qs, name)
@@ -477,7 +483,6 @@ impl DeclaratorType {
         use DeclaratorType::*;
         match self {
             Pointer { to, .. } => to.print_post(f),
-            // TODO: maybe print the array size too?
             Array { of, size } => {
                 write!(f, "[")?;
                 if let Some(expr) = size {
@@ -489,14 +494,7 @@ impl DeclaratorType {
             Function {
                 params, varargs, ..
             } => {
-                write!(f, "(")?;
-                let mut params = params.iter();
-                if let Some(first) = params.next() {
-                    write!(f, "{}", first.0)?;
-                }
-                for param in params {
-                    write!(f, ", {}", param.0)?;
-                }
+                write!(f, "({}", joined(params, ", "))?;
                 if *varargs {
                     write!(f, ", ...")?;
                 }
@@ -508,30 +506,20 @@ impl DeclaratorType {
 }
 impl Display for Declarator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.decl.print_pre(f)?;
-        self.decl.print_mid(self.id, f)?;
-        self.decl.print_post(f)
+        self.decl.pretty_print(self.id, f)
     }
 }
 
 impl Display for DeclaratorType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // declarator with no id
-        self.print_pre(f)?;
-        self.print_mid(None, f)?;
-        self.print_post(f)
+        self.pretty_print(None, f)
     }
 }
 
 impl Display for TypeName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut specifiers = self.specifiers.iter();
-        if let Some(first) = specifiers.next() {
-            write!(f, "{}", first)?;
-        }
-        for s in specifiers {
-            write!(f, " {}", s)?;
-        }
+        write!(f, "{}", joined(&self.specifiers, " "))?;
         if self.declarator.is_nonempty() {
             write!(f, " {}", self.declarator)?;
         }

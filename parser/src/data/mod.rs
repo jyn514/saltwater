@@ -10,10 +10,10 @@ pub mod types;
 pub mod prelude {
     pub(crate) use super::error::{ErrorHandler, Recover, RecoverableResult};
     pub use super::{
+        ast::{Declaration, Expr, ExprType, Stmt, StmtType},
         error::{CompileError, CompileResult, CompileWarning, Error, SemanticError, SyntaxError},
         lex::{DefaultLocation as Location, Literal, Locatable, LocationTrait, Token},
         types::{StructRef, StructType},
-        ast::{Declaration, Expr, ExprType, Stmt, StmtType},
     };
     pub use crate::intern::InternedStr;
 }

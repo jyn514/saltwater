@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
+#![allow(clippy::mem_replace_with_default)]
 
+mod data;
 mod decl;
 mod expr;
-mod stmt;
-mod data;
 mod intern;
 mod lex;
+mod stmt;
 
 use std::collections::{HashSet, VecDeque};
 use std::fmt;

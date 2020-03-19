@@ -13,11 +13,11 @@ pub enum ExternalDeclaration {
 
 #[derive(Clone, Debug)]
 pub struct FunctionDefinition {
-    specifiers: Vec<DeclarationSpecifier>,
+    pub specifiers: Vec<DeclarationSpecifier>,
     // TODO: maybe support K&R C?
     //DeclarationList
-    declarator: Declarator,
-    body: CompoundStatement,
+    pub declarator: Declarator,
+    pub body: CompoundStatement,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -170,9 +170,31 @@ pub enum DeclaratorType {
     }
 }
 
-type CompoundStatement = Vec<Stmt>;
+pub type Stmt = Locatable<StmtType>;
+pub type CompoundStatement = Vec<Stmt>;
 
-pub use crate::data::{Stmt, StmtType};
+#[derive(Clone, Debug)]
+pub enum StmtType {
+    Compound(CompoundStatement),
+    If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+    Do(Box<Stmt>, Expr),
+    While(Expr, Box<Stmt>),
+    // for(int i = 1, j = 2; i < 4; ++i) body
+    // for(i = 1; ; ++i) body
+    // for (;;) ;
+    For(Box<Stmt>, Option<Box<Expr>>, Option<Box<Expr>>, Box<Stmt>),
+    Switch(Expr, Box<Stmt>),
+    Label(InternedStr, Box<Stmt>),
+    Case(Box<Expr>, Box<Stmt>),
+    Default(Box<Stmt>),
+    Expr(Expr),
+    Goto(InternedStr),
+    Continue,
+    Break,
+    Return(Option<Expr>),
+    Decl(Declaration),
+}
+
 pub type Expr = Locatable<ExprType>;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -269,6 +291,12 @@ impl Declarator {
     }
 }
 
+impl Default for StmtType {
+    fn default() -> Self {
+        StmtType::Compound(Vec::new())
+    }
+}
+
 impl Display for StructSpecifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(ident) = self.name {
@@ -300,10 +328,9 @@ impl Display for FunctionDefinition {
         for spec in &self.specifiers {
             write!(f, "{} ", spec)?;
         }
-        write!(f, "{}", self.declarator)?;
-        write!(f, "{{")?;
-        unimplemented!("printing function body");
-        //write!(f, "}}")?;
+        write!(f, "{} ", self.declarator)?;
+        pretty_print_compound(f, &self.body, 0)?;
+        writeln!(f)
     }
 }
 
@@ -507,6 +534,68 @@ impl Display for TypeName {
             write!(f, " {}", self.declarator)?;
         }
         Ok(())
+    }
+}
+
+impl Display for StmtType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.pretty_print(f, 0)
+    }
+}
+
+fn pretty_print_compound(f: &mut fmt::Formatter, stmts: &CompoundStatement, depth: usize) -> fmt::Result {
+    writeln!(f, "{}{{", " ".repeat(depth))?;
+    for stmt in stmts {
+        writeln!(f, "{}{}", " ".repeat(depth + 4), stmt.data)?;
+    }
+    write!(f, "{}}}", " ".repeat(depth))
+}
+
+impl StmtType {
+    fn pretty_print(&self, f: &mut fmt::Formatter, depth: usize) -> fmt::Result {
+        write!(f, "{}", "    ".repeat(depth))?;
+        match self {
+            StmtType::Expr(expr) => write!(f, "{};", expr),
+            StmtType::Return(None) => write!(f, "return;"),
+            StmtType::Return(Some(expr)) => write!(f, "return {};", expr),
+            StmtType::Break => write!(f, "break;"),
+            StmtType::Continue => write!(f, "continue;"),
+            StmtType::Default(stmt) => write!(f, "default:\n{}", stmt.data),
+            StmtType::Case(expr, stmt) => write!(f, "case {}:\n{}", expr, stmt.data),
+            StmtType::Goto(id) => write!(f, "goto {};", id),
+            StmtType::Label(id, inner) => write!(f, "{}: {}", id, inner.data),
+            StmtType::While(condition, body) => write!(f, "while ({}) {}", condition, body.data),
+            StmtType::If(condition, body, None) => write!(f, "if ({}) {}", condition, body.data),
+            StmtType::If(condition, body, Some(otherwise)) => write!(
+                f,
+                "if ({}) {} else {}",
+                condition, body.data, otherwise.data
+            ),
+            StmtType::Do(body, condition) => {
+                write!(f, "do {:?} while ({:?});", body.data, condition)
+            }
+            StmtType::For(decls, condition, post_loop, body) => {
+                write!(f, "for (")?;
+                match &decls.data {
+                    StmtType::Decl(decls) => write!(f, "{}", decls)?,
+                    StmtType::Expr(expr) => write!(f, "{}", expr)?,
+                    _ => unreachable!("for loop initialization other than decl or expr"),
+                };
+                match condition {
+                    Some(condition) => write!(f, "; {}; ", condition)?,
+                    None => write!(f, "; ; ")?,
+                };
+                match post_loop {
+                    Some(condition) => write!(f, " {})", condition)?,
+                    None => write!(f, ")")?,
+                };
+                write!(f, " {}", body.data)
+            }
+            StmtType::Decl(decls) => write!(f, "{}", decls),
+            StmtType::Compound(stmts) => pretty_print_compound(f, stmts, depth),
+            StmtType::Switch(condition, body) => write!(f, "switch ({}) {}", condition, body.data),
+        }?;
+        writeln!(f)
     }
 }
 

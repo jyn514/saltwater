@@ -3,12 +3,12 @@
 
 mod decl;
 mod expr;
-//mod stmt;
+mod stmt;
 mod data;
 mod intern;
 mod lex;
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::fmt;
 use std::iter::Iterator;
 use std::mem;
@@ -36,14 +36,7 @@ struct RecursionGuard(Rc<()>);
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme<L>>, L: LocationTrait = Location> {
-    /// C actually has 4 different scopes:
-    /// - label names
-    /// - tags
-    /// - members
-    /// - ordinary identifiers
-    ///
-    /// This holds the scope for ordinary identifiers: variables and typedefs
-    scope: Scope<InternedStr, Symbol>,
+    typedefs: HashSet<InternedStr>,
     /// the compound types that have been declared (struct/union/enum)
     tag_scope: TagScope,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
@@ -82,7 +75,7 @@ where
     /// use `std::iter::once`.
     pub fn new(first: Locatable<Token, L>, tokens: I, debug: bool) -> Self {
         Parser {
-            scope: Default::default(),
+            typedefs: Default::default(),
             tag_scope: Default::default(),
             tokens,
             pending: Default::default(),
@@ -131,7 +124,7 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
                 if self.peek_token().is_none() {
                     self.error_handler.pop_front().map(Err)
                 } else {
-                    match self.declaration() {
+                    match self.external_declaration() {
                         Ok(decls) => {
                             self.pending.push_back(decls);
                         }

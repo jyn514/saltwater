@@ -7,5 +7,5 @@ fn main() {
     let mut lexer = Lexer::new((), src, false);
     let first = lexer.next().unwrap().unwrap();
     let mut parser = Parser::new(first, lexer, false);
-    println!("{}", parser.declaration().unwrap().data);
+    println!("{}", parser.external_declaration().unwrap().data);
 }

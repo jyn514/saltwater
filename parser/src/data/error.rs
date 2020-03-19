@@ -85,7 +85,7 @@ impl Iterator for ErrorHandler {
     }
 }
 
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error)]
 pub enum Error {
     #[error("invalid program: {0}")]
     Semantic(#[from] SemanticError),
@@ -163,7 +163,7 @@ pub enum SemanticError {
 }
 
 /// Syntax errors are non-exhaustive and may have new variants added at any time
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error)]
 pub enum SyntaxError {
     #[error("{0}")]
     Generic(String),
@@ -200,6 +200,9 @@ pub enum SyntaxError {
 
     #[error("functions cannot be initialized (got {0})")]
     FunctionInitializer(ast::Initializer),
+
+    #[error("function not allowed in this context (got {0})")]
+    FunctionNotAllowed(ast::FunctionDefinition),
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

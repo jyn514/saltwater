@@ -85,7 +85,7 @@ impl Iterator for ErrorHandler {
     }
 }
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum Error {
     #[error("invalid program: {0}")]
     Semantic(#[from] SemanticError),
@@ -163,7 +163,7 @@ pub enum SemanticError {
 }
 
 /// Syntax errors are non-exhaustive and may have new variants added at any time
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum SyntaxError {
     #[error("{0}")]
     Generic(String),

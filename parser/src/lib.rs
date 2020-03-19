@@ -438,11 +438,13 @@ pub(crate) mod test {
     pub(crate) fn parse_all(input: &str) -> Vec<ParseType> {
         parser(input).collect()
     }
-    #[inline]
     pub(crate) fn parser(input: &str) -> Parser<Lexer> {
         let mut lexer = Lexer::new((), input, false);
         let first: Locatable<Token, Location> = lexer.next().unwrap().unwrap();
-        let p: Parser<Lexer> = Parser::new(first, lexer, false);
-        p
+        Parser::new(first, lexer, false)
+    }
+
+    pub(crate) fn assert_same(left: &str, right: &str) {
+        assert_eq!(parse_all(left), parse_all(right))
     }
 }

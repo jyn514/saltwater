@@ -343,10 +343,11 @@ impl ExternalDeclaration {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::*;
+    use crate::test::*;
     use crate::data::prelude::*;
+    use crate::data::ast::*;
 
-    fn parse_stmt(stmt: &str) -> CompileResult<Stmt> {
+    fn stmt(stmt: &str) -> CompileResult<Stmt> {
         let mut p = parser(stmt);
         let exp = p.statement();
         if let Some(err) = p.error_handler.pop_front() {
@@ -355,21 +356,28 @@ mod tests {
             exp.map_err(CompileError::from)
         }
     }
+
+    fn assert_stmt_display(left: &str, right: &str) {
+        assert_eq!(stmt(left).unwrap().data.to_string(), right);
+    }
+
     #[test]
     // NOTE: this seems to be one of the few tests that checks that the location
     // is correct. If it starts failing, maybe look at the lexer first
     fn test_expr_stmt() {
-        let parsed = parse_stmt("1;");
+        let parsed = stmt("1;");
         let expected = Ok(Stmt {
             data: StmtType::Expr(parser("1").expr().unwrap()),
             location: Location {
                 file: Location::default().file,
-                // TODO: this should really be 0..2
-                // but I haven't implemented merging spans yet
-                span: (1..2).into(),
+                span: (0..2).into(),
             },
         });
         assert_eq!(parsed, expected);
         assert_eq!(parsed.unwrap().location, expected.unwrap().location);
+    }
+    #[test]
+    fn test_for() {
+        assert_stmt_display("for (int i = 0; i < 10; ++i);", "for (int i = 0; (i) < (10); ++(i)) {\n}");
     }
 }

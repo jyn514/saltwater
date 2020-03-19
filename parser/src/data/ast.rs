@@ -5,13 +5,13 @@ use crate::intern::InternedStr;
 
 pub type Program = Vec<Declaration>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ExternalDeclaration {
     Function(FunctionDefinition),
     Declaration(Declaration),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunctionDefinition {
     pub specifiers: Vec<DeclarationSpecifier>,
     // TODO: maybe support K&R C?
@@ -173,7 +173,7 @@ pub enum DeclaratorType {
 pub type Stmt = Locatable<StmtType>;
 pub type CompoundStatement = Vec<Stmt>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum StmtType {
     Compound(CompoundStatement),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
@@ -342,7 +342,7 @@ impl Display for Declaration {
         for decl in &self.declarators {
             write!(f, "{}", decl.data)?;
         }
-        writeln!(f, ";")
+        write!(f, ";")
     }
 }
 
@@ -550,6 +550,7 @@ fn pretty_print_compound(f: &mut fmt::Formatter, stmts: &CompoundStatement, dept
     writeln!(f, "{{")?;
     for stmt in stmts {
         stmt.data.pretty_print(f, depth + 1)?;
+        writeln!(f)?;
     }
     write!(f, "{}}}", INDENT.repeat(depth))
 }
@@ -586,12 +587,12 @@ impl StmtType {
                     _ => unreachable!("for loop initialization other than decl or expr"),
                 };
                 match condition {
-                    Some(condition) => write!(f, "; {}; ", condition)?,
-                    None => write!(f, "; ; ")?,
+                    Some(condition) => write!(f, " {}; ", condition)?,
+                    None => write!(f, " ; ")?,
                 };
                 match post_loop {
-                    Some(condition) => write!(f, " {})", condition)?,
-                    None => write!(f, ")")?,
+                    Some(condition) => write!(f, "{}) ", condition)?,
+                    None => write!(f, ") ")?,
                 };
                 // don't increase depth in case it's on the same line
                 body.data.pretty_print(f, depth)
@@ -599,8 +600,7 @@ impl StmtType {
             StmtType::Decl(decls) => write!(f, "{}", decls),
             StmtType::Compound(stmts) => pretty_print_compound(f, stmts, depth),
             StmtType::Switch(condition, body) => write!(f, "switch ({}) {}", condition, body.data),
-        }?;
-        writeln!(f)
+        }
     }
 }
 

@@ -259,7 +259,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// `token` is the delimiter that ends the expression;
     /// `token` is usually `;` but sometimes `)` (in `for` loops)
     pub(super) fn expr_opt(&mut self, token: Token) -> SyntaxResult<Option<Expr>> {
-        if self.match_next(&token).is_none() {
+        if self.match_next(&token).is_some() {
             Ok(None)
         } else {
             let expr = self.expr()?;

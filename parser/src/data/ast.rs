@@ -304,7 +304,7 @@ impl Display for StructSpecifier {
         } else if let Some(body) = &self.members {
             writeln!(f, "{{")?;
             for decl in body {
-                writeln!(f, "    {}", decl)?;
+                writeln!(f, "{}{}", INDENT, decl)?;
             }
             writeln!(f, "}}")
         } else {
@@ -543,17 +543,20 @@ impl Display for StmtType {
     }
 }
 
+const INDENT: &str = "    ";
+
 fn pretty_print_compound(f: &mut fmt::Formatter, stmts: &CompoundStatement, depth: usize) -> fmt::Result {
-    writeln!(f, "{}{{", " ".repeat(depth))?;
+    // NOTE: expects the caller to have already printed the leading whitespace
+    writeln!(f, "{{")?;
     for stmt in stmts {
-        writeln!(f, "{}{}", " ".repeat(depth + 4), stmt.data)?;
+        stmt.data.pretty_print(f, depth + 1)?;
     }
-    write!(f, "{}}}", " ".repeat(depth))
+    write!(f, "{}}}", INDENT.repeat(depth))
 }
 
 impl StmtType {
     fn pretty_print(&self, f: &mut fmt::Formatter, depth: usize) -> fmt::Result {
-        write!(f, "{}", "    ".repeat(depth))?;
+        write!(f, "{}", INDENT.repeat(depth))?;
         match self {
             StmtType::Expr(expr) => write!(f, "{};", expr),
             StmtType::Return(None) => write!(f, "return;"),

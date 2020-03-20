@@ -373,11 +373,9 @@ impl Display for Initializer {
         match self {
             Initializer::Scalar(expr) => write!(f, "{}", expr),
             Initializer::Aggregate(items) => {
-                write!(f, "{{")?;
-                for item in items {
-                    write!(f, "{} ", item)?;
-                }
-                write!(f, "}}")
+                write!(f, "{{ ")?;
+                write!(f, "{}", joined(items, ", "))?;
+                write!(f, " }}")
             }
         }
     }
@@ -458,15 +456,24 @@ impl DeclaratorType {
             Pointer { to, qualifiers } => {
                 to.print_mid(None, f)?;
                 let qs = joined(qualifiers, " ");
+                // we need to handle the following cases:
+                // `(*const p)()`
+                // `*const p`
+                // `*const (*p)()`
+                // `(*const)` (e.g. in an abstract parameter)
+                // `*p` (in any of the above contexts)
                 let name = name.unwrap_or_default();
-                let pointer = if !qs.is_empty() && name != InternedStr::default() {
+                let pointer = if !qs.is_empty() && name != Default::default() {
                     format!("*{} {}", qs, name)
                 } else {
                     format!("*{}{}", qs, name)
                 };
                 match **to {
                     Array { .. } | Function { .. } => write!(f, "({})", pointer),
-                    End => write!(f, "*{} {}", qs, name),
+                    // this is the only case when `*const (*p)()` can occur
+                    // TODO: maybe put a space after the qualifier if it's there?
+                    // clang-format disagrees with me about the space though
+                    End => write!(f, "{}", pointer),
                     Pointer { .. } => write!(f, "{}", pointer),
                 }
             }

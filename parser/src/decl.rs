@@ -416,12 +416,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn initializer(&mut self) -> SyntaxResult<Initializer> {
         // initializer_list
         if self.match_next(&Token::LeftBrace).is_some() {
-            let ret = self.aggregate_initializer();
-            self.expect(Token::RightBrace)?;
-            return ret;
+            self.aggregate_initializer()
+        } else {
+            let expr = self.assignment_expr()?;
+            Ok(Initializer::Scalar(Box::new(expr)))
         }
-        let expr = self.assignment_expr()?;
-        Ok(Initializer::Scalar(Box::new(expr)))
     }
 
     // handle char[][3] = {{1,2,3}}, but also = {1,2,3} and {{1}, 2, 3}
@@ -430,9 +429,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut elems = vec![];
         while self.match_next(&Token::RightBrace).is_none() {
             let next = if self.match_next(&Token::LeftBrace).is_some() {
-                let t = self.aggregate_initializer()?;
-                self.expect(Token::RightBrace)?;
-                t
+                self.aggregate_initializer()?
             } else {
                 // scalar
                 self.initializer()?
@@ -585,5 +582,42 @@ impl Keyword {
             | Inline | NoReturn => true,
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::data::ast::*;
+    use crate::data::prelude::*;
+    use crate::test::*;
+
+    fn decl(decl: &str) -> CompileResult<Locatable<ExternalDeclaration>> {
+        let mut p = parser(decl);
+        let exp = p.external_declaration();
+        if let Some(err) = p.error_handler.pop_front() {
+            Err(err)
+        } else {
+            exp.map_err(CompileError::from)
+        }
+    }
+
+    fn assert_display(left: &str, right: &str) {
+        assert_eq!(decl(left).unwrap().data.to_string(), right);
+    }
+    fn assert_no_change(s: &str) {
+        assert_display(s, s);
+    }
+
+    #[test]
+    fn username() {
+        assert_no_change("int *(*jynelson)(int (*)(int));");
+        assert_no_change("const int *volatile(*restrict jynelson)(_Atomic int (*const volatile)(_Thread_local int));")
+    }
+
+    #[test]
+    fn test_multiple() {
+        assert_no_change("int i, j, k;");
+        assert_no_change("int i = 1, j = 2, k = 3;");
+        assert_no_change("int i = { { 1 }, 2 };");
     }
 }

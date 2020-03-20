@@ -562,11 +562,11 @@ impl StmtType {
             StmtType::Break => write!(f, "break;"),
             StmtType::Continue => write!(f, "continue;"),
             StmtType::Default(stmt) => {
-                write!(f, "default:\n")?;
+                writeln!(f, "default:")?;
                 stmt.data.pretty_print(f, depth + 1)
             }
             StmtType::Case(expr, stmt) => {
-                write!(f, "case {}:\n", expr)?;
+                writeln!(f, "case {}:", expr)?;
                 stmt.data.pretty_print(f, depth + 1)
             }
             StmtType::Goto(id) => write!(f, "goto {};", id),

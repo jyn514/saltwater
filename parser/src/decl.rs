@@ -212,7 +212,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let current = Locatable::new(InternalDeclaratorType::Pointer { qualifiers }, location);
             pointer_decls.push(current);
         }
-        // TODO: allow abstract declarators
         let mut decl = self.direct_declarator(allow_abstract)?;
         while let Some(pointer) = pointer_decls.pop() {
             decl = Some(Self::merge_decls(pointer, decl));
@@ -281,6 +280,26 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // this is the reason we need to save next - otherwise we
                 // consume LeftParen without postfix_type ever seeing it
                 match self.peek_next_token() {
+                    // HACK: catch function declarators with implicit int
+                    // If we see code like the following: `int f(());`,
+                    // this does _not_ mean a parenthesized declarator. Instead,
+                    // this is a function declarator with an implicit `int` (compare `int f(int ())`).
+                    // This will later be desugared by the analyzer to `int f(int (*)())`.
+                    // TODO: this does _not_ catch more complex types like `int f((()))`
+                    // (which clang parses as `int f(int (int ()))`) - it instead treats them as `int f(())`.
+                    // However, this is so cursed I don't expect it to be a real problem in the real world
+                    Some(Token::RightParen) => {
+                        let left_paren = self.expect(Token::LeftParen).unwrap().location;
+                        let right_paren = self.expect(Token::RightParen).unwrap().location;
+                        let decl = InternalDeclarator {
+                            current: InternalDeclaratorType::Function {
+                                params: Vec::new(),
+                                varargs: false,
+                            },
+                            next: None,
+                        };
+                        Some(Locatable::new(decl, left_paren.merge(right_paren)))
+                    }
                     // parameter_type_list, leave it for postfix_type
                     // need to check allow_abstract because we haven't seen an ID at
                     // this point
@@ -601,6 +620,9 @@ mod test {
         }
     }
 
+    fn assert_same(left: &str, right: &str) {
+        assert_eq!(decl(left), decl(right));
+    }
     fn assert_display(left: &str, right: &str) {
         assert_eq!(decl(left).unwrap().data.to_string(), right);
     }
@@ -619,5 +641,37 @@ mod test {
         assert_no_change("int i, j, k;");
         assert_no_change("int i = 1, j = 2, k = 3;");
         assert_no_change("int i = { { 1 }, 2 };");
+    }
+    #[test]
+    fn test_array() {
+        assert_same("int a[10 + 1] = 1;", "int a[(10) + (1)] = 1;");
+    }
+    #[test]
+    fn test_cursed_function_declarator() {
+        let decl = parser("f(())")
+            .declarator(false)
+            .unwrap()
+            .unwrap()
+            .data
+            .parse_declarator();
+        assert_eq!(decl.id, Some("f".into()));
+        match decl.decl {
+            DeclaratorType::Function {
+                return_type,
+                params,
+                varargs,
+            } => {
+                assert_eq!(*return_type, DeclaratorType::End);
+                assert_eq!(varargs, false);
+                assert_eq!(params.len(), 1);
+                let cursed = DeclaratorType::Function {
+                    params: vec![],
+                    varargs: false,
+                    return_type: Box::new(DeclaratorType::End),
+                };
+                assert_eq!(params[0].declarator.decl, cursed);
+            }
+            _ => panic!("wrong declarator parsed"),
+        }
     }
 }

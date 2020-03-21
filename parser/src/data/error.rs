@@ -318,6 +318,12 @@ pub enum Warning {
     #[error("#warning {}", (.0).iter().map(|t| t.to_string()).collect::<Vec<_>>().join(" "))]
     User(Vec<Token>),
 
+    #[error("extraneous semicolon in {0}")]
+    ExtraneousSemicolon(&'static str),
+
+    #[error("declaration does not declare anything")]
+    EmptyDeclaration,
+
     #[error("rcc does not support #pragma")]
     IgnoredPragma,
 

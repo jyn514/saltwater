@@ -121,10 +121,23 @@ pub enum TypeSpecifier {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructSpecifier {
-    name: Option<InternedStr>,
-    // Some([]): `struct s {}`
-    // None: `struct s;`
-    members: Option<Vec<Declaration>>,
+    pub name: Option<InternedStr>,
+    /// Some([]): `struct s {}`
+    /// None: `struct s;`
+    pub members: Option<Vec<StructDeclarationList>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StructDeclarationList {
+    pub specifiers: Vec<DeclarationSpecifier>,
+    pub declarators: Vec<StructDeclarator>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StructDeclarator {
+    /// optional since this could be only padding bits
+    pub decl: Option<Declarator>,
+    pub bitfield: Option<Expr>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -306,11 +319,30 @@ impl Display for StructSpecifier {
             for decl in body {
                 writeln!(f, "{}{}", INDENT, decl)?;
             }
-            writeln!(f, "}}")
+            write!(f, "}}")
         } else {
             // what are we supposed to do for `struct;` lol
             Ok(())
         }
+    }
+}
+
+impl Display for StructDeclarationList {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} ", joined(&self.specifiers, " "))?;
+        write!(f, "{};", joined(&self.declarators, ", "))
+    }
+}
+
+impl Display for StructDeclarator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(decl) = &self.decl {
+            write!(f, "{}", decl)?;
+        }
+        if let Some(expr) = &self.bitfield {
+            write!(f, ":{}", expr)?;
+        }
+        Ok(())
     }
 }
 

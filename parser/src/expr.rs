@@ -148,9 +148,15 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     #[inline]
     pub fn assignment_expr(&mut self) -> SyntaxResult<Expr> {
+        self.custom_expr(BinaryPrecedence::Assignment(AssignmentToken::Equal))
+    }
+    #[inline]
+    pub fn ternary_expr(&mut self) -> SyntaxResult<Expr> {
+        self.custom_expr(BinaryPrecedence::Ternary)
+    }
+    fn custom_expr(&mut self, prec: BinaryPrecedence) -> SyntaxResult<Expr> {
         let start = self.unary_expr()?;
-        let prec = BinaryPrecedence::Assignment(AssignmentToken::Equal).prec();
-        self.binary_expr(start, prec)
+        self.binary_expr(start, prec.prec())
     }
     // see `BinaryPrecedence` for all possible binary expressions
     fn binary_expr(&mut self, mut left: Expr, max_precedence: usize) -> SyntaxResult<Expr> {

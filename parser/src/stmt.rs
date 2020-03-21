@@ -1,5 +1,5 @@
 use super::{Lexeme, Parser, SyntaxResult};
-use crate::data::prelude::*;
+use crate::data::*;
 use crate::data::{
     ast::{CompoundStatement, Declaration, Expr, ExternalDeclaration, Stmt, StmtType},
     lex::Keyword,
@@ -350,7 +350,7 @@ impl ExternalDeclaration {
 #[cfg(test)]
 mod tests {
     use crate::data::ast::*;
-    use crate::data::prelude::*;
+    use crate::data::*;
     use crate::test::*;
 
     fn stmt(stmt: &str) -> CompileResult<Stmt> {

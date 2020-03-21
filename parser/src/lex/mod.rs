@@ -4,7 +4,7 @@ use std::rc::Rc;
 //use codespan::FileId;
 type FileId = ();
 
-use super::data::{error::LexError, lex::*, prelude::*};
+use super::data::{error::LexError, lex::*, *};
 use super::intern::InternedStr;
 use crate::get_str;
 

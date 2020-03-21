@@ -121,7 +121,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             let spec = match keyword {
                 Keyword::Struct => self.struct_specifier(true, location)?,
                 Keyword::Union => self.struct_specifier(false, location)?,
-                Keyword::Enum => self.enum_specifier()?,
+                Keyword::Enum => self.enum_specifier(location)?,
                 other if !other.is_decl_specifier() => {
                     let err = SyntaxError::ExpectedDeclSpecifier(keyword);
                     return Err(location.with(err));
@@ -229,12 +229,63 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         ))
     }
     /// enum_specifier
-    ///  : ENUM '{' enumerator_list '}'
-    ///  | ENUM identifier '{' enumerator_list '}'
-    ///  | ENUM identifier
+    ///  : 'enum' '{' enumerator_list '}'
+    ///  | 'enum' identifier '{' enumerator_list '}'
+
+    // this is not valid for declaring an enum, but it's fine for an enum we've already seen
+    // e.g. `enum E { A }; enum E e;`
+
+    ///  | 'enum' identifier
     ///  ;
-    fn enum_specifier(&mut self) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
-        unimplemented!("enum specifiers");
+    ///
+    /// enumerator_list
+    /// : enumerator
+    /// | enumerator_list ',' enumerator
+    /// ;
+    ///
+    /// enumerator
+    /// : IDENTIFIER
+    /// | IDENTIFIER '=' constant_expression
+    /// ;
+
+    // we've already seen an `enum` token,, `location` is where we saw it
+    fn enum_specifier(
+        &mut self, mut location: Location,
+    ) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
+        let name = self.match_id().map(|id| {
+            location = location.merge(id.location);
+            id.data
+        });
+        let body = if let Some(token) = self.match_next(&Token::LeftBrace) {
+            location = location.merge(token.location);
+            let mut body = Vec::new();
+            loop {
+                if let Some(token) = self.match_next(&Token::RightBrace) {
+                    location = location.merge(token.location);
+                    break;
+                }
+                let enumerator = self.expect_id()?;
+                let value = if self.match_next(&Token::EQUAL).is_some() {
+                    Some(self.ternary_expr()?)
+                } else {
+                    None
+                };
+                body.push((enumerator.data, value));
+                if self.match_next(&Token::Comma).is_none() {
+                    let token = self.expect(Token::RightBrace)?;
+                    location = location.merge(token.location);
+                    break;
+                }
+            }
+            Some(body)
+        } else {
+            None
+        };
+        let decl = DeclarationSpecifier::Enum {
+            name,
+            members: body,
+        };
+        Ok(Locatable::new(decl, location))
     }
 
     fn init_declarator(&mut self) -> SyntaxResult<Locatable<ast::InitDeclarator>> {
@@ -722,12 +773,15 @@ mod test {
             exp.map_err(CompileError::from)
         }
     }
+    fn display(s: &str) -> String {
+        decl(s).unwrap().data.to_string()
+    }
 
     fn assert_same(left: &str, right: &str) {
         assert_eq!(decl(left), decl(right));
     }
     fn assert_display(left: &str, right: &str) {
-        assert_eq!(decl(left).unwrap().data.to_string(), right);
+        assert_eq!(display(left), right);
     }
     fn assert_no_change(s: &str) {
         assert_display(s, s);
@@ -748,6 +802,13 @@ mod test {
     #[test]
     fn test_array() {
         assert_same("int a[10 + 1] = 1;", "int a[(10) + (1)] = 1;");
+    }
+    #[test]
+    fn test_enum() {
+        assert!(display("enum { A, B = 2, C };").contains("enum { A, B = 2, C }"));
+        assert!(display("enum E { A, B = 2, C };").contains("enum E "));
+        // invalid semantically, but valid syntax
+        assert!(decl("enum;").is_ok());
     }
     #[test]
     fn test_cursed_function_declarator() {

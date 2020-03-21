@@ -81,7 +81,7 @@ pub enum DeclarationSpecifier {
     // enum name? { A = 1, B = 2, C }
     Enum {
         name: Option<InternedStr>,
-        members: Vec<(InternedStr, Expr)>,
+        members: Option<Vec<(InternedStr, Option<Expr>)>>,
     },
     Typedef(InternedStr),
     /*
@@ -444,8 +444,25 @@ impl Display for DeclarationSpecifier {
             Enum {
                 name: Some(ident), ..
             } => write!(f, "enum {}", ident),
-            // TODO: maybe print the body too?
-            Enum { name: None, .. } => write!(f, "<anonymous enum>"),
+            // error, but caught later
+            Enum {
+                name: None,
+                members: None,
+            } => write!(f, "enum;"),
+            Enum {
+                name: None,
+                members: Some(members),
+            } => {
+                let members = members.iter().map(|(name, value)| {
+                    let val = if let Some(val) = value {
+                        format!(" = {}", val)
+                    } else {
+                        String::new()
+                    };
+                    format!("{}{}", name, val)
+                });
+                write!(f, "enum {{ {} }}", joined(members, ", "))
+            }
             Union(spec) => write!(f, "union {}", spec),
             Struct(spec) => write!(f, "struct {}", spec),
             Typedef(name) => write!(f, "{}", name),

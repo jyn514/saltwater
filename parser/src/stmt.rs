@@ -307,7 +307,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     .with(SyntaxError::EndOfFile("expression or ';'")));
             }
         };
-        let decl = Box::new(Stmt {
+        let initializer = Box::new(Stmt {
             data: decl_stmt.data,
             location: paren.location.merge(decl_stmt.location),
         });
@@ -315,12 +315,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let iter_expr = self.expr_opt(Token::RightParen)?;
         let body = Box::new(self.statement()?);
         Ok(Stmt {
-            data: StmtType::For(
-                decl,
-                controlling_expr.map(Box::new),
-                iter_expr.map(Box::new),
+            data: StmtType::For {
+                initializer,
+                condition: controlling_expr.map(Box::new),
+                post_loop: iter_expr.map(Box::new),
                 body,
-            ),
+            },
             location: start.location,
         })
     }

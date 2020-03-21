@@ -83,34 +83,34 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             location,
         ))
     }
-    // expects to be followed by a ')'
     pub fn type_name(&mut self) -> SyntaxResult<Locatable<TypeName>> {
-        let (specifiers, specifier_locations) = self.specifiers()?;
-        if self.peek_token() == Some(&Token::RightParen) {
-            return if specifiers.is_empty() {
-                Err(self.next_location().with(SyntaxError::ExpectedType))
-            } else {
-                use crate::data::ast::DeclaratorType;
+        use crate::ast::DeclaratorType;
 
-                let location = specifier_locations.expect("just checked >= 1 specifier");
-                Ok(location.with(TypeName {
-                    specifiers,
-                    declarator: Declarator {
-                        id: None,
-                        decl: DeclaratorType::End,
-                    },
-                }))
-            };
-        }
-        let declarator = self
-            .declarator(true)?
-            .expect("types should have a declarator or syntax error if not followed by ')'")
-            .map(InternalDeclarator::parse_declarator);
-        let location =
-            specifier_locations.map_or(declarator.location, |loc| loc.merge(declarator.location));
+        let (specifiers, specifier_locations) = self.specifiers()?;
+        let maybe_declarator = self.declarator(true)?;
+        let (location, declarator) = match maybe_declarator {
+            None => (
+                specifier_locations,
+                Declarator {
+                    decl: DeclaratorType::End,
+                    id: None,
+                },
+            ),
+            Some(decl) => (
+                Some(decl.location.maybe_merge(specifier_locations)),
+                decl.data.parse_declarator(),
+            ),
+        };
+        let location = match location {
+            None => {
+                assert_eq!(declarator.decl, DeclaratorType::End);
+                return Err(self.next_location().with(SyntaxError::ExpectedType));
+            }
+            Some(l) => l,
+        };
         let type_name = TypeName {
             specifiers,
-            declarator: declarator.data,
+            declarator,
         };
         Ok(Locatable::new(type_name, location))
     }

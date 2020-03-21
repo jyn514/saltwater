@@ -265,7 +265,6 @@ impl PartialEq for FunctionType {
     }
 }
 
-/*
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         print_type(self, None, f)
@@ -275,9 +274,7 @@ impl std::fmt::Display for Type {
 use std::fmt::{self, Formatter};
 
 pub(super) fn print_type(
-    ctype: &Type,
-    name: Option<InternedStr>,
-    f: &mut Formatter,
+    ctype: &Type, name: Option<InternedStr>, f: &mut Formatter,
 ) -> fmt::Result {
     print_pre(ctype, f)?;
     print_mid(ctype, name, f)?;
@@ -305,7 +302,6 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         Union(_) => write!(f, "<anonymous union>"),
         Struct(StructType::Named(ident, _)) => write!(f, "struct {}", ident),
         Struct(_) => write!(f, "<anonymous struct>"),
-        Bitfield(_) => unimplemented!("printing bitfield type"),
         VaList => write!(f, "va_list"),
         Error => write!(f, "<type error>"),
     }
@@ -346,11 +342,7 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
             // https://stackoverflow.com/a/30325430
             let mut comma_seperated = "(".to_string();
             for param in &func_type.params {
-                comma_seperated.push_str(&param.ctype.to_string());
-                if param.id != Default::default() {
-                    comma_seperated.push(' ');
-                    comma_seperated.push_str(&param.id.to_string());
-                }
+                print_type(&param.ctype, Some(param.id), f)?;
                 comma_seperated.push_str(", ");
             }
             if func_type.varargs {
@@ -371,5 +363,3 @@ impl FunctionType {
         *self.return_type != Type::Void
     }
 }
-
-*/

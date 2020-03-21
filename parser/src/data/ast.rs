@@ -1,5 +1,6 @@
 use std::fmt::{self, Display};
 
+use super::{joined, joined_locatable};
 use crate::data::lex::{AssignmentToken, ComparisonToken, Literal, Locatable};
 use crate::intern::InternedStr;
 
@@ -369,19 +370,6 @@ impl Display for FunctionDefinition {
         pretty_print_compound(f, &self.body, 0)?;
         writeln!(f)
     }
-}
-
-fn joined<I: IntoIterator<Item = T>, T: ToString>(it: I, delim: &str) -> String {
-    it.into_iter()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>()
-        .join(delim)
-}
-
-fn joined_locatable<'a, I: IntoIterator<Item = &'a Locatable<T>>, T: ToString + 'a>(
-    it: I, delim: &str,
-) -> String {
-    joined(it.into_iter().map(|s| s.data.to_string()), delim)
 }
 
 impl Display for Declaration {

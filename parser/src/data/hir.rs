@@ -54,32 +54,19 @@ pub enum Initializer {
 }
 
 /// Holds the metadata for an expression.
-///
-/// This should be the datatype you use in APIs, etc.
-/// because it is more useful than the raw ExprType.
-pub type Expr = Locatable<ExprType>;
-/*
 #[derive(Clone, Debug, PartialEq)]
 pub struct Expr {
     /// expr: holds the actual expression
     pub expr: ExprType,
 
-    /*
     /// ctype: holds the type of the expression
     pub ctype: Type,
-
-    /// constexpr: whether a value can be constant-folded at compile-time
-    ///
-    /// unrelated to the `const` keyword
-    /// NOTE: can sometimes be true at the same time as `lval` (e.g. for constant arrays)
-    pub constexpr: bool,
 
     /// lval: whether an expression can be assigned to
     ///
     /// for example, variables, array elements, and pointer dereferences are lvals,
-    /// but literals, functions, and addresses cannot
+    /// but literals, functions, and addresses are not
     pub lval: bool,
-    */
 
     /// location: the best approximation of where the expression is
     ///
@@ -88,22 +75,25 @@ pub struct Expr {
     /// implicit operations should point to the child expression
     pub location: Location,
 }
-*/
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprType {
-    Id(InternedStr),
+    // primary expressions
+    Id(Symbol),
     Literal(Literal),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, InternedStr),
+
+    // unary expressions
     // post increment/decrement
     PostIncrement(Box<Expr>, bool),
     Cast(Box<Expr>),
     Sizeof(Type),
     Deref(Box<Expr>),
     Negate(Box<Expr>),
-    // getting rid of this is https://github.com/jyn514/rcc/issues/10
     BitwiseNot(Box<Expr>),
+
+    // binary expressions
     LogicalOr(Box<Expr>, Box<Expr>),
     BitwiseOr(Box<Expr>, Box<Expr>),
     LogicalAnd(Box<Expr>, Box<Expr>),
@@ -119,6 +109,8 @@ pub enum ExprType {
     // Token: make >, <, <=, ... part of the same variant
     Compare(Box<Expr>, Box<Expr>, ComparisonToken),
     Assign(Box<Expr>, Box<Expr>),
+
+    // misfits
     // Ternary: if ? then : else
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     Comma(Box<Expr>, Box<Expr>),
@@ -130,9 +122,10 @@ pub enum ExprType {
 }
 
 /* structs */
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Symbol {
     pub ctype: Type,
+    pub id: InternedStr,
     pub qualifiers: Qualifiers,
     pub storage_class: StorageClass,
 }
@@ -269,7 +262,6 @@ impl Display for Qualifiers {
     }
 }
 
-/*
 impl Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.expr {
@@ -293,11 +285,11 @@ impl Display for Expr {
                 write!(f, "({}) {} ({})", val, if *left { "<<" } else { ">>" }, by)
             }
             ExprType::Compare(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
-            ExprType::Assign(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
+            ExprType::Assign(left, right) => write!(f, "({}) = ({})", left, right),
             ExprType::Ternary(cond, left, right) => {
                 write!(f, "({}) ? ({}) : ({})", cond, left, right)
             }
-            ExprType::FuncCall(left, params) => write!(f, "({})({})", left, join(params)),
+            ExprType::FuncCall(left, params) => write!(f, "({})({})", left, joined(params, ", ")),
             ExprType::Cast(expr) => write!(f, "({})({})", self.ctype, expr),
             ExprType::Sizeof(ty) => write!(f, "sizeof({})", ty),
             ExprType::Member(compound, id) => write!(f, "({}).{}", compound, id),
@@ -309,7 +301,6 @@ impl Display for Expr {
         }
     }
 }
-*/
 
 /*
 fn join<T: std::string::ToString>(params: &[T]) -> String {
@@ -321,14 +312,13 @@ fn join<T: std::string::ToString>(params: &[T]) -> String {
 }
 */
 
-/*
 impl Display for Initializer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Initializer::Scalar(expr) => write!(f, "{}", expr),
             Initializer::InitializerList(list) => {
                 write!(f, "{{ ")?;
-                write!(f, "{}", join(list),)?;
+                write!(f, "{}", joined(list, ", "),)?;
                 write!(f, " }}")
             }
             Initializer::FunctionBody(body) => {
@@ -341,9 +331,7 @@ impl Display for Initializer {
         }
     }
 }
-*/
 
-/*
 impl Display for StmtType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.pretty_print(f, 0)
@@ -420,7 +408,7 @@ impl StmtType {
 impl Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} {}", self.storage_class, self.qualifiers)?;
-        types::print_type(&self.ctype, Some(self.id), f)
+        super::types::print_type(&self.ctype, Some(self.id), f)
     }
 }
 
@@ -467,7 +455,7 @@ impl Eq for Symbol {}
 
 #[cfg(test)]
 mod tests {
-    use crate::data::lex::test::cpp;
+    use crate::test::parser;
     use crate::Parser;
 
     #[test]
@@ -475,20 +463,15 @@ mod tests {
         let types = [
             "int",
             "int *",
-            "int[1][2][3]",
+            "int [1][2][3]",
             "char *(*)(float)",
             "short *(*)[1][2][3]",
             "_Bool",
             "struct s",
         ];
         for ty in types.iter() {
-            let mut lexer = cpp(ty);
-            let first = lexer.next().unwrap().unwrap();
-            let mut parser = Parser::new(first, &mut lexer, false);
-
-            let parsed_ty = parser.type_name().unwrap().data.0;
-            assert_eq!(&parsed_ty.to_string(), *ty);
+            let parsed_ty = parser(dbg!(ty)).type_name().unwrap().data;
+            assert_eq!(parsed_ty.to_string().trim(), *ty);
         }
     }
 }
-*/

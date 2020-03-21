@@ -22,3 +22,16 @@ pub enum StorageClass {
     Register = Keyword::Register as isize,
     Typedef = Keyword::Typedef as isize,
 }
+
+fn joined<I: IntoIterator<Item = T>, T: ToString>(it: I, delim: &str) -> String {
+    it.into_iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+        .join(delim)
+}
+
+fn joined_locatable<'a, I: IntoIterator<Item = &'a Locatable<T>>, T: ToString + 'a>(
+    it: I, delim: &str,
+) -> String {
+    joined(it.into_iter().map(|s| s.data.to_string()), delim)
+}

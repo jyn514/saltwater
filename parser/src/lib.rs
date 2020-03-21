@@ -15,12 +15,11 @@ use std::iter::Iterator;
 use std::mem;
 use std::rc::Rc;
 
-pub use crate::data::prelude::*;
-use crate::data::{ast::ExternalDeclaration, lex::Keyword, Scope};
+pub use crate::data::*;
+use crate::data::{ast::ExternalDeclaration, lex::Keyword};
 pub use crate::lex::Lexer;
 
 type Lexeme<L = Location> = CompileResult<Locatable<Token, L>, L>;
-pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
 
 type SyntaxResult<T = Expr> = Result<T, Locatable<SyntaxError>>;
 
@@ -38,8 +37,6 @@ struct RecursionGuard(Rc<()>);
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme<L>>, L: LocationTrait = Location> {
     typedefs: HashSet<InternedStr>,
-    /// the compound types that have been declared (struct/union/enum)
-    tag_scope: TagScope,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,
@@ -60,8 +57,6 @@ pub struct Parser<I: Iterator<Item = Lexeme<L>>, L: LocationTrait = Location> {
     debug: bool,
     /// Internal API which makes it easier to return errors lazily
     error_handler: ErrorHandler,
-    /// Internal API which prevents segfaults due to stack overflow
-    recursion_guard: RecursionGuard,
 }
 
 impl<I, L: LocationTrait> Parser<I, L>
@@ -77,7 +72,6 @@ where
     pub fn new(first: Locatable<Token, L>, tokens: I, debug: bool) -> Self {
         Parser {
             typedefs: Default::default(),
-            tag_scope: Default::default(),
             tokens,
             pending: Default::default(),
             last_location: first.location,
@@ -85,7 +79,6 @@ where
             next: None,
             debug,
             error_handler: ErrorHandler::new(),
-            recursion_guard: Default::default(),
         }
     }
 }
@@ -149,26 +142,6 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
 }
 
 impl<I: Iterator<Item = Lexeme>> Parser<I> {
-    // make sure we don't crash on highly nested expressions
-    // or rather, crash in a controlled way
-    fn recursion_check(&self) -> RecursionGuard {
-        // this is just a guesstimate, it should probably be configurable
-        #[cfg(debug_assertions)]
-        const MAX_DEPTH: usize = 50;
-        #[cfg(not(debug_assertions))]
-        const MAX_DEPTH: usize = 200;
-
-        let guard = self.recursion_guard.clone();
-        let depth = Rc::strong_count(&guard.0);
-        if depth > MAX_DEPTH {
-            eprintln!(
-                "fatal: maximum recursion depth exceeded ({} > {})",
-                depth, MAX_DEPTH
-            );
-            std::process::exit(102);
-        }
-        guard
-    }
     /* utility functions */
     /*
     #[inline]
@@ -417,7 +390,7 @@ impl Token {
 pub(crate) mod test {
     use super::Parser;
     use crate::data::ast::ExternalDeclaration;
-    use crate::data::prelude::*;
+    use crate::data::*;
     use crate::lex::Lexer;
 
     pub(crate) type ParseType = CompileResult<Locatable<ExternalDeclaration>>;

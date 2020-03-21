@@ -1,3 +1,4 @@
+use super::data::*;
 use super::*;
 use crate::data::ast::{
     self, Declaration, DeclarationSpecifier, Declarator, Expr, ExternalDeclaration, Initializer,
@@ -761,7 +762,7 @@ impl Keyword {
 #[cfg(test)]
 mod test {
     use crate::data::ast::*;
-    use crate::data::prelude::*;
+    use crate::data::*;
     use crate::test::*;
 
     fn decl(decl: &str) -> CompileResult<Locatable<ExternalDeclaration>> {

@@ -3,7 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use super::*;
 use crate::data::ast::{Expr, ExprType, TypeName};
 use crate::data::lex::{AssignmentToken, Keyword};
-use crate::data::prelude::*;
+use crate::data::*;
 
 #[derive(Copy, Clone, Debug)]
 #[rustfmt::skip]

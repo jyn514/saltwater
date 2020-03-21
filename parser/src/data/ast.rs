@@ -683,7 +683,7 @@ impl Display for Expr {
             ExprType::Ternary(cond, left, right) => {
                 write!(f, "({}) ? ({}) : ({})", cond, left, right)
             }
-            ExprType::FuncCall(left, params) => write!(f, "({})({})", left, super::join(params)),
+            ExprType::FuncCall(left, params) => write!(f, "({})({})", left, joined(params, ", ")),
             ExprType::Cast(ctype, expr) => write!(f, "({})({})", ctype, expr),
             ExprType::Member(compound, id) => write!(f, "({}).{}", compound, id),
             ExprType::DerefMember(compound, id) => write!(f, "({})->{}", compound, id),

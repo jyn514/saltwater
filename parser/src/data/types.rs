@@ -1,4 +1,4 @@
-use super::Symbol;
+use super::hir::Symbol;
 use crate::intern::InternedStr;
 pub use struct_ref::{StructRef, StructType};
 
@@ -130,7 +130,6 @@ mod struct_ref {
     }
 }
 
-/*
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Void,
@@ -148,12 +147,16 @@ pub enum Type {
     Struct(StructType),
     /// Enums should always have members, since tentative definitions are not allowed
     Enum(Option<InternedStr>, Vec<(InternedStr, i64)>),
-    /// This should probably be merged into Structs at some point
-    Bitfield(Vec<BitfieldType>),
     /// This is the type used for variadic arguments.
     VaList,
     /// A semantic error occured while parsing this type.
     Error,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ArrayType {
+    Fixed(u64),
+    Unbounded,
 }
 
 #[derive(Clone, Debug)]
@@ -169,14 +172,6 @@ pub struct FunctionType {
     pub return_type: Box<Type>,
     pub params: Vec<Symbol>,
     pub varargs: bool,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BitfieldType {
-    pub offset: i32,
-    pub name: Option<InternedStr>,
-    pub ctype: Type,
 }
 
 impl Type {
@@ -376,7 +371,5 @@ impl FunctionType {
         *self.return_type != Type::Void
     }
 }
-
-*/
 
 */

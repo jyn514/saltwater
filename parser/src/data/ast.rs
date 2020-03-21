@@ -195,7 +195,12 @@ pub enum StmtType {
     // for(int i = 1, j = 2; i < 4; ++i) body
     // for(i = 1; ; ++i) body
     // for (;;) ;
-    For(Box<Stmt>, Option<Box<Expr>>, Option<Box<Expr>>, Box<Stmt>),
+    For {
+        initializer: Box<Stmt>,
+        condition: Option<Box<Expr>>,
+        post_loop: Option<Box<Expr>>,
+        body: Box<Stmt>,
+    },
     Switch(Expr, Box<Stmt>),
     Label(InternedStr, Box<Stmt>),
     Case(Box<Expr>, Box<Stmt>),
@@ -628,7 +633,12 @@ impl StmtType {
                 condition, body.data, otherwise.data
             ),
             StmtType::Do(body, condition) => write!(f, "do {} while ({});", body.data, condition),
-            StmtType::For(decls, condition, post_loop, body) => {
+            StmtType::For {
+                initializer: decls,
+                condition,
+                post_loop,
+                body,
+            } => {
                 write!(f, "for (")?;
                 match &decls.data {
                     StmtType::Decl(decls) => write!(f, "{} ", decls)?,

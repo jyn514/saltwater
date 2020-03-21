@@ -3,6 +3,7 @@ use crate::data::ast::{
     self, Declaration, DeclarationSpecifier, Declarator, Expr, ExternalDeclaration, Initializer,
     TypeName,
 };
+use crate::data::error::Warning;
 use crate::data::lex::LocationTrait;
 use std::convert::{TryFrom, TryInto};
 
@@ -39,11 +40,20 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// ;
     pub fn external_declaration(&mut self) -> SyntaxResult<Locatable<ExternalDeclaration>> {
         let (specifiers, specifier_locations) = self.specifiers()?;
-        // TODO: allow `int;`
+
+        // allow `int;`
+        if let Some(token) = self.match_next(&Token::Semicolon) {
+            let location = token.location.maybe_merge(specifier_locations);
+            self.error_handler.warn(Warning::EmptyDeclaration, location);
+            let empty_decl = ExternalDeclaration::Declaration(Declaration {
+                specifiers,
+                declarators: Vec::new(),
+            });
+            return Ok(Locatable::new(empty_decl, location));
+        }
+
         let declarator = self.init_declarator()?;
         let mut location = declarator.location.maybe_merge(specifier_locations);
-
-        //if let Some(token) = self.match_next(&Token::LeftBrace) {
         if self.peek_token() == Some(&Token::LeftBrace) {
             if !declarator.data.declarator.is_function() {
                 return Err(location.with(SyntaxError::NotAFunction(declarator.data)));
@@ -107,18 +117,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let mut specifiers = Vec::new();
         let mut all_locs = None;
         while let Some(&Token::Keyword(keyword)) = self.peek_token() {
+            let location = self.next_token().unwrap().location;
             let spec = match keyword {
-                Keyword::Struct | Keyword::Union => self.struct_specifier()?,
+                Keyword::Struct => self.struct_specifier(true, location)?,
+                Keyword::Union => self.struct_specifier(false, location)?,
                 Keyword::Enum => self.enum_specifier()?,
                 other if !other.is_decl_specifier() => {
                     let err = SyntaxError::ExpectedDeclSpecifier(keyword);
-                    let location = self.next_token().unwrap().location;
                     return Err(location.with(err));
                 }
-                _ => {
-                    let location = self.next_token().unwrap().location;
-                    Locatable::new(keyword.try_into().unwrap(), location)
-                }
+                _ => Locatable::new(keyword.try_into().unwrap(), location),
             };
             all_locs = all_locs.map_or(Some(spec.location), |existing: Location| {
                 Some(existing.merge(spec.location))
@@ -127,9 +135,104 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
         Ok((specifiers, all_locs))
     }
-    fn struct_specifier(&mut self) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
-        unimplemented!("struct/union specifiers");
+    /// struct_or_union_specifier
+    /// : (struct | union) '{' struct_declaration + '}'
+    /// | (struct | union) identifier '{' struct_declaration + '}'
+    /// | (struct | union) identifier
+    /// ;
+    fn struct_specifier(
+        &mut self, is_struct: bool, mut start: Location,
+    ) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
+        use crate::data::ast::StructSpecifier;
+        use crate::data::error::Warning;
+
+        let name = self.match_id().map(|id| {
+            start = start.merge(id.location);
+            id.data
+        });
+        let members = if let Some(token) = self.match_next(&Token::LeftBrace) {
+            start = start.merge(token.location);
+            let mut members = Vec::new();
+            loop {
+                if let Some(token) = self.match_next(&Token::RightBrace) {
+                    start = start.merge(token.location);
+                    break;
+                }
+                if let Some(token) = self.match_next(&Token::Semicolon) {
+                    self.error_handler.warn(
+                        Warning::ExtraneousSemicolon("struct declaration is not allowed by ISO"),
+                        token.location,
+                    );
+                    continue;
+                }
+                let decl = self.struct_declaration_list()?;
+                start = start.merge(decl.location);
+                members.push(decl.data);
+            }
+            Some(members)
+        } else {
+            None
+        };
+        let spec = StructSpecifier { name, members };
+        let spec = if is_struct {
+            DeclarationSpecifier::Struct(spec)
+        } else {
+            DeclarationSpecifier::Union(spec)
+        };
+        Ok(Locatable::new(spec, start))
     }
+
+    /// struct_declaration: (type_specifier | type_qualifier)+ struct_declarator_list ';'
+    ///
+    /// struct_declarator_list: struct_declarator (',' struct_declarator)* ;
+    ///
+    /// struct_declarator
+    /// : declarator
+    /// | ':' constant_expr  // bitfield, not supported
+    /// | declarator ':' constant_expr
+    /// ;
+    fn struct_declaration_list(&mut self) -> SyntaxResult<Locatable<ast::StructDeclarationList>> {
+        //use data::lex::LocationTrait;
+        let (specifiers, mut spec_location) = self.specifiers()?;
+        let mut declarators = Vec::new();
+        let location = loop {
+            if let Some(token) = self.match_next(&Token::Semicolon) {
+                break token.location.maybe_merge(spec_location);
+            }
+            let decl = if self.peek_token() != Some(&Token::Colon) {
+                self.declarator(true)?.map(|d| {
+                    spec_location = Some(d.location.maybe_merge(spec_location));
+                    d.data.parse_declarator()
+                })
+            } else {
+                None
+            };
+            let bitfield = if let Some(token) = self.match_next(&Token::Colon) {
+                let size = self.ternary_expr()?;
+                spec_location = Some(token.location.merge(size.location));
+                Some(size)
+            } else {
+                None
+            };
+            declarators.push(ast::StructDeclarator { decl, bitfield });
+            if self.match_next(&Token::Comma).is_none() {
+                break self.expect(Token::Semicolon)?.location;
+            }
+        };
+        let decl_list = ast::StructDeclarationList {
+            specifiers,
+            declarators,
+        };
+        Ok(Locatable::new(
+            decl_list,
+            location.maybe_merge(spec_location),
+        ))
+    }
+    /// enum_specifier
+    ///  : ENUM '{' enumerator_list '}'
+    ///  | ENUM identifier '{' enumerator_list '}'
+    ///  | ENUM identifier
+    ///  ;
     fn enum_specifier(&mut self) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
         unimplemented!("enum specifiers");
     }

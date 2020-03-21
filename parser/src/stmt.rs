@@ -96,16 +96,16 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
 
                 // selection_statement
-                Keyword::If => Ok(self.if_statement()?),
-                Keyword::Switch => Ok(self.switch_statement()?),
+                Keyword::If => self.if_statement(),
+                Keyword::Switch => self.switch_statement(),
 
                 // iteration_statement
-                Keyword::While => Ok(self.while_statement()?),
-                Keyword::Do => Ok(self.do_while_statement()?),
-                Keyword::For => Ok(self.for_statement()?),
+                Keyword::While => self.while_statement(),
+                Keyword::Do => self.do_while_statement(),
+                Keyword::For => self.for_statement(),
 
                 // jump_statement
-                Keyword::Goto => Ok(self.goto_statement()?),
+                Keyword::Goto => self.goto_statement(),
                 Keyword::Continue => {
                     let kw = self.next_token().unwrap();
                     self.expect(Token::Semicolon)?;
@@ -122,7 +122,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         location: kw.location,
                     })
                 }
-                Keyword::Return => Ok(self.return_statement()?),
+                Keyword::Return => self.return_statement(),
 
                 // start of an expression statement
                 Keyword::Sizeof

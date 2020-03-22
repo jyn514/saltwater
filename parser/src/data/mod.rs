@@ -5,7 +5,6 @@ pub mod lex;
 pub mod types;
 
 pub use crate::intern::InternedStr;
-pub use ast::{Declaration, Expr, ExprType, Stmt, StmtType};
 pub use error::{CompileError, CompileResult, CompileWarning, Error, SemanticError, SyntaxError};
 pub(crate) use error::{ErrorHandler, Recover, RecoverableResult};
 pub use lex::{DefaultLocation as Location, Literal, Locatable, LocationTrait, Token};

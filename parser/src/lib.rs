@@ -21,7 +21,7 @@ pub use crate::lex::Lexer;
 
 type Lexeme<L = Location> = CompileResult<Locatable<Token, L>, L>;
 
-type SyntaxResult<T = Expr> = Result<T, Locatable<SyntaxError>>;
+type SyntaxResult<T> = Result<T, Locatable<SyntaxError>>;
 
 #[derive(Clone, Debug)]
 pub(crate) enum TagEntry {

@@ -15,9 +15,8 @@ pub enum ExternalDeclaration {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FunctionDefinition {
     pub specifiers: Vec<DeclarationSpecifier>,
-    // TODO: maybe support K&R C?
-    //DeclarationList
-    pub declarator: Declarator,
+    pub id: InternedStr,
+    pub declarator: FunctionDeclarator,
     pub body: CompoundStatement,
 }
 
@@ -85,40 +84,7 @@ pub enum DeclarationSpecifier {
         members: Option<Vec<(InternedStr, Option<Expr>)>>,
     },
     Typedef(InternedStr),
-    /*
-    Type(TypeSpecifier),
-    Qualifier(TypeQualifier),
-    */
 }
-
-/*
-pub enum TypeQualifier {
-    Const,
-    Volatile,
-    Restrict,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum TypeSpecifier {
-    Void,
-    Char,
-    Short,
-    Int,
-    Long,
-    Float,
-    Double,
-    Signed,
-    Unsigned,
-    Struct(StructSpecifier),
-    Union(StructSpecifier),
-    // enum name? { A = 1, B = 2, C }
-    Enum {
-        name: Option<InternedStr>,
-        members: Vec<(InternedStr, Expr)>,
-    },
-    Typedef(InternedStr),
-}
-*/
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructSpecifier {
@@ -166,6 +132,21 @@ pub struct Declarator {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct FunctionDeclarator {
+    pub return_type: Box<DeclaratorType>,
+    // TODO: maybe support K&R C?
+    //DeclarationList
+    pub params: Vec<TypeName>,
+    pub varargs: bool,
+}
+
+impl From<FunctionDeclarator> for DeclaratorType {
+    fn from(func: FunctionDeclarator) -> Self {
+        DeclaratorType::Function(func)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum DeclaratorType {
     // No more declarator, e.g. for abstract params
     End,
@@ -177,11 +158,7 @@ pub enum DeclaratorType {
         of: Box<DeclaratorType>,
         size: Option<Box<Expr>>,
     },
-    Function {
-        return_type: Box<DeclaratorType>,
-        params: Vec<TypeName>,
-        varargs: bool,
-    },
+    Function(FunctionDeclarator),
 }
 
 pub type Stmt = Locatable<StmtType>;
@@ -366,9 +343,8 @@ impl Display for FunctionDefinition {
         for spec in &self.specifiers {
             write!(f, "{} ", spec)?;
         }
-        write!(f, "{} ", self.declarator)?;
-        pretty_print_compound(f, &self.body, 0)?;
-        writeln!(f)
+        self.declarator.pretty_print(Some(self.id), f)?;
+        pretty_print_compound(f, &self.body, 0)
     }
 }
 
@@ -486,7 +462,7 @@ impl DeclaratorType {
         use DeclaratorType::*;
         match self {
             Pointer { to: inner, .. } | Array { of: inner, .. } => inner.print_pre(f),
-            Function { return_type, .. } => write!(f, "{}", return_type),
+            Function(FunctionDeclarator { return_type, .. }) => write!(f, "{}", return_type),
             End => Ok(()),
         }
     }
@@ -540,9 +516,9 @@ impl DeclaratorType {
                 write!(f, "]")?;
                 of.print_post(f)
             }
-            Function {
+            Function(FunctionDeclarator {
                 params, varargs, ..
-            } => {
+            }) => {
                 write!(f, "({}", joined(params, ", "))?;
                 if *varargs {
                     write!(f, ", ...")?;
@@ -553,9 +529,34 @@ impl DeclaratorType {
         }
     }
 }
+
 impl Display for Declarator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.decl.pretty_print(self.id, f)
+    }
+}
+
+impl Display for FunctionDeclarator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.pretty_print(None, f)
+    }
+}
+
+impl FunctionDeclarator {
+    fn pretty_print(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
+        // TODO: maybe factor out some of the repeated code?
+        // print_pre
+        write!(f, "{}", self.return_type)?;
+        // print_mid
+        if let Some(name) = name {
+            write!(f, "{}", name)?;
+        }
+        // print_post
+        write!(f, "({}", joined(&self.params, ", "))?;
+        if self.varargs {
+            write!(f, ", ...")?;
+        }
+        write!(f, ")")
     }
 }
 

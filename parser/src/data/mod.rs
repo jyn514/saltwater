@@ -14,6 +14,7 @@ pub use types::{StructRef, StructType};
 
 use lex::Keyword;
 
+// used by both `ast` and `hir`
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StorageClass {
     Static = Keyword::Static as isize,
@@ -23,6 +24,7 @@ pub enum StorageClass {
     Typedef = Keyword::Typedef as isize,
 }
 
+// helper functions for `Display` impls
 fn joined<I: IntoIterator<Item = T>, T: ToString>(it: I, delim: &str) -> String {
     it.into_iter()
         .map(|s| s.to_string())

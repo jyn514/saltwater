@@ -56,16 +56,30 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         let declarator = self.init_declarator()?;
         let mut location = declarator.location.maybe_merge(specifier_locations);
         if self.peek_token() == Some(&Token::LeftBrace) {
-            if !declarator.data.declarator.is_function() {
-                return Err(location.with(SyntaxError::NotAFunction(declarator.data)));
-            } else if let Some(init) = declarator.data.init {
+            use crate::data::ast::{DeclaratorType, FunctionDefinition};
+
+            // int i = 1 {}
+            let func = match declarator.data.declarator.decl {
+                DeclaratorType::Function(func) => func,
+                _ => return Err(location.with(SyntaxError::NotAFunction(declarator.data))),
+            };
+            // int f() = 1 { }
+            if let Some(init) = declarator.data.init {
                 return Err(location.with(SyntaxError::FunctionInitializer(init)));
             }
-            let ctype = TypeName {
+
+            let body = self.compound_statement()?;
+            let location = location.merge(body.location);
+            // int () {}
+            let err = location.with(SyntaxError::MissingFunctionName);
+            let id = declarator.data.declarator.id.ok_or(err)?;
+            let def = FunctionDefinition {
+                id,
+                body: body.data,
                 specifiers,
-                declarator: declarator.data.declarator,
+                declarator: func,
             };
-            return self.function_body(Locatable::new(ctype, location));
+            return Ok(Locatable::new(ExternalDeclaration::Function(def), location));
         }
         let mut decls = vec![declarator];
         while self.match_next(&Token::Semicolon).is_none() {
@@ -303,21 +317,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             declarator: InternalDeclarator::parse_declarator(d),
             init,
         }))
-    }
-
-    fn function_body(
-        &mut self, func: Locatable<TypeName>,
-    ) -> SyntaxResult<Locatable<ExternalDeclaration>> {
-        use crate::data::ast::FunctionDefinition;
-
-        let body = self.compound_statement()?;
-        let location = func.location.merge(body.location);
-        let def = FunctionDefinition {
-            body: body.data,
-            specifiers: func.data.specifiers,
-            declarator: func.data.declarator,
-        };
-        Ok(Locatable::new(ExternalDeclaration::Function(def), location))
     }
 
     fn merge_decls(
@@ -654,11 +653,11 @@ impl InternalDeclarator {
                     of: Box::new(current),
                     size,
                 },
-                Function { params, varargs } => DeclaratorType::Function {
+                Function { params, varargs } => DeclaratorType::from(ast::FunctionDeclarator {
                     return_type: Box::new(current),
                     params,
                     varargs,
-                },
+                }),
             };
             declarator = decl.next.map(|x| *x);
         }
@@ -821,19 +820,19 @@ mod test {
             .parse_declarator();
         assert_eq!(decl.id, Some("f".into()));
         match decl.decl {
-            DeclaratorType::Function {
+            DeclaratorType::Function(FunctionDeclarator {
                 return_type,
                 params,
                 varargs,
-            } => {
+            }) => {
                 assert_eq!(*return_type, DeclaratorType::End);
                 assert_eq!(varargs, false);
                 assert_eq!(params.len(), 1);
-                let cursed = DeclaratorType::Function {
+                let cursed = DeclaratorType::Function(FunctionDeclarator {
                     params: vec![],
                     varargs: false,
                     return_type: Box::new(DeclaratorType::End),
-                };
+                });
                 assert_eq!(params[0].declarator.decl, cursed);
             }
             _ => panic!("wrong declarator parsed"),

@@ -206,6 +206,9 @@ pub enum SyntaxError {
     #[error("function not allowed in this context (got {0})")]
     FunctionNotAllowed(ast::FunctionDefinition),
 
+    #[error("function definitions must have a name")]
+    MissingFunctionName,
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

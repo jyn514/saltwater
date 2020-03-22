@@ -669,6 +669,7 @@ impl TryFrom<Keyword> for DeclarationSpecifier {
     type Error = ();
     #[rustfmt::skip]
     fn try_from(k: Keyword) -> Result<DeclarationSpecifier, ()> {
+        use ast::UnitSpecifier;
         use DeclarationSpecifier::*;
         use Keyword::*;
 
@@ -682,7 +683,7 @@ impl TryFrom<Keyword> for DeclarationSpecifier {
         macro_rules! change_enum {
             ($val: expr, $source: path, $dest: ident, $($name: ident),* $(,)?) => {
                 match $val {
-                    $(<$source>::$name => Ok($dest::$name),)*
+                    $(<$source>::$name => Ok(DeclarationSpecifier::Unit(UnitSpecifier::$name)),)*
                     _ => Err(()),
                 }
             }

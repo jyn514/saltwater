@@ -28,6 +28,19 @@ pub struct TypeName {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeclarationSpecifier {
+    Unit(UnitSpecifier),
+    Struct(StructSpecifier),
+    Union(StructSpecifier),
+    // enum name? { A = 1, B = 2, C }
+    Enum {
+        name: Option<InternedStr>,
+        members: Option<Vec<(InternedStr, Option<Expr>)>>,
+    },
+    Typedef(InternedStr),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum UnitSpecifier {
     // types
     Char,
     Short,
@@ -61,29 +74,6 @@ pub enum DeclarationSpecifier {
     Register,
     Static,
     Extern,
-    /*
-    Const,
-    Volatile,
-    Restrict,
-
-    Void,
-    Char,
-    Short,
-    Int,
-    Long,
-    Float,
-    Double,
-    Signed,
-    Unsigned,
-    */
-    Struct(StructSpecifier),
-    Union(StructSpecifier),
-    // enum name? { A = 1, B = 2, C }
-    Enum {
-        name: Option<InternedStr>,
-        members: Option<Vec<(InternedStr, Option<Expr>)>>,
-    },
-    Typedef(InternedStr),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -385,31 +375,9 @@ impl Display for Initializer {
 impl Display for DeclarationSpecifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use DeclarationSpecifier::*;
+
         match self {
-            Static => write!(f, "static"),
-            Extern => write!(f, "extern"),
-            Register => write!(f, "register"),
-            Auto => write!(f, "auto"),
-
-            Const => write!(f, "const"),
-            Volatile => write!(f, "volatile"),
-            Restrict => write!(f, "restrict"),
-            Atomic => write!(f, "_Atomic"),
-            ThreadLocal => write!(f, "_Thread_local"),
-
-            Inline => write!(f, "inline"),
-            NoReturn => write!(f, "_Noreturn"),
-
-            Void => write!(f, "void"),
-            Bool => write!(f, "_Bool"),
-            Char => write!(f, "char"),
-            Short => write!(f, "short"),
-            Int => write!(f, "int"),
-            Long => write!(f, "long"),
-            Float => write!(f, "float"),
-            Double => write!(f, "double"),
-            Signed => write!(f, "signed"),
-            Unsigned => write!(f, "unsigned"),
+            Unit(u) => write!(f, "{}", u),
             Enum {
                 name: Some(ident), ..
             } => write!(f, "enum {}", ident),
@@ -435,6 +403,39 @@ impl Display for DeclarationSpecifier {
             Union(spec) => write!(f, "union {}", spec),
             Struct(spec) => write!(f, "struct {}", spec),
             Typedef(name) => write!(f, "{}", name),
+        }
+    }
+}
+
+impl Display for UnitSpecifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use UnitSpecifier::*;
+
+        match self {
+            Static => write!(f, "static"),
+            Extern => write!(f, "extern"),
+            Register => write!(f, "register"),
+            Auto => write!(f, "auto"),
+
+            Const => write!(f, "const"),
+            Volatile => write!(f, "volatile"),
+            Restrict => write!(f, "restrict"),
+            Atomic => write!(f, "_Atomic"),
+            ThreadLocal => write!(f, "_Thread_local"),
+
+            Inline => write!(f, "inline"),
+            NoReturn => write!(f, "_Noreturn"),
+
+            Void => write!(f, "void"),
+            Bool => write!(f, "_Bool"),
+            Char => write!(f, "char"),
+            Short => write!(f, "short"),
+            Int => write!(f, "int"),
+            Long => write!(f, "long"),
+            Float => write!(f, "float"),
+            Double => write!(f, "double"),
+            Signed => write!(f, "signed"),
+            Unsigned => write!(f, "unsigned"),
 
             Complex => write!(f, "_Complex"),
             Imaginary => write!(f, "_Imaginary"),

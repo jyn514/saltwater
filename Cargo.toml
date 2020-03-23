@@ -21,7 +21,7 @@ cranelift-object = "0.59"
 cranelift-simplejit = { version = "0.59", optional = true }
 env_logger = { version = "0.7", default-features = false, optional = true }
 hexponent = "0.2.2"
-thiserror = ">=1.0.9"
+thiserror = ">=1.0.10"
 log = "0.4"
 target-lexicon = "0.10"
 tempfile = { version = "3", optional = true }

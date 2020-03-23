@@ -155,7 +155,7 @@ fn test_float_literals() {
     assert_float("0x.ep-0l", 0.875);
     assert_float("0xe.p-4f", 0.875);
     assert_float("0xep-4f", 0.875);
-    assert_float("0x.000000000000000000102p0", 1.3338287377417571E-23);
+    assert_float("0x.000000000000000000102p0", 1.333_828_737_741_757E-23);
     // DBL_MAX is actually 1.79769313486231570814527423731704357e+308L
     // TODO: change this whenever https://github.com/rust-lang/rust/issues/31407 is closed
     assert_float(

@@ -1,4 +1,4 @@
-use super::hir::Symbol;
+use super::hir::Metadata;
 use crate::intern::InternedStr;
 pub use struct_ref::{StructRef, StructType};
 
@@ -6,7 +6,7 @@ mod struct_ref {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use super::Symbol;
+    use super::Metadata;
 
     thread_local!(
         /// The global storage for all struct definitions.
@@ -18,7 +18,7 @@ mod struct_ref {
         /// Rc: A hack so that the members can be accessed across function boundaries,
         /// see the documentation for `StructRef::get`.
         /// Vec<Symbol>: The members of a single struct definition.
-        static TYPES: RefCell<Vec<Rc<Vec<Symbol>>>> = Default::default()
+        static TYPES: RefCell<Vec<Rc<Vec<Metadata>>>> = Default::default()
     );
 
     /// A reference to a struct definition. Allows self-referencing structs.
@@ -64,7 +64,7 @@ mod struct_ref {
         // Implementation hack: because thread_local items cannot be returned
         // from a closure, this uses an Rc so that it can be `clone`d cheaply.
         // The clone is necessary so the members do not reference TYPES.
-        pub fn get(self) -> Rc<Vec<Symbol>> {
+        pub fn get(self) -> Rc<Vec<Metadata>> {
             TYPES.with(|list| list.borrow()[self.0].clone())
         }
 
@@ -82,7 +82,7 @@ mod struct_ref {
         /// ```
         pub(crate) fn update<V>(self, members: V)
         where
-            V: Into<Rc<Vec<Symbol>>>,
+            V: Into<Rc<Vec<Metadata>>>,
         {
             TYPES.with(|list| {
                 let mut types = list.borrow_mut();
@@ -103,12 +103,12 @@ mod struct_ref {
         Named(super::InternedStr, StructRef),
         /// Anonymous structs carry all their information with them,
         /// there's no need (or way) to use StructRef.
-        Anonymous(Rc<Vec<Symbol>>),
+        Anonymous(Rc<Vec<Metadata>>),
     }
 
     impl StructType {
         /// Get the members of a struct, regardless of which variant it is
-        pub fn members(&self) -> Rc<Vec<Symbol>> {
+        pub fn members(&self) -> Rc<Vec<Metadata>> {
             match self {
                 StructType::Anonymous(members) => Rc::clone(members),
                 StructType::Named(_, struct_ref) => struct_ref.get(),
@@ -159,18 +159,23 @@ pub enum ArrayType {
     Unbounded,
 }
 
-#[derive(Clone, Debug)]
-// note: old-style declarations are not supported at this time
+// NOTE: K&R declarations are not supported at this time
+// NOTE: previously, `PartialEq` for FunctionType returned whether the two functions had compatible prototypes,
+// which is _not_ the same as having the _same_ prototypes.
+// This #[derive(PartialEq)] returns whether the functions have the _same_ prototype.
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunctionType {
-    // why Symbol instead of Type?
+    // TODO: allow FunctionQualifiers as well
+    pub return_type: Box<Type>,
+    // why Metadata instead of Type?
     // 1. we need to know qualifiers for the params. if we made that part of Type,
     //    we'd need qualifiers for every step along the way
     //    (consider that int a[][][] parses as 4 nested types).
     // 2. when we do scoping, we need to know the names of formal parameters
     //    (as opposed to concrete arguments).
     //    this is as good a place to store them as any.
-    pub return_type: Box<Type>,
-    pub params: Vec<Symbol>,
+    // None represents an abstract parameter
+    pub params: Vec<Metadata>,
     pub varargs: bool,
 }
 
@@ -245,6 +250,7 @@ impl Type {
     */
 }
 
+/*
 impl PartialEq for FunctionType {
     fn eq(&self, other: &Self) -> bool {
         // no prototype: any parameters are allowed
@@ -264,6 +270,7 @@ impl PartialEq for FunctionType {
                 })
     }
 }
+*/
 
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -341,8 +348,13 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         Type::Function(func_type) => {
             // https://stackoverflow.com/a/30325430
             let mut comma_seperated = "(".to_string();
-            for param in &func_type.params {
-                print_type(&param.ctype, Some(param.id), f)?;
+            for symbol in &func_type.params {
+                let id = if symbol.id == InternedStr::default() {
+                    None
+                } else {
+                    Some(symbol.id)
+                };
+                print_type(&symbol.ctype, id, f)?;
                 comma_seperated.push_str(", ");
             }
             if func_type.varargs {

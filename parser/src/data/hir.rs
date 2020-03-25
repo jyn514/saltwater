@@ -1,7 +1,9 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
+use std::rc::Rc;
 
 use super::error::CompileError;
 use super::lex::{AssignmentToken, ComparisonToken, Keyword, Literal, Locatable};
@@ -42,7 +44,7 @@ impl Default for StmtType {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Declaration {
-    pub symbol: Symbol,
+    pub symbol: MetadataRef,
     pub init: Option<Initializer>,
 }
 
@@ -76,10 +78,47 @@ pub struct Expr {
     pub location: Location,
 }
 
+/// An identifier used to look up the metadata for a variable.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct MetadataRef(usize);
+
+thread_local!(
+    /// The global storage for all metadata.
+    ///
+    /// The type is read like so:
+    /// RefCell: A container with interior mutability, used because `LocalKey`
+    /// returns an immutable reference.
+    /// MetadataStore: metadata for all variables seen so far
+    static METADATA_STORE: RefCell<MetadataStore> = Default::default()
+);
+
+#[derive(Default)]
+pub(crate) struct MetadataStore(Vec<Rc<Metadata>>);
+
+impl MetadataStore {
+    pub(crate) fn insert(&mut self, m: Metadata) -> MetadataRef {
+        let i = self.0.len();
+        self.0.push(Rc::new(m));
+        MetadataRef(i)
+    }
+    /// Guarenteed not to panic since `MetadataRef` is always valid
+    pub fn get(&self, i: MetadataRef) -> Rc<Metadata> {
+        self.0[i.0].clone()
+    }
+}
+
+impl MetadataRef {
+    fn get(self) -> Rc<Metadata> {
+        METADATA_STORE.with(|store| store.borrow().get(self).clone())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprType {
     // primary expressions
-    Id(Symbol),
+    // This stores a reference to the metadata for the identifier,
+    // which can be looked up using a `metadata_store`.
+    Id(MetadataRef),
     Literal(Literal),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, InternedStr),
@@ -122,12 +161,16 @@ pub enum ExprType {
 }
 
 /* structs */
-#[derive(Clone, Debug)]
-pub struct Symbol {
+/// The metadata stored for variables and function parameters.
+///
+/// For abstract function parameters, e.g. `int f(int)`, the `id` will resolve to the empty string.
+/// Furthermore, it is guaranteed to be equal to `InternedStr::default()`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Metadata {
     pub ctype: Type,
-    pub id: InternedStr,
-    pub qualifiers: Qualifiers,
     pub storage_class: StorageClass,
+    pub qualifiers: Qualifiers,
+    pub id: InternedStr,
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -267,7 +310,7 @@ impl Display for Expr {
         match &self.expr {
             ExprType::Comma(left, right) => write!(f, "{}, {}", *left, *right),
             ExprType::Literal(token) => write!(f, "{}", token),
-            ExprType::Id(symbol) => write!(f, "{}", symbol.id),
+            ExprType::Id(symbol) => write!(f, "{}", symbol.get().id),
             ExprType::Add(left, right) => write!(f, "({}) + ({})", left, right),
             ExprType::Sub(left, right) => write!(f, "({}) - ({})", left, right),
             ExprType::Mul(left, right) => write!(f, "({}) * ({})", left, right),
@@ -405,16 +448,16 @@ impl StmtType {
     }
 }
 
-impl Display for Symbol {
+impl Display for Metadata {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}", self.storage_class, self.qualifiers)?;
-        super::types::print_type(&self.ctype, Some(self.id), f)
+        write!(f, "{} {}", self.qualifiers, self.storage_class)?;
+        super::types::print_type(&self.ctype, None, f)
     }
 }
 
 impl Display for Declaration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.symbol)?;
+        write!(f, "{}", self.symbol.get())?;
         match &self.init {
             Some(Initializer::FunctionBody(body)) => {
                 writeln!(f, " {{")?;
@@ -436,6 +479,7 @@ impl Display for Declaration {
     }
 }
 
+/*
 impl PartialEq for Symbol {
     // don't require both symbols to be `init` to be equal
     fn eq(&self, other: &Self) -> bool {
@@ -452,6 +496,7 @@ impl PartialEq for Symbol {
 }
 
 impl Eq for Symbol {}
+*/
 
 #[cfg(test)]
 mod tests {

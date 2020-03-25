@@ -2,6 +2,7 @@
 #![allow(unused_imports)]
 #![allow(clippy::mem_replace_with_default)]
 
+mod analyze;
 mod data;
 mod decl;
 mod expr;

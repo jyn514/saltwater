@@ -36,10 +36,10 @@ pub enum DeclarationSpecifier {
         name: Option<InternedStr>,
         members: Option<Vec<(InternedStr, Option<Expr>)>>,
     },
-    Typedef(InternedStr),
+    Typedef,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum UnitSpecifier {
     // types
     Char,
@@ -402,7 +402,7 @@ impl Display for DeclarationSpecifier {
             }
             Union(spec) => write!(f, "union {}", spec),
             Struct(spec) => write!(f, "struct {}", spec),
-            Typedef(name) => write!(f, "{}", name),
+            Typedef => write!(f, "typedef"),
         }
     }
 }

@@ -108,6 +108,24 @@ pub enum SemanticError {
     #[error("{0}")]
     Generic(String),
 
+    #[error("cannot combine '{new}' specifier with previous '{existing}' type specifier")]
+    InvalidSpecifier {
+        existing: ast::DeclarationSpecifier,
+        new: ast::DeclarationSpecifier,
+    },
+
+    #[error("'{}' is too long for rcc", vec!["long"; *.0].join(" "))]
+    TooLong(usize),
+
+    #[error("conflicting storage classes '{0}' and '{1}'")]
+    ConflictingStorageClass(StorageClass, StorageClass),
+
+    #[error("conflicting types '{0}' and '{1}'")]
+    ConflictingType(Type, Type),
+
+    #[error("types cannot be both signed and unsigned")]
+    ConflictingSigned,
+
     /*
     #[error("cannot have empty program")]
     EmptyProgram,
@@ -326,6 +344,13 @@ pub enum Warning {
     #[error("extraneous semicolon in {0}")]
     ExtraneousSemicolon(&'static str),
 
+    #[error("'{0}' qualifier on return type has no effect")]
+    FunctionQualifiersIgnored(hir::Qualifiers),
+
+    #[error("duplicate '{0}' declaration specifier{}",
+            if *.1 > 1 { format!(" occurs {} times", .1) } else { String::new() })]
+    DuplicateSpecifier(ast::UnitSpecifier, usize),
+
     #[error("declaration does not declare anything")]
     EmptyDeclaration,
 
@@ -334,6 +359,9 @@ pub enum Warning {
 
     #[error("variadic macros are not yet supported")]
     IgnoredVariadic,
+
+    #[error("implicit int is deprecated and may be removed in a future release")]
+    ImplicitInt,
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

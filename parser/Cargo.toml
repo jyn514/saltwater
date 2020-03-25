@@ -12,6 +12,7 @@ string-interner = "*"
 lazy_static = "*"
 codespan = "0.8"
 hexf-parse = "0.1"
+counter = "0.4"
 #rcc = { path = "../" }
 
 [dev-dependencies]

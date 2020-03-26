@@ -520,24 +520,29 @@ impl Lexer {
         base.try_into().map_err(|_| CharError::OctalTooLarge)
     }
     fn parse_hex_char_escape(&mut self) -> Result<u8, CharError> {
-        let mut base = 0_u64;
-        let mut update = |this: &mut Self, c: u8| {
+        // first, consume the hex literal so overflow errors don't cascade
+        let mut buf = Vec::new();
+        let mut update = |this: &mut Self, c| {
             this.next_char();
-            // NOTE: this can't overflow, it will just shift in a 0
-            // base *= 16
-            base <<= 4;
-            // NOTE: because we shifted in a 0 and c < 16, this can't overflow
-            base += u64::from(c);
+            buf.push(c);
         };
-        loop {
-            match self.peek() {
-                Some(c) if b'0' <= c && c <= b'9' => update(self, c - b'0'),
-                Some(c) if b'a' <= c && c <= b'f' => update(self, c - b'a' + 10),
-                Some(c) if b'A' <= c && c <= b'F' => update(self, c - b'A' + 10),
+        while let Some(c) = self.peek() {
+            match c {
+                b'0'..=b'9' => update(self, c - b'0'),
+                b'a'..=b'f' => update(self, c - b'a' + 10),
+                b'A'..=b'F' => update(self, c - b'A' + 10),
                 _ => break,
             }
         }
-        base.try_into().map_err(|_| CharError::HexTooLarge)
+
+        // now, turn the literal into a number
+        let mut base = 0_u64;
+        for digit in buf {
+            base = base.checked_mul(16).ok_or(CharError::HexTooLarge)?;
+            // NOTE: because we shifted in a 0 and c < 16, this can't overflow
+            base += u64::from(digit);
+        }
+        base.try_into().or(Err(CharError::HexTooLarge))
     }
     /// Parse a character literal, starting after the opening quote.
     ///

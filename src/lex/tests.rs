@@ -263,6 +263,7 @@ fn test_characters() {
         .unwrap()
         .unwrap_err()
         .is_lex_err());
+    assert!(lex(r"'\xffuuuuuuuuuuuuuuuX'").unwrap().unwrap_err().is_lex_err());
 }
 #[test]
 fn test_strings() {

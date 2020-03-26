@@ -532,8 +532,8 @@ impl Lexer {
         loop {
             match self.peek() {
                 Some(c) if b'0' <= c && c <= b'9' => update(self, c - b'0'),
-                Some(c) if b'a' <= c && c <= b'z' => update(self, c - b'a' + 10),
-                Some(c) if b'A' <= c && c <= b'Z' => update(self, c - b'A' + 10),
+                Some(c) if b'a' <= c && c <= b'f' => update(self, c - b'a' + 10),
+                Some(c) if b'A' <= c && c <= b'F' => update(self, c - b'A' + 10),
                 _ => break,
             }
         }

@@ -21,4 +21,4 @@ assignees: ''
 ```
 
 <!-- If you know where to find it, include the relevant part of the C standard
-    There's a copy at http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf -->
+    There's a copy at http://port70.net/~nsz/c/c11/n1570.html -->

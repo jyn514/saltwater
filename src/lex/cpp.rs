@@ -1617,7 +1617,11 @@ int main(){}
         assert_same(original, expected);
 
         let original = "#define foo(x, y) { x, y }\nfoo(5 (6), 7)";
-        let expected = "{ 5 ( 6 ) , 7 }";
+        let expected = "{ 5 (6), 7 }";
+        assert_same(original, expected);
+
+        let original = "#define f(a, b, c) a + b + c\nf((((1))), ((2)), (3))";
+        let expected = "(((1))) + ((2)) + (3)";
         assert_same(original, expected);
     }
 }

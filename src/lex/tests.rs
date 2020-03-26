@@ -277,6 +277,11 @@ fn test_strings() {
     assert!(match_str(lex("\"string with \\0\""), "string with \0"));
     // 2 for newline
     assert_eq!(lex("\"").unwrap().unwrap_err().location.span, (0..2).into());
+    // regression test for https://github.com/jyn514/rcc/issues/350
+    assert!(match_str(lex(r#"
+    "a"
+    "b"
+    "#), "ab"));
 }
 
 #[test]

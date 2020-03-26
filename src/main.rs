@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 extern crate codespan;
-extern crate color_backtrace;
 extern crate codespan_reporting;
+extern crate color_backtrace;
 extern crate env_logger;
 extern crate log;
 extern crate pico_args;
@@ -339,6 +339,10 @@ fn get_errors() -> usize {
 }
 
 fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
-    eprintln!("{}: {}", ansi_term::Colour::Black.bold().paint("fatal"), msg);
+    eprintln!(
+        "{}: {}",
+        ansi_term::Colour::Black.bold().paint("fatal"),
+        msg
+    );
     process::exit(code);
 }

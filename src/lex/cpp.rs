@@ -717,8 +717,13 @@ impl<'a> PreProcessor<'a> {
                     let replacement = args[index].clone();
                     self.pending.extend(replacement);
                 } else {
-                    self.pending
-                        .push_back(location.with(PendingToken::Replacement(token.clone())));
+                    // #define f(a) f(a + 1)
+                    let pending = if id == name {
+                        PendingToken::Cyclic(Token::Id(id))
+                    } else {
+                        PendingToken::Replacement(Token::Id(id))
+                    };
+                    self.pending.push_back(location.with(pending));
                 }
             } else {
                 self.pending
@@ -1622,6 +1627,12 @@ int main(){}
 
         let original = "#define f(a, b, c) a + b + c\nf((((1))), ((2)), (3))";
         let expected = "(((1))) + ((2)) + (3)";
+        assert_same(original, expected);
+    }
+    #[test]
+    fn recursive_function() {
+        let original = "#define f(a) f(a + 1)\nf(1)";
+        let expected = "f(1 + 1)";
         assert_same(original, expected);
     }
 }

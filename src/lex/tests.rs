@@ -257,13 +257,22 @@ fn test_characters() {
     assert!(lex("'\\777'").unwrap().unwrap_err().is_lex_err());
     // extra digits are not allowed for octal escapes
     assert!(lex("'\\0001'").unwrap().unwrap_err().is_lex_err());
-    // should catch overflow in hex escapes
-    assert!(lex("'\\xfff'").unwrap().unwrap_err().is_lex_err());
-    assert!(lex("'\\xfffffffffffffffffffffffffff'")
-        .unwrap()
-        .unwrap_err()
-        .is_lex_err());
-    assert!(lex(r"'\xffuuuuuuuuuuuuuuuX'").unwrap().unwrap_err().is_lex_err());
+    // chars past `f` aren't hex digits
+    let invalid = r"'\xffuuuuuuuuuuuuuuuX'";
+    assert!(lex(invalid).unwrap().unwrap_err().is_lex_err());
+
+    // catch overflow in hex escapes
+    use crate::data::{
+        error::{Error, LexError},
+        Radix,
+    };
+    let assert_overflow = |c| match lex(c).unwrap().unwrap_err().data {
+        Error::Lex(LexError::CharEscapeOutOfRange(Radix::Hexadecimal)) => {}
+        _ => panic!("expected overflow error for {}", c),
+    };
+    assert_overflow("'\\xfff'");
+    assert_overflow("'\\xfffffffffffffffffffffffffff'");
+    assert_overflow(r"'\xff00000000000000ff'");
 }
 #[test]
 fn test_strings() {

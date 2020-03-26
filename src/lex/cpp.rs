@@ -673,6 +673,7 @@ impl<'a> PreProcessor<'a> {
         let location = self.span(start);
         let mut args = Vec::new();
         let mut current_arg = Vec::new();
+        let mut nested_parens = 1;
         // now, expand all arguments
         loop {
             let next = match self.next_replacement_token() {
@@ -680,15 +681,24 @@ impl<'a> PreProcessor<'a> {
                 Some(Err(err)) => return Some(Err(err)),
                 Some(Ok(token)) => token,
             };
-            if next.data.token() == &Token::Comma {
-                args.push(mem::replace(&mut current_arg, Vec::new()));
-                continue;
-            } else if next.data.token() == &Token::RightParen {
-                args.push(mem::replace(&mut current_arg, Vec::new()));
-                break;
-            } else {
-                current_arg.push(next);
+            match next.data.token() {
+                Token::Comma if nested_parens == 1 => {
+                    args.push(mem::replace(&mut current_arg, Vec::new()));
+                    continue;
+                }
+                Token::RightParen => {
+                    nested_parens -= 1;
+                    if nested_parens == 0 {
+                        args.push(mem::replace(&mut current_arg, Vec::new()));
+                        break;
+                    }
+                }
+                Token::LeftParen => {
+                    nested_parens += 1;
+                }
+                _ => {}
             }
+            current_arg.push(next);
         }
         let (params, body) = match self.definitions.get(&name) {
             Some(Definition::Function { params, body }) => (params, body),
@@ -1599,5 +1609,15 @@ int main(){}
         #define sa_handler   __sa_handler.sa_handler
         s.sa_handler";
         assert_same(src, "s.__sa_handler.sa_handler");
+    }
+    #[test]
+    fn parens() {
+        let original = "#define f(a, b) a\nf((1, 2, 3), 2)";
+        let expected = "(1, 2, 3)";
+        assert_same(original, expected);
+
+        let original = "#define foo(x, y) { x, y }\nfoo(5 (6), 7)";
+        let expected = "{ 5 ( 6 ) , 7 }";
+        assert_same(original, expected);
     }
 }

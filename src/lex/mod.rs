@@ -608,7 +608,7 @@ impl Lexer {
             // HACK: on the following call to `next()`.
             // NOTE: since we saw a newline, we must have consumed at least one token,
             // NOTE: so this can't possibly discard `self.lookahead`.
-            if self.seen_line_token != old_saw_token {
+            if self.seen_line_token != old_saw_token && self.peek() != Some(b'"') {
                 self.unput(b'\n');
             }
         }

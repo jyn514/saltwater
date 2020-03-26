@@ -278,10 +278,8 @@ fn test_strings() {
     // 2 for newline
     assert_eq!(lex("\"").unwrap().unwrap_err().location.span, (0..2).into());
     // regression test for https://github.com/jyn514/rcc/issues/350
-    assert!(match_str(lex(r#"
-    "a"
-    "b"
-    "#), "ab"));
+    let newlines = r#" "a" \n "b" "#;
+    assert!(match_str(lex(newlines), "ab"));
 }
 
 #[test]

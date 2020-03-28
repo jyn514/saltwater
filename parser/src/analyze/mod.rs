@@ -61,13 +61,8 @@ impl Iterator for Analyzer {
         match next.data {
             ExternalDeclaration::Function(func) => {
                 let id = func.id;
-                let (meta_ref, body) = ret_err!(FunctionAnalyzer::analyze(
-                    func,
-                    &mut self.scope,
-                    &mut self.tag_scope,
-                    &mut self.error_handler,
-                    next.location
-                ));
+                let (meta_ref, body) =
+                    ret_err!(FunctionAnalyzer::analyze(func, self, next.location));
                 self.scope.insert(id, meta_ref);
                 let decl = Declaration {
                     symbol: meta_ref,
@@ -93,7 +88,7 @@ impl Analyzer {
     fn parse_type(
         &mut self, specifiers: Vec<ast::DeclarationSpecifier>, decl: ast::DeclaratorType,
         location: Location,
-    ) -> Result<ParsedType, SemanticError> {
+    ) -> ParsedType {
         use ast::{DeclarationSpecifier::*, UnitSpecifier::*};
         use std::collections::HashSet;
         // need to parse specifiers now
@@ -218,13 +213,13 @@ impl Analyzer {
         });
         // *i[]
         let ctype = self.parse_decl(decl, ctype, location);
-        Ok(ParsedType {
+        ParsedType {
             qualifiers,
             storage_class,
             ctype,
             // TODO: set this properly when I implement enum/struct/union
             declared_compound_type: false,
-        })
+        }
     }
     /// Parse the declarator for a variable, given a starting type.
     /// e.g. for `int *p`, takes `start: Type::Int(true)` and returns `Type::Pointer(Type::Int(true))`
@@ -318,6 +313,9 @@ struct FunctionAnalyzer<'a> {
     /// the function we are currently compiling.
     /// used for checking return types
     metadata: FunctionData,
+    /// We need this for the scopes, as well as for parsing expressions
+    analyzer: &'a mut Analyzer,
+    /*
     /// objects that are in scope
     /// It's a reference instead of an owned scope since the global variables are passed in from the `Analyzer`.
     scope: &'a mut Scope<InternedStr, MetadataRef>,
@@ -326,6 +324,7 @@ struct FunctionAnalyzer<'a> {
     tag_scope: &'a mut TagScope,
     /// used for recovering from semantic errors
     error_handler: &'a mut ErrorHandler,
+    */
 }
 
 #[derive(Debug)]
@@ -344,10 +343,10 @@ impl<'a> FunctionAnalyzer<'a> {
     /// Performs semantic analysis on the function and adds it to `METADATA_STORE`.
     /// Returns the analyzed statements.
     fn analyze(
-        func: ast::FunctionDefinition, global_scope: &'a mut Scope<InternedStr, MetadataRef>,
-        tag_scope: &'a mut TagScope, error_handler: &mut ErrorHandler, location: Location,
+        func: ast::FunctionDefinition, analyzer: &mut Analyzer, location: Location,
     ) -> SemanticResult<(MetadataRef, Vec<Stmt>)> {
-        let return_type: ParsedType = unimplemented!();
+        let return_type: ParsedType =
+            analyzer.parse_type(func.specifiers, func.declarator.into(), location);
         /*
         let return_type = func
             .declarator
@@ -356,7 +355,7 @@ impl<'a> FunctionAnalyzer<'a> {
             .map_err(|err| location.with(err))?;
             */
         if return_type.qualifiers != Qualifiers::default() {
-            error_handler.warn(
+            analyzer.error_handler.warn(
                 Warning::FunctionQualifiersIgnored(return_type.qualifiers),
                 location,
             );
@@ -366,14 +365,9 @@ impl<'a> FunctionAnalyzer<'a> {
             id: func.id,
             return_type: return_type.ctype,
         };
-        assert!(global_scope.is_global());
-        assert!(tag_scope.is_global());
-        let analyzer = FunctionAnalyzer {
-            metadata,
-            scope: global_scope,
-            tag_scope,
-            error_handler,
-        };
+        assert!(analyzer.scope.is_global());
+        assert!(analyzer.tag_scope.is_global());
+        let analyzer = FunctionAnalyzer { metadata, analyzer };
         unimplemented!("analyzing functions");
         //assert!(global_scope.is_global());
         //assert!(tag_scope.is_global());

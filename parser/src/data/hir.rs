@@ -109,7 +109,7 @@ impl MetadataStore {
 
 impl MetadataRef {
     pub fn get(self) -> Rc<Metadata> {
-        METADATA_STORE.with(|store| store.borrow().get(self).clone())
+        METADATA_STORE.with(|store| store.borrow().get(self))
     }
 }
 

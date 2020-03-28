@@ -14,6 +14,7 @@ codespan = "0.8"
 hexf-parse = "0.1"
 counter = "0.4"
 #rcc = { path = "../" }
+target-lexicon = "0.10"
 
 [dev-dependencies]
 criterion = "0.3"

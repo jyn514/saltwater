@@ -3,9 +3,11 @@
 #![allow(clippy::mem_replace_with_default)]
 
 mod analyze;
+mod arch;
 mod data;
 mod decl;
 mod expr;
+mod fold;
 mod intern;
 mod lex;
 mod stmt;
@@ -414,7 +416,7 @@ pub(crate) mod test {
         parser(input).collect()
     }
     pub(crate) fn parser(input: &str) -> Parser<Lexer> {
-        let mut lexer = Lexer::new((), input, false);
+        let mut lexer = Lexer::new((), format!("{}\n", input), false);
         let first: Locatable<Token, Location> = lexer.next().unwrap().unwrap();
         Parser::new(first, lexer, false)
     }

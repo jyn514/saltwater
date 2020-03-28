@@ -140,7 +140,8 @@ pub enum Type {
     Long(bool),
     Float,
     Double,
-    Pointer(Box<Type>),
+    // TODO: separate Qualifiers into LvalQualifiers and FunctionQualifiers
+    Pointer(Box<Type>, super::hir::Qualifiers),
     Array(Box<Type>, ArrayType),
     Function(FunctionType),
     Union(StructType),
@@ -228,7 +229,7 @@ impl Type {
     #[inline]
     pub fn is_pointer(&self) -> bool {
         match self {
-            Type::Pointer(_) => true,
+            Type::Pointer(_, _) => true,
             _ => false,
         }
     }
@@ -301,7 +302,7 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         }
         Bool => write!(f, "_Bool"),
         Float | Double | Void => write!(f, "{}", format!("{:?}", ctype).to_lowercase()),
-        Pointer(inner) | Array(inner, _) => print_pre(inner, f),
+        Pointer(inner, _) | Array(inner, _) => print_pre(inner, f),
         Function(ftype) => write!(f, "{}", ftype.return_type),
         Enum(Some(ident), _) => write!(f, "enum {}", ident),
         Enum(None, _) => write!(f, "<anonymous enum>"),
@@ -316,27 +317,31 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
 
 fn print_mid(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt::Result {
     match ctype {
-        Type::Pointer(to) => {
+        Type::Pointer(to, qs) => {
             print_mid(to, None, f)?;
+            let name = name.unwrap_or_default();
+            let pointer = if *qs != Default::default() && name != Default::default() {
+                format!("*{} {}", qs, name)
+            } else {
+                format!("*{}{}", qs, name)
+            };
             match &**to {
-                Type::Array(_, _) | Type::Function(_) => {
-                    write!(f, "(*{})", name.unwrap_or_default())?
-                }
-                _ => write!(f, " *{}", name.unwrap_or_default())?,
+                Type::Array(_, _) | Type::Function(_) => write!(f, "({})", pointer),
+                _ => write!(f, " {}", pointer),
             }
         }
-        Type::Array(to, _) => print_mid(to, name, f)?,
+        Type::Array(to, _) => print_mid(to, name, f),
         _ => {
             if let Some(name) = name {
                 write!(f, " {}", name)?;
             }
+            Ok(())
         }
     }
-    Ok(())
 }
 fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
     match ctype {
-        Type::Pointer(to) => print_post(to, f),
+        Type::Pointer(to, _) => print_post(to, f),
         Type::Array(to, size) => {
             write!(f, "[")?;
             if let ArrayType::Fixed(size) = size {

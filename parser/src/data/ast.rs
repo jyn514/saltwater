@@ -76,6 +76,12 @@ pub enum UnitSpecifier {
     Extern,
 }
 
+impl From<UnitSpecifier> for DeclarationSpecifier {
+    fn from(unit: UnitSpecifier) -> Self {
+        DeclarationSpecifier::Unit(unit)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructSpecifier {
     pub name: Option<InternedStr>,

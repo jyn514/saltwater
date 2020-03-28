@@ -11,8 +11,6 @@ extern crate ansi_term;
 extern crate codespan;
 #[cfg(debug_assertions)]
 extern crate color_backtrace;
-extern crate env_logger;
-extern crate log;
 extern crate pico_args;
 extern crate rcc;
 
@@ -91,8 +89,6 @@ fn real_main(
     opt: &BinOpt,
     output: &Path,
 ) -> Result<(), Error> {
-    env_logger::init();
-
     let opt = if opt.preprocess_only {
         use std::io::{BufWriter, Write};
 

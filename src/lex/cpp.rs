@@ -1113,8 +1113,6 @@ impl<'a> PreProcessor<'a> {
         local: bool,
         start: u32,
     ) -> Result<PathBuf, Locatable<Error>> {
-        log::debug!("in search path");
-
         if filename.is_empty() {
             return Err(CompileError::new(
                 CppError::EmptyInclude.into(),
@@ -1193,7 +1191,6 @@ impl<'a> PreProcessor<'a> {
     // Returns every byte between the current position and the next `byte`.
     // Consumes and does not return the final `byte`.
     fn bytes_until(&mut self, byte: u8) -> Vec<u8> {
-        log::debug!("in bytes_until");
         let mut bytes = Vec::new();
         loop {
             match self.lexer_mut().next_char() {

@@ -10,6 +10,8 @@ jobs:
 
           script:
             - tests/pre-commit.sh
+            - cargo test --all-features
+            - cargo test --no-default-features
           # upload coverage statistics to codecov.io
           env: RUSTFLAGS="-C link-dead-code"
           addons:

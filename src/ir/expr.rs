@@ -1,7 +1,6 @@
 use cranelift::codegen::ir::{condcodes, types, MemFlags};
 use cranelift::prelude::{FunctionBuilder, InstBuilder, Type as IrType, Value as IrValue};
 use cranelift_module::Backend;
-use log::debug;
 
 use super::{Compiler, Id};
 use crate::data::prelude::*;
@@ -575,7 +574,6 @@ impl<B: Backend> Compiler<B> {
                 if arg.ctype.is_floating() {
                     float_variadic += 1;
                 }
-                debug!("adding variadic arg with type {}", arg.ctype);
                 ftype.params.push(Symbol {
                     ctype: arg.ctype.clone(),
                     id: Default::default(),
@@ -590,7 +588,6 @@ impl<B: Backend> Compiler<B> {
             .map(|arg| self.compile_expr(arg, builder).map(|val| val.ir_val))
             .collect::<CompileResult<_>>()?;
         if ftype.varargs {
-            debug!("adding number of float args");
             let float_ir = builder.ins().iconst(types::I8, float_variadic);
             compiled_args.push(float_ir);
         }

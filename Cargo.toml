@@ -24,7 +24,7 @@ thiserror = ">=1.0.10"
 target-lexicon = "0.10"
 tempfile = { version = "3", optional = true }
 pico-args = { version = "0.3", optional = true }
-string-interner = "0.7"
+string-interner = { version = "0.7", default-features = false }
 codespan = "0.8"
 color-backtrace = { version = "0.3", default-features = false, optional = true }
 

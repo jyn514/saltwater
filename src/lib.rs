@@ -9,18 +9,18 @@
 #![deny(unused_extern_crates)]
 
 use std::collections::VecDeque;
-use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
 
 pub use codespan;
 use codespan::FileId;
-use cranelift::codegen::settings::{Configurable, Flags};
-use cranelift::prelude::isa::TargetIsa;
+#[cfg(feature = "codegen")]
 use cranelift_module::{Backend, Module};
-use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
+
+#[cfg(feature = "codegen")]
+pub use ir::initialize_aot_module;
 
 /// The `Source` type for `codespan::Files`.
 ///
@@ -42,7 +42,8 @@ impl AsRef<str> for Source {
 }
 
 pub type Files = codespan::Files<Source>;
-pub type Product = <ObjectBackend as Backend>::Product;
+#[cfg(feature = "codegen")]
+pub type Product = <cranelift_object::ObjectBackend as Backend>::Product;
 
 use data::prelude::CompileError;
 pub use data::prelude::*;
@@ -57,6 +58,7 @@ mod arch;
 pub mod data;
 mod fold;
 pub mod intern;
+#[cfg(feature = "codegen")]
 mod ir;
 mod lex;
 mod parse;
@@ -146,50 +148,16 @@ pub fn preprocess(
     (res, cpp.warnings())
 }
 
-fn get_isa(jit: bool) -> Box<dyn TargetIsa + 'static> {
-    let mut flags_builder = cranelift::codegen::settings::builder();
-    // `simplejit` requires non-PIC code
-    if !jit {
-        // allow creating shared libraries
-        flags_builder
-            .enable("is_pic")
-            .expect("is_pic should be a valid option");
-    }
-    // use debug assertions
-    flags_builder
-        .enable("enable_verifier")
-        .expect("enable_verifier should be a valid option");
-    // minimal optimizations
-    flags_builder
-        .set("opt_level", "speed")
-        .expect("opt_level: speed should be a valid option");
-    // don't emit call to __cranelift_probestack
-    flags_builder
-        .set("enable_probestack", "false")
-        .expect("enable_probestack should be a valid option");
-    let flags = Flags::new(flags_builder);
-    cranelift::codegen::isa::lookup(arch::TARGET)
-        .unwrap_or_else(|_| panic!("platform not supported: {}", arch::TARGET))
-        .finish(flags)
-}
-
-pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
-    Module::new(ObjectBuilder::new(
-        get_isa(false),
-        name,
-        ObjectTrapCollection::Disabled,
-        cranelift_module::default_libcall_names(),
-    ))
-}
-
-/// Compile and return the declarations and warnings.
-pub fn compile<B: Backend>(
-    module: Module<B>,
+/// Perform semantic analysis, including type checking and constant folding.
+pub fn check_semantics(
     buf: &str,
     opt: &Opt,
     file: FileId,
     files: &mut Files,
-) -> (Result<Module<B>, Error>, VecDeque<CompileWarning>) {
+) -> (
+    Result<Vec<Locatable<Declaration>>, VecDeque<CompileError>>,
+    VecDeque<CompileWarning>,
+) {
     let path = opt.search_path.iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
     let mut errs = VecDeque::new();
@@ -199,7 +167,7 @@ pub fn compile<B: Backend>(
             errs.push_back($err);
             if let Some(max) = opt.max_errors {
                 if errs.len() >= max.into() {
-                    return (Err(Error::Source(errs)), cpp.warnings());
+                    return (Err(errs), cpp.warnings());
                 }
             }
         }};
@@ -222,7 +190,7 @@ pub fn compile<B: Backend>(
             if errs.is_empty() {
                 errs.push_back(eof().error(SemanticError::EmptyProgram));
             }
-            return (Err(Error::Source(errs)), cpp.warnings());
+            return (Err(errs), cpp.warnings());
         }
     };
 
@@ -240,15 +208,33 @@ pub fn compile<B: Backend>(
 
     let mut warnings = parser.warnings();
     warnings.extend(cpp.warnings());
-    if !errs.is_empty() {
-        return (Err(Error::Source(errs)), warnings);
-    }
+    let res = if !errs.is_empty() { Err(errs) } else { Ok(hir) };
+    (res, warnings)
+}
+
+#[cfg(feature = "codegen")]
+/// Compile and return the declarations and warnings.
+pub fn compile<B: Backend>(
+    module: Module<B>,
+    buf: &str,
+    opt: &Opt,
+    file: FileId,
+    files: &mut Files,
+) -> (Result<Module<B>, Error>, VecDeque<CompileWarning>) {
+    let (hir, mut warnings) = match check_semantics(buf, opt, file, files) {
+        (Err(errs), warnings) => return (Err(Error::Source(errs)), warnings),
+        (Ok(hir), warnings) => (hir, warnings),
+    };
     let (result, ir_warnings) = ir::compile(module, hir, opt.debug_asm);
     warnings.extend(ir_warnings);
     (result.map_err(Error::from), warnings)
 }
 
+#[cfg(feature = "codegen")]
 pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {
+    use io::Write;
+    use std::fs::File;
+
     let bytes = product.emit().map_err(Error::Platform)?;
     File::create(output)?
         .write_all(&bytes)
@@ -284,6 +270,7 @@ pub use jit::*;
 #[cfg(feature = "jit")]
 mod jit {
     use super::*;
+    use crate::ir::get_isa;
     use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
     use std::convert::TryFrom;
 

@@ -58,7 +58,7 @@ impl Iterator for Analyzer {
             return Some(decl);
         }
         let next = ret_err!(self.declarations.next()?);
-        match next.data {
+        let decl = match next.data {
             ExternalDeclaration::Function(func) => {
                 let id = func.id;
                 let (meta_ref, body) =
@@ -68,10 +68,18 @@ impl Iterator for Analyzer {
                     symbol: meta_ref,
                     init: Some(Initializer::FunctionBody(body)),
                 };
-                Some(Ok(Locatable::new(decl, next.location)))
+                Locatable::new(decl, next.location)
             }
-            ExternalDeclaration::Declaration(_) => unimplemented!("declarations"),
-        }
+            ExternalDeclaration::Declaration(declaration) => {
+                let original = self.parse_specifiers(declaration.specifiers, next.location);
+                for d in declaration.declarators {
+                    let ctype =
+                        self.parse_decl(original.ctype.clone(), d.data.declarator.decl, d.location);
+                }
+                unimplemented!()
+            }
+        };
+        Some(Ok(decl))
     }
 }
 
@@ -86,8 +94,15 @@ impl Analyzer {
         }
     }
     fn parse_type(
-        &mut self, specifiers: Vec<ast::DeclarationSpecifier>, decl: ast::DeclaratorType,
+        &mut self, specifiers: Vec<ast::DeclarationSpecifier>, declarator: ast::DeclaratorType,
         location: Location,
+    ) -> ParsedType {
+        let mut specs = self.parse_specifiers(specifiers, location);
+        specs.ctype = self.parse_decl(specs.ctype, declarator, location);
+        specs
+    }
+    fn parse_specifiers(
+        &mut self, specifiers: Vec<ast::DeclarationSpecifier>, location: Location,
     ) -> ParsedType {
         use ast::{DeclarationSpecifier::*, UnitSpecifier::*};
         use std::collections::HashSet;
@@ -211,8 +226,6 @@ impl Analyzer {
             self.error_handler.warn(Warning::ImplicitInt, location);
             Type::Int(true)
         });
-        // *i[]
-        let ctype = self.parse_decl(decl, ctype, location);
         ParsedType {
             qualifiers,
             storage_class,
@@ -223,14 +236,14 @@ impl Analyzer {
     }
     /// Parse the declarator for a variable, given a starting type.
     /// e.g. for `int *p`, takes `start: Type::Int(true)` and returns `Type::Pointer(Type::Int(true))`
-    fn parse_decl(&mut self, decl: ast::DeclaratorType, current: Type, location: Location) -> Type {
+    fn parse_decl(&mut self, current: Type, decl: ast::DeclaratorType, location: Location) -> Type {
         use crate::data::ast::DeclaratorType::*;
         match decl {
             End => current,
             Pointer { to, qualifiers } => {
                 use UnitSpecifier::*;
 
-                let inner = self.parse_decl(*to, current, location);
+                let inner = self.parse_decl(current, *to, location);
                 let (counter, compounds) =
                     count_specifiers(qualifiers, &mut self.error_handler, location);
                 let qualifiers = Qualifiers {

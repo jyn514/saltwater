@@ -1,3 +1,5 @@
+#![allow(clippy::trivially_copy_pass_by_ref)]
+
 use crate::data::hir::{Expr, ExprType};
 // TODO: architecture dependent stuff
 //use crate::arch::CHAR_BIT;
@@ -5,8 +7,6 @@ const CHAR_BIT: u8 = 8;
 use crate::data::lex::Literal::*;
 use crate::data::*;
 use std::ops::{Add, Div, Mul, Sub};
-
-#[allow(clippy::trivially_copy_pass_by_ref)]
 
 macro_rules! fold_int_bin_op {
     ($op: tt) => {

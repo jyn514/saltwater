@@ -11,6 +11,7 @@ license = "BSD-3-Clause"
 keywords = ["C", "compiler", "recursive-descent", "cranelift"]
 default-run = "rcc"
 documentation = "https://docs.rs/rcc"
+#auto-build-binaries = false
 
 [dependencies]
 lazy_static = "1"
@@ -46,6 +47,10 @@ jit = ["codegen", "cranelift-simplejit"]
 [[bin]]
 name = "rcc"
 required-features = ["cc"]
+
+[[bin]]
+name = "cpp"
+required-features = ["ansi_term", "pico-args"]
 
 [[bench]]
 name = "examples"

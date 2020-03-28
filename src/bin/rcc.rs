@@ -1,11 +1,13 @@
-use std::collections::VecDeque;
+mod util;
+
+use util::BinOpt;
+
 use std::fs::File;
 use std::io::{self, Read};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 extern crate ansi_term;
 extern crate codespan;
@@ -27,9 +29,6 @@ use rcc::{
 };
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
-
-static ERRORS: AtomicUsize = AtomicUsize::new(0);
-static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 
 const HELP: &str = concat!(
     env!("CARGO_PKG_NAME"), " ", env!("RCC_GIT_REV"), "\n",
@@ -67,19 +66,6 @@ const USAGE: &str = "\
 usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
            [--debug-lex] [--jit] [--no-link | -c] [-I <dir>] [<file>]";
 
-struct BinOpt {
-    /// The options that will be passed to `compile()`
-    opt: Opt,
-    /// If set, preprocess only, but do not do anything else.
-    ///
-    /// Note that preprocessing discards whitespace and comments.
-    /// There is not currently a way to disable this behavior.
-    preprocess_only: bool,
-    /// The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
-    /// Only one file at a time is currently accepted. [default: -]
-    filename: PathBuf,
-}
-
 // TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
 fn real_main(
@@ -93,7 +79,7 @@ fn real_main(
         use std::io::{BufWriter, Write};
 
         let (tokens, warnings) = preprocess(&buf, &opt.opt, file_id, file_db);
-        handle_warnings(warnings, file_db);
+        util::handle_warnings(warnings, file_db);
 
         let stdout = io::stdout();
         let mut stdout_buf = BufWriter::new(stdout.lock());
@@ -144,17 +130,6 @@ fn aot_main(
     let tmp_file = NamedTempFile::new()?;
     assemble(product, tmp_file.as_ref())?;
     link(tmp_file.as_ref(), output).map_err(io::Error::into)
-}
-
-fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files) {
-    WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
-    let tag = Colour::Yellow.bold().paint("warning");
-    for warning in warnings {
-        print!(
-            "{}",
-            pretty_print(tag.clone(), warning.data, warning.location, file_db)
-        );
-    }
 }
 
 fn main() {
@@ -213,6 +188,7 @@ macro_rules! type_sizes {
         $(println!("{}: {}", stringify!($type), std::mem::size_of::<$type>());)*
     };
 }
+
 fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
     let mut input = Arguments::from_env();
     if input.contains(["-h", "--help"]) {
@@ -273,134 +249,4 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         },
         output,
     ))
-}
-
-fn err_exit(err: Error, max_errors: Option<NonZeroUsize>, file_db: &Files) -> ! {
-    use Error::*;
-    match err {
-        Source(errs) => {
-            for err in &errs {
-                error(&err.data, err.location(), file_db);
-            }
-            if let Some(max) = max_errors {
-                if usize::from(max) <= errs.len() {
-                    println!(
-                        "fatal: too many errors (--max-errors {}), stopping now",
-                        max
-                    );
-                }
-            }
-            let (num_warnings, num_errors) = (get_warnings(), get_errors());
-            print_issues(num_warnings, num_errors);
-            process::exit(2);
-        }
-        IO(err) => fatal(&err, 3),
-        Platform(err) => fatal(&err, 4),
-    }
-}
-
-fn print_issues(warnings: usize, errors: usize) {
-    if warnings == 0 && errors == 0 {
-        return;
-    }
-    let warn_msg = if warnings > 1 { "warnings" } else { "warning" };
-    let err_msg = if errors > 1 { "errors" } else { "error" };
-    let msg = match (warnings, errors) {
-        (0, _) => format!("{} {}", errors, err_msg),
-        (_, 0) => format!("{} {}", warnings, warn_msg),
-        (_, _) => format!("{} {} and {} {}", warnings, warn_msg, errors, err_msg),
-    };
-    eprintln!("{} generated", msg);
-}
-
-fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files) {
-    ERRORS.fetch_add(1, Ordering::Relaxed);
-    print!(
-        "{}",
-        pretty_print(Colour::Red.bold().paint("error"), msg, location, file_db,)
-    );
-}
-
-#[must_use]
-fn pretty_print<T: std::fmt::Display>(
-    prefix: ANSIString,
-    msg: T,
-    location: Location,
-    file_db: &Files,
-) -> String {
-    let file = location.file;
-    let start = file_db
-        .location(file, location.span.start())
-        .expect("start location should be in bounds");
-    let buf = format!(
-        "{}:{}:{} {}: {}\n",
-        file_db.name(file).to_string_lossy(),
-        start.line.number(),
-        start.column.number(),
-        prefix,
-        msg
-    );
-    // avoid printing spurious newline for errors and EOF
-    if location.span.end() == 0.into() {
-        return buf;
-    }
-    let end = file_db
-        .location(file, location.span.end())
-        .expect("end location should be in bounds");
-    if start.line == end.line {
-        let line = file_db
-            .line_span(file, start.line)
-            .expect("line should be in bounds");
-        format!(
-            "{}{}{}{}\n",
-            buf,
-            file_db.source_slice(file, line).unwrap(),
-            " ".repeat(start.column.0 as usize),
-            "^".repeat((end.column - start.column).0 as usize)
-        )
-    } else {
-        buf
-    }
-}
-
-#[inline]
-fn get_warnings() -> usize {
-    ERRORS.load(Ordering::SeqCst)
-}
-
-#[inline]
-fn get_errors() -> usize {
-    ERRORS.load(Ordering::SeqCst)
-}
-
-fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
-    eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
-    process::exit(code);
-}
-
-#[cfg(test)]
-mod test {
-    use super::{Files, Location};
-    use ansi_term::Style;
-    use codespan::Span;
-
-    fn pp<S: Into<Span>>(span: S, source: &str) -> String {
-        let mut file_db = Files::new();
-        let source = String::from(source).into();
-        let file = file_db.add("<test-suite>", source);
-        let location = Location {
-            file,
-            span: span.into(),
-        };
-        let ansi_str = Style::new().paint("");
-        super::pretty_print(ansi_str, "", location, &file_db)
-    }
-    #[test]
-    fn pretty_print() {
-        assert_eq!(
-            dbg!(pp(8..15, "int i = \"hello\";\n")).lines().nth(2),
-            Some("        ^^^^^^^")
-        );
-        pp(0..0, "");
-    }
 }

@@ -149,6 +149,7 @@ pub fn preprocess(
 }
 
 /// Perform semantic analysis, including type checking and constant folding.
+#[allow(clippy::type_complexity)]
 pub fn check_semantics(
     buf: &str,
     opt: &Opt,

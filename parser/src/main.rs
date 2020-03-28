@@ -1,4 +1,4 @@
-use parser::{Lexer, Parser};
+use parser::{Analyzer, Lexer, Parser};
 use std::io::Read;
 
 fn main() {
@@ -6,6 +6,7 @@ fn main() {
     std::io::stdin().read_to_string(&mut src).unwrap();
     let mut lexer = Lexer::new((), src, false);
     let first = lexer.next().unwrap().unwrap();
-    let mut parser = Parser::new(first, lexer, false);
-    println!("{}", parser.external_declaration().unwrap().data);
+    let parser = Parser::new(first, lexer, false);
+    let mut analyzer = Analyzer::new(parser);
+    println!("{}", analyzer.next().unwrap().unwrap().data);
 }

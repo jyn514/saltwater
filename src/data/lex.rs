@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 
 use codespan::{FileId, Span};
-use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
@@ -234,34 +233,6 @@ impl Literal {
     }
 }
 
-impl ComparisonToken {
-    pub fn to_int_compare(self, signed: bool) -> IntCC {
-        use ComparisonToken::*;
-        match (self, signed) {
-            (Less, true) => IntCC::SignedLessThan,
-            (Less, false) => IntCC::UnsignedLessThan,
-            (LessEqual, true) => IntCC::SignedLessThanOrEqual,
-            (LessEqual, false) => IntCC::UnsignedLessThanOrEqual,
-            (Greater, true) => IntCC::SignedGreaterThan,
-            (Greater, false) => IntCC::UnsignedGreaterThan,
-            (GreaterEqual, true) => IntCC::SignedGreaterThanOrEqual,
-            (GreaterEqual, false) => IntCC::UnsignedGreaterThanOrEqual,
-            (EqualEqual, _) => IntCC::Equal,
-            (NotEqual, _) => IntCC::NotEqual,
-        }
-    }
-    pub fn to_float_compare(self) -> FloatCC {
-        use ComparisonToken::*;
-        match self {
-            Less => FloatCC::LessThan,
-            LessEqual => FloatCC::LessThanOrEqual,
-            Greater => FloatCC::GreaterThan,
-            GreaterEqual => FloatCC::GreaterThanOrEqual,
-            EqualEqual => FloatCC::Equal,
-            NotEqual => FloatCC::NotEqual,
-        }
-    }
-}
 impl AssignmentToken {
     pub fn without_assignment(self) -> Token {
         use AssignmentToken::*;

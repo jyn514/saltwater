@@ -151,6 +151,8 @@ pub enum SemanticError {
     #[error("unreachable statement")]
     UnreachableStatement,
 
+    // TODO: this error should happen way before codegen
+    #[cfg(feature = "codegen")]
     #[error("redeclaration of label {0}")]
     LabelRedeclaration(cranelift::prelude::Block),
 

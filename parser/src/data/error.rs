@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use thiserror::Error;
 
+use super::hir::{Expr, ExprType};
 use super::*;
 /*
     ast,
@@ -108,11 +109,15 @@ pub enum SemanticError {
     #[error("{0}")]
     Generic(String),
 
+    // Declaration specifier errors
     #[error("cannot combine '{new}' specifier with previous '{existing}' type specifier")]
     InvalidSpecifier {
         existing: ast::DeclarationSpecifier,
         new: ast::DeclarationSpecifier,
     },
+
+    #[error("'{0}' is not a qualifier and cannot be used for pointers")]
+    NotAQualifier(ast::DeclarationSpecifier),
 
     #[error("'{}' is too long for rcc", vec!["long"; *.0].join(" "))]
     TooLong(usize),
@@ -122,6 +127,9 @@ pub enum SemanticError {
 
     #[error("conflicting types '{0}' and '{1}'")]
     ConflictingType(Type, Type),
+
+    #[error("'{0}' cannot be signed or unsigned")]
+    CannotBeSigned(Type),
 
     #[error("types cannot be both signed and unsigned")]
     ConflictingSigned,
@@ -136,15 +144,16 @@ pub enum SemanticError {
     #[error("`{0}` is only allowed on function declarations")]
     InvalidFuncQualifiers(super::FunctionQualifiers),
 
-    #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
-    ConstOverflow { is_positive: bool },
-
     // String is the reason it couldn't be assigned
     #[error("cannot assign to {0}")]
     NotAssignable(String),
 
     #[error("cannot take address of {0}")]
     InvalidAddressOf(&'static str),
+    */
+    // const fold errors
+    #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
+    ConstOverflow { is_positive: bool },
 
     #[error("cannot divide by zero")]
     DivideByZero,
@@ -152,6 +161,21 @@ pub enum SemanticError {
     #[error("cannot shift {} by a negative amount", if *(.is_left) { "left" } else { "right" })]
     NegativeShift { is_left: bool },
 
+    #[error("cannot shift {} by {maximum} or more bits for type '{ctype}' (got {current})",
+        if *(.is_left) { "left" } else { "right" })]
+    TooManyShiftBits {
+        is_left: bool,
+        maximum: u64,
+        ctype: Type,
+        current: u64,
+    },
+
+    #[error("not a constant expression: {0}")]
+    NotConstant(Expr),
+
+    #[error("cannot dereference NULL pointer")]
+    NullPointerDereference,
+    /*
     #[error("unreachable statement")]
     UnreachableStatement,
 

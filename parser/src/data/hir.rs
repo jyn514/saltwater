@@ -108,7 +108,7 @@ impl MetadataStore {
 }
 
 impl MetadataRef {
-    fn get(self) -> Rc<Metadata> {
+    pub fn get(self) -> Rc<Metadata> {
         METADATA_STORE.with(|store| store.borrow().get(self).clone())
     }
 }
@@ -158,6 +158,15 @@ pub enum ExprType {
     StaticRef(Box<Expr>),
     // used to work around various bugs, see places this is constructed for details
     Noop(Box<Expr>),
+}
+
+impl Expr {
+    pub fn is_constexpr(&self) -> bool {
+        match &self.expr {
+            ExprType::Literal(_) => true,
+            _ => false,
+        }
+    }
 }
 
 /* structs */

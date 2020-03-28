@@ -52,7 +52,7 @@ You may find the following references useful.
 ### Other projects
 
 - [C18 Standard final draft](https://web.archive.org/web/20191010011013/http://www2.open-std.org/JTC1/SC22/WG14/www/abq/c17_updated_proposed_fdis.pdf)
-- [C11 Standard final draft](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf)
+- [C11 Standard final draft](http://port70.net/~nsz/c/c11/n1570.html)
 - [C99 Standard final draft](http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1256.pdf)
 - [C89 Standard final draft](https://www.pdf-archive.com/2014/10/02/ansi-iso-9899-1990-1/ansi-iso-9899-1990-1.pdf)
 - [Yacc grammar for C11](http://www.quut.com/c/ANSI-C-grammar-y.html)

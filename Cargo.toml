@@ -45,7 +45,6 @@ jit = ["codegen", "cranelift-simplejit"]
 
 [[bin]]
 name = "rcc"
-path = "src/main.rs"
 required-features = ["cc"]
 
 [[bench]]

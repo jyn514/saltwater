@@ -177,13 +177,20 @@ impl Analyzer {
                 true
             }
         };
-        // `long` is special because of `long long`
+        // `long` is special because of `long long` and `long double`
         let mut ctype = None;
         if let Some(&long_count) = counter.get(&Long) {
             match long_count {
                 0 => panic!("constraint violation, should only set count if > 0"),
-                1 => ctype = Some(Type::Long(signed)),
-                2 => unimplemented!("long long is also too long for rcc apparently"),
+                1 => {
+                    // NOTE: this is handled later by the big `for type in [...]` loop
+                    // see notes there
+                    if counter.get(&Double).is_none() {
+                        ctype = Some(Type::Long(signed));
+                    }
+                }
+                // TODO: implement `long long` as a separate type
+                2 => ctype = Some(Type::Long(signed)),
                 _ => {
                     self.error_handler
                         .error(SemanticError::TooLong(long_count), location);
@@ -225,6 +232,8 @@ impl Analyzer {
             (Int, Type::Int(signed)),
             // already handled `long` when we handled `long long`
             (Float, Type::Float),
+            // NOTE: if we saw `long double` before, we'll set `ctype` to `double` now
+            // TODO: make `long double` different from `double`
             (Double, Type::Double),
             (Void, Type::Void),
             (VaList, Type::VaList),
@@ -257,7 +266,7 @@ impl Analyzer {
         // Check to see if we had a conflicting `signed` specifier
         // Note we use `counter` instead of the `signed` bool
         // because we've already set the default and forgotten whether it was originally present.
-        if counter.get(&Signed).is_some() {
+        if counter.get(&Signed).is_some() || counter.get(&Unsigned).is_some() {
             match &ctype {
                 // unsigned int
                 Some(Type::Char(_)) | Some(Type::Short(_)) | Some(Type::Int(_))

@@ -8,5 +8,7 @@ fn main() {
     let first = lexer.next().unwrap().unwrap();
     let parser = Parser::new(first, lexer, false);
     let mut analyzer = Analyzer::new(parser);
-    println!("{}", analyzer.next().unwrap().unwrap().data);
+    for decl in analyzer {
+        println!("{}", decl.unwrap().data);
+    }
 }

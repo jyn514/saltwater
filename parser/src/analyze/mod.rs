@@ -299,7 +299,7 @@ impl Analyzer {
         &mut self, current: Type, decl: ast::DeclaratorType, location: Location,
     ) -> Type {
         use crate::data::ast::DeclaratorType::*;
-        use crate::data::types::ArrayType;
+        use crate::data::types::{ArrayType, FunctionType};
         match decl {
             End => current,
             Pointer { to, qualifiers } => {
@@ -341,7 +341,33 @@ impl Analyzer {
                 let of = self.parse_declarator(current, *of, location);
                 Type::Array(Box::new(of), size)
             }
-            Function(func) => unimplemented!(),
+            Function(func) => {
+                // TODO: give a warning for `const int f();` somewhere
+                let return_type = self.parse_declarator(current, *func.return_type, location);
+                let mut params = Vec::new();
+                for param in func.params {
+                    // TODO: this location should be that of the param, not of the function
+                    let param_type =
+                        self.parse_type(param.specifiers, param.declarator.decl, location);
+                    if let Some(sc) = param_type.storage_class {
+                        self.error_handler
+                            .error(SemanticError::ParameterStorageClass(sc), location);
+                    }
+                    // TODO: `int f(int g())` should decay to `int f(int (*g)())`
+                    let meta = Metadata {
+                        ctype: param_type.ctype,
+                        id: param.declarator.id.unwrap_or_default(),
+                        qualifiers: param_type.qualifiers,
+                        storage_class: StorageClass::Auto,
+                    };
+                    params.push(meta);
+                }
+                Type::Function(FunctionType {
+                    params,
+                    return_type: Box::new(return_type),
+                    varargs: func.varargs,
+                })
+            }
         }
     }
     // used for arrays like `int a[BUF_SIZE - 1];`
@@ -635,6 +661,16 @@ pub(crate) mod test {
             _ => panic!("wrong error"),
         }
     }
+
+    #[test]
+    fn function() {
+        assert_decl_display("int f();", "extern int f();");
+        assert_decl_display("int f(int i);", "extern int f(int i);");
+        assert_decl_display("int f(int i, int j);", "extern int f(int i, int j);");
+        assert_decl_display("int f(int g());", "extern int f(int g());");
+        assert_decl_display("int f(int g(), ...);", "extern int f(int g(), ...);");
+    }
+
     #[test]
     fn test_decl_specifiers() {
         assert!(match_type(decl("char i;"), Type::Char(true)));

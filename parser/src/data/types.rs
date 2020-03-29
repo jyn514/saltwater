@@ -351,25 +351,27 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
             print_post(to, f)
         }
         Type::Function(func_type) => {
-            // https://stackoverflow.com/a/30325430
-            let mut comma_seperated = "(".to_string();
-            for symbol in &func_type.params {
+            write!(f, "(")?;
+            let mut params = func_type.params.iter();
+            let print = |f: &mut _, symbol: &Metadata| {
                 let id = if symbol.id == InternedStr::default() {
                     None
                 } else {
                     Some(symbol.id)
                 };
-                print_type(&symbol.ctype, id, f)?;
-                comma_seperated.push_str(", ");
+                print_type(&symbol.ctype, id, f)
+            };
+            if let Some(first) = params.next() {
+                print(f, first)?;
+            }
+            for symbol in params {
+                write!(f, ", ")?;
+                print(f, symbol)?;
             }
             if func_type.varargs {
-                comma_seperated.push_str("...");
-            } else if !func_type.params.is_empty() {
-                comma_seperated.pop();
-                comma_seperated.pop();
+                write!(f, ", ...")?;
             }
-            comma_seperated.push(')');
-            write!(f, "{}", comma_seperated)
+            write!(f, ")")
         }
         _ => Ok(()),
     }

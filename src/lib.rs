@@ -44,6 +44,13 @@ impl AsRef<str> for Source {
 pub type Files = codespan::Files<Source>;
 #[cfg(feature = "codegen")]
 pub type Product = <cranelift_object::ObjectBackend as Backend>::Product;
+/// A result which includes all warnings, even for `Err` variants.
+///
+/// If successful, this returns an `Ok(T)`.
+/// If unsuccessful, this returns an `Err(VecDeque<Error>)`,
+/// so you can iterate the tokens in order without consuming them.
+/// Regardless, this always returns all warnings found.
+pub type WarningResult<T> = (Result<T, VecDeque<CompileError>>, VecDeque<CompileWarning>);
 
 use data::prelude::CompileError;
 pub use data::prelude::*;
@@ -112,23 +119,12 @@ pub struct Opt {
 }
 
 /// Preprocess the source and return the tokens.
-///
-/// Note on the return type:
-/// If successful, this returns an `Ok(VecDeque<Token>)`.
-/// The `VecDeque` is so you can iterate the tokens in order without consuming them.
-/// If unsuccessful, this returns an `Err(VecDeque<Error>)`,
-/// again so you can iterate the tokens in order.
-/// Regardless, this always returns all warnings found.
-#[allow(clippy::type_complexity)]
 pub fn preprocess(
     buf: &str,
     opt: &Opt,
     file: FileId,
     files: &mut Files,
-) -> (
-    Result<VecDeque<Locatable<Token>>, VecDeque<CompileError>>,
-    VecDeque<CompileWarning>,
-) {
+) -> WarningResult<VecDeque<Locatable<Token>>> {
     let path = opt.search_path.iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
 
@@ -149,16 +145,12 @@ pub fn preprocess(
 }
 
 /// Perform semantic analysis, including type checking and constant folding.
-#[allow(clippy::type_complexity)]
 pub fn check_semantics(
     buf: &str,
     opt: &Opt,
     file: FileId,
     files: &mut Files,
-) -> (
-    Result<Vec<Locatable<Declaration>>, VecDeque<CompileError>>,
-    VecDeque<CompileWarning>,
-) {
+) -> WarningResult<Vec<Locatable<Declaration>>> {
     let path = opt.search_path.iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
     let mut errs = VecDeque::new();

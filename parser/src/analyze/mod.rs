@@ -109,6 +109,10 @@ impl Analyzer {
                         StorageClass::Auto
                     }
                 });
+                if sc == StorageClass::Auto && self.scope.is_global() {
+                    self.error_handler
+                        .error(SemanticError::AutoAtGlobalScope, next.location);
+                }
                 let mut decls = Vec::new();
                 for d in declaration.declarators {
                     let ctype = self.parse_declarator(
@@ -526,7 +530,7 @@ pub(crate) mod test {
         Ok(e)
     }
 
-    pub(crate) fn analyze_decl(s: &str) -> CompileResult<Declaration> {
+    pub(crate) fn decl(s: &str) -> CompileResult<Declaration> {
         let mut parser = parser(s);
         if let Some(err) = parser.error_handler.pop_front() {
             return Err(err);
@@ -544,11 +548,24 @@ pub(crate) mod test {
         analyze(s, Parser::expr, Analyzer::parse_expr)
     }
 
+    fn assert_decl_display(left: &str, right: &str) {
+        assert_eq!(decl(left).unwrap().to_string(), right);
+    }
+
     #[test]
     fn no_name_should_be_syntax_error() {
-        match analyze_decl("int *;").unwrap_err().data {
+        match decl("int *;").unwrap_err().data {
             Error::Syntax(_) => {}
             _ => panic!("expected syntax error"),
+        }
+    }
+
+    #[test]
+    fn storage_class() {
+        assert_decl_display("int i;", "extern int i;");
+        match decl("auto int i;").unwrap_err().data {
+            Error::Semantic(SemanticError::AutoAtGlobalScope) => {}
+            _ => panic!("wrong error"),
         }
     }
 }

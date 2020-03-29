@@ -695,7 +695,7 @@ impl TryFrom<Keyword> for DeclarationSpecifier {
             Unsigned, Signed,
             Bool, Char, Short, Int, Long, Float, Double, Void,
             Complex, Imaginary, VaList,
-            Extern,
+            Extern, Static, Auto,
         )
         /*
         macro_rules! change_enum {

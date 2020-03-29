@@ -134,6 +134,8 @@ pub enum SemanticError {
     #[error("types cannot be both signed and unsigned")]
     ConflictingSigned,
 
+    #[error("only function-scoped variables can have an `auto` storage class")]
+    AutoAtGlobalScope,
     /*
     #[error("cannot have empty program")]
     EmptyProgram,

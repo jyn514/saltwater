@@ -508,7 +508,15 @@ fn count_specifiers(
     }
     for (&spec, &count) in counter.iter() {
         if spec != Long && count > 1 {
-            error_handler.warn(Warning::DuplicateSpecifier(spec, count), location);
+            if spec.is_type() {
+                let err = SemanticError::InvalidSpecifier {
+                    existing: spec.into(),
+                    new: spec.into(),
+                };
+                error_handler.error(err, location);
+            } else {
+                error_handler.warn(Warning::DuplicateSpecifier(spec, count), location);
+            }
         }
     }
     (counter, compounds)
@@ -519,6 +527,16 @@ impl UnitSpecifier {
         use UnitSpecifier::*;
         match self {
             Const | Volatile | Restrict | Inline | NoReturn => true,
+            _ => false,
+        }
+    }
+    /// Returns whether this is a self-contained type, not just whether this modifies a type.
+    /// For example, `int` and `long` are self-contained types, but `unsigned` and `_Complex` are not.
+    /// This is despite the fact that `unsigned i;` is valid and means `unsigned int i;`
+    fn is_type(self) -> bool {
+        use UnitSpecifier::*;
+        match self {
+            Bool | Char | Int | Long | Float | Double | VaList => true,
             _ => false,
         }
     }
@@ -648,7 +666,7 @@ pub(crate) mod test {
             "int void i;",
             "void int i;",
         ] {
-            assert!(decl(s).is_err());
+            assert!(decl(s).is_err(), "'{}' should be an error", s);
         }
         // default to int if we don't have a type
         // don't panic if we see duplicate specifiers

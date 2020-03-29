@@ -57,6 +57,18 @@ required-features = ["jit"]
 name = "jit"
 required-features = ["jit"]
 
+[[test]]
+name = "runner"
+required-features = ["cc"]
+
+[[test]]
+name = "varargs"
+required-features = ["cc"]
+
+[[test]]
+name = "headers"
+required-features = ["cc"]
+
 [profile.release]
 lto = true
 

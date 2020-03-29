@@ -136,6 +136,13 @@ pub enum SemanticError {
 
     #[error("only function-scoped variables can have an `auto` storage class")]
     AutoAtGlobalScope,
+
+    #[error("arrays must have integer length")]
+    NonIntegralLength,
+
+    #[error("arrays must have a positive length")]
+    NegativeLength,
+
     /*
     #[error("cannot have empty program")]
     EmptyProgram,

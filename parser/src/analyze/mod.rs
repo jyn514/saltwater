@@ -507,18 +507,48 @@ pub(crate) mod test {
     use super::*;
     use crate::test::*;
 
-    pub(crate) fn analyze_expr(s: &str) -> CompileResult<Expr> {
-        // because we're a child module of parse, we can skip straight to `expr()`
-        let mut p = parser(s);
-        let exp = p.expr()?;
+    fn analyze<P, A, R, S, E>(input: &str, parse_func: P, analyze_func: A) -> CompileResult<R>
+    where
+        P: Fn(&mut Parser) -> Result<S, E>,
+        A: Fn(&mut Analyzer, S) -> R,
+        CompileError: From<E>,
+    {
+        let mut p = parser(input);
+        let ast = parse_func(&mut p)?;
         if let Some(err) = p.error_handler.pop_front() {
             return Err(err);
         }
         let mut a = Analyzer::new(p);
-        let e = a.parse_expr(exp);
+        let e = analyze_func(&mut a, ast);
         if let Some(err) = a.error_handler.pop_front() {
             return Err(err);
         }
         Ok(e)
+    }
+
+    pub(crate) fn analyze_decl(s: &str) -> CompileResult<Declaration> {
+        let mut parser = parser(s);
+        if let Some(err) = parser.error_handler.pop_front() {
+            return Err(err);
+        }
+        let mut analyzer = Analyzer::new(parser);
+        let n = analyzer.next();
+        if let Some(err) = analyzer.error_handler.pop_front() {
+            Err(err)
+        } else {
+            n.unwrap().map(|l| l.data)
+        }
+    }
+
+    pub(crate) fn analyze_expr(s: &str) -> CompileResult<Expr> {
+        analyze(s, Parser::expr, Analyzer::parse_expr)
+    }
+
+    #[test]
+    fn no_name_should_be_syntax_error() {
+        match analyze_decl("int *;").unwrap_err().data {
+            Error::Syntax(_) => {}
+            _ => panic!("expected syntax error"),
+        }
     }
 }

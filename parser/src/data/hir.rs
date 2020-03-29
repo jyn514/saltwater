@@ -93,15 +93,15 @@ thread_local!(
 );
 
 #[derive(Default)]
-pub(crate) struct MetadataStore(Vec<Rc<Metadata>>);
+struct MetadataStore(Vec<Rc<Metadata>>);
 
 impl MetadataStore {
-    pub(crate) fn insert(&mut self, m: Metadata) -> MetadataRef {
+    fn insert(&mut self, m: Metadata) -> MetadataRef {
         let i = self.0.len();
         self.0.push(Rc::new(m));
         MetadataRef(i)
     }
-    /// Guarenteed not to panic since `MetadataRef` is always valid
+    /// Guaranteed not to panic since `MetadataRef` is always valid
     pub fn get(&self, i: MetadataRef) -> Rc<Metadata> {
         self.0[i.0].clone()
     }
@@ -110,6 +110,12 @@ impl MetadataStore {
 impl MetadataRef {
     pub fn get(self) -> Rc<Metadata> {
         METADATA_STORE.with(|store| store.borrow().get(self))
+    }
+}
+
+impl Metadata {
+    pub(crate) fn insert(self) -> MetadataRef {
+        METADATA_STORE.with(|store| store.borrow_mut().insert(self))
     }
 }
 
@@ -459,8 +465,11 @@ impl StmtType {
 
 impl Display for Metadata {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}", self.qualifiers, self.storage_class)?;
-        super::types::print_type(&self.ctype, None, f)
+        if self.qualifiers != Qualifiers::default() {
+            write!(f, "{} ", self.qualifiers)?;
+        }
+        write!(f, "{} ", self.storage_class)?;
+        super::types::print_type(&self.ctype, Some(self.id), f)
     }
 }
 

@@ -22,7 +22,7 @@ pub(crate) enum TagEntry {
 pub struct Analyzer {
     declarations: Parser,
     // in case a `Declaration` has multiple declarators
-    pending: VecDeque<CompileResult<Locatable<Declaration>>>,
+    pending: VecDeque<Locatable<Declaration>>,
     /// objects that are in scope
     /// C actually has 4 different scopes:
     /// 1. ordinary identifiers
@@ -42,44 +42,33 @@ pub struct Analyzer {
 impl Iterator for Analyzer {
     type Item = CompileResult<Locatable<Declaration>>;
     fn next(&mut self) -> Option<Self::Item> {
-        use ast::ExternalDeclaration;
-
-        // like `try!`, but returns `Option<Result>` instead of `Result`
-        macro_rules! ret_err {
-            ($maybe_err: expr) => {
-                match $maybe_err {
-                    Err(err) => return Some(Err(err.into())),
-                    Ok(success) => success,
-                }
+        // have to handle `int;` somehow
+        loop {
+            // Instead of returning `SemanticResult`, the analyzer puts all errors into `error_handler`.
+            // This simplifies the logic in `next` greatly.
+            // NOTE: this returns errors for a declaration before the declaration itself
+            if let Some(err) = self.error_handler.pop_front() {
+                return Some(Err(err));
+            // If we saw `int i, j, k;`, we treated those as different declarations
+            // `j, k` will be stored into `pending`
+            } else if let Some(decl) = self.pending.pop_front() {
+                return Some(Ok(decl));
+            }
+            // Now do the real work.
+            let next = match self.declarations.next()? {
+                Err(err) => return Some(Err(err)),
+                Ok(decl) => decl,
             };
-        }
-
-        if let Some(decl) = self.pending.pop_front() {
-            return Some(decl);
-        }
-        let next = ret_err!(self.declarations.next()?);
-        let decl = match next.data {
-            ExternalDeclaration::Function(func) => {
-                let id = func.id;
-                let (meta_ref, body) =
-                    ret_err!(FunctionAnalyzer::analyze(func, self, next.location));
-                self.scope.insert(id, meta_ref);
-                let decl = Declaration {
-                    symbol: meta_ref,
-                    init: Some(Initializer::FunctionBody(body)),
-                };
-                Locatable::new(decl, next.location)
+            // Note that we need to store `next` so that we have the location in case it was empty.
+            let location = next.location;
+            let decls = self.parse_declaration(next);
+            if decls.is_empty() {
+                self.error_handler.warn(Warning::EmptyDeclaration, location);
+            } else {
+                // TODO: if an error occurs, should we still add the declaration to `pending`?
+                self.pending.extend(decls);
             }
-            ExternalDeclaration::Declaration(declaration) => {
-                let original = self.parse_specifiers(declaration.specifiers, next.location);
-                for d in declaration.declarators {
-                    let ctype =
-                        self.parse_decl(original.ctype.clone(), d.data.declarator.decl, d.location);
-                }
-                unimplemented!()
-            }
-        };
-        Some(Ok(decl))
+        }
     }
 }
 
@@ -93,12 +82,69 @@ impl Analyzer {
             pending: VecDeque::new(),
         }
     }
+    fn parse_declaration(
+        &mut self, next: Locatable<ast::ExternalDeclaration>,
+    ) -> Vec<Locatable<Declaration>> {
+        use ast::ExternalDeclaration;
+
+        match next.data {
+            ExternalDeclaration::Function(func) => {
+                let id = func.id;
+                let (meta_ref, body) = FunctionAnalyzer::analyze(func, self, next.location);
+                self.scope.insert(id, meta_ref);
+                let decl = Declaration {
+                    symbol: meta_ref,
+                    init: Some(Initializer::FunctionBody(body)),
+                };
+                vec![Locatable::new(decl, next.location)]
+            }
+            ExternalDeclaration::Declaration(declaration) => {
+                let original = self.parse_specifiers(declaration.specifiers, next.location);
+                // `int i;` desugars to `extern int i;` at global scope,
+                // but to `auto int i;` at function scope
+                let sc = original.storage_class.unwrap_or_else(|| {
+                    if self.scope.is_global() {
+                        StorageClass::Extern
+                    } else {
+                        StorageClass::Auto
+                    }
+                });
+                let mut decls = Vec::new();
+                for d in declaration.declarators {
+                    let ctype = self.parse_declarator(
+                        original.ctype.clone(),
+                        d.data.declarator.decl,
+                        d.location,
+                    );
+                    let id = d.data.declarator.id;
+                    let id = id.expect("declarations should never be abstract");
+                    let init = if let Some(init) = d.data.init {
+                        Some(self.parse_initializer(init, &ctype, d.location))
+                    } else {
+                        None
+                    };
+                    let meta = Metadata {
+                        ctype,
+                        id,
+                        qualifiers: original.qualifiers,
+                        storage_class: sc,
+                    }
+                    .insert();
+                    decls.push(Locatable::new(
+                        Declaration { symbol: meta, init },
+                        d.location,
+                    ));
+                }
+                decls
+            }
+        }
+    }
     fn parse_type(
         &mut self, specifiers: Vec<ast::DeclarationSpecifier>, declarator: ast::DeclaratorType,
         location: Location,
     ) -> ParsedType {
         let mut specs = self.parse_specifiers(specifiers, location);
-        specs.ctype = self.parse_decl(specs.ctype, declarator, location);
+        specs.ctype = self.parse_declarator(specs.ctype, declarator, location);
         specs
     }
     fn parse_specifiers(
@@ -236,14 +282,16 @@ impl Analyzer {
     }
     /// Parse the declarator for a variable, given a starting type.
     /// e.g. for `int *p`, takes `start: Type::Int(true)` and returns `Type::Pointer(Type::Int(true))`
-    fn parse_decl(&mut self, current: Type, decl: ast::DeclaratorType, location: Location) -> Type {
+    fn parse_declarator(
+        &mut self, current: Type, decl: ast::DeclaratorType, location: Location,
+    ) -> Type {
         use crate::data::ast::DeclaratorType::*;
         match decl {
             End => current,
             Pointer { to, qualifiers } => {
                 use UnitSpecifier::*;
 
-                let inner = self.parse_decl(current, *to, location);
+                let inner = self.parse_declarator(current, *to, location);
                 let (counter, compounds) =
                     count_specifiers(qualifiers, &mut self.error_handler, location);
                 let qualifiers = Qualifiers {
@@ -276,6 +324,11 @@ impl Analyzer {
             }
             Function(func) => unimplemented!(),
         }
+    }
+    fn parse_initializer(
+        &mut self, init: ast::Initializer, ctype: &Type, location: Location,
+    ) -> Initializer {
+        unimplemented!("initializers")
     }
     fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
         match expr {
@@ -357,7 +410,7 @@ impl<'a> FunctionAnalyzer<'a> {
     /// Returns the analyzed statements.
     fn analyze(
         func: ast::FunctionDefinition, analyzer: &mut Analyzer, location: Location,
-    ) -> SemanticResult<(MetadataRef, Vec<Stmt>)> {
+    ) -> (MetadataRef, Vec<Stmt>) {
         let return_type: ParsedType =
             analyzer.parse_type(func.specifiers, func.declarator.into(), location);
         /*

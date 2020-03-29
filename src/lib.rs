@@ -393,14 +393,15 @@ impl<T: Into<Rc<str>>> From<T> for Source {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn compile(src: &str) -> Result<Product, Error> {
+    fn compile(src: &str) -> Result<Vec<Declaration>, Error> {
         let options = Opt::default();
-        let module = initialize_aot_module("RccAOT".to_owned());
         let mut files: Files = Default::default();
         let id = files.add("<test suite>", src.into());
-        super::compile(module, src, &options, id, &mut files)
-            .0
-            .map(|x| x.finish())
+        let res = super::check_semantics(src, &options, id, &mut files).0;
+        match res {
+            Ok(decls) => Ok(decls.into_iter().map(|l| l.data).collect()),
+            Err(errs) => Err(Error::Source(errs)),
+        }
     }
     fn compile_err(src: &str) -> VecDeque<CompileError> {
         match compile(src).err().unwrap() {

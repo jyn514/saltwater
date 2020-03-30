@@ -164,7 +164,6 @@ pub enum SemanticError {
     #[error("cannot have empty program")]
     EmptyProgram,
     */
-
     // expression errors
     #[error("use of undeclared identifier '{0}'")]
     UndeclaredVar(InternedStr),

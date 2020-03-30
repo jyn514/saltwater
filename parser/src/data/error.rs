@@ -146,16 +146,33 @@ pub enum SemanticError {
 
     #[error("function parameters always have a storage class of `auto`")]
     ParameterStorageClass(StorageClass),
+
+    #[error("duplicate parameter name '{0}' in function declaration")]
+    DuplicateParameter(InternedStr),
+
+    #[error("functions cannot return '{0}'")]
+    IllegalReturnType(Type),
+
+    // TODO: print params in the error message
+    #[error("arrays cannot contain functions (got '{0}'). help: try storing array of pointer to function: (*{}[])(...)")]
+    ArrayStoringFunction(Type),
+
     /*
-    #[error("cannot have empty program")]
-    EmptyProgram,
-
-    #[error("use of undeclared identifier '{0}'")]
-    UndeclaredVar(InternedStr),
-
     #[error("`{0}` is only allowed on function declarations")]
     InvalidFuncQualifiers(super::FunctionQualifiers),
 
+    #[error("cannot have empty program")]
+    EmptyProgram,
+    */
+
+    // expression errors
+    #[error("use of undeclared identifier '{0}'")]
+    UndeclaredVar(InternedStr),
+
+    #[error("expected expression, got typedef")]
+    TypedefInExpressionContext,
+
+    /*
     // String is the reason it couldn't be assigned
     #[error("cannot assign to {0}")]
     NotAssignable(String),
@@ -203,9 +220,6 @@ pub enum SemanticError {
 
     #[error("void must be the first and only parameter if specified")]
     InvalidVoidParameter,
-
-    #[error("expected expression, got typedef")]
-    TypedefInExpressionContext,
 
     #[error("overflow in enumeration constant")]
     EnumOverflow,

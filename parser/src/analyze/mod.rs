@@ -63,7 +63,7 @@ impl Iterator for Analyzer {
             let location = next.location;
             let decls = self.parse_declaration(next);
             if decls.is_empty() {
-                self.error_handler.warn(Warning::EmptyDeclaration, location);
+                self.warn(Warning::EmptyDeclaration, location);
             } else {
                 // TODO: if an error occurs, should we still add the declaration to `pending`?
                 self.pending.extend(decls);
@@ -81,6 +81,15 @@ impl Analyzer {
             tag_scope: Scope::new(),
             pending: VecDeque::new(),
         }
+    }
+    // I type these a lot
+    #[inline(always)]
+    fn err(&mut self, e: SemanticError, l: Location) {
+        self.error_handler.error(e, l);
+    }
+    #[inline(always)]
+    fn warn(&mut self, w: Warning, l: Location) {
+        self.error_handler.warn(w, l);
     }
     fn parse_declaration(
         &mut self, next: Locatable<ast::ExternalDeclaration>,
@@ -110,8 +119,7 @@ impl Analyzer {
                     }
                 });
                 if sc == StorageClass::Auto && self.scope.is_global() {
-                    self.error_handler
-                        .error(SemanticError::AutoAtGlobalScope, next.location);
+                    self.err(SemanticError::AutoAtGlobalScope, next.location);
                 }
                 let mut decls = Vec::new();
                 for d in declaration.declarators {
@@ -173,8 +181,7 @@ impl Analyzer {
             (None, None) | (Some(_), None) => true,
             (None, Some(_)) => false,
             (Some(_), Some(_)) => {
-                self.error_handler
-                    .error(SemanticError::ConflictingSigned, location);
+                self.err(SemanticError::ConflictingSigned, location);
                 true
             }
         };
@@ -193,8 +200,7 @@ impl Analyzer {
                 // TODO: implement `long long` as a separate type
                 2 => ctype = Some(Type::Long(signed)),
                 _ => {
-                    self.error_handler
-                        .error(SemanticError::TooLong(long_count), location);
+                    self.err(SemanticError::TooLong(long_count), location);
                     ctype = Some(Type::Long(signed));
                 }
             }
@@ -216,7 +222,7 @@ impl Analyzer {
         ] {
             if counter.get(spec).is_some() {
                 if let Some(existing) = storage_class {
-                    self.error_handler.error(
+                    self.err(
                         SemanticError::ConflictingStorageClass(existing, *sc),
                         location,
                     );
@@ -241,7 +247,7 @@ impl Analyzer {
         ] {
             if counter.get(&spec).is_some() {
                 if let Some(existing) = ctype {
-                    self.error_handler.error(
+                    self.err(
                         SemanticError::ConflictingType(existing, new_ctype.clone()),
                         location,
                     );
@@ -254,7 +260,7 @@ impl Analyzer {
                 Unit(_) => unreachable!("already caught"),
                 Typedef => {
                     if let Some(existing) = storage_class {
-                        self.error_handler.error(
+                        self.err(
                             SemanticError::ConflictingStorageClass(existing, StorageClass::Typedef),
                             location,
                         );
@@ -275,7 +281,7 @@ impl Analyzer {
                 // unsigned float
                 Some(other) => {
                     let err = SemanticError::CannotBeSigned(other.clone());
-                    self.error_handler.error(err, location);
+                    self.err(err, location);
                 }
                 // unsigned i
                 None => ctype = Some(Type::Int(signed)),
@@ -283,7 +289,7 @@ impl Analyzer {
         }
         // i;
         let ctype = ctype.unwrap_or_else(|| {
-            self.error_handler.warn(Warning::ImplicitInt, location);
+            self.warn(Warning::ImplicitInt, location);
             Type::Int(true)
         });
         ParsedType {
@@ -319,13 +325,11 @@ impl Analyzer {
                 };
                 for &q in counter.keys() {
                     if !q.is_qualifier() {
-                        self.error_handler
-                            .error(SemanticError::NotAQualifier(q.into()), location);
+                        self.err(SemanticError::NotAQualifier(q.into()), location);
                     }
                 }
                 for spec in compounds {
-                    self.error_handler
-                        .error(SemanticError::NotAQualifier(spec), location);
+                    self.err(SemanticError::NotAQualifier(spec), location);
                 }
                 Type::Pointer(Box::new(inner), qualifiers)
             }
@@ -341,7 +345,7 @@ impl Analyzer {
                 };
                 let of = self.parse_declarator(current, *of, location);
                 if let Type::Function(_) = &of {
-                    self.error_handler.error(SemanticError::ArrayStoringFunction(of.clone()), location);
+                    self.err(SemanticError::ArrayStoringFunction(of.clone()), location);
                 }
                 Type::Array(Box::new(of), size)
             }
@@ -351,8 +355,14 @@ impl Analyzer {
                 // TODO: give a warning for `const int f();` somewhere
                 let return_type = self.parse_declarator(current, *func.return_type, location);
                 match &return_type {
-                    Type::Array(_, _) => self.error_handler.error(SemanticError::IllegalReturnType(return_type.clone()), location),
-                    Type::Function(_) => self.error_handler.error(SemanticError::IllegalReturnType(return_type.clone()), location),
+                    Type::Array(_, _) => self.err(
+                        SemanticError::IllegalReturnType(return_type.clone()),
+                        location,
+                    ),
+                    Type::Function(_) => self.err(
+                        SemanticError::IllegalReturnType(return_type.clone()),
+                        location,
+                    ),
                     _ => {}
                 }
 
@@ -363,12 +373,11 @@ impl Analyzer {
                     let param_type =
                         self.parse_type(param.specifiers, param.declarator.decl, location);
                     if let Some(sc) = param_type.storage_class {
-                        self.error_handler
-                            .error(SemanticError::ParameterStorageClass(sc), location);
+                        self.err(SemanticError::ParameterStorageClass(sc), location);
                     }
                     let id = if let Some(name) = param.declarator.id {
                         if names.contains(&name) {
-                            self.error_handler.error(SemanticError::DuplicateParameter(name), location)
+                            self.err(SemanticError::DuplicateParameter(name), location)
                         }
                         names.insert(name);
                         name
@@ -439,28 +448,24 @@ impl Analyzer {
         let pretend_zero = Expr::zero(location);
         match self.scope.get(&name) {
             None => {
-                self.error_handler.error(
-                    SemanticError::UndeclaredVar(name),
-                    location,
-                );
+                self.err(SemanticError::UndeclaredVar(name), location);
                 pretend_zero
             }
             Some(&symbol) => {
                 let meta = symbol.get();
                 if meta.storage_class == StorageClass::Typedef {
-                    self.error_handler.push_back(
-                        location.error(SemanticError::TypedefInExpressionContext),
-                    );
+                    self.err(SemanticError::TypedefInExpressionContext, location);
                     return pretend_zero;
                 }
                 if let Type::Enum(ident, members) = &meta.ctype {
-                    let enumerator = members.iter().find_map(|(member, value)| {
+                    let mapper = |(member, value): &(InternedStr, i64)| {
                         if name == *member {
                             Some(*value)
                         } else {
                             None
                         }
-                    });
+                    };
+                    let enumerator = members.iter().find_map(mapper);
                     if let Some(e) = enumerator {
                         return Expr {
                             ctype: Type::Enum(*ident, members.clone()),
@@ -612,7 +617,6 @@ impl Expr {
         }
     }
 }
-
 
 /*
 fn desugar(expr: ExprType) -> data::Expr {
@@ -1071,140 +1075,140 @@ pub(crate) mod test {
         assert!(decl("int f(int a, int a);").is_err());
     }
     /*
-    #[test]
-    fn test_initializers() {
-        // scalars
-        assert!(decl("int i = 3;").unwrap().is_ok());
+        #[test]
+        fn test_initializers() {
+            // scalars
+            assert!(decl("int i = 3;").unwrap().is_ok());
 
-        // bounded and unbounded arrays
-        let parsed = [
-            decl("int a[] = {1, 2, 3};"),
-            decl("int a[3] = {1, 2, 3};"),
-            // possibly with trailing commas
-            decl("int a[] = {1, 2, 3,};"),
-            decl("int a[3] = {1, 2, 3,};"),
-            // or nested
-            decl("int a[][3] = {{1, 2, 3}};"),
-            decl("int a[][3] = {{1, 2, 3,}};"),
-            decl("int a[][3] = {{1, 2, 3,},};"),
-            decl("int a[1][3] = {{1, 2, 3,},};"),
-            // with misleading braces
-            decl("int a[][3] = {1, 2, 3};"),
-            decl("int a[][3] = {1, 2, 3,};"),
-        ];
-        for res in &parsed {
-            match res.as_ref().unwrap() {
-                Ok(Locatable {
-                    data:
-                        Declaration {
-                            init: Some(Initializer::InitializerList(_)),
-                            ..
-                        },
-                    ..
-                }) => {}
-                Ok(Locatable { data, .. }) => {
-                    panic!("expected initializer list, got declaration: {}", data)
-                }
-                Err(Locatable { data, .. }) => {
-                    panic!("expected initializer list, got error: {}", data)
-                }
-            };
+            // bounded and unbounded arrays
+            let parsed = [
+                decl("int a[] = {1, 2, 3};"),
+                decl("int a[3] = {1, 2, 3};"),
+                // possibly with trailing commas
+                decl("int a[] = {1, 2, 3,};"),
+                decl("int a[3] = {1, 2, 3,};"),
+                // or nested
+                decl("int a[][3] = {{1, 2, 3}};"),
+                decl("int a[][3] = {{1, 2, 3,}};"),
+                decl("int a[][3] = {{1, 2, 3,},};"),
+                decl("int a[1][3] = {{1, 2, 3,},};"),
+                // with misleading braces
+                decl("int a[][3] = {1, 2, 3};"),
+                decl("int a[][3] = {1, 2, 3,};"),
+            ];
+            for res in &parsed {
+                match res.as_ref().unwrap() {
+                    Ok(Locatable {
+                        data:
+                            Declaration {
+                                init: Some(Initializer::InitializerList(_)),
+                                ..
+                            },
+                        ..
+                    }) => {}
+                    Ok(Locatable { data, .. }) => {
+                        panic!("expected initializer list, got declaration: {}", data)
+                    }
+                    Err(Locatable { data, .. }) => {
+                        panic!("expected initializer list, got error: {}", data)
+                    }
+                };
+            }
+            for err in &["int i = {};", "int a[] = {};", "int a[][3] = {{}};"] {
+                assert!(decl(err).unwrap().is_err());
+            }
         }
-        for err in &["int i = {};", "int a[] = {};", "int a[][3] = {{}};"] {
-            assert!(decl(err).unwrap().is_err());
+
+        #[test]
+        fn default_type_specifier_warns() {
+            let default_type_decls = &[
+                "i;",
+                "f();",
+                "a[1];",
+                "(*fp)();",
+                "(i);",
+                "((*f)());",
+                "(a[1]);",
+                "(((((((((i)))))))));",
+            ];
+
+            for decl in default_type_decls {
+                assert_errs_decls(decl, 0, 1, 1);
+            }
         }
-    }
 
-    #[test]
-    fn default_type_specifier_warns() {
-        let default_type_decls = &[
-            "i;",
-            "f();",
-            "a[1];",
-            "(*fp)();",
-            "(i);",
-            "((*f)());",
-            "(a[1]);",
-            "(((((((((i)))))))));",
-        ];
+        #[test]
+        fn extern_redeclaration_of_static_fn_does_not_error() {
+            let code = "
+                static int f();
+                extern int f();
+            ";
 
-        for decl in default_type_decls {
-            assert_errs_decls(decl, 0, 1, 1);
+            assert_errs_decls(code, 0, 0, 2);
+
+            // However the opposite should still error
+            let code = "
+                extern int f();
+                static int f();
+            ";
+
+            assert_errs_decls(code, 1, 0, 2);
         }
-    }
 
-    #[test]
-    fn extern_redeclaration_of_static_fn_does_not_error() {
-        let code = "
-            static int f();
-            extern int f();
-        ";
-
-        assert_errs_decls(code, 0, 0, 2);
-
-        // However the opposite should still error
-        let code = "
-            extern int f();
-            static int f();
-        ";
-
-        assert_errs_decls(code, 1, 0, 2);
+        #[test]
+        fn enum_declaration() {
+            assert!(decl("enum;").unwrap().is_err());
+            assert!(decl("enum e;").unwrap().is_err());
+            assert!(decl("enum e {};").unwrap().is_err());
+            assert!(decl("enum e { A }").unwrap().is_err());
+            assert!(decl("enum { A };").is_none());
+            assert!(match_type(
+                decl("enum { A } E;"),
+                Type::Enum(None, vec![("A".into(), 0)])
+            ));
+            assert!(match_type(
+                decl("enum e { A = 1, B } E;"),
+                Type::Enum(Some("e".into()), vec![("A".into(), 1), ("B".into(), 2)])
+            ));
+            assert!(match_type(
+                decl("enum { A = -5, B, C = 2, D } E;"),
+                Type::Enum(
+                    None,
+                    vec![
+                        ("A".into(), -5),
+                        ("B".into(), -4),
+                        ("C".into(), 2),
+                        ("D".into(), 3)
+                    ]
+                )
+            ));
+        }
+        #[test]
+        fn typedef_signed() {
+            let mut parsed = parse_all("typedef unsigned uint; uint i;");
+            assert!(match_type(parsed.pop(), Type::Int(false)));
+        }
+        #[test]
+        fn bitfields() {
+            assert!(decl("struct { int:5; } a;").unwrap().is_err());
+            assert!(decl("struct { int a:5; } b;").unwrap().is_ok());
+            assert!(decl("struct { int a:5, b:6; } c;").unwrap().is_ok());
+            assert!(decl("struct { extern int a:5; } d;").unwrap().is_err());
+        }
+        #[test]
+        fn lol() {
+            let lol = "
+    int *jynelson(int(*fp)(int)) {
+        return 0;
     }
-
-    #[test]
-    fn enum_declaration() {
-        assert!(decl("enum;").unwrap().is_err());
-        assert!(decl("enum e;").unwrap().is_err());
-        assert!(decl("enum e {};").unwrap().is_err());
-        assert!(decl("enum e { A }").unwrap().is_err());
-        assert!(decl("enum { A };").is_none());
-        assert!(match_type(
-            decl("enum { A } E;"),
-            Type::Enum(None, vec![("A".into(), 0)])
-        ));
-        assert!(match_type(
-            decl("enum e { A = 1, B } E;"),
-            Type::Enum(Some("e".into()), vec![("A".into(), 1), ("B".into(), 2)])
-        ));
-        assert!(match_type(
-            decl("enum { A = -5, B, C = 2, D } E;"),
-            Type::Enum(
-                None,
-                vec![
-                    ("A".into(), -5),
-                    ("B".into(), -4),
-                    ("C".into(), 2),
-                    ("D".into(), 3)
-                ]
-            )
-        ));
+    int f(int i) {
+        return 0;
     }
-    #[test]
-    fn typedef_signed() {
-        let mut parsed = parse_all("typedef unsigned uint; uint i;");
-        assert!(match_type(parsed.pop(), Type::Int(false)));
+    int main() {
+        return *((int*(*)(int(*)(int)))jynelson)(&f);
     }
-    #[test]
-    fn bitfields() {
-        assert!(decl("struct { int:5; } a;").unwrap().is_err());
-        assert!(decl("struct { int a:5; } b;").unwrap().is_ok());
-        assert!(decl("struct { int a:5, b:6; } c;").unwrap().is_ok());
-        assert!(decl("struct { extern int a:5; } d;").unwrap().is_err());
-    }
-    #[test]
-    fn lol() {
-        let lol = "
-int *jynelson(int(*fp)(int)) {
-    return 0;
-}
-int f(int i) {
-    return 0;
-}
-int main() {
-    return *((int*(*)(int(*)(int)))jynelson)(&f);
-}
-";
-        assert!(parse_all(lol).iter().all(Result::is_ok));
-    }
-    */
+    ";
+            assert!(parse_all(lol).iter().all(Result::is_ok));
+        }
+        */
 }

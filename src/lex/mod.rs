@@ -150,7 +150,13 @@ impl Lexer {
     /// This function will panic if called twice in a row
     /// or when `self.lookahead.is_some()`.
     fn unput(&mut self, byte: u8) {
-        assert!(self.lookahead.is_none());
+        assert!(
+            self.lookahead.is_none(),
+            "unputting {:?} would cause the lexer to forget it saw {:?} (current is {:?})",
+            byte as char,
+            self.lookahead.unwrap() as char,
+            self.current.unwrap() as char
+        );
         self.lookahead = self.current.take();
         self.current = Some(byte);
         // TODO: this is not right,

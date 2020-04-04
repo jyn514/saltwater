@@ -149,7 +149,7 @@ pub enum ExprType {
     Mod(Box<Expr>, Box<Expr>),
     Add(Box<Expr>, Box<Expr>),
     Sub(Box<Expr>, Box<Expr>),
-    // bool: left or right
+    // bool: left (true) or right (false)
     Shift(Box<Expr>, Box<Expr>, bool),
     // Token: make >, <, <=, ... part of the same variant
     Compare(Box<Expr>, Box<Expr>, ComparisonToken),

@@ -736,6 +736,15 @@ impl Analyzer {
         match token {
             Equal => unreachable!(),
             OrEqual => self.parse_integer_op(left, right, ExprType::BitwiseOr),
+            AndEqual => self.parse_integer_op(left, right, ExprType::BitwiseAnd),
+            XorEqual => self.parse_integer_op(left, right, ExprType::Xor),
+            LeftEqual => self.parse_integer_op(left, right, |a, b| ExprType::Shift(a, b, true)),
+            RightEqual => self.parse_integer_op(left, right, |a, b| ExprType::Shift(a, b, false)),
+            /*
+            MulEqual => self.mul(left, right, Token::Star),
+            DivEqual => self.mul(left, right, Token::Divide),
+            ModEqual => self.mul(left, right, Token::Mod),
+            */
             _ => unimplemented!("desugaring complex assignment"),
         }
     }

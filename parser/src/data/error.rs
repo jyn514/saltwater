@@ -171,6 +171,11 @@ pub enum SemanticError {
     #[error("expected expression, got typedef")]
     TypedefInExpressionContext,
 
+    #[error("type casts cannot have a storage class")]
+    IllegalStorageClass(StorageClass),
+
+    #[error("type casts cannot have a variable name")]
+    IdInTypeName(InternedStr),
     /*
     // String is the reason it couldn't be assigned
     #[error("cannot assign to {0}")]
@@ -399,6 +404,9 @@ pub enum Warning {
     #[error("duplicate '{0}' declaration specifier{}",
             if *.1 > 1 { format!(" occurs {} times", .1) } else { String::new() })]
     DuplicateSpecifier(ast::UnitSpecifier, usize),
+
+    #[error("qualifiers in type casts are ignored")]
+    IgnoredQualifier(hir::Qualifiers),
 
     #[error("declaration does not declare anything")]
     EmptyDeclaration,

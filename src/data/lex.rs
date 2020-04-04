@@ -91,7 +91,7 @@ pub enum Keyword {
     Alignof,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum AssignmentToken {
     Equal,
@@ -107,7 +107,7 @@ pub enum AssignmentToken {
     XorEqual, // ^=
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum ComparisonToken {
     Less,

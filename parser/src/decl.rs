@@ -795,6 +795,10 @@ mod test {
         assert_no_change("int *(*jynelson)(int (*)(int));");
         assert_no_change("const int *volatile(*restrict jynelson)(_Atomic int (*const volatile)(_Thread_local int));")
     }
+    #[test]
+    fn test_precedence() {
+        assert_same("char (*(*f));", "char **f;");
+    }
 
     #[test]
     fn test_multiple() {

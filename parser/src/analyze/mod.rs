@@ -5,7 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use counter::Counter;
 
 use crate::arch;
-use crate::data::{self, error::Warning, hir::*, *};
+use crate::data::{self, error::Warning, hir::*, lex::ComparisonToken, *};
 use crate::intern::InternedStr;
 
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
@@ -459,15 +459,44 @@ impl Analyzer {
             Id(id) => self.parse_id(id, expr.location),
             Cast(ctype, inner) => {
                 let ctype = self.parse_typename(ctype, expr.location);
-                let inner = self.parse_expr(*inner);
-                Expr {
-                    ctype,
-                    expr: ExprType::Cast(Box::new(inner)),
-                    location: expr.location,
-                    lval: false,
-                }
+                self.explicit_cast(*inner, ctype)
             }
+            Shift(left, right, direction) => {
+                self.parse_integer_op(*left, *right, |a, b| ExprType::Shift(a, b, direction))
+            }
+            BitwiseAnd(left, right) => self.parse_integer_op(*left, *right, ExprType::BitwiseAnd),
+            BitwiseOr(left, right) => self.parse_integer_op(*left, *right, ExprType::BitwiseOr),
+            Xor(left, right) => self.parse_integer_op(*left, *right, ExprType::Xor),
+            Compare(left, right, token) => self.relational_expr(*left, *right, token),
+            Mul(left, right) => self.mul(*left, *right, Token::Star),
+            Div(left, right) => self.mul(*left, *right, Token::Divide),
+            Mod(left, right) => self.mul(*left, *right, Token::Mod),
             _ => unimplemented!(),
+        }
+    }
+    fn parse_integer_op<F>(&mut self, left: ast::Expr, right: ast::Expr, expr_func: F) -> Expr
+    where
+        F: Fn(Box<Expr>, Box<Expr>) -> ExprType,
+    {
+        let left = self.parse_expr(left);
+        let right = self.parse_expr(right);
+        let non_scalar = if !left.ctype.is_integral() {
+            Some(&left.ctype)
+        } else if !right.ctype.is_integral() {
+            Some(&right.ctype)
+        } else {
+            None
+        };
+        let location = left.location.merge(right.location);
+        if let Some(ctype) = non_scalar {
+            self.err(SemanticError::NonIntegralExpr(ctype.clone()), location);
+        }
+        let (promoted_expr, next) = Expr::binary_promote(left, right, &mut self.error_handler);
+        Expr {
+            ctype: next.ctype.clone(),
+            expr: expr_func(Box::new(promoted_expr), Box::new(next)),
+            lval: false,
+            location,
         }
     }
     fn parse_id(&mut self, name: InternedStr, location: Location) -> Expr {
@@ -505,6 +534,115 @@ impl Analyzer {
             }
         }
     }
+    fn relational_expr(
+        &mut self, left: ast::Expr, right: ast::Expr, token: ComparisonToken,
+    ) -> Expr {
+        let location = left.location.merge(right.location);
+        let mut left = self.parse_expr(left);
+        let mut right = self.parse_expr(right);
+
+        if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
+            let tmp = Expr::binary_promote(left, right, &mut self.error_handler);
+            left = tmp.0;
+            right = tmp.1;
+        } else {
+            let (left_expr, right_expr) = (left.rval(), right.rval());
+            if !((left_expr.ctype.is_pointer() && left_expr.ctype == right_expr.ctype)
+                // equality operations have different rules :(
+                || ((token == ComparisonToken::EqualEqual || token == ComparisonToken::NotEqual)
+                    // shoot me now
+                    && ((left_expr.ctype.is_pointer() && right_expr.ctype.is_void_pointer())
+                        || (left_expr.ctype.is_void_pointer() && right_expr.ctype.is_pointer())
+                        || (left_expr.is_null() && right_expr.ctype.is_pointer())
+                        || (left_expr.ctype.is_pointer() && right_expr.is_null()))))
+            {
+                self.err(
+                    SemanticError::InvalidRelationalType(
+                        token,
+                        left_expr.ctype.clone(),
+                        right_expr.ctype.clone(),
+                    ),
+                    location,
+                );
+            }
+            left = left_expr;
+            right = right_expr;
+        }
+        assert!(!left.lval && !right.lval);
+        Expr {
+            lval: false,
+            location,
+            ctype: Type::Bool,
+            expr: ExprType::Compare(Box::new(left), Box::new(right), token),
+        }
+    }
+    fn mul(&mut self, left: ast::Expr, right: ast::Expr, token: Token) -> Expr {
+        let left = self.parse_expr(left);
+        let right = self.parse_expr(right);
+        let location = left.location.merge(right.location);
+
+        if token == Token::Mod && !(left.ctype.is_integral() && right.ctype.is_integral()) {
+            self.err(
+                SemanticError::from(format!(
+                    "expected integers for both operators of %, got '{}' and '{}'",
+                    left.ctype, right.ctype
+                )),
+                location,
+            );
+        } else if !(left.ctype.is_arithmetic() && right.ctype.is_arithmetic()) {
+            self.err(
+                SemanticError::from(format!(
+                    "expected float or integer types for both operands of {}, got '{}' and '{}'",
+                    token, left.ctype, right.ctype
+                )),
+                location,
+            );
+        }
+        let (p_left, right) = Expr::binary_promote(left, right, &mut self.error_handler);
+        Expr {
+            ctype: p_left.ctype.clone(),
+            location,
+            lval: false,
+            expr: match token {
+                Token::Star => ExprType::Mul(Box::new(p_left), Box::new(right)),
+                Token::Divide => ExprType::Div(Box::new(p_left), Box::new(right)),
+                Token::Mod => ExprType::Mod(Box::new(p_left), Box::new(right)),
+                _ => panic!("left_associative_binary_op should only return tokens given to it"),
+            },
+        }
+    }
+    fn explicit_cast(&mut self, expr: ast::Expr, ctype: Type) -> Expr {
+        let location = expr.location;
+        let expr = self.parse_expr(expr);
+        if ctype == Type::Void {
+            // casting anything to void is allowed
+            return Expr {
+                lval: false,
+                ctype,
+                // this just signals to the backend to ignore this outer expr
+                expr: ExprType::Cast(Box::new(expr)),
+                location,
+            };
+        }
+        if !ctype.is_scalar() {
+            self.err(SemanticError::NonScalarCast(ctype.clone()), location);
+        } else if expr.ctype.is_floating() && ctype.is_pointer()
+            || expr.ctype.is_pointer() && ctype.is_floating()
+        {
+            self.err(SemanticError::FloatPointerCast(ctype.clone()), location);
+        } else if expr.ctype.is_struct() {
+            // not implemented: galaga (https://github.com/jyn514/rcc/issues/98)
+            self.err(SemanticError::StructCast, location);
+        } else if expr.ctype == Type::Void {
+            self.err(SemanticError::VoidCast, location);
+        }
+        Expr {
+            lval: false,
+            expr: ExprType::Cast(Box::new(expr)),
+            ctype,
+            location,
+        }
+    }
 }
 
 // literal
@@ -529,22 +667,135 @@ fn literal(literal: Literal, location: Location) -> Expr {
     }
 }
 
+fn pointer_promote(left: &mut Expr, right: &mut Expr) -> bool {
+    if left.ctype == right.ctype {
+        true
+    } else if left.ctype.is_void_pointer() || left.ctype.is_char_pointer() || left.is_null() {
+        left.ctype = right.ctype.clone();
+        true
+    } else if right.ctype.is_void_pointer() || right.ctype.is_char_pointer() || right.is_null() {
+        right.ctype = left.ctype.clone();
+        true
+    } else {
+        false
+    }
+}
+impl Type {
+    #[inline]
+    fn is_void_pointer(&self) -> bool {
+        match self {
+            Type::Pointer(t, _) => **t == Type::Void,
+            _ => false,
+        }
+    }
+    #[inline]
+    fn is_char_pointer(&self) -> bool {
+        match self {
+            Type::Pointer(t, _) => match **t {
+                Type::Char(_) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+    /// Return whether self is a signed type.
+    ///
+    /// Should only be called on integral types.
+    /// Calling sign() on a floating or derived type will panic.
+    fn sign(&self) -> bool {
+        use Type::*;
+        match self {
+            Char(sign) | Short(sign) | Int(sign) | Long(sign) => *sign,
+            Bool => false,
+            // TODO: allow enums with values of UINT_MAX
+            Enum(_, _) => true,
+            x => panic!(
+                "Type::sign can only be called on integral types (got {})",
+                x
+            ),
+        }
+    }
+
+    /// Return the rank of an integral type, according to section 6.3.1.1 of the C standard.
+    ///
+    /// It is an error to take the rank of a non-integral type.
+    ///
+    /// Examples:
+    /// ```ignore
+    /// use rcc::data::types::Type::*;
+    /// assert!(Long(true).rank() > Int(true).rank());
+    /// assert!(Int(false).rank() > Short(false).rank());
+    /// assert!(Short(true).rank() > Char(true).rank());
+    /// assert!(Char(true).rank() > Bool.rank());
+    /// assert!(Long(false).rank() > Bool.rank());
+    /// assert!(Long(true).rank() == Long(false).rank());
+    /// ```
+    fn rank(&self) -> usize {
+        use Type::*;
+        match self {
+            Bool => 0,
+            Char(_) => 1,
+            Short(_) => 2,
+            Int(_) => 3,
+            Long(_) => 4,
+            // don't make this 5 in case we add `long long` at some point
+            _ => std::usize::MAX,
+        }
+    }
+    fn integer_promote(self) -> Type {
+        if self.rank() <= Type::Int(true).rank() {
+            if Type::Int(true).can_represent(&self) {
+                Type::Int(true)
+            } else {
+                Type::Int(false)
+            }
+        } else {
+            self
+        }
+    }
+    fn binary_promote(mut left: Type, mut right: Type) -> Type {
+        use Type::*;
+        if left == Double || right == Double {
+            return Double; // toil and trouble
+        } else if left == Float || right == Float {
+            return Float;
+        }
+        left = left.integer_promote();
+        right = right.integer_promote();
+        let signs = (left.sign(), right.sign());
+        // same sign
+        if signs.0 == signs.1 {
+            return if left.rank() >= right.rank() {
+                left
+            } else {
+                right
+            };
+        };
+        let (signed, unsigned) = if signs.0 {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        if signed.can_represent(&unsigned) {
+            signed
+        } else {
+            unsigned
+        }
+    }
+    fn is_struct(&self) -> bool {
+        match self {
+            Type::Struct(_) | Type::Union(_) => true,
+            _ => false,
+        }
+    }
+}
+
 struct FunctionAnalyzer<'a> {
     /// the function we are currently compiling.
     /// used for checking return types
     metadata: FunctionData,
     /// We need this for the scopes, as well as for parsing expressions
     analyzer: &'a mut Analyzer,
-    /*
-    /// objects that are in scope
-    /// It's a reference instead of an owned scope since the global variables are passed in from the `Analyzer`.
-    scope: &'a mut Scope<InternedStr, MetadataRef>,
-    /// compound types that are in scope: structs, unions, and enums
-    /// scope 2. from above
-    tag_scope: &'a mut TagScope,
-    /// used for recovering from semantic errors
-    error_handler: &'a mut ErrorHandler,
-    */
 }
 
 #[derive(Debug)]
@@ -654,6 +905,16 @@ impl Expr {
             location,
         }
     }
+    fn is_null(&self) -> bool {
+        if let ExprType::Literal(token) = &self.expr {
+            match token {
+                Literal::Int(0) | Literal::UnsignedInt(0) | Literal::Char(0) => true,
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
     fn id(symbol: MetadataRef, location: Location) -> Self {
         Self {
             expr: ExprType::Id(symbol),
@@ -664,26 +925,97 @@ impl Expr {
             location,
         }
     }
-}
-
-/*
-fn desugar(expr: ExprType) -> data::Expr {
-    unimplemented!()
-    /*
-    match expr {
-        ExprType::Assign(lval, rval, token) => {
-            // lval += rval -> { tmp = &lval; *tmp = rval; }
+    // Perform a binary conversion, including all relevant casts.
+    //
+    // See `Type::binary_promote` for conversion rules.
+    fn binary_promote(left: Expr, right: Expr, error_handler: &mut ErrorHandler) -> (Expr, Expr) {
+        let (left, right) = (left.rval(), right.rval());
+        let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
+        (
+            left.implicit_cast(&ctype, error_handler),
+            right.implicit_cast(&ctype, error_handler),
+        )
+        /*
+            (Ok(left_cast), Ok(right_cast)) => Ok((left_cast, right_cast)),
+            (Err((err, left)), Ok(right)) | (Ok(left), Err((err, right)))
+            // TODO: don't ignore this right error
+            | (Err((err, left)), Err((_, right))) => Err((err, (left, right))),
+        }
+        */
+    }
+    // ensure an expression has a value. convert
+    // - arrays -> pointers
+    // - functions -> pointers
+    // - variables -> value stored in that variable
+    pub(super) fn rval(self) -> Expr {
+        match self.ctype {
+            // a + 1 is the same as &a + 1
+            Type::Array(to, _) => Expr {
+                lval: false,
+                ctype: Type::Pointer(to, Qualifiers::default()),
+                ..self
+            },
+            Type::Function(_) => Expr {
+                lval: false,
+                ctype: Type::Pointer(
+                    Box::new(self.ctype),
+                    Qualifiers {
+                        c_const: true,
+                        ..Qualifiers::default()
+                    },
+                ),
+                ..self
+            },
+            // HACK: structs can't be dereferenced since they're not scalar, so we just fake it
+            Type::Struct(_) | Type::Union(_) if self.lval => Expr {
+                lval: false,
+                ..self
+            },
+            _ if self.lval => Expr {
+                ctype: self.ctype.clone(),
+                lval: false,
+                location: self.location,
+                expr: ExprType::Deref(Box::new(self)),
+            },
+            _ => self,
         }
     }
-    */
+    pub(super) fn implicit_cast(mut self, ctype: &Type, error_handler: &mut ErrorHandler) -> Expr {
+        if dbg!(&self.ctype) == dbg!(&*ctype) {
+            self
+        } else if self.ctype.is_arithmetic() && ctype.is_arithmetic()
+            || self.is_null() && ctype.is_pointer()
+            || self.ctype.is_pointer() && ctype.is_bool()
+            || self.ctype.is_pointer() && ctype.is_void_pointer()
+            || self.ctype.is_pointer() && ctype.is_char_pointer()
+        {
+            Expr {
+                location: self.location,
+                expr: ExprType::Cast(Box::new(self)),
+                lval: false,
+                ctype: ctype.clone(),
+            }
+        } else if ctype.is_pointer()
+            && (self.is_null() || self.ctype.is_void_pointer() || self.ctype.is_char_pointer())
+        {
+            self.ctype = ctype.clone();
+            self
+        } else if self.ctype == Type::Error {
+            self
+        // TODO: allow implicit casts of const pointers
+        } else {
+            error_handler.error(
+                SemanticError::InvalidCast(
+                    //"cannot implicitly convert '{}' to '{}'{}",
+                    self.ctype.clone(),
+                    ctype.clone(),
+                ),
+                self.location,
+            );
+            self
+        }
+    }
 }
-*/
-
-/*
-fn analyze(declaration: ExternalDeclaration) {
-
-}
-*/
 
 #[cfg(test)]
 pub(crate) mod test {
@@ -1271,4 +1603,133 @@ pub(crate) mod test {
             assert!(parse_all(lol).iter().all(Result::is_ok));
         }
         */
+
+    pub(crate) fn parse_expr(input: &str) -> CompileResult<Expr> {
+        analyze(input, Parser::expr, Analyzer::parse_expr)
+    }
+    fn get_location(r: &CompileResult<Expr>) -> Location {
+        match r {
+            Ok(expr) => expr.location,
+            Err(err) => err.location(),
+        }
+    }
+    fn assert_literal(token: Literal) {
+        let parsed = parse_expr(&token.to_string());
+        let location = get_location(&parsed);
+        assert_eq!(parsed.unwrap(), literal(token, location));
+    }
+    /*
+    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[&Symbol]) -> CompileResult<Expr> {
+        let mut parser = parser(input);
+        let mut scope = Scope::new();
+        for var in variables {
+            scope.insert(var.id.clone(), (*var).clone());
+        }
+        parser.scope = scope;
+        let exp = parser.expr();
+        if let Some(err) = parser.error_handler.pop_front() {
+            Err(err)
+        } else {
+            exp.map_err(CompileError::from)
+        }
+    }
+    */
+    fn assert_type(input: &str, ctype: Type) {
+        match parse_expr(input) {
+            Ok(expr) => assert_eq!(expr.ctype, ctype),
+            Err(err) => panic!("error: {}", err.data),
+        };
+    }
+    #[test]
+    fn test_primaries() {
+        assert_literal(Literal::Int(141));
+        let parsed = parse_expr("\"hi there\"");
+
+        /*
+        assert_eq!(
+            parsed,
+            Ok(Expr::from((
+                Literal::Str("hi there\0".into()),
+                get_location(&parsed)
+            )))
+        );
+        assert_literal(Literal::Float(1.5));
+        let parsed = parse_expr("(1)");
+        assert_eq!(
+            parsed,
+            Ok(Expr::from((Literal::Int(1), get_location(&parsed))))
+        );
+        let x = Symbol {
+            ctype: Type::Int(true),
+            id: InternedStr::get_or_intern("x"),
+            qualifiers: Default::default(),
+            storage_class: Default::default(),
+            init: false,
+        };
+        let parsed = parse_expr_with_scope("x", &[&x]);
+        assert_eq!(
+            parsed,
+            Ok(Expr {
+                location: get_location(&parsed),
+                ctype: Type::Int(true),
+                lval: true,
+                expr: ExprType::Id(x)
+            })
+        );
+        */
+    }
+    #[test]
+    fn test_mul() {
+        assert_type("1*1.0", Type::Double);
+        assert_type("1*2.0 / 1.3", Type::Double);
+        assert_type("3%2", Type::Long(true));
+    }
+    /*
+    #[test]
+    fn test_funcall() {
+        let f = Symbol {
+            id: InternedStr::get_or_intern("f"),
+            init: false,
+            qualifiers: Default::default(),
+            storage_class: Default::default(),
+            ctype: Type::Function(types::FunctionType {
+                params: vec![Symbol {
+                    ctype: Type::Void,
+                    id: Default::default(),
+                    init: false,
+                    qualifiers: Default::default(),
+                    storage_class: StorageClass::Auto,
+                }],
+                return_type: Box::new(Type::Int(true)),
+                varargs: false,
+            }),
+        };
+        assert!(parse_expr_with_scope("f(1,2,3)", &[&f]).is_err());
+        let parsed = parse_expr_with_scope("f()", &[&f]);
+        assert!(match parsed {
+            Ok(Expr {
+                expr: ExprType::FuncCall(_, _),
+                ..
+            }) => true,
+            _ => false,
+        },);
+    }
+    */
+    #[test]
+    fn test_type_errors() {
+        assert!(parse_expr("1 % 2.0").is_err());
+    }
+
+    #[test]
+    fn test_explicit_casts() {
+        assert_type("(int)4.2", Type::Int(true));
+        assert_type("(unsigned int)4.2", Type::Int(false));
+        assert_type("(float)4.2", Type::Float);
+        assert_type("(double)4.2", Type::Double);
+        assert!(parse_expr("(int*)4.2").is_err());
+        assert_type(
+            "(int*)(int)4.2",
+            Type::Pointer(Box::new(Type::Int(true)), Qualifiers::default()),
+        );
+    }
 }

@@ -176,6 +176,18 @@ pub enum SemanticError {
 
     #[error("type casts cannot have a variable name")]
     IdInTypeName(InternedStr),
+
+    #[error("expected integer, got '{0}'")]
+    NonIntegralExpr(Type),
+
+    #[error("cannot implicitly convert '{0}' to '{1}'{}",
+        if .1.is_pointer() {
+            format!(". help: use an explicit cast: ({})", .1)
+        } else {
+            String::new()
+        })
+    ]
+    InvalidCast(Type, Type),
     /*
     // String is the reason it couldn't be assigned
     #[error("cannot assign to {0}")]
@@ -208,6 +220,23 @@ pub enum SemanticError {
 
     #[error("cannot dereference NULL pointer")]
     NullPointerDereference,
+
+    #[error("invalid types for '{0}' (expected arithmetic types or compatible pointers, got {1} {0} {2}")]
+    InvalidRelationalType(lex::ComparisonToken, Type, Type),
+
+    #[error("cannot cast pointer to float or vice versa")]
+    FloatPointerCast(Type),
+
+    // TODO: this shouldn't be an error
+    #[error("cannot cast to non-scalar type '{0}'")]
+    NonScalarCast(Type),
+
+    #[error("cannot cast void to any type")]
+    VoidCast,
+
+    #[error("cannot cast structs to any type")]
+    StructCast,
+
     /*
     #[error("unreachable statement")]
     UnreachableStatement,

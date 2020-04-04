@@ -495,6 +495,8 @@ impl Analyzer {
             Div(left, right) => self.binary_helper(left, right, BinaryOp::Div, Self::mul),
             Mod(left, right) => self.binary_helper(left, right, BinaryOp::Mod, Self::mul),
             Assign(lval, rval, token) => self.assignment_expr(*lval, *rval, token, expr.location),
+            Add(left, right) => self.binary_helper(left, right, BinaryOp::Add, Self::add),
+            Sub(left, right) => self.binary_helper(left, right, BinaryOp::Sub, Self::add),
             _ => unimplemented!(),
         }
     }
@@ -631,6 +633,50 @@ impl Analyzer {
             expr: ExprType::Binary(op, Box::new(left), Box::new(right)),
         }
     }
+    // is_add should be set to `false` if this is a subtraction
+    fn add(&mut self, mut left: Expr, mut right: Expr, op: BinaryOp) -> Expr {
+        let is_add = op == BinaryOp::Add;
+        let location = left.location.merge(right.location);
+        match (&left.ctype, &right.ctype) {
+            (Type::Pointer(to, _), i)
+            | (Type::Array(to, _), i) if i.is_integral() && to.is_complete() => {
+                let to = to.clone();
+                let (left, right) = (left.rval(), right.rval());
+                return self.pointer_arithmetic(left, right, &*to, location);
+            }
+            (i, Type::Pointer(to, _))
+                // `i - p` for pointer p is not valid
+            | (i, Type::Array(to, _)) if i.is_integral() && is_add && to.is_complete() => {
+                let to = to.clone();
+                let (left, right) = (left.rval(), right.rval());
+                return self.pointer_arithmetic(right, left, &*to, location);
+            }
+            _ => {}
+        };
+        let (ctype, lval) = if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
+            let tmp = Expr::binary_promote(left, right, &mut self.error_handler);
+            left = tmp.0;
+            right = tmp.1;
+            (left.ctype.clone(), false)
+        // `p1 + p2` for pointers p1 and p2 is not valid
+        } else if !is_add && left.ctype.is_pointer_to_complete_object() && left.ctype == right.ctype
+        {
+            // not sure what type to use here, C11 standard doesn't mention it
+            (left.ctype.clone(), true)
+        } else {
+            self.err(
+                SemanticError::InvalidAdd(op, left.ctype.clone(), right.ctype.clone()),
+                location,
+            );
+            (left.ctype.clone(), false)
+        };
+        Expr {
+            ctype,
+            lval,
+            location,
+            expr: ExprType::Binary(op, Box::new(left), Box::new(right)),
+        }
+    }
     fn explicit_cast(&mut self, expr: ast::Expr, ctype: Type) -> Expr {
         let location = expr.location;
         let expr = self.parse_expr(expr);
@@ -661,6 +707,46 @@ impl Analyzer {
             expr: ExprType::Cast(Box::new(expr)),
             ctype,
             location,
+        }
+    }
+    fn pointer_arithmetic(
+        &mut self, base: Expr, index: Expr, pointee: &Type, location: Location,
+    ) -> Expr {
+        let offset = Expr {
+            lval: false,
+            location: index.location,
+            expr: ExprType::Cast(Box::new(index)),
+            ctype: base.ctype.clone(),
+        }
+        .rval();
+        let size = match pointee.sizeof() {
+            Ok(s) => s,
+            Err(_) => {
+                self.err(
+                    SemanticError::PointerAddUnknownSize(base.ctype.clone()),
+                    location,
+                );
+                1
+            }
+        };
+        let size_literal = literal(Literal::UnsignedInt(size), offset.location);
+        let size_cast = Expr {
+            lval: false,
+            location: offset.location,
+            ctype: offset.ctype.clone(),
+            expr: ExprType::Cast(Box::new(size_literal)),
+        };
+        let offset = Expr {
+            lval: false,
+            location: offset.location,
+            ctype: offset.ctype.clone(),
+            expr: ExprType::Binary(BinaryOp::Mul, Box::new(size_cast), Box::new(offset)),
+        };
+        Expr {
+            lval: false,
+            location,
+            ctype: base.ctype.clone(),
+            expr: ExprType::Binary(BinaryOp::Add, Box::new(base), Box::new(offset)),
         }
     }
     fn assignment_expr(
@@ -751,7 +837,8 @@ impl Analyzer {
             MulEqual => self.mul(left, right, BinaryOp::Mul),
             DivEqual => self.mul(left, right, BinaryOp::Div),
             ModEqual => self.mul(left, right, BinaryOp::Mod),
-            _ => unimplemented!("desugaring complex assignment"),
+            AddEqual => self.add(left, right, BinaryOp::Add),
+            SubEqual => self.add(left, right, BinaryOp::Sub),
         }
     }
 }
@@ -806,6 +893,15 @@ impl Type {
                 Type::Char(_) => true,
                 _ => false,
             },
+            _ => false,
+        }
+    }
+    #[inline]
+    /// used for pointer addition and subtraction, see section 6.5.6 of the C11 standard
+    fn is_pointer_to_complete_object(&self) -> bool {
+        match self {
+            Type::Pointer(ctype, _) => ctype.is_complete() && !ctype.is_function(),
+            Type::Array(_, _) => true,
             _ => false,
         }
     }

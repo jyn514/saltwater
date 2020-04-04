@@ -19,8 +19,8 @@ use std::mem;
 use std::rc::Rc;
 
 pub use crate::analyze::Analyzer;
-pub use crate::data::*;
 use crate::data::{ast::ExternalDeclaration, lex::Keyword};
+pub use crate::data::{lex as lexer, *};
 pub use crate::lex::Lexer;
 
 type Lexeme<L = Location> = CompileResult<Locatable<Token, L>, L>;

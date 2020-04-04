@@ -157,33 +157,33 @@ pub enum ExprType {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
 pub enum BinaryOp {
     // binary expressions
-    #[display = "||"]
+    #[display(fmt = "||")]
     LogicalOr,
-    #[display = "|"]
+    #[display(fmt = "|")]
     BitwiseOr,
-    #[display = "&&"]
+    #[display(fmt = "&&")]
     LogicalAnd,
-    #[display = "&"]
+    #[display(fmt = "&")]
     BitwiseAnd,
-    #[display = "^"]
+    #[display(fmt = "^")]
     Xor,
-    #[display = "*"]
+    #[display(fmt = "*")]
     Mul,
-    #[display = "/"]
+    #[display(fmt = "/")]
     Div,
-    #[display = "%"]
+    #[display(fmt = "%")]
     Mod,
-    #[display = "+"]
+    #[display(fmt = "+")]
     Add,
-    #[display = "-"]
+    #[display(fmt = "-")]
     Sub,
-    #[display = "<<"]
+    #[display(fmt = "<<")]
     Shl,
-    #[display = ">>"]
+    #[display(fmt = "<<")]
     Shr,
     // Token: make >, <, <=, ... part of the same variant
     Compare(ComparisonToken),
-    #[display = "="]
+    #[display(fmt = "=")]
     Assign,
 }
 

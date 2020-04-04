@@ -192,6 +192,12 @@ pub enum SemanticError {
     #[error("cannot assign to {0}")]
     NotAssignable(String),
 
+    #[error("invalid operators for '{0}' (expected either arithmetic types or pointer operation, got '{1} {0} {2}'")]
+    InvalidAdd(hir::BinaryOp, Type, Type),
+
+    #[error("cannot perform pointer arithmetic when size of pointed type '{0}' is unknown")]
+    PointerAddUnknownSize(Type),
+
     /*
     #[error("cannot take address of {0}")]
     InvalidAddressOf(&'static str),

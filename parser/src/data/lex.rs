@@ -134,8 +134,8 @@ pub enum Keyword {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AssignmentToken {
     Equal,
-    PlusEqual,
-    MinusEqual,
+    AddEqual,
+    SubEqual,
     MulEqual,
     DivEqual,
     ModEqual,
@@ -298,8 +298,8 @@ impl AssignmentToken {
         use AssignmentToken::*;
         match self {
             Equal => Equal.into(), // there's not really a good behavior here...
-            PlusEqual => Token::Plus,
-            MinusEqual => Token::Minus,
+            AddEqual => Token::Plus,
+            SubEqual => Token::Minus,
             MulEqual => Token::Star,
             DivEqual => Token::Divide,
             ModEqual => Token::Mod,

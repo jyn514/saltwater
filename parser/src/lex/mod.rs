@@ -679,7 +679,7 @@ impl Iterator for Lexer {
                 b'+' => match self.peek() {
                     Some(b'=') => {
                         self.next_char();
-                        AssignmentToken::PlusEqual.into()
+                        AssignmentToken::AddEqual.into()
                     }
                     Some(b'+') => {
                         self.next_char();
@@ -690,7 +690,7 @@ impl Iterator for Lexer {
                 b'-' => match self.peek() {
                     Some(b'=') => {
                         self.next_char();
-                        AssignmentToken::MinusEqual.into()
+                        AssignmentToken::SubEqual.into()
                     }
                     Some(b'-') => {
                         self.next_char();

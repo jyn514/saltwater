@@ -9,6 +9,9 @@ fn main() {
     let parser = Parser::new(first, lexer, false);
     let analyzer = Analyzer::new(parser);
     for decl in analyzer {
-        println!("{}", decl.unwrap().data);
+        match decl {
+            Ok(ok) => println!("{}", ok.data),
+            Err(err) => println!("{}", err.data),
+        }
     }
 }

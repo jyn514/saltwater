@@ -462,11 +462,24 @@ impl Analyzer {
                 self.explicit_cast(*inner, ctype)
             }
             Shift(left, right, direction) => {
-                self.parse_integer_op(*left, *right, |a, b| ExprType::Shift(a, b, direction))
+                let func = |a, b, this: &mut Self| {
+                    this.parse_integer_op(a, b, |a, b| ExprType::Shift(a, b, direction))
+                };
+                self.parse_binary(*left, *right, func)
             }
-            BitwiseAnd(left, right) => self.parse_integer_op(*left, *right, ExprType::BitwiseAnd),
-            BitwiseOr(left, right) => self.parse_integer_op(*left, *right, ExprType::BitwiseOr),
-            Xor(left, right) => self.parse_integer_op(*left, *right, ExprType::Xor),
+            BitwiseAnd(left, right) => {
+                let func =
+                    |a, b, this: &mut Self| this.parse_integer_op(a, b, ExprType::BitwiseAnd);
+                self.parse_binary(*left, *right, func)
+            }
+            BitwiseOr(left, right) => {
+                let func = |a, b, this: &mut Self| this.parse_integer_op(a, b, ExprType::BitwiseOr);
+                self.parse_binary(*left, *right, func)
+            }
+            Xor(left, right) => {
+                let func = |a, b, this: &mut Self| this.parse_integer_op(a, b, ExprType::Xor);
+                self.parse_binary(*left, *right, func)
+            }
             Compare(left, right, token) => self.relational_expr(*left, *right, token),
             Mul(left, right) => self.mul(*left, *right, Token::Star),
             Div(left, right) => self.mul(*left, *right, Token::Divide),
@@ -475,12 +488,18 @@ impl Analyzer {
             _ => unimplemented!(),
         }
     }
-    fn parse_integer_op<F>(&mut self, left: ast::Expr, right: ast::Expr, expr_func: F) -> Expr
+    fn parse_binary<F>(&mut self, left: ast::Expr, right: ast::Expr, f: F) -> Expr
     where
-        F: Fn(Box<Expr>, Box<Expr>) -> ExprType,
+        F: FnOnce(Expr, Expr, &mut Self /*, Location*/) -> Expr,
     {
         let left = self.parse_expr(left);
         let right = self.parse_expr(right);
+        f(left, right, self)
+    }
+    fn parse_integer_op<F>(&mut self, left: Expr, right: Expr, expr_func: F) -> Expr
+    where
+        F: Fn(Box<Expr>, Box<Expr>) -> ExprType,
+    {
         let non_scalar = if !left.ctype.is_integral() {
             Some(&left.ctype)
         } else if !right.ctype.is_integral() {
@@ -719,7 +738,7 @@ impl Analyzer {
 
         match token {
             Equal => unreachable!(),
-            PlusEqual => unimplemented!(),
+            OrEqual => self.parse_integer_op(left, right, ExprType::BitwiseOr),
             _ => unimplemented!("desugaring complex assignment"),
         }
     }
@@ -1068,7 +1087,7 @@ impl Expr {
         }
     }
     pub(super) fn implicit_cast(mut self, ctype: &Type, error_handler: &mut ErrorHandler) -> Expr {
-        if dbg!(&self.ctype) == dbg!(&*ctype) {
+        if &self.ctype == ctype {
             self
         } else if self.ctype.is_arithmetic() && ctype.is_arithmetic()
             || self.is_null() && ctype.is_pointer()

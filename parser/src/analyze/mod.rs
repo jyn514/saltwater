@@ -854,8 +854,6 @@ pub(crate) mod test {
     }
     #[test]
     fn test_pointers_and_arrays() {
-        //assert_extern_decl_display("char **foo[10];");
-        //assert_extern_decl_display("int (**foo)[10];");
         // cdecl: declare foo as array 10 of pointer to pointer to char
         assert!(match_type(
             decl("char **foo[10];"),
@@ -879,13 +877,12 @@ pub(crate) mod test {
             )
         ));
     }
-    /*
     #[test]
     fn test_functions() {
         assert!(match_type(
             decl("void *f();"),
             Function(FunctionType {
-                return_type: Box::new(Pointer(Box::new(Type::Void))),
+                return_type: Box::new(Pointer(Box::new(Type::Void), Qualifiers::default())),
                 params: vec![],
                 varargs: false,
             })
@@ -893,12 +890,16 @@ pub(crate) mod test {
         // cdecl: declare i as pointer to function returning int;
         assert!(match_type(
             decl("int (*i)();"),
-            Pointer(Box::new(Function(FunctionType {
-                return_type: Box::new(Int(true)),
-                params: vec![],
-                varargs: false,
-            })),)
+            Pointer(
+                Box::new(Function(FunctionType {
+                    return_type: Box::new(Int(true)),
+                    params: vec![],
+                    varargs: false,
+                })),
+                Qualifiers::default()
+            )
         ));
+        /*
         // cdecl: declare i as pointer to function (int, char, float) returning int
         assert!(match_type(
             decl("int (*i)(int, char, float);"),
@@ -963,7 +964,9 @@ pub(crate) mod test {
                     varargs: true,
                 })
             ));
-        }
+            */
+    }
+    /*
         #[test]
         fn test_functions_array_parameter_static() {
             assert!(match_type(

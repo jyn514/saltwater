@@ -730,6 +730,10 @@ pub(crate) mod test {
         assert_eq!(decl(left).unwrap().to_string(), right);
     }
 
+    fn assert_no_change(s: &str) {
+        assert_decl_display(s, s);
+    }
+
     fn match_type(lexed: CompileResult<Declaration>, given_type: Type) -> bool {
         lexed.map_or(false, |data| data.symbol.get().ctype == given_type)
     }
@@ -832,9 +836,20 @@ pub(crate) mod test {
         assert_decl_display("int a[1];", "extern int a[1];");
         assert_decl_display("int a[(int)1];", "extern int a[1];");
     }
-    /*
     #[test]
     fn test_pointers() {
+        for &pointer in &[
+            "void *a;",
+            "float *const a;",
+            "double *volatile *const a;",
+            "double *volatile *const a;",
+            "_Bool *const volatile a;",
+        ] {
+            //assert_no_change(pointer);
+            assert_decl_display(pointer, &format!("extern {}", pointer));
+        }
+        assert_decl_display("char (*(*f));", "extern char **f;");
+        /*
         assert_no_change("void *a;");
         assert!(match_type(
             decl("float *const a;"),
@@ -853,7 +868,9 @@ pub(crate) mod test {
             decl("char (*(*f));"),
             Pointer(Box::new(Pointer(Box::new(Char(true)))))
         ));
+        */
     }
+    /*
     #[test]
     fn test_pointers_and_arrays() {
         // cdecl: declare foo as array 10 of pointer to pointer to char

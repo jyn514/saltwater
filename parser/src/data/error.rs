@@ -262,10 +262,17 @@ pub enum SemanticError {
 
     #[error("overflow in enumeration constant")]
     EnumOverflow,
-
+    */
+    // Initializer errors
     #[error("initializers cannot be empty")]
     EmptyInitializer,
-    */
+
+    #[error("scalar initializers for '{0}' may only have one element (initialized with {1})")]
+    AggregateInitializingScalar(Type, usize),
+
+    #[error("too many initializers (declared with {0} elements, found {1})")]
+    TooManyMembers(usize, usize),
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

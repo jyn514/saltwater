@@ -1,3 +1,5 @@
+use derive_more::Display;
+
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
@@ -139,21 +141,7 @@ pub enum ExprType {
     BitwiseNot(Box<Expr>),
 
     // binary expressions
-    LogicalOr(Box<Expr>, Box<Expr>),
-    BitwiseOr(Box<Expr>, Box<Expr>),
-    LogicalAnd(Box<Expr>, Box<Expr>),
-    BitwiseAnd(Box<Expr>, Box<Expr>),
-    Xor(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>),
-    Div(Box<Expr>, Box<Expr>),
-    Mod(Box<Expr>, Box<Expr>),
-    Add(Box<Expr>, Box<Expr>),
-    Sub(Box<Expr>, Box<Expr>),
-    // bool: left (true) or right (false)
-    Shift(Box<Expr>, Box<Expr>, bool),
-    // Token: make >, <, <=, ... part of the same variant
-    Compare(Box<Expr>, Box<Expr>, ComparisonToken),
-    Assign(Box<Expr>, Box<Expr>),
+    Binary(BinaryOp, Box<Expr>, Box<Expr>),
 
     // misfits
     // Ternary: if ? then : else
@@ -164,6 +152,39 @@ pub enum ExprType {
     StaticRef(Box<Expr>),
     // used to work around various bugs, see places this is constructed for details
     Noop(Box<Expr>),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
+pub enum BinaryOp {
+    // binary expressions
+    #[display = "||"]
+    LogicalOr,
+    #[display = "|"]
+    BitwiseOr,
+    #[display = "&&"]
+    LogicalAnd,
+    #[display = "&"]
+    BitwiseAnd,
+    #[display = "^"]
+    Xor,
+    #[display = "*"]
+    Mul,
+    #[display = "/"]
+    Div,
+    #[display = "%"]
+    Mod,
+    #[display = "+"]
+    Add,
+    #[display = "-"]
+    Sub,
+    #[display = "<<"]
+    Shl,
+    #[display = ">>"]
+    Shr,
+    // Token: make >, <, <=, ... part of the same variant
+    Compare(ComparisonToken),
+    #[display = "="]
+    Assign,
 }
 
 impl Expr {
@@ -332,24 +353,11 @@ impl Display for Expr {
             ExprType::Comma(left, right) => write!(f, "{}, {}", *left, *right),
             ExprType::Literal(token) => write!(f, "{}", token),
             ExprType::Id(symbol) => write!(f, "{}", symbol.get().id),
-            ExprType::Add(left, right) => write!(f, "({}) + ({})", left, right),
-            ExprType::Sub(left, right) => write!(f, "({}) - ({})", left, right),
-            ExprType::Mul(left, right) => write!(f, "({}) * ({})", left, right),
-            ExprType::Div(left, right) => write!(f, "({}) / ({})", left, right),
-            ExprType::Mod(left, right) => write!(f, "({}) % ({})", left, right),
-            ExprType::Xor(left, right) => write!(f, "({}) ^ ({})", left, right),
-            ExprType::BitwiseOr(left, right) => write!(f, "({}) | ({})", left, right),
-            ExprType::BitwiseAnd(left, right) => write!(f, "({}) & ({})", left, right),
+            ExprType::Binary(op, left, right) => write!(f, "({}) {} ({})", left, op, right),
             ExprType::BitwiseNot(expr) => write!(f, "(~{})", expr),
             ExprType::Deref(expr) => write!(f, "*({})", expr),
             ExprType::Negate(expr) => write!(f, "-({})", expr),
-            ExprType::LogicalOr(left, right) => write!(f, "({}) || ({})", left, right),
-            ExprType::LogicalAnd(left, right) => write!(f, "({}) && ({})", left, right),
-            ExprType::Shift(val, by, left) => {
-                write!(f, "({}) {} ({})", val, if *left { "<<" } else { ">>" }, by)
-            }
-            ExprType::Compare(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
-            ExprType::Assign(left, right) => write!(f, "({}) = ({})", left, right),
+
             ExprType::Ternary(cond, left, right) => {
                 write!(f, "({}) ? ({}) : ({})", cond, left, right)
             }

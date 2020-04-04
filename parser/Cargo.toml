@@ -16,6 +16,11 @@ counter = "0.4"
 #rcc = { path = "../" }
 target-lexicon = "0.10"
 
+[dependencies.derive_more]
+version = "0.99"
+default-features = false
+features = ["display"]
+
 [dev-dependencies]
 criterion = "0.3"
 

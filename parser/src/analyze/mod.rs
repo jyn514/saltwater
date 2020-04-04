@@ -453,14 +453,15 @@ impl Analyzer {
         unimplemented!("initializers")
     }
     // only meant for use with `parse_expr`
-    fn binary_helper<E, F>(
-        &mut self, left: Box<ast::Expr>, right: Box<ast::Expr>, expr_type: E, expr_checker: F,
+    // TODO: change ast::Expr to use `ExprType::Binary` as well
+    #[allow(clippy::boxed_local)]
+    fn binary_helper<F>(
+        &mut self, left: Box<ast::Expr>, right: Box<ast::Expr>, op: BinaryOp, expr_checker: F,
     ) -> Expr
     where
-        E: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
-        F: FnOnce(&mut Self, Expr, Expr, E) -> Expr
+        F: FnOnce(&mut Self, Expr, Expr, BinaryOp) -> Expr,
     {
-        let func = |a, b, this: &mut Self| expr_checker(this, a, b, expr_type);
+        let func = |a, b, this: &mut Self| expr_checker(this, a, b, op);
         self.parse_binary(*left, *right, func)
     }
     fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
@@ -473,15 +474,26 @@ impl Analyzer {
                 self.explicit_cast(*inner, ctype)
             }
             Shift(left, right, direction) => {
-                self.binary_helper(left, right, |a, b| ExprType::Shift(a, b, direction), Self::parse_integer_op)
+                let op = if direction {
+                    BinaryOp::Shl
+                } else {
+                    BinaryOp::Shr
+                };
+                self.binary_helper(left, right, op, Self::parse_integer_op)
             }
-            BitwiseAnd(left, right) => self.binary_helper(left, right, ExprType::BitwiseAnd, Self::parse_integer_op),
-            BitwiseOr(left, right) => self.binary_helper(left, right, ExprType::BitwiseOr, Self::parse_integer_op),
-            Xor(left, right) => self.binary_helper(left, right, ExprType::Xor, Self::parse_integer_op),
+            BitwiseAnd(left, right) => {
+                self.binary_helper(left, right, BinaryOp::BitwiseAnd, Self::parse_integer_op)
+            }
+            BitwiseOr(left, right) => {
+                self.binary_helper(left, right, BinaryOp::BitwiseOr, Self::parse_integer_op)
+            }
+            Xor(left, right) => {
+                self.binary_helper(left, right, BinaryOp::Xor, Self::parse_integer_op)
+            }
             Compare(left, right, token) => self.relational_expr(*left, *right, token),
-            Mul(left, right) => self.binary_helper(left, right, ExprType::Mul, Self::mul),
-            Div(left, right) => self.binary_helper(left, right, ExprType::Div, Self::mul),
-            Mod(left, right) => self.binary_helper(left, right, ExprType::Mod, Self::mul),
+            Mul(left, right) => self.binary_helper(left, right, BinaryOp::Mul, Self::mul),
+            Div(left, right) => self.binary_helper(left, right, BinaryOp::Div, Self::mul),
+            Mod(left, right) => self.binary_helper(left, right, BinaryOp::Mod, Self::mul),
             Assign(lval, rval, token) => self.assignment_expr(*lval, *rval, token, expr.location),
             _ => unimplemented!(),
         }
@@ -494,10 +506,7 @@ impl Analyzer {
         let right = self.parse_expr(right);
         f(left, right, self)
     }
-    fn parse_integer_op<F>(&mut self, left: Expr, right: Expr, expr_func: F) -> Expr
-    where
-        F: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
-    {
+    fn parse_integer_op(&mut self, left: Expr, right: Expr, op: BinaryOp) -> Expr {
         let non_scalar = if !left.ctype.is_integral() {
             Some(&left.ctype)
         } else if !right.ctype.is_integral() {
@@ -512,7 +521,7 @@ impl Analyzer {
         let (promoted_expr, next) = Expr::binary_promote(left, right, &mut self.error_handler);
         Expr {
             ctype: next.ctype.clone(),
-            expr: expr_func(Box::new(promoted_expr), Box::new(next)),
+            expr: ExprType::Binary(op, Box::new(promoted_expr), Box::new(next)),
             lval: false,
             location,
         }
@@ -591,14 +600,13 @@ impl Analyzer {
             lval: false,
             location,
             ctype: Type::Bool,
-            expr: ExprType::Compare(Box::new(left), Box::new(right), token),
+            expr: ExprType::Binary(BinaryOp::Compare(token), Box::new(left), Box::new(right)),
         }
     }
-    fn mul<F>(&mut self, left: Expr, right: Expr, expr_type: F) -> Expr
-    where F: FnOnce(Box<Expr>, Box<Expr>) -> ExprType {
+    fn mul(&mut self, left: Expr, right: Expr, op: BinaryOp) -> Expr {
         let location = left.location.merge(right.location);
 
-        if expr_type == ExprType::Mod && !(left.ctype.is_integral() && right.ctype.is_integral()) {
+        if op == BinaryOp::Mod && !(left.ctype.is_integral() && right.ctype.is_integral()) {
             self.err(
                 SemanticError::from(format!(
                     "expected integers for both operators of %, got '{}' and '{}'",
@@ -610,7 +618,7 @@ impl Analyzer {
             self.err(
                 SemanticError::from(format!(
                     "expected float or integer types for both operands of {}, got '{}' and '{}'",
-                    token, left.ctype, right.ctype
+                    op, left.ctype, right.ctype
                 )),
                 location,
             );
@@ -620,7 +628,7 @@ impl Analyzer {
             ctype: left.ctype.clone(),
             location,
             lval: false,
-            expr: expr_type(Box::new(left), Box::new(right)),
+            expr: ExprType::Binary(op, Box::new(left), Box::new(right)),
         }
     }
     fn explicit_cast(&mut self, expr: ast::Expr, ctype: Type) -> Expr {
@@ -672,7 +680,7 @@ impl Analyzer {
                 ctype: lval.ctype.clone(),
                 lval: false, // `(i = j) = 4`; is invalid
                 location,
-                expr: ExprType::Assign(Box::new(lval), Box::new(rval)),
+                expr: ExprType::Binary(BinaryOp::Assign, Box::new(lval), Box::new(rval)),
             };
         }
         // Complex assignment is tricky because the left side needs to be evaluated only once
@@ -697,7 +705,8 @@ impl Analyzer {
         self.scope.exit();
         // NOTE: this does _not_ call rval() on x
         // tmp = *f()
-        let assign = ExprType::Assign(
+        let assign = ExprType::Binary(
+            BinaryOp::Assign,
             Box::new(Expr {
                 ctype: ctype.clone(),
                 lval: false,
@@ -722,7 +731,11 @@ impl Analyzer {
             ctype,
             lval: false,
             location,
-            expr: ExprType::Assign(Box::new(tmp_assign_expr), Box::new(new_val)),
+            expr: ExprType::Binary(
+                BinaryOp::Assign,
+                Box::new(tmp_assign_expr),
+                Box::new(new_val),
+            ),
         }
     }
     fn desugar_op(&mut self, left: Expr, right: Expr, token: lex::AssignmentToken) -> Expr {
@@ -730,11 +743,11 @@ impl Analyzer {
 
         match token {
             Equal => unreachable!(),
-            OrEqual => self.parse_integer_op(left, right, ExprType::BitwiseOr),
-            AndEqual => self.parse_integer_op(left, right, ExprType::BitwiseAnd),
-            XorEqual => self.parse_integer_op(left, right, ExprType::Xor),
-            LeftEqual => self.parse_integer_op(left, right, |a, b| ExprType::Shift(a, b, true)),
-            RightEqual => self.parse_integer_op(left, right, |a, b| ExprType::Shift(a, b, false)),
+            OrEqual => self.parse_integer_op(left, right, BinaryOp::BitwiseOr),
+            AndEqual => self.parse_integer_op(left, right, BinaryOp::BitwiseAnd),
+            XorEqual => self.parse_integer_op(left, right, BinaryOp::Xor),
+            LeftEqual => self.parse_integer_op(left, right, BinaryOp::Shl),
+            RightEqual => self.parse_integer_op(left, right, BinaryOp::Shr),
             /*
             MulEqual => self.mul(left, right, Token::Star),
             DivEqual => self.mul(left, right, Token::Divide),

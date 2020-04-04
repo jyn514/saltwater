@@ -4,6 +4,7 @@ use std::collections::{HashMap, VecDeque};
 
 use counter::Counter;
 
+use crate::arch;
 use crate::data::{self, error::Warning, hir::*, *};
 use crate::intern::InternedStr;
 
@@ -151,6 +152,21 @@ impl Analyzer {
                 decls
             }
         }
+    }
+    // TODO: I don't think this is a very good abstraction
+    fn parse_typename(&mut self, ctype: ast::TypeName, location: Location) -> Type {
+        let parsed = self.parse_type(ctype.specifiers, ctype.declarator.decl, location);
+        // TODO: should these be syntax errors instead?
+        if let Some(sc) = parsed.storage_class {
+            self.err(SemanticError::IllegalStorageClass(sc), location);
+        }
+        if parsed.qualifiers != Qualifiers::default() {
+            self.warn(Warning::IgnoredQualifier(parsed.qualifiers), location);
+        }
+        if let Some(id) = ctype.declarator.id {
+            self.err(SemanticError::IdInTypeName(id), location);
+        }
+        parsed.ctype
     }
     fn parse_type(
         &mut self, specifiers: Vec<ast::DeclarationSpecifier>, declarator: ast::DeclaratorType,
@@ -405,9 +421,8 @@ impl Analyzer {
     fn const_int(expr: Expr) -> CompileResult<crate::arch::SIZE_T> {
         use Literal::*;
 
-        let expr = expr.const_fold()?;
         let location = expr.location;
-        let lit = expr.into_literal().or_else(|runtime_expr| {
+        let lit = expr.const_fold()?.into_literal().or_else(|runtime_expr| {
             Err(Locatable::new(
                 SemanticError::NotConstant(runtime_expr),
                 location,
@@ -438,9 +453,20 @@ impl Analyzer {
         unimplemented!("initializers")
     }
     fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
-        use ExprType::*;
+        use ast::ExprType::*;
         match expr.data {
-            ast::ExprType::Id(id) => self.parse_id(id, expr.location),
+            Literal(lit) => literal(lit, expr.location),
+            Id(id) => self.parse_id(id, expr.location),
+            Cast(ctype, inner) => {
+                let ctype = self.parse_typename(ctype, expr.location);
+                let inner = self.parse_expr(*inner);
+                Expr {
+                    ctype,
+                    expr: ExprType::Cast(Box::new(inner)),
+                    location: expr.location,
+                    lval: false,
+                }
+            }
             _ => unimplemented!(),
         }
     }
@@ -478,6 +504,28 @@ impl Analyzer {
                 Expr::id(symbol, location)
             }
         }
+    }
+}
+
+// literal
+fn literal(literal: Literal, location: Location) -> Expr {
+    use crate::data::types::ArrayType;
+
+    let ctype = match &literal {
+        Literal::Char(_) => Type::Char(true),
+        Literal::Int(_) => Type::Long(true),
+        Literal::UnsignedInt(_) => Type::Long(false),
+        Literal::Float(_) => Type::Double,
+        Literal::Str(s) => {
+            let len = s.len() as arch::SIZE_T;
+            Type::Array(Box::new(Type::Char(true)), ArrayType::Fixed(len))
+        }
+    };
+    Expr {
+        lval: false,
+        ctype,
+        location,
+        expr: ExprType::Literal(literal),
     }
 }
 
@@ -781,6 +829,8 @@ pub(crate) mod test {
                 ArrayType::Unbounded
             )
         ));
+        assert_decl_display("int a[1];", "extern int a[1];");
+        assert_decl_display("int a[(int)1];", "extern int a[1];");
     }
     /*
     #[test]

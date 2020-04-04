@@ -108,24 +108,11 @@ pub enum ExprType {
     Sizeof(Type),
     Deref(Box<Expr>),
     Negate(Box<Expr>),
-    // getting rid of this is https://github.com/jyn514/rcc/issues/10
+
+    // binary expressions
+    Binary(BinaryOp, Box<Expr>, Box<Expr>),
+
     BitwiseNot(Box<Expr>),
-    LogicalOr(Box<Expr>, Box<Expr>),
-    BitwiseOr(Box<Expr>, Box<Expr>),
-    LogicalAnd(Box<Expr>, Box<Expr>),
-    BitwiseAnd(Box<Expr>, Box<Expr>),
-    Xor(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>),
-    Div(Box<Expr>, Box<Expr>),
-    Mod(Box<Expr>, Box<Expr>),
-    Add(Box<Expr>, Box<Expr>),
-    Sub(Box<Expr>, Box<Expr>),
-    // bool: left or right
-    Shift(Box<Expr>, Box<Expr>, bool),
-    // Token: make >, <, <=, ... part of the same variant
-    Compare(Box<Expr>, Box<Expr>, ComparisonToken),
-    // Token: allow extended assignment
-    Assign(Box<Expr>, Box<Expr>, AssignmentToken),
     // Ternary: if ? then : else
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     Comma(Box<Expr>, Box<Expr>),
@@ -134,6 +121,26 @@ pub enum ExprType {
     StaticRef(Box<Expr>),
     // used to work around various bugs, see places this is constructed for details
     Noop(Box<Expr>),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BinaryOp {
+    // binary expressions
+    LogicalOr,
+    BitwiseOr,
+    LogicalAnd,
+    BitwiseAnd,
+    Xor,
+    Mul,
+    Div,
+    Mod,
+    Add,
+    Sub,
+    Shl,
+    Shr,
+    // Token: make >, <, <=, ... part of the same variant
+    Compare(ComparisonToken),
+    Assign(AssignmentToken),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -293,24 +300,10 @@ impl Display for Expr {
             ExprType::Comma(left, right) => write!(f, "{}, {}", *left, *right),
             ExprType::Literal(token) => write!(f, "{}", token),
             ExprType::Id(symbol) => write!(f, "{}", symbol.id),
-            ExprType::Add(left, right) => write!(f, "({}) + ({})", left, right),
-            ExprType::Sub(left, right) => write!(f, "({}) - ({})", left, right),
-            ExprType::Mul(left, right) => write!(f, "({}) * ({})", left, right),
-            ExprType::Div(left, right) => write!(f, "({}) / ({})", left, right),
-            ExprType::Mod(left, right) => write!(f, "({}) % ({})", left, right),
-            ExprType::Xor(left, right) => write!(f, "({}) ^ ({})", left, right),
-            ExprType::BitwiseOr(left, right) => write!(f, "({}) | ({})", left, right),
-            ExprType::BitwiseAnd(left, right) => write!(f, "({}) & ({})", left, right),
             ExprType::BitwiseNot(expr) => write!(f, "(~{})", expr),
             ExprType::Deref(expr) => write!(f, "*({})", expr),
             ExprType::Negate(expr) => write!(f, "-({})", expr),
-            ExprType::LogicalOr(left, right) => write!(f, "({}) || ({})", left, right),
-            ExprType::LogicalAnd(left, right) => write!(f, "({}) && ({})", left, right),
-            ExprType::Shift(val, by, left) => {
-                write!(f, "({}) {} ({})", val, if *left { "<<" } else { ">>" }, by)
-            }
-            ExprType::Compare(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
-            ExprType::Assign(left, right, token) => write!(f, "({}) {} ({})", left, token, right),
+            ExprType::Binary(op, left, right) => write!(f, "({}) {} ({})", left, op, right),
             ExprType::Ternary(cond, left, right) => {
                 write!(f, "({}) ? ({}) : ({})", cond, left, right)
             }
@@ -517,6 +510,29 @@ impl TryFrom<u32> for Radix {
             16 => Ok(Radix::Hexadecimal),
             _ => Err(()),
         }
+    }
+}
+
+impl Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use BinaryOp::*;
+        let s = match self {
+            LogicalOr => "||",
+            BitwiseOr => "|",
+            LogicalAnd => "&&",
+            BitwiseAnd => "&",
+            Xor => "^",
+            Mul => "*",
+            Div => "/",
+            Mod => "%",
+            Add => "+",
+            Sub => "-",
+            Shl => "<<",
+            Shr => ">>",
+            Compare(compare) => return write!(f, "{}", compare),
+            Assign(assign) => return write!(f, "{}", assign),
+        };
+        write!(f, "{}", s)
     }
 }
 

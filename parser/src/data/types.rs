@@ -275,16 +275,19 @@ impl PartialEq for FunctionType {
 
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        print_type(self, None, f)
+        print_type(self, None, false, f)
     }
 }
 
 use std::fmt::{self, Formatter};
 
 pub(super) fn print_type(
-    ctype: &Type, name: Option<InternedStr>, f: &mut Formatter,
+    ctype: &Type, name: Option<InternedStr>, func: bool, f: &mut Formatter,
 ) -> fmt::Result {
     print_pre(ctype, f)?;
+    if !func {
+        write!(f, " ")?;
+    }
     print_mid(ctype, name, f)?;
     print_post(ctype, f)
 }
@@ -303,7 +306,7 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         Bool => write!(f, "_Bool"),
         Float | Double | Void => write!(f, "{}", format!("{:?}", ctype).to_lowercase()),
         Pointer(inner, _) | Array(inner, _) => print_pre(inner, f),
-        Function(ftype) => write!(f, "{}", ftype.return_type),
+        Function(ftype) => print_type(&ftype.return_type, None, true, f),
         Enum(Some(ident), _) => write!(f, "enum {}", ident),
         Enum(None, _) => write!(f, "<anonymous enum>"),
         Union(StructType::Named(ident, _)) => write!(f, "union {}", ident),
@@ -321,19 +324,19 @@ fn print_mid(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt:
             print_mid(to, None, f)?;
             let name = name.unwrap_or_default();
             let pointer = if *qs != Default::default() && name != Default::default() {
-                format!("*{} {}", qs, name)
+                format!("*{}{}", qs, name)
             } else {
                 format!("*{}{}", qs, name)
             };
             match &**to {
                 Type::Array(_, _) | Type::Function(_) => write!(f, "({})", pointer),
-                _ => write!(f, " {}", pointer),
+                _ => write!(f, "{}", pointer),
             }
         }
         Type::Array(to, _) => print_mid(to, name, f),
         _ => {
             if let Some(name) = name {
-                write!(f, " {}", name)?;
+                write!(f, "{}", name)?;
             }
             Ok(())
         }
@@ -359,7 +362,7 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
                 } else {
                     Some(symbol.id)
                 };
-                print_type(&symbol.ctype, id, f)
+                print_type(&symbol.ctype, id, false, f)
             };
             if let Some(first) = params.next() {
                 print(f, first)?;

@@ -366,16 +366,6 @@ impl Display for Expr {
     }
 }
 
-/*
-fn join<T: std::string::ToString>(params: &[T]) -> String {
-    params
-        .iter()
-        .map(|p| p.to_string())
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-*/
-
 impl Display for Initializer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -475,7 +465,7 @@ impl Display for Metadata {
             write!(f, "{} ", self.qualifiers)?;
         }
         write!(f, "{} ", self.storage_class)?;
-        super::types::print_type(&self.ctype, Some(self.id), f)
+        super::types::print_type(&self.ctype, Some(self.id), false, f)
     }
 }
 

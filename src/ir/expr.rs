@@ -5,13 +5,13 @@ use cranelift_module::Backend;
 use super::{Compiler, Id};
 use crate::data::prelude::*;
 use crate::data::{
-    lex::{AssignmentToken, ComparisonToken, Literal, Token},
-    Expr, ExprType,
+    lex::{AssignmentToken, ComparisonToken, Literal},
+    BinaryOp, Expr, ExprType, Symbol,
 };
 
 type IrResult = CompileResult<Value>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Value {
     pub(super) ir_val: IrValue,
     ir_type: IrType,
@@ -64,42 +64,15 @@ impl<B: Backend> Compiler<B> {
                 },
             ),
             // binary operators
-            ExprType::Add(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Plus, builder)
+            ExprType::Binary(BinaryOp::LogicalOr, left, right) => {
+                self.logical_expr(*left, *right, false, builder)
             }
-            ExprType::Sub(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Minus, builder)
+            ExprType::Binary(BinaryOp::LogicalAnd, left, right) => {
+                self.logical_expr(*left, *right, true, builder)
             }
-            ExprType::Mul(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Star, builder)
+            ExprType::Binary(op, left, right) => {
+                self.binary_assign_op(*left, *right, expr.ctype, op, builder)
             }
-            ExprType::Div(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Divide, builder)
-            }
-            ExprType::Mod(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Mod, builder)
-            }
-            ExprType::BitwiseAnd(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Ampersand, builder)
-            }
-            ExprType::BitwiseOr(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::BitwiseOr, builder)
-            }
-            // left shift
-            ExprType::Shift(left, right, true) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::ShiftRight, builder)
-            }
-            // right shift
-            ExprType::Shift(left, right, false) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::ShiftRight, builder)
-            }
-            ExprType::Xor(left, right) => {
-                self.binary_assign_op(*left, *right, expr.ctype, Token::Xor, builder)
-            }
-            ExprType::Compare(left, right, token) => self.compare(*left, *right, token, builder),
-
-            // misfits
-            ExprType::Assign(lval, rval, token) => self.assignment(*lval, *rval, token, builder),
             ExprType::FuncCall(func, args) => match func.expr {
                 ExprType::Id(var) => self.call(FuncCall::Named(var.id), func.ctype, args, builder),
                 _ => {
@@ -158,8 +131,6 @@ impl<B: Backend> Compiler<B> {
                 val.ctype = expr.ctype;
                 Ok(val)
             }
-            ExprType::LogicalOr(left, right) => self.logical_expr(*left, *right, false, builder),
-            ExprType::LogicalAnd(left, right) => self.logical_expr(*left, *right, true, builder),
             ExprType::Ternary(condition, left, right) => {
                 self.ternary(*condition, *left, *right, builder)
             }
@@ -280,49 +251,51 @@ impl<B: Backend> Compiler<B> {
         left: Expr,
         right: Expr,
         ctype: Type,
-        token: Token,
+        op: BinaryOp,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let (left, right) = (
             self.compile_expr(left, builder)?,
             self.compile_expr(right, builder)?,
         );
-        Self::binary_assign_ir(left, right, ctype, token, builder)
+        Self::binary_assign_ir(left, right, ctype, op, builder)
     }
     fn binary_assign_ir(
         left: Value,
         right: Value,
         ctype: Type,
-        token: Token,
+        op: BinaryOp,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         use cranelift::codegen::ir::InstBuilder as b;
+        use BinaryOp::*;
         assert_eq!(left.ir_type, right.ir_type);
         let ir_type = ctype.as_ir_type();
         let signed = ctype.is_signed();
-        let func = match (token, ir_type, signed) {
-            (Token::Plus, ty, _) if ty.is_int() => b::iadd,
-            (Token::Plus, ty, _) if ty.is_float() => b::fadd,
-            (Token::Minus, ty, _) if ty.is_int() => b::isub,
-            (Token::Minus, ty, _) if ty.is_float() => b::fsub,
-            (Token::Star, ty, _) if ty.is_int() => b::imul,
-            (Token::Star, ty, _) if ty.is_float() => b::fmul,
-            (Token::Divide, ty, true) if ty.is_int() => b::sdiv,
-            (Token::Divide, ty, false) if ty.is_int() => b::udiv,
-            (Token::Divide, ty, _) if ty.is_float() => b::fdiv,
-            (Token::Mod, ty, true) if ty.is_int() => b::srem,
-            (Token::Mod, ty, false) if ty.is_int() => b::urem,
-            (Token::Ampersand, ty, _) if ty.is_int() || ty.is_bool() => b::band,
-            (Token::BitwiseOr, ty, _) if ty.is_int() || ty.is_bool() => b::bor,
-            (Token::ShiftLeft, ty, _) if ty.is_int() => b::ishl,
+        let func = match (op, ir_type, signed) {
+            (Add, ty, _) if ty.is_int() => b::iadd,
+            (Add, ty, _) if ty.is_float() => b::fadd,
+            (Sub, ty, _) if ty.is_int() => b::isub,
+            (Sub, ty, _) if ty.is_float() => b::fsub,
+            (Mul, ty, _) if ty.is_int() => b::imul,
+            (Mul, ty, _) if ty.is_float() => b::fmul,
+            (Div, ty, true) if ty.is_int() => b::sdiv,
+            (Div, ty, false) if ty.is_int() => b::udiv,
+            (Div, ty, _) if ty.is_float() => b::fdiv,
+            (Mod, ty, true) if ty.is_int() => b::srem,
+            (Mod, ty, false) if ty.is_int() => b::urem,
+            (BitwiseAnd, ty, _) if ty.is_int() || ty.is_bool() => b::band,
+            (BitwiseOr, ty, _) if ty.is_int() || ty.is_bool() => b::bor,
+            (Shl, ty, _) if ty.is_int() => b::ishl,
             // arithmetic shift: keeps the sign of `left`
-            (Token::ShiftRight, ty, true) if ty.is_int() => b::sshr,
+            (Shr, ty, true) if ty.is_int() => b::sshr,
             // logical shift: shifts in zeros
-            (Token::ShiftRight, ty, false) if ty.is_int() => b::ushr,
-            (Token::Xor, ty, _) if ty.is_int() => b::bxor,
-            (token, _, _) => unreachable!(
-                "only valid assign binary ops should be passed to binary_assign_op (got {})",
-                token
+            (Shr, ty, false) if ty.is_int() => b::ushr,
+            (Xor, ty, _) if ty.is_int() => b::bxor,
+            (LogicalAnd, _, _) | (LogicalOr, _, _) => unreachable!("should be handled earlier"),
+            _ => unreachable!(
+                "bug in parser: passed invalid type {} for binary op {}",
+                ctype, op
             ),
         };
         let ir_val = func(builder.ins(), left.ir_val, right.ir_val);
@@ -523,6 +496,7 @@ impl<B: Backend> Compiler<B> {
         // scalar assignment
         let target_val = target.ir_val;
         let mut value = value;
+        /*
         if token != AssignmentToken::Equal {
             // need to deref explicitly to get an rval, the frontend didn't do it for us
             let ir_type = ctype.as_ir_type();
@@ -543,6 +517,7 @@ impl<B: Backend> Compiler<B> {
             value =
                 Self::binary_assign_ir(target, value, ctype, token.without_assignment(), builder)?;
         }
+        */
         builder
             .ins()
             .store(MemFlags::new(), value.ir_val, target_val, 0);

@@ -4,6 +4,7 @@ use crate::data::prelude::*;
 use crate::data::{
     lex::{AssignmentToken, ComparisonToken, Keyword},
     types::ArrayType,
+    BinaryOp,
     StorageClass::Typedef,
 };
 
@@ -125,7 +126,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 ctype: lval.ctype.clone(),
                 lval: false, // `(i = j) = 4`; is invalid
                 location: assign_op.location,
-                expr: ExprType::Assign(Box::new(lval), Box::new(rval), assign_op.data),
+                expr: ExprType::Binary(
+                    BinaryOp::Assign(assign_op.data),
+                    Box::new(lval),
+                    Box::new(rval),
+                ),
             })
         }
     }
@@ -197,7 +202,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.scalar_left_associative_binary_op(
             Self::logical_and_expr,
             |a, b| {
-                Ok(ExprType::LogicalOr(
+                Ok(ExprType::Binary(
+                    BinaryOp::LogicalOr,
                     Box::new(a.cast(&Type::Bool)?),
                     Box::new(b.cast(&Type::Bool)?),
                 ))
@@ -223,7 +229,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.scalar_left_associative_binary_op(
             Self::inclusive_or_expr,
             |a, b| {
-                Ok(ExprType::LogicalAnd(
+                Ok(ExprType::Binary(
+                    BinaryOp::LogicalAnd,
                     Box::new(a.cast(&Type::Bool)?),
                     Box::new(b.cast(&Type::Bool)?),
                 ))
@@ -243,7 +250,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.integral_left_associative_binary_op(
             Self::exclusive_or_expr,
             &[&Token::BitwiseOr],
-            Expr::default_expr(ExprType::BitwiseOr),
+            Expr::default_expr(BinaryOp::BitwiseOr),
         )
     }
 
@@ -255,7 +262,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.integral_left_associative_binary_op(
             Self::and_expr,
             &[&Token::Xor],
-            Expr::default_expr(ExprType::Xor),
+            Expr::default_expr(BinaryOp::Xor),
         )
     }
 
@@ -267,7 +274,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         self.integral_left_associative_binary_op(
             Self::equality_expr,
             &[&Token::Ampersand],
-            Expr::default_expr(ExprType::BitwiseAnd),
+            Expr::default_expr(BinaryOp::BitwiseAnd),
         )
     }
 
@@ -321,10 +328,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     ctype: left.ctype.clone(),
                     location: token.location,
                     lval: false,
-                    expr: ExprType::Shift(
+                    expr: ExprType::Binary(
+                        if token.data == Token::ShiftLeft {
+                            BinaryOp::Shl
+                        } else {
+                            BinaryOp::Shr
+                        },
                         Box::new(left),
                         Box::new(right),
-                        token.data == Token::ShiftLeft,
                     ),
                 })
             },
@@ -380,11 +391,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     ctype,
                     lval,
                     location: token.location,
-                    expr: (if token.data == Token::Plus {
-                        ExprType::Add
+                    expr: ExprType::Binary(if token.data == Token::Plus {
+                        BinaryOp::Add
                     } else {
-                        ExprType::Sub
-                    })(Box::new(*left), right),
+                        BinaryOp::Sub
+                    },Box::new(*left), right),
                 })
             },
         )
@@ -422,9 +433,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location: token.location,
                     lval: false,
                     expr: match token.data {
-                        Token::Star => ExprType::Mul(Box::new(p_left), Box::new(right)),
-                        Token::Divide => ExprType::Div(Box::new(p_left), Box::new(right)),
-                        Token::Mod => ExprType::Mod(Box::new(p_left), Box::new(right)),
+                        Token::Star => ExprType::Binary(BinaryOp::Mul,Box::new(p_left), Box::new(right)),
+                        Token::Divide => ExprType::Binary(BinaryOp::Div,Box::new(p_left), Box::new(right)),
+                        Token::Mod => ExprType::Binary(BinaryOp::Mod,Box::new(p_left), Box::new(right)),
                         _ => {
                             panic!("left_associative_binary_op should only return tokens given to it")
                         }
@@ -1255,7 +1266,11 @@ impl Expr {
                 lval: false,
                 location: self.location,
                 ctype: Type::Bool,
-                expr: ExprType::Compare(Box::new(self), Box::new(zero), ComparisonToken::NotEqual),
+                expr: ExprType::Binary(
+                    BinaryOp::Compare(ComparisonToken::NotEqual),
+                    Box::new(self),
+                    Box::new(zero),
+                ),
             })
         }
     }
@@ -1268,10 +1283,10 @@ impl Expr {
             lval: false,
             location: boolean.location,
             ctype: Type::Bool,
-            expr: ExprType::Compare(
+            expr: ExprType::Binary(
+                BinaryOp::Compare(ComparisonToken::EqualEqual),
                 Box::new(boolean),
                 Box::new(zero),
-                ComparisonToken::EqualEqual,
             ),
         })
     }
@@ -1363,13 +1378,13 @@ impl Expr {
             lval: false,
             location: offset.location,
             ctype: offset.ctype.clone(),
-            expr: ExprType::Mul(Box::new(size_cast), Box::new(offset)),
+            expr: ExprType::Binary(BinaryOp::Mul, Box::new(size_cast), Box::new(offset)),
         };
         Ok(Expr {
             lval: false,
             location,
             ctype: base.ctype.clone(),
-            expr: ExprType::Add(Box::new(base), Box::new(offset)),
+            expr: ExprType::Binary(BinaryOp::Add, Box::new(base), Box::new(offset)),
         })
     }
     fn increment_op(
@@ -1401,18 +1416,15 @@ impl Expr {
                 location,
                 expr: ExprType::Cast(Box::new(Expr::from((Literal::Int(1), location)))),
             };
+            let token = if increment {
+                AssignmentToken::AddEqual
+            } else {
+                AssignmentToken::SubEqual
+            };
             Ok(Expr {
                 ctype: expr.ctype.clone(),
                 lval: false, // `(i = j) = 4`; is invalid
-                expr: ExprType::Assign(
-                    Box::new(expr),
-                    Box::new(rval),
-                    if increment {
-                        AssignmentToken::AddEqual
-                    } else {
-                        AssignmentToken::SubEqual
-                    },
-                ),
+                expr: ExprType::Binary(BinaryOp::Assign(token), Box::new(expr), Box::new(rval)),
                 location,
             })
         } else {
@@ -1426,18 +1438,16 @@ impl Expr {
         }
     }
     // convenience method for constructing an Expr
-    fn default_expr<C>(
-        constructor: C,
+    fn default_expr(
+        op: BinaryOp,
     ) -> impl Fn(Expr, Expr, Locatable<Token>) -> RecoverableResult<Expr, Locatable<SemanticError>>
-    where
-        C: Fn(Box<Expr>, Box<Expr>) -> ExprType,
     {
         move |left: Expr, right: Expr, token: Locatable<Token>| {
             Ok(Expr {
                 location: token.location,
                 ctype: left.ctype.clone(),
                 lval: false,
-                expr: constructor(Box::new(left), Box::new(right)),
+                expr: ExprType::Binary(op, Box::new(left), Box::new(right)),
             })
         }
     }
@@ -1485,7 +1495,7 @@ impl Expr {
             lval: false,
             location: token.location,
             ctype: Type::Bool,
-            expr: ExprType::Compare(left, right, token.data),
+            expr: ExprType::Binary(BinaryOp::Compare(token.data), left, right),
         })
     }
     fn id(symbol: &Symbol, location: Location) -> Self {

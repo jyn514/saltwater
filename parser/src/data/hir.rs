@@ -465,7 +465,7 @@ impl Display for Metadata {
             write!(f, "{} ", self.qualifiers)?;
         }
         write!(f, "{} ", self.storage_class)?;
-        super::types::print_type(&self.ctype, Some(self.id), false, f)
+        super::types::print_type(&self.ctype, Some(self.id), f)
     }
 }
 

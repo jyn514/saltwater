@@ -136,11 +136,11 @@ pub enum AssignmentToken {
     Equal,
     PlusEqual,
     MinusEqual,
-    StarEqual,
-    DivideEqual,
+    MulEqual,
+    DivEqual,
     ModEqual,
-    LeftEqual,  // <<=
-    RightEqual, // >>=
+    ShlEqual, // <<=
+    ShrEqual, // >>=
     AndEqual,
     OrEqual,
     XorEqual, // ^=
@@ -300,13 +300,13 @@ impl AssignmentToken {
             Equal => Equal.into(), // there's not really a good behavior here...
             PlusEqual => Token::Plus,
             MinusEqual => Token::Minus,
-            StarEqual => Token::Star,
-            DivideEqual => Token::Divide,
+            MulEqual => Token::Star,
+            DivEqual => Token::Divide,
             ModEqual => Token::Mod,
             AndEqual => Token::Ampersand,
             OrEqual => Token::BitwiseOr,
-            LeftEqual => Token::ShiftLeft,
-            RightEqual => Token::ShiftRight,
+            ShlEqual => Token::ShiftLeft,
+            ShrEqual => Token::ShiftRight,
             XorEqual => Token::Xor,
         }
     }

@@ -648,25 +648,79 @@ impl Analyzer {
         &mut self, lval: ast::Expr, rval: ast::Expr, token: lex::AssignmentToken,
         location: Location,
     ) -> Expr {
-        use lex::AssignmentToken::*;
-
         let lval = self.parse_expr(lval);
         let mut rval = self.parse_expr(rval);
         if let Err(err) = lval.modifiable_lval() {
             self.err(err, location);
         }
-        match token {
-            Equal => {}
-            _ => return unimplemented!("desugaring complex assignment"),
+        if let lex::AssignmentToken::Equal = token {
+            if rval.ctype != lval.ctype {
+                rval = rval.implicit_cast(&lval.ctype, &mut self.error_handler);
+            }
+            return Expr {
+                ctype: lval.ctype.clone(),
+                lval: false, // `(i = j) = 4`; is invalid
+                location,
+                expr: ExprType::Assign(Box::new(lval), Box::new(rval)),
+            };
         }
-        if rval.ctype != lval.ctype {
-            rval = rval.implicit_cast(&lval.ctype, &mut self.error_handler);
-        }
-        Expr {
+        // Complex assignment is tricky because the left side needs to be evaluated only once
+        // Consider e.g. `*f() += 1`: `f()` should only be called once.
+        // The hack implemented here is to treat `*f()` as a variable then load and store it to memory:
+        // `tmp = *f(); tmp = tmp + 1;`
+
+        // declare tmp in a new hidden scope
+        // We really should only be modifying the scope in `FunctionAnalyzer`,
+        // but assignment expressions can never appear in an initializer anyway.
+        self.scope.enter();
+        let tmp_name = InternedStr::get_or_intern("tmp");
+        let meta = Metadata {
+            id: tmp_name,
             ctype: lval.ctype.clone(),
-            lval: false, // `(i = j) = 4`; is invalid
+            qualifiers: Qualifiers::NONE,
+            storage_class: StorageClass::Register,
+        };
+        let ctype = meta.ctype.clone();
+        let meta_ref = meta.insert();
+        self.scope.insert(tmp_name, meta_ref);
+        self.scope.exit();
+        // NOTE: this does _not_ call rval() on x
+        // tmp = *f()
+        let assign = ExprType::Assign(
+            Box::new(Expr {
+                ctype: ctype.clone(),
+                lval: false,
+                location: lval.location,
+                expr: ExprType::Id(meta_ref),
+            }),
+            Box::new(lval),
+        );
+        // (tmp = *f()), i.e. the expression
+        let tmp_assign_expr = Expr {
+            expr: assign,
+            ctype: ctype.clone(),
+            lval: true,
             location,
-            expr: ExprType::Assign(Box::new(lval), Box::new(rval)),
+        };
+
+        // *f() + 1
+        let new_val = self.desugar_op(tmp_assign_expr.clone(), rval, token);
+
+        // tmp = *f() + 1
+        Expr {
+            ctype,
+            lval: false,
+            location,
+            expr: ExprType::Assign(Box::new(tmp_assign_expr), Box::new(new_val)),
+        }
+    }
+    fn desugar_op(&mut self, left: Expr, right: Expr, token: lex::AssignmentToken) -> Expr {
+        use lex::AssignmentToken::*;
+
+        match token {
+            Equal => unreachable!(),
+            PlusEqual => unimplemented!(),
+            _ => unimplemented!("desugaring complex assignment"),
         }
     }
 }

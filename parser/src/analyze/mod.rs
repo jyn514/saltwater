@@ -452,6 +452,16 @@ impl Analyzer {
     ) -> Initializer {
         unimplemented!("initializers")
     }
+    // only meant for use with `parse_expr`
+    fn binary_helper<F>(
+        &mut self, left: Box<ast::Expr>, right: Box<ast::Expr>, expr_type: F,
+    ) -> Expr
+    where
+        F: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
+    {
+        let func = |a, b, this: &mut Self| this.parse_integer_op(a, b, expr_type);
+        self.parse_binary(*left, *right, func)
+    }
     fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
         use ast::ExprType::*;
         match expr.data {
@@ -462,24 +472,11 @@ impl Analyzer {
                 self.explicit_cast(*inner, ctype)
             }
             Shift(left, right, direction) => {
-                let func = |a, b, this: &mut Self| {
-                    this.parse_integer_op(a, b, |a, b| ExprType::Shift(a, b, direction))
-                };
-                self.parse_binary(*left, *right, func)
+                self.binary_helper(left, right, |a, b| ExprType::Shift(a, b, direction))
             }
-            BitwiseAnd(left, right) => {
-                let func =
-                    |a, b, this: &mut Self| this.parse_integer_op(a, b, ExprType::BitwiseAnd);
-                self.parse_binary(*left, *right, func)
-            }
-            BitwiseOr(left, right) => {
-                let func = |a, b, this: &mut Self| this.parse_integer_op(a, b, ExprType::BitwiseOr);
-                self.parse_binary(*left, *right, func)
-            }
-            Xor(left, right) => {
-                let func = |a, b, this: &mut Self| this.parse_integer_op(a, b, ExprType::Xor);
-                self.parse_binary(*left, *right, func)
-            }
+            BitwiseAnd(left, right) => self.binary_helper(left, right, ExprType::BitwiseAnd),
+            BitwiseOr(left, right) => self.binary_helper(left, right, ExprType::BitwiseOr),
+            Xor(left, right) => self.binary_helper(left, right, ExprType::Xor),
             Compare(left, right, token) => self.relational_expr(*left, *right, token),
             Mul(left, right) => self.mul(*left, *right, Token::Star),
             Div(left, right) => self.mul(*left, *right, Token::Divide),
@@ -498,7 +495,7 @@ impl Analyzer {
     }
     fn parse_integer_op<F>(&mut self, left: Expr, right: Expr, expr_func: F) -> Expr
     where
-        F: Fn(Box<Expr>, Box<Expr>) -> ExprType,
+        F: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
     {
         let non_scalar = if !left.ctype.is_integral() {
             Some(&left.ctype)

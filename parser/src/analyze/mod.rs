@@ -471,6 +471,7 @@ impl Analyzer {
             Mul(left, right) => self.mul(*left, *right, Token::Star),
             Div(left, right) => self.mul(*left, *right, Token::Divide),
             Mod(left, right) => self.mul(*left, *right, Token::Mod),
+            Assign(lval, rval, token) => self.assignment_expr(*lval, *rval, token, expr.location),
             _ => unimplemented!(),
         }
     }
@@ -643,6 +644,31 @@ impl Analyzer {
             location,
         }
     }
+    fn assignment_expr(
+        &mut self, lval: ast::Expr, rval: ast::Expr, token: lex::AssignmentToken,
+        location: Location,
+    ) -> Expr {
+        use lex::AssignmentToken::*;
+
+        let lval = self.parse_expr(lval);
+        let mut rval = self.parse_expr(rval);
+        if let Err(err) = lval.modifiable_lval() {
+            self.err(err, location);
+        }
+        match token {
+            Equal => {}
+            _ => return unimplemented!("desugaring complex assignment"),
+        }
+        if rval.ctype != lval.ctype {
+            rval = rval.implicit_cast(&lval.ctype, &mut self.error_handler);
+        }
+        Expr {
+            ctype: lval.ctype.clone(),
+            lval: false, // `(i = j) = 4`; is invalid
+            location,
+            expr: ExprType::Assign(Box::new(lval), Box::new(rval)),
+        }
+    }
 }
 
 // literal
@@ -786,6 +812,13 @@ impl Type {
         match self {
             Type::Struct(_) | Type::Union(_) => true,
             _ => false,
+        }
+    }
+    fn is_complete(&self) -> bool {
+        match self {
+            Type::Void | Type::Function(_) | Type::Array(_, types::ArrayType::Unbounded) => false,
+            // TODO: update when we allow incomplete struct and union types (e.g. `struct s;`)
+            _ => true,
         }
     }
 }
@@ -1013,6 +1046,47 @@ impl Expr {
                 self.location,
             );
             self
+        }
+    }
+    /// See section 6.3.2.1 of the C Standard. In particular:
+    /// "A modifiable lvalue is an lvalue that does not have array type,
+    /// does not  have an incomplete type, does not have a const-qualified type,
+    /// and if it is a structure or union, does not have any member with a const-qualified type"
+    fn modifiable_lval(&self) -> Result<(), SemanticError> {
+        let err = |e| Err(SemanticError::NotAssignable(e));
+        // rval
+        if !self.lval {
+            return err("rvalue".to_string());
+        }
+        // incomplete type
+        if !self.ctype.is_complete() {
+            return err(format!("expression with incomplete type '{}'", self.ctype));
+        }
+        // const-qualified type
+        // TODO: handle `*const`
+        if let ExprType::Id(sym) = &self.expr {
+            let meta = sym.get();
+            if meta.qualifiers.c_const {
+                return err(format!("variable '{}' with `const` qualifier", meta.id));
+            }
+        }
+        match &self.ctype {
+            // array type
+            Type::Array(_, _) => err("array".to_string()),
+            // member with const-qualified type
+            Type::Struct(stype) | Type::Union(stype) => {
+                if stype
+                    .members()
+                    .iter()
+                    .map(|sym| sym.qualifiers.c_const)
+                    .any(|x| x)
+                {
+                    err("struct or union with `const` qualified member".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Ok(()),
         }
     }
 }

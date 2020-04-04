@@ -285,7 +285,6 @@ pub(super) fn print_type(
     ctype: &Type, name: Option<InternedStr>, f: &mut Formatter,
 ) -> fmt::Result {
     print_pre(ctype, f)?;
-    write!(f, " ")?;
     print_mid(ctype, name, f)?;
     print_post(ctype, f)
 }
@@ -328,11 +327,18 @@ fn print_mid(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt:
                 Type::Array(_, _) | Type::Function(_) => true,
                 _ => false,
             };
+            print_mid(to, None, f)?;
+
+            write!(f, " ")?;
             if depth {
                 write!(f, "(")?;
             }
-            print_mid(to, None, f)?;
-            let pointer = format!("*{}{}", qs, name);
+
+            let pointer = if qs != &Default::default() && name != InternedStr::default() {
+                format!("*{} {}", qs, name)
+            } else {
+                format!("*{}{}", qs, name)
+            };
             write!(f, "{}", pointer)?;
             if depth {
                 write!(f, ")")?;
@@ -342,7 +348,7 @@ fn print_mid(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt:
         Type::Array(to, _) => print_mid(to, name, f),
         _ => {
             if let Some(name) = name {
-                write!(f, "{}", name)?;
+                write!(f, " {}", name)?;
             }
             Ok(())
         }

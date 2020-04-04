@@ -639,11 +639,11 @@ pub(crate) mod test {
 
     #[test]
     fn function() {
-        assert_decl_display("int f();", "extern int  f();");
-        assert_decl_display("int f(int i);", "extern int  f(int i);");
-        assert_decl_display("int f(int i, int j);", "extern int  f(int i, int j);");
-        assert_decl_display("int f(int g());", "extern int  f(int  g());");
-        assert_decl_display("int f(int g(), ...);", "extern int  f(int  g(), ...);");
+        assert_decl_display("int f();", "extern int f();");
+        assert_decl_display("int f(int i);", "extern int f(int i);");
+        assert_decl_display("int f(int i, int j);", "extern int f(int i, int j);");
+        assert_decl_display("int f(int g());", "extern int f(int g());");
+        assert_decl_display("int f(int g(), ...);", "extern int f(int g(), ...);");
     }
 
     #[test]
@@ -729,7 +729,7 @@ pub(crate) mod test {
         ] {
             assert_decl_display(pointer, &format!("extern {}", pointer));
         }
-        assert_decl_display("char (*(*f));", "extern char **f;");
+        assert_same("char (*(*f));", "char **f;");
     }
     #[test]
     fn test_pointers_and_arrays() {
@@ -778,6 +778,7 @@ pub(crate) mod test {
                 Qualifiers::default()
             )
         ));
+        assert_no_change("extern int (*i)(int, char, float);");
         /*
         // cdecl: declare i as pointer to function (int, char, float) returning int
         assert!(match_type(

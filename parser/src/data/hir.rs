@@ -338,9 +338,9 @@ impl Display for Qualifiers {
             f,
             "{}",
             match (self.c_const, self.volatile) {
-                (true, true) => "const volatile ",
-                (true, false) => "const ",
-                (false, true) => "volatile ",
+                (true, true) => "const volatile",
+                (true, false) => "const",
+                (false, true) => "volatile",
                 (false, false) => "",
             }
         )

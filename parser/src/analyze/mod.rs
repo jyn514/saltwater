@@ -453,13 +453,14 @@ impl Analyzer {
         unimplemented!("initializers")
     }
     // only meant for use with `parse_expr`
-    fn binary_helper<F>(
-        &mut self, left: Box<ast::Expr>, right: Box<ast::Expr>, expr_type: F,
+    fn binary_helper<E, F>(
+        &mut self, left: Box<ast::Expr>, right: Box<ast::Expr>, expr_type: E, expr_checker: F,
     ) -> Expr
     where
-        F: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
+        E: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
+        F: FnOnce(&mut Self, Expr, Expr, E) -> Expr
     {
-        let func = |a, b, this: &mut Self| this.parse_integer_op(a, b, expr_type);
+        let func = |a, b, this: &mut Self| expr_checker(this, a, b, expr_type);
         self.parse_binary(*left, *right, func)
     }
     fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
@@ -472,15 +473,15 @@ impl Analyzer {
                 self.explicit_cast(*inner, ctype)
             }
             Shift(left, right, direction) => {
-                self.binary_helper(left, right, |a, b| ExprType::Shift(a, b, direction))
+                self.binary_helper(left, right, |a, b| ExprType::Shift(a, b, direction), Self::parse_integer_op)
             }
-            BitwiseAnd(left, right) => self.binary_helper(left, right, ExprType::BitwiseAnd),
-            BitwiseOr(left, right) => self.binary_helper(left, right, ExprType::BitwiseOr),
-            Xor(left, right) => self.binary_helper(left, right, ExprType::Xor),
+            BitwiseAnd(left, right) => self.binary_helper(left, right, ExprType::BitwiseAnd, Self::parse_integer_op),
+            BitwiseOr(left, right) => self.binary_helper(left, right, ExprType::BitwiseOr, Self::parse_integer_op),
+            Xor(left, right) => self.binary_helper(left, right, ExprType::Xor, Self::parse_integer_op),
             Compare(left, right, token) => self.relational_expr(*left, *right, token),
-            Mul(left, right) => self.mul(*left, *right, Token::Star),
-            Div(left, right) => self.mul(*left, *right, Token::Divide),
-            Mod(left, right) => self.mul(*left, *right, Token::Mod),
+            Mul(left, right) => self.binary_helper(left, right, ExprType::Mul, Self::mul),
+            Div(left, right) => self.binary_helper(left, right, ExprType::Div, Self::mul),
+            Mod(left, right) => self.binary_helper(left, right, ExprType::Mod, Self::mul),
             Assign(lval, rval, token) => self.assignment_expr(*lval, *rval, token, expr.location),
             _ => unimplemented!(),
         }
@@ -593,12 +594,11 @@ impl Analyzer {
             expr: ExprType::Compare(Box::new(left), Box::new(right), token),
         }
     }
-    fn mul(&mut self, left: ast::Expr, right: ast::Expr, token: Token) -> Expr {
-        let left = self.parse_expr(left);
-        let right = self.parse_expr(right);
+    fn mul<F>(&mut self, left: Expr, right: Expr, expr_type: F) -> Expr
+    where F: FnOnce(Box<Expr>, Box<Expr>) -> ExprType {
         let location = left.location.merge(right.location);
 
-        if token == Token::Mod && !(left.ctype.is_integral() && right.ctype.is_integral()) {
+        if expr_type == ExprType::Mod && !(left.ctype.is_integral() && right.ctype.is_integral()) {
             self.err(
                 SemanticError::from(format!(
                     "expected integers for both operators of %, got '{}' and '{}'",
@@ -615,17 +615,12 @@ impl Analyzer {
                 location,
             );
         }
-        let (p_left, right) = Expr::binary_promote(left, right, &mut self.error_handler);
+        let (left, right) = Expr::binary_promote(left, right, &mut self.error_handler);
         Expr {
-            ctype: p_left.ctype.clone(),
+            ctype: left.ctype.clone(),
             location,
             lval: false,
-            expr: match token {
-                Token::Star => ExprType::Mul(Box::new(p_left), Box::new(right)),
-                Token::Divide => ExprType::Div(Box::new(p_left), Box::new(right)),
-                Token::Mod => ExprType::Mod(Box::new(p_left), Box::new(right)),
-                _ => panic!("left_associative_binary_op should only return tokens given to it"),
-            },
+            expr: expr_type(Box::new(left), Box::new(right)),
         }
     }
     fn explicit_cast(&mut self, expr: ast::Expr, ctype: Type) -> Expr {

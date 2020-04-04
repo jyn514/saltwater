@@ -275,19 +275,17 @@ impl PartialEq for FunctionType {
 
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        print_type(self, None, false, f)
+        print_type(self, None, f)
     }
 }
 
 use std::fmt::{self, Formatter};
 
 pub(super) fn print_type(
-    ctype: &Type, name: Option<InternedStr>, func: bool, f: &mut Formatter,
+    ctype: &Type, name: Option<InternedStr>, f: &mut Formatter,
 ) -> fmt::Result {
     print_pre(ctype, f)?;
-    if !func {
-        write!(f, " ")?;
-    }
+    write!(f, " ")?;
     print_mid(ctype, name, f)?;
     print_post(ctype, f)
 }
@@ -306,7 +304,7 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         Bool => write!(f, "_Bool"),
         Float | Double | Void => write!(f, "{}", format!("{:?}", ctype).to_lowercase()),
         Pointer(inner, _) | Array(inner, _) => print_pre(inner, f),
-        Function(ftype) => print_type(&ftype.return_type, None, true, f),
+        Function(ftype) => print_type(&ftype.return_type, None, f),
         Enum(Some(ident), _) => write!(f, "enum {}", ident),
         Enum(None, _) => write!(f, "<anonymous enum>"),
         Union(StructType::Named(ident, _)) => write!(f, "union {}", ident),
@@ -321,17 +319,25 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
 fn print_mid(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt::Result {
     match ctype {
         Type::Pointer(to, qs) => {
-            print_mid(to, None, f)?;
             let name = name.unwrap_or_default();
-            let pointer = if *qs != Default::default() && name != Default::default() {
-                format!("*{}{}", qs, name)
-            } else {
-                format!("*{}{}", qs, name)
+            // what do we do for (**p)()?
+            // we have to look arbitrarily deep into the type,
+            // but also we have to only print the ( once,
+            // so how do we know we know if it's already been printed?
+            let depth = match &**to {
+                Type::Array(_, _) | Type::Function(_) => true,
+                _ => false,
             };
-            match &**to {
-                Type::Array(_, _) | Type::Function(_) => write!(f, "({})", pointer),
-                _ => write!(f, "{}", pointer),
+            if depth {
+                write!(f, "(")?;
             }
+            print_mid(to, None, f)?;
+            let pointer = format!("*{}{}", qs, name);
+            write!(f, "{}", pointer)?;
+            if depth {
+                write!(f, ")")?;
+            }
+            Ok(())
         }
         Type::Array(to, _) => print_mid(to, name, f),
         _ => {
@@ -362,7 +368,7 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
                 } else {
                     Some(symbol.id)
                 };
-                print_type(&symbol.ctype, id, false, f)
+                print_type(&symbol.ctype, id, f)
             };
             if let Some(first) = params.next() {
                 print(f, first)?;

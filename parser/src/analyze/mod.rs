@@ -748,11 +748,9 @@ impl Analyzer {
             XorEqual => self.parse_integer_op(left, right, BinaryOp::Xor),
             LeftEqual => self.parse_integer_op(left, right, BinaryOp::Shl),
             RightEqual => self.parse_integer_op(left, right, BinaryOp::Shr),
-            /*
-            MulEqual => self.mul(left, right, Token::Star),
-            DivEqual => self.mul(left, right, Token::Divide),
-            ModEqual => self.mul(left, right, Token::Mod),
-            */
+            StarEqual => self.mul(left, right, BinaryOp::Mul),
+            DivideEqual => self.mul(left, right, BinaryOp::Div),
+            ModEqual => self.mul(left, right, BinaryOp::Mod),
             _ => unimplemented!("desugaring complex assignment"),
         }
     }

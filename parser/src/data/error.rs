@@ -188,6 +188,7 @@ pub enum SemanticError {
         })
     ]
     InvalidCast(Type, Type),
+
     // String is the reason it couldn't be assigned
     #[error("cannot assign to {0}")]
     NotAssignable(String),
@@ -272,6 +273,26 @@ pub enum SemanticError {
 
     #[error("too many initializers (declared with {0} elements, found {1})")]
     TooManyMembers(usize, usize),
+
+    // Function definition errors
+    #[error("illegal storage class {0} for function (only `static` and `extern` are allowed)")]
+    InvalidFuncStorageClass(StorageClass),
+
+    #[error("missing parameter name in function definition (parameter {0} of type '{1}')")]
+    MissingParamName(usize, Type),
+
+    #[error("forward declaration of {0} is never completed (used in {1})")]
+    ForwardDeclarationIncomplete(InternedStr, InternedStr),
+
+    #[error("illegal signature for main function (expected 'int main(void)' or 'int main(int, char **)'")]
+    IllegalMainSignature,
+
+    // declaration errors
+    #[error("redefinition of '{0}'")]
+    Redefinition(InternedStr),
+
+    #[error("redeclaration of '{0}' with different type or qualifiers (originally {}, now {})", .1.get(), .2.get())]
+    IncompatibleRedeclaration(InternedStr, hir::MetadataRef, hir::MetadataRef),
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
@@ -461,6 +482,9 @@ pub enum Warning {
 
     #[error("implicit int is deprecated and may be removed in a future release")]
     ImplicitInt,
+
+    #[error("this is a definition, not a declaration, the 'extern' keyword has no effect")]
+    ExtraneousExtern,
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

@@ -111,6 +111,7 @@ impl Analyzer {
             PostIncrement(inner, increment) => {
                 self.increment_op(false, increment, *inner, expr.location)
             }
+            Index(left, right) => self.index(*left, *right, expr.location),
             _ => unimplemented!("expression: {}", expr),
         }
     }
@@ -465,6 +466,7 @@ impl Analyzer {
             }
         }
     }
+    // ++i, i--
     fn increment_op(
         &mut self, prefix: bool, increment: bool, expr: ast::Expr, location: Location,
     ) -> Expr {
@@ -503,7 +505,24 @@ impl Analyzer {
             }
         }
     }
+    // a[i] desugars to *(a + i)
+    fn index(&mut self, left: ast::Expr, right: ast::Expr, location: Location) -> Expr {
+        let left = self.parse_expr(left).rval();
+        let right = self.parse_expr(right).rval();
 
+        let (target_type, array, index) = match (&left.ctype, &right.ctype) {
+            (Type::Pointer(target, _), _) => ((**target).clone(), left, right),
+            (_, Type::Pointer(target, _)) => ((**target).clone(), right, left),
+            (l, r) => {
+                self.err(SemanticError::NotAPointer(l.clone()), location);
+                return left;
+            }
+        };
+        let mut addr = self.pointer_arithmetic(array, index, &target_type, location);
+        addr.ctype = target_type;
+        addr.lval = true;
+        addr
+    }
     fn assignment_expr(
         &mut self, lval: Expr, mut rval: Expr, token: lex::AssignmentToken, location: Location,
     ) -> Expr {

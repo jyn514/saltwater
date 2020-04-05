@@ -38,6 +38,45 @@ impl Analyzer {
             Add(left, right) => self.binary_helper(left, right, BinaryOp::Add, Self::add),
             Sub(left, right) => self.binary_helper(left, right, BinaryOp::Sub, Self::add),
             FuncCall(func, args) => self.func_call(*func, args),
+            Member(struct_, id) => {
+                let struct_ = self.parse_expr(*struct_);
+                self.struct_member(struct_, id, expr.location)
+            }
+            // s->p desguars to (*s).p
+            DerefMember(inner, id) => {
+                let inner = self.parse_expr(*inner);
+                let struct_type = match &inner.ctype {
+                    Type::Pointer(ctype, _) => match &**ctype {
+                        Type::Union(_) | Type::Struct(_) => (**ctype).clone(),
+                        other => {
+                            self.err(SemanticError::NotAStruct(other.clone()), inner.location);
+                            return inner;
+                        }
+                    },
+                    other => {
+                        self.err(SemanticError::NotAPointer(other.clone()), inner.location);
+                        return inner;
+                    }
+                };
+                let deref = inner.indirection(false, struct_type);
+                self.struct_member(deref, id, expr.location)
+            }
+            Deref(inner) => {
+                let inner = self.parse_expr(*inner);
+                match &inner.ctype {
+                    Type::Array(t, _) | Type::Pointer(t, _) => {
+                        let ctype = (**t).clone();
+                        inner.indirection(true, ctype)
+                    }
+                    _ => {
+                        self.err(
+                            SemanticError::NotAPointer(inner.ctype.clone()),
+                            expr.location,
+                        );
+                        inner
+                    }
+                }
+            }
             _ => unimplemented!("expression: {}", expr),
         }
     }
@@ -362,6 +401,37 @@ impl Analyzer {
         let ctype = expr.ctype.clone().default_promote();
         expr.implicit_cast(&ctype, &mut self.error_handler)
     }
+    // parse a struct member
+    // used for both s.a and s->a
+    fn struct_member(&mut self, expr: Expr, id: InternedStr, location: Location) -> Expr {
+        match &expr.ctype {
+            Type::Struct(stype) | Type::Union(stype) => {
+                let members = stype.members();
+                if members.is_empty() {
+                    self.err(
+                        SemanticError::IncompleteDefinitionUsed(expr.ctype.clone()),
+                        location,
+                    );
+                    expr
+                } else if let Some(member) = members.iter().find(|member| member.id == id) {
+                    Expr {
+                        ctype: member.ctype.clone(),
+                        lval: true,
+                        location,
+                        expr: ExprType::Member(Box::new(expr), id),
+                    }
+                } else {
+                    self.err(SemanticError::NotAMember(id, expr.ctype.clone()), location);
+                    expr
+                }
+            }
+            _ => {
+                self.err(SemanticError::NotAStruct(expr.ctype.clone()), location);
+                expr
+            }
+        }
+    }
+
     fn assignment_expr(
         &mut self, lval: ast::Expr, rval: ast::Expr, token: lex::AssignmentToken,
         location: Location,
@@ -742,6 +812,18 @@ impl Expr {
             _ => self,
         }
     }
+    // `*p` when p is a pointer or `x` where variable used in an rval context
+    fn indirection(self, lval: bool, ctype: Type) -> Self {
+        Expr {
+            location: self.location,
+            ctype,
+            lval,
+            // this is super hacky but the only way I can think of to prevent
+            // https://github.com/jyn514/rcc/issues/90
+            expr: ExprType::Noop(Box::new(self.rval())),
+        }
+    }
+
     pub(super) fn implicit_cast(mut self, ctype: &Type, error_handler: &mut ErrorHandler) -> Expr {
         if &self.ctype == ctype {
             self

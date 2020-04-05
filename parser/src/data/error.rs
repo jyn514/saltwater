@@ -206,6 +206,21 @@ pub enum SemanticError {
     /// (actual, expected)
     WrongArgumentNumber(usize, usize),
 
+    #[error("{0} has not yet been defined")]
+    IncompleteDefinitionUsed(Type),
+
+    #[error("no member named '{0}' in '{1}'")]
+    NotAMember(InternedStr, Type),
+
+    #[error("expected struct or union, got type '{0}'")]
+    NotAStruct(Type),
+
+    #[error("cannot use '->' operator on type that is not a pointer")]
+    NotAStructPointer(Type),
+
+    #[error("cannot dereference expression of non-pointer type '{0}'")]
+    NotAPointer(Type),
+
     /*
     #[error("cannot take address of {0}")]
     InvalidAddressOf(&'static str),

@@ -585,6 +585,40 @@ impl Expr {
             location,
         }
     }
+    // Convert an expression to _Bool. Section 6.3.1.3 of the C standard:
+    // "When any scalar value is converted to _Bool,
+    // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
+    //
+    // if (expr)
+    pub(super) fn truthy(mut self, error_handler: &mut ErrorHandler) -> Expr {
+        self = self.rval();
+        if self.ctype == Type::Bool {
+            return self;
+        }
+        if !self.ctype.is_scalar() {
+            error_handler.error(
+                SemanticError::Generic(format!(
+                    "expression of type '{}' cannot be converted to bool",
+                    self.ctype
+                )),
+                self.location,
+            );
+            literal(Literal::Int(0), self.location)
+        } else {
+            let zero = Expr::zero(self.location).implicit_cast(&self.ctype, error_handler);
+            Expr {
+                lval: false,
+                location: self.location,
+                ctype: Type::Bool,
+                expr: ExprType::Binary(
+                    BinaryOp::Compare(ComparisonToken::NotEqual),
+                    Box::new(self),
+                    Box::new(zero),
+                ),
+            }
+        }
+    }
+
     // Perform a binary conversion, including all relevant casts.
     //
     // See `Type::binary_promote` for conversion rules.

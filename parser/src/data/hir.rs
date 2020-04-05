@@ -35,7 +35,7 @@ pub enum StmtType {
     Continue,
     Break,
     Return(Option<Expr>),
-    Decl(VecDeque<Locatable<Declaration>>),
+    Decl(Vec<Locatable<Declaration>>),
 }
 
 impl Default for StmtType {

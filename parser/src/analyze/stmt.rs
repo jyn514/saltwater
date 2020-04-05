@@ -49,15 +49,9 @@ impl FunctionAnalyzer<'_> {
                 post_loop,
                 body,
             } => {
-                let init_data = match initializer.data {
-                    Expr(expr) => S::Expr(self.parse_expr(expr)),
-                    Decl(decl) => {
-                        let decl = self.analyzer.parse_declaration(decl, initializer.location);
-                        S::Decl(decl)
-                    }
-                    _ => unreachable!(),
-                };
-                let initializer = Locatable::new(init_data, initializer.location);
+                // TODO: maybe a sanity check here that the init statement is only an expression or declaration?
+                // Or encode that in the type somehow?
+                let initializer = self.parse_stmt(*initializer);
                 let condition = condition.map(|e| {
                     Box::new(self.parse_expr(*e).truthy(&mut self.analyzer.error_handler))
                 });
@@ -78,15 +72,18 @@ impl FunctionAnalyzer<'_> {
             }
             Expr(expr) => S::Expr(self.parse_expr(expr)),
             Return(value) => self.return_statement(value, stmt.location),
+            // TODO: all of these should have semantic checking here, not in the backend
             Label(name, inner) => {
                 let inner = self.parse_stmt(*inner);
                 S::Label(name, Box::new(inner))
             }
             Case(expr, inner) => self.case_statement(*expr, *inner, stmt.location),
-            _ => unimplemented!("most statements"),
+            Default(inner) => S::Default(Box::new(self.parse_stmt(*inner))),
+            Goto(label) => S::Goto(label),
+            Continue => S::Continue,
+            Break => S::Break,
+            Decl(decls) => S::Decl(self.analyzer.parse_declaration(decls, stmt.location)),
             /*
-            Default(Box<Stmt>),
-            Goto(InternedStr),
             Continue,
             Break,
             Decl(VecDeque<Locatable<Declaration>>),

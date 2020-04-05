@@ -199,6 +199,13 @@ pub enum SemanticError {
     #[error("cannot perform pointer arithmetic when size of pointed type '{0}' is unknown")]
     PointerAddUnknownSize(Type),
 
+    #[error("called object of type '{0}' is not a function")]
+    NotAFunction(Type),
+
+    #[error("too {} arguments to function call: expected {0}, have {1}", if .1 > .0 { "many" } else { "few" })]
+    /// (actual, expected)
+    WrongArgumentNumber(usize, usize),
+
     /*
     #[error("cannot take address of {0}")]
     InvalidAddressOf(&'static str),

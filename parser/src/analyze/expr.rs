@@ -37,7 +37,8 @@ impl Analyzer {
             Assign(lval, rval, token) => self.assignment_expr(*lval, *rval, token, expr.location),
             Add(left, right) => self.binary_helper(left, right, BinaryOp::Add, Self::add),
             Sub(left, right) => self.binary_helper(left, right, BinaryOp::Sub, Self::add),
-            _ => unimplemented!(),
+            FuncCall(func, args) => self.func_call(*func, args),
+            _ => unimplemented!("expression: {}", expr),
         }
     }
     // only meant for use with `parse_expr`
@@ -301,6 +302,66 @@ impl Analyzer {
             expr: ExprType::Binary(BinaryOp::Add, Box::new(base), Box::new(offset)),
         }
     }
+    fn func_call(&mut self, func: ast::Expr, args: Vec<ast::Expr>) -> Expr {
+        let mut func = self.parse_expr(func);
+        // if fp is a function pointer, fp() desugars to (*fp)()
+        match &func.ctype {
+            Type::Pointer(pointee, _) if pointee.is_function() => {
+                func = Expr {
+                    lval: false,
+                    location: func.location,
+                    ctype: (**pointee).clone(),
+                    expr: ExprType::Deref(Box::new(func)),
+                }
+            }
+            _ => {}
+        };
+        let functype = match &func.ctype {
+            Type::Function(functype) => functype,
+            Type::Error => return func, // we've already reported this error
+            other => {
+                self.err(SemanticError::NotAFunction(other.clone()), func.location);
+                return func;
+            }
+        };
+        let mut expected = functype.params.len();
+        // f(void)
+        if expected == 1 && functype.params[0].ctype == Type::Void {
+            expected = 0;
+        }
+        // f() takes _any_ number of arguments
+        if !functype.params.is_empty()
+            && (args.len() < expected || args.len() > expected && !functype.varargs)
+        {
+            self.err(
+                SemanticError::WrongArgumentNumber(args.len(), expected),
+                func.location,
+            );
+        }
+        let mut promoted_args = vec![];
+        for (i, arg) in args.into_iter().enumerate() {
+            let arg = self.parse_expr(arg);
+            let promoted = match functype.params.get(i) {
+                Some(expected) => arg
+                    .rval()
+                    .implicit_cast(&expected.ctype, &mut self.error_handler),
+                None => self.default_promote(arg),
+            };
+            promoted_args.push(promoted);
+        }
+        Expr {
+            location: func.location,
+            lval: false, // no move semantics here!
+            ctype: *functype.return_type.clone(),
+            expr: ExprType::FuncCall(Box::new(func), promoted_args),
+        }
+    }
+    /// 'default promotions' from 6.5.2.2p6
+    fn default_promote(&mut self, expr: Expr) -> Expr {
+        let expr = expr.rval();
+        let ctype = expr.ctype.clone().default_promote();
+        expr.implicit_cast(&ctype, &mut self.error_handler)
+    }
     fn assignment_expr(
         &mut self, lval: ast::Expr, rval: ast::Expr, token: lex::AssignmentToken,
         location: Location,
@@ -539,6 +600,20 @@ impl Type {
             signed
         } else {
             unsigned
+        }
+    }
+    /// 6.5.2.2p6:
+    /// > If the expression that denotes the called function has a type that does not include a prototype,
+    /// > the integer promotions are performed on each argument,
+    /// > and arguments that have type float are promoted to double.
+    /// > These are called the default argument promotions.
+    fn default_promote(self) -> Type {
+        if self.is_integral() {
+            self.integer_promote()
+        } else if self == Type::Float {
+            Type::Double
+        } else {
+            self
         }
     }
     fn is_struct(&self) -> bool {

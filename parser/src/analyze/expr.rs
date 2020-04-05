@@ -34,7 +34,11 @@ impl Analyzer {
             Mul(left, right) => self.binary_helper(left, right, BinaryOp::Mul, Self::mul),
             Div(left, right) => self.binary_helper(left, right, BinaryOp::Div, Self::mul),
             Mod(left, right) => self.binary_helper(left, right, BinaryOp::Mod, Self::mul),
-            Assign(lval, rval, token) => self.assignment_expr(*lval, *rval, token, expr.location),
+            Assign(lval, rval, token) => {
+                let lval = self.parse_expr(*lval);
+                let rval = self.parse_expr(*rval);
+                self.assignment_expr(lval, rval, token, expr.location)
+            }
             Add(left, right) => self.binary_helper(left, right, BinaryOp::Add, Self::add),
             Sub(left, right) => self.binary_helper(left, right, BinaryOp::Sub, Self::add),
             FuncCall(func, args) => self.func_call(*func, args),
@@ -100,6 +104,12 @@ impl Analyzer {
                         inner
                     }
                 }
+            }
+            PreIncrement(inner, increment) => {
+                self.increment_op(true, increment, *inner, expr.location)
+            }
+            PostIncrement(inner, increment) => {
+                self.increment_op(false, increment, *inner, expr.location)
             }
             _ => unimplemented!("expression: {}", expr),
         }
@@ -455,13 +465,48 @@ impl Analyzer {
             }
         }
     }
+    fn increment_op(
+        &mut self, prefix: bool, increment: bool, expr: ast::Expr, location: Location,
+    ) -> Expr {
+        use crate::data::lex::AssignmentToken;
+
+        let expr = self.parse_expr(expr);
+        if let Err(err) = expr.modifiable_lval() {
+            self.err(err, location);
+        } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
+            self.err(
+                SemanticError::InvalidIncrement(expr.ctype.clone()),
+                expr.location,
+            );
+        }
+        // ++i is syntactic sugar for i+=1
+        if prefix {
+            let rval = Expr {
+                lval: false,
+                ctype: expr.ctype.clone(),
+                location,
+                expr: ExprType::Cast(Box::new(literal(Literal::Int(1), location))),
+            };
+            let op = if increment {
+                AssignmentToken::AddEqual
+            } else {
+                AssignmentToken::SubEqual
+            };
+            self.assignment_expr(expr, rval, op, location)
+        } else {
+            Expr {
+                lval: false,
+                ctype: expr.ctype.clone(),
+                // true, false: pre-decrement
+                expr: ExprType::PostIncrement(Box::new(expr), increment),
+                location,
+            }
+        }
+    }
 
     fn assignment_expr(
-        &mut self, lval: ast::Expr, rval: ast::Expr, token: lex::AssignmentToken,
-        location: Location,
+        &mut self, lval: Expr, mut rval: Expr, token: lex::AssignmentToken, location: Location,
     ) -> Expr {
-        let lval = self.parse_expr(lval);
-        let mut rval = self.parse_expr(rval);
         if let Err(err) = lval.modifiable_lval() {
             self.err(err, location);
         }

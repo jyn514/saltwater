@@ -221,10 +221,9 @@ pub enum SemanticError {
     #[error("cannot dereference expression of non-pointer type '{0}'")]
     NotAPointer(Type),
 
-    /*
     #[error("cannot take address of {0}")]
     InvalidAddressOf(&'static str),
-    */
+
     // const fold errors
     #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
     ConstOverflow { is_positive: bool },

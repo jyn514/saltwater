@@ -298,6 +298,12 @@ pub enum SemanticError {
     #[error("switch expressions must have an integer type (got {0})")]
     NonIntegralSwitch(Type),
 
+    #[error("function '{0}' does not return a value")]
+    MissingReturnValue(InternedStr),
+
+    #[error("void function '{0}' should not return a value")]
+    ReturnFromVoid(InternedStr),
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

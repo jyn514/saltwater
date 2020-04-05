@@ -13,10 +13,12 @@ impl FunctionAnalyzer<'_> {
         // ugh so much boilerplate
         let data = match stmt.data {
             Compound(stmts) => {
+                self.enter_scope();
                 let mut parsed = Vec::new();
                 for inner in stmts {
                     parsed.push(self.parse_stmt(inner));
                 }
+                self.leave_scope(stmt.location);
                 S::Compound(parsed)
             }
             If(condition, then, otherwise) => {
@@ -75,6 +77,7 @@ impl FunctionAnalyzer<'_> {
                 S::Switch(value, Box::new(body))
             }
             Expr(expr) => S::Expr(self.parse_expr(expr)),
+            Return(value) => self.return_statement(value, stmt.location),
             //Label()
             _ => unimplemented!("most statements"),
             /*
@@ -90,6 +93,40 @@ impl FunctionAnalyzer<'_> {
             */
         };
         Locatable::new(data, stmt.location)
+    }
+    fn return_statement(&mut self, expr: Option<ast::Expr>, location: Location) -> StmtType {
+        use crate::data::Type;
+
+        let expr = expr.map(|e| self.parse_expr(e));
+        let ret_type = &self.metadata.return_type;
+        match (expr, *ret_type != Type::Void) {
+            (None, false) => StmtType::Return(None),
+            (None, true) => {
+                let err = format!("function '{}' does not return a value", self.metadata.id);
+                self.err(
+                    SemanticError::MissingReturnValue(self.metadata.id),
+                    location,
+                );
+                StmtType::Return(None)
+            }
+            (Some(expr), false) => {
+                self.err(
+                    SemanticError::ReturnFromVoid(self.metadata.id),
+                    expr.location,
+                );
+                StmtType::Return(None)
+            }
+            (Some(expr), true) => {
+                let expr = expr.rval();
+                if expr.ctype != *ret_type {
+                    StmtType::Return(Some(
+                        expr.implicit_cast(ret_type, &mut self.analyzer.error_handler),
+                    ))
+                } else {
+                    StmtType::Return(Some(expr))
+                }
+            }
+        }
     }
     /*
     /// statement
@@ -111,16 +148,6 @@ impl FunctionAnalyzer<'_> {
     pub fn statement(&mut self) -> SyntaxResult<Stmt> {
         let _guard = self.recursion_check();
         match self.peek_token() {
-            Some(Token::LeftBrace) => {
-                self.enter_scope();
-                let stmts = self.compound_statement();
-                let location = match &stmts {
-                    Ok(stmt) => stmt.location,
-                    Err(err) => err.location,
-                };
-                self.leave_scope(location);
-                stmts
-            }
             Some(Token::Keyword(k)) => match k {
                 // labeled_statement (excluding labels)
                 Keyword::Case => {
@@ -355,25 +382,6 @@ impl FunctionAnalyzer<'_> {
         let body = self.statement()?;
         Ok(Stmt {
             data: StmtType::While(condition, Box::new(body)),
-            location: start.location,
-        })
-    }
-    /// do_while_statement: DO statement WHILE '(' expr ')' ';'
-    fn do_while_statement(&mut self) -> StmtResult {
-        let start = self
-            .expect(Token::Keyword(Keyword::Do))
-            .unwrap_or_else(|_| {
-                panic!("do_while_statement should only be called with `do` as next token")
-            });
-        let body = self.statement()?;
-        self.expect(Token::Keyword(Keyword::While))?;
-        self.expect(Token::LeftParen)?;
-        let condition = self.expr()?.truthy().recover(&mut self.error_handler);
-        self.expect(Token::RightParen)?;
-        self.expect(Token::Semicolon)?;
-        let stmt = StmtType::Do(Box::new(body), condition);
-        Ok(Stmt {
-            data: stmt,
             location: start.location,
         })
     }

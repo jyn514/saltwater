@@ -294,6 +294,10 @@ pub enum SemanticError {
     #[error("redeclaration of '{0}' with different type or qualifiers (originally {}, now {})", .1.get(), .2.get())]
     IncompatibleRedeclaration(InternedStr, hir::MetadataRef, hir::MetadataRef),
 
+    // stmt errors
+    #[error("switch expressions must have an integer type (got {0})")]
+    NonIntegralSwitch(Type),
+
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]
     __Nonexhaustive,

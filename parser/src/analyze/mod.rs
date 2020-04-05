@@ -1,6 +1,7 @@
 #![allow(unused_variables)]
 
 mod expr;
+mod stmt;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::iter::Peekable;
@@ -67,7 +68,7 @@ impl Iterator for Analyzer {
             };
             // Note that we need to store `next` so that we have the location in case it was empty.
             let location = next.location;
-            let decls = self.parse_declaration(next);
+            let decls = self.parse_external_declaration(next);
             if decls.is_empty() {
                 self.warn(Warning::EmptyDeclaration, location);
             } else {
@@ -98,7 +99,7 @@ impl Analyzer {
     fn warn(&mut self, w: Warning, l: Location) {
         self.error_handler.warn(w, l);
     }
-    fn parse_declaration(
+    fn parse_external_declaration(
         &mut self, next: Locatable<ast::ExternalDeclaration>,
     ) -> Vec<Locatable<Declaration>> {
         use ast::ExternalDeclaration;
@@ -115,49 +116,51 @@ impl Analyzer {
                 vec![Locatable::new(decl, next.location)]
             }
             ExternalDeclaration::Declaration(declaration) => {
-                let original = self.parse_specifiers(declaration.specifiers, next.location);
-                // `int i;` desugars to `extern int i;` at global scope,
-                // but to `auto int i;` at function scope
-                let sc = original.storage_class.unwrap_or_else(|| {
-                    if self.scope.is_global() {
-                        StorageClass::Extern
-                    } else {
-                        StorageClass::Auto
-                    }
-                });
-                if sc == StorageClass::Auto && self.scope.is_global() {
-                    self.err(SemanticError::AutoAtGlobalScope, next.location);
-                }
-                let mut decls = Vec::new();
-                for d in declaration.declarators {
-                    let ctype = self.parse_declarator(
-                        original.ctype.clone(),
-                        d.data.declarator.decl,
-                        d.location,
-                    );
-                    let id = d.data.declarator.id;
-                    let id = id.expect("declarations should never be abstract");
-                    let init = if let Some(init) = d.data.init {
-                        Some(self.parse_initializer(init, &ctype, d.location))
-                    } else {
-                        None
-                    };
-                    let meta = Metadata {
-                        ctype,
-                        id,
-                        qualifiers: original.qualifiers,
-                        storage_class: sc,
-                    }
-                    .insert();
-                    self.scope.insert(id, meta);
-                    decls.push(Locatable::new(
-                        Declaration { symbol: meta, init },
-                        d.location,
-                    ));
-                }
-                decls
+                self.parse_declaration(declaration, next.location)
             }
         }
+    }
+    fn parse_declaration(
+        &mut self, declaration: ast::Declaration, location: Location,
+    ) -> Vec<Locatable<Declaration>> {
+        let original = self.parse_specifiers(declaration.specifiers, location);
+        // `int i;` desugars to `extern int i;` at global scope,
+        // but to `auto int i;` at function scope
+        let sc = original.storage_class.unwrap_or_else(|| {
+            if self.scope.is_global() {
+                StorageClass::Extern
+            } else {
+                StorageClass::Auto
+            }
+        });
+        if sc == StorageClass::Auto && self.scope.is_global() {
+            self.err(SemanticError::AutoAtGlobalScope, location);
+        }
+        let mut decls = Vec::new();
+        for d in declaration.declarators {
+            let ctype =
+                self.parse_declarator(original.ctype.clone(), d.data.declarator.decl, d.location);
+            let id = d.data.declarator.id;
+            let id = id.expect("declarations should never be abstract");
+            let init = if let Some(init) = d.data.init {
+                Some(self.parse_initializer(init, &ctype, d.location))
+            } else {
+                None
+            };
+            let meta = Metadata {
+                ctype,
+                id,
+                qualifiers: original.qualifiers,
+                storage_class: sc,
+            }
+            .insert();
+            self.scope.insert(id, meta);
+            decls.push(Locatable::new(
+                Declaration { symbol: meta, init },
+                d.location,
+            ));
+        }
+        decls
     }
     // TODO: I don't think this is a very good abstraction
     fn parse_typename(&mut self, ctype: ast::TypeName, location: Location) -> Type {
@@ -813,9 +816,6 @@ impl FunctionAnalyzer<'_> {
         }
         self.analyzer.scope.exit();
         self.analyzer.tag_scope.exit();
-    }
-    fn parse_stmt(&mut self, stmt: ast::Stmt) -> Stmt {
-        unimplemented!("statements")
     }
 }
 

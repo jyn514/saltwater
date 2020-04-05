@@ -120,6 +120,14 @@ impl Analyzer {
                 let inner = self.parse_expr(*inner);
                 self.align(inner.ctype, expr.location)
             }
+            SizeofType(type_name) => {
+                let ctype = self.parse_typename(type_name, expr.location);
+                self.sizeof(ctype, expr.location)
+            }
+            SizeofExpr(inner) => {
+                let inner = self.parse_expr(*inner);
+                self.sizeof(inner.ctype, expr.location)
+            }
             _ => unimplemented!("expression: {}", expr),
         }
     }
@@ -534,6 +542,14 @@ impl Analyzer {
     // _Alignof(int)
     fn align(&mut self, ctype: Type, location: Location) -> Expr {
         let align = ctype.alignof().unwrap_or_else(|err| {
+            self.err(err.into(), location);
+            1
+        });
+        literal(Literal::UnsignedInt(align), location)
+    }
+    // sizeof(int)
+    fn sizeof(&mut self, ctype: Type, location: Location) -> Expr {
+        let align = ctype.sizeof().unwrap_or_else(|err| {
             self.err(err.into(), location);
             1
         });

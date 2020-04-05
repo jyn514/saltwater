@@ -224,6 +224,9 @@ pub enum SemanticError {
     #[error("cannot take address of {0}")]
     InvalidAddressOf(&'static str),
 
+    #[error("cannot increment or decrement value of type '{0}'")]
+    InvalidIncrement(Type),
+
     // const fold errors
     #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
     ConstOverflow { is_positive: bool },

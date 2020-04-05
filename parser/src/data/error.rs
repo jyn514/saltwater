@@ -230,6 +230,9 @@ pub enum SemanticError {
     #[error("cannot use unary plus on expression of non-arithmetic type '{0}'")]
     NotArithmetic(Type),
 
+    #[error("incompatible types in ternary expression: '{0}' cannot be converted to '{1}'")]
+    IncompatibleTypes(Type, Type),
+
     // const fold errors
     #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
     ConstOverflow { is_positive: bool },

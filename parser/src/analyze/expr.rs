@@ -148,7 +148,9 @@ impl Analyzer {
                     location: expr.location,
                 }
             }
-            Ternary(_, _, _) => unimplemented!(),
+            Ternary(condition, then, otherwise) => {
+                self.ternary(*condition, *then, *otherwise, expr.location)
+            }
         }
     }
     // only meant for use with `parse_expr`
@@ -643,6 +645,31 @@ impl Analyzer {
             ctype: Type::Bool,
             location: a.location,
             expr: ExprType::Binary(op, Box::new(a), Box::new(b)),
+        }
+    }
+    // condition ? then : otherwise
+    fn ternary(
+        &mut self, condition: ast::Expr, then: ast::Expr, otherwise: ast::Expr, location: Location,
+    ) -> Expr {
+        let condition = self.parse_expr(condition).truthy(&mut self.error_handler);
+        let mut then = self.parse_expr(then).rval();
+        let mut otherwise = self.parse_expr(otherwise).rval();
+
+        if then.ctype.is_arithmetic() && otherwise.ctype.is_arithmetic() {
+            let (tmp1, tmp2) = Expr::binary_promote(then, otherwise, &mut self.error_handler);
+            then = tmp1;
+            otherwise = tmp2;
+        } else if !pointer_promote(&mut then, &mut otherwise) {
+            self.err(
+                SemanticError::IncompatibleTypes(then.ctype.clone(), otherwise.ctype.clone()),
+                location,
+            );
+        }
+        Expr {
+            ctype: then.ctype.clone(),
+            lval: false,
+            location,
+            expr: ExprType::Ternary(Box::new(condition), Box::new(then), Box::new(otherwise)),
         }
     }
 

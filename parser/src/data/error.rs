@@ -295,6 +295,7 @@ pub enum SemanticError {
     IncompatibleRedeclaration(InternedStr, hir::MetadataRef, hir::MetadataRef),
 
     // stmt errors
+    // new with the new parser
     #[error("switch expressions must have an integer type (got {0})")]
     NonIntegralSwitch(Type),
 

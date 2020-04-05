@@ -77,6 +77,30 @@ impl Analyzer {
                     }
                 }
             }
+            AddressOf(inner) => {
+                let inner = self.parse_expr(*inner);
+                match inner.expr {
+                    // parse &*p as p
+                    ExprType::Deref(double_inner) => *double_inner,
+                    ExprType::Id(ref sym) if sym.get().storage_class == StorageClass::Register => {
+                        self.err(
+                            SemanticError::InvalidAddressOf("variable declared with `register`"),
+                            expr.location,
+                        );
+                        inner
+                    }
+                    _ if inner.lval => Expr {
+                        lval: false,
+                        location: expr.location,
+                        ctype: Type::Pointer(Box::new(inner.ctype.clone()), Qualifiers::default()),
+                        expr: inner.expr,
+                    },
+                    _ => {
+                        self.err(SemanticError::InvalidAddressOf("value"), expr.location);
+                        inner
+                    }
+                }
+            }
             _ => unimplemented!("expression: {}", expr),
         }
     }

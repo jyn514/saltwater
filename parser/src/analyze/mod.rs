@@ -2,7 +2,7 @@
 
 mod expr;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::iter::Peekable;
 
 use counter::Counter;
@@ -39,6 +39,8 @@ pub struct Analyzer {
     /// the compound types that have been declared (struct/union/enum)
     /// scope 2. from above
     tag_scope: TagScope,
+    /// Stores all variables that have been initialized so far
+    initialized: HashSet<MetadataRef>,
     /// Internal API which makes it easier to return errors lazily
     error_handler: ErrorHandler,
 }
@@ -84,6 +86,7 @@ impl Analyzer {
             scope: Scope::new(),
             tag_scope: Scope::new(),
             pending: VecDeque::new(),
+            initialized: HashSet::new(),
         }
     }
     // I type these a lot
@@ -564,6 +567,64 @@ impl Analyzer {
         }
         Initializer::InitializerList(elems)
     }
+    fn declare(&mut self, meta: MetadataRef, location: Location) {
+        let decl = meta.get();
+        if decl.id == "main".into() {
+            if let Type::Function(ftype) = &decl.ctype {
+                if !ftype.is_main_func_signature() {
+                    self.err(SemanticError::IllegalMainSignature, location);
+                }
+            }
+        }
+        let decl_init = self.initialized.contains(&meta);
+        // e.g. extern int i = 1;
+        // this is a silly thing to do, but valid: https://stackoverflow.com/a/57900212/7669110
+        if decl.storage_class == StorageClass::Extern && !decl.ctype.is_function() && decl_init {
+            self.warn(Warning::ExtraneousExtern, location);
+            //decl.storage_class = StorageClass::Auto;
+        }
+        if let Some(existing) = self.scope.get_immediate(&decl.id) {
+            if existing.get() == decl {
+                if decl_init && self.initialized.contains(existing) {
+                    self.err(SemanticError::Redefinition(decl.id), location);
+                }
+            } else {
+                let err = SemanticError::IncompatibleRedeclaration(decl.id, *existing, meta);
+                self.err(err, location);
+            }
+        }
+        self.scope.insert(decl.id, meta);
+    }
+}
+
+impl types::FunctionType {
+    // check if this is a valid signature for 'main'
+    fn is_main_func_signature(&self) -> bool {
+        // main must return 'int' and must not be variadic
+        if *self.return_type != Type::Int(true) || self.varargs {
+            return false;
+        }
+        // allow 'main()''
+        if self.params.is_empty() {
+            return true;
+        }
+        let types: Vec<_> = self.params.iter().map(|param| &param.ctype).collect();
+        // allow 'main(void)'
+        if types == vec![&Type::Void] {
+            return true;
+        }
+        // TODO: allow 'int main(int argc, char *argv[], char *environ[])'
+        if types.len() != 2 || *types[0] != Type::Int(true) {
+            return false;
+        }
+        match types[1] {
+            Type::Pointer(t, _) | Type::Array(t, _) => match &**t {
+                Type::Pointer(inner, _) => inner.is_char(),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
 }
 
 impl Type {
@@ -653,22 +714,108 @@ impl<'a> FunctionAnalyzer<'a> {
     fn analyze(
         func: ast::FunctionDefinition, analyzer: &mut Analyzer, location: Location,
     ) -> (MetadataRef, Vec<Stmt>) {
-        let return_type = analyzer.parse_type(func.specifiers, func.declarator.into(), location);
-        if return_type.qualifiers != Qualifiers::default() {
+        let parsed_func = analyzer.parse_type(func.specifiers, func.declarator.into(), location);
+        if parsed_func.qualifiers != Qualifiers::default() {
             analyzer.error_handler.warn(
-                Warning::FunctionQualifiersIgnored(return_type.qualifiers),
+                Warning::FunctionQualifiersIgnored(parsed_func.qualifiers),
                 location,
             );
         }
-        let metadata = FunctionData {
+        let sc = match parsed_func.storage_class {
+            None => StorageClass::Extern,
+            Some(sc @ StorageClass::Extern) | Some(sc @ StorageClass::Static) => sc,
+            Some(other) => {
+                analyzer.err(SemanticError::InvalidFuncStorageClass(other), location);
+                StorageClass::Extern
+            }
+        };
+        let metadata = Metadata {
+            // TODO: is it possible to remove this clone?
+            // if we made params store `MetadataRef` instead of `Metadata`
+            // we could use `func_type.params.iter()` instead of `into_iter()`.
+            ctype: parsed_func.ctype.clone(),
+            id: func.id,
+            qualifiers: parsed_func.qualifiers,
+            storage_class: sc,
+        }
+        .insert();
+        let func_type = match parsed_func.ctype {
+            Type::Function(ftype) => ftype,
+            _ => unreachable!(),
+        };
+        let tmp_metadata = FunctionData {
             location,
             id: func.id,
-            return_type: return_type.ctype,
+            return_type: *func_type.return_type,
         };
+        // TODO: add this function into the global scope
         assert!(analyzer.scope.is_global());
         assert!(analyzer.tag_scope.is_global());
-        let analyzer = FunctionAnalyzer { metadata, analyzer };
-        unimplemented!("analyzing functions");
+        let mut func_analyzer = FunctionAnalyzer {
+            metadata: tmp_metadata,
+            analyzer,
+        };
+        func_analyzer.enter_scope();
+        // TODO: handle `Void`
+        for (i, param) in func_type.params.into_iter().enumerate() {
+            if param.id == InternedStr::default() && param.ctype != Type::Void {
+                func_analyzer.err(
+                    SemanticError::MissingParamName(i, param.ctype.clone()),
+                    location,
+                );
+            }
+            func_analyzer
+                .analyzer
+                .scope
+                .insert(param.id, param.insert());
+        }
+        let stmts = func
+            .body
+            .into_iter()
+            .map(|s| func_analyzer.parse_stmt(s))
+            .collect();
+        // TODO: this should be the end of the function, not the start
+        func_analyzer.leave_scope(location);
+        assert!(analyzer.tag_scope.is_global());
+        assert!(analyzer.scope.is_global());
+        (metadata, stmts)
+    }
+}
+
+impl FunctionAnalyzer<'_> {
+    fn err(&mut self, err: SemanticError, location: Location) {
+        self.analyzer.err(err, location);
+    }
+    fn enter_scope(&mut self) {
+        self.analyzer.scope.enter();
+        self.analyzer.tag_scope.enter();
+    }
+    fn leave_scope(&mut self, location: Location) {
+        use crate::data::StorageClass;
+
+        for object in self.analyzer.scope.get_all_immediate().values() {
+            let object = object.get();
+            match &object.ctype {
+                Type::Struct(StructType::Named(name, members))
+                | Type::Union(StructType::Named(name, members)) => {
+                    if members.get().is_empty()
+                        && object.storage_class != StorageClass::Extern
+                        && object.storage_class != StorageClass::Typedef
+                    {
+                        self.analyzer.error_handler.error(
+                            SemanticError::ForwardDeclarationIncomplete(*name, object.id),
+                            location,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.analyzer.scope.exit();
+        self.analyzer.tag_scope.exit();
+    }
+    fn parse_stmt(&mut self, stmt: ast::Stmt) -> Stmt {
+        unimplemented!("statements")
     }
 }
 

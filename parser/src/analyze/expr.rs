@@ -1168,22 +1168,15 @@ mod test {
         let location = get_location(&parsed);
         assert_eq!(parsed.unwrap(), literal(token, location));
     }
-    /*
-    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[&Symbol]) -> CompileResult<Expr> {
-        let mut parser = parser(input);
-        let mut scope = Scope::new();
-        for var in variables {
-            scope.insert(var.id.clone(), (*var).clone());
-        }
-        parser.scope = scope;
-        let exp = parser.expr();
-        if let Some(err) = parser.error_handler.pop_front() {
-            Err(err)
-        } else {
-            exp.map_err(CompileError::from)
-        }
+    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[MetadataRef]) -> CompileResult<Expr> {
+        analyze(input, Parser::expr, |a, expr| {
+            for &meta in variables {
+                let id = meta.get().id;
+                a.scope.insert(id, meta);
+            }
+            a.parse_expr(expr)
+        })
     }
-    */
     fn assert_type(input: &str, ctype: Type) {
         match parse_expr(input) {
             Ok(expr) => assert_eq!(expr.ctype, ctype),
@@ -1195,28 +1188,24 @@ mod test {
         assert_literal(Literal::Int(141));
         let parsed = parse_expr("\"hi there\"");
 
-        /*
         assert_eq!(
             parsed,
-            Ok(Expr::from((
+            Ok(literal(
                 Literal::Str("hi there\0".into()),
                 get_location(&parsed)
-            )))
+            )),
         );
         assert_literal(Literal::Float(1.5));
         let parsed = parse_expr("(1)");
-        assert_eq!(
-            parsed,
-            Ok(Expr::from((Literal::Int(1), get_location(&parsed))))
-        );
-        let x = Symbol {
+        assert_eq!(parsed, Ok(literal(Literal::Int(1), get_location(&parsed))));
+        let x = Metadata {
             ctype: Type::Int(true),
             id: InternedStr::get_or_intern("x"),
             qualifiers: Default::default(),
             storage_class: Default::default(),
-            init: false,
-        };
-        let parsed = parse_expr_with_scope("x", &[&x]);
+        }
+        .insert();
+        let parsed = parse_expr_with_scope("x", &[x]);
         assert_eq!(
             parsed,
             Ok(Expr {
@@ -1226,7 +1215,6 @@ mod test {
                 expr: ExprType::Id(x)
             })
         );
-        */
     }
     #[test]
     fn test_mul() {
@@ -1234,28 +1222,26 @@ mod test {
         assert_type("1*2.0 / 1.3", Type::Double);
         assert_type("3%2", Type::Long(true));
     }
-    /*
     #[test]
     fn test_funcall() {
-        let f = Symbol {
+        let f = Metadata {
             id: InternedStr::get_or_intern("f"),
-            init: false,
             qualifiers: Default::default(),
             storage_class: Default::default(),
             ctype: Type::Function(types::FunctionType {
-                params: vec![Symbol {
+                params: vec![Metadata {
                     ctype: Type::Void,
                     id: Default::default(),
-                    init: false,
                     qualifiers: Default::default(),
                     storage_class: StorageClass::Auto,
                 }],
                 return_type: Box::new(Type::Int(true)),
                 varargs: false,
             }),
-        };
-        assert!(parse_expr_with_scope("f(1,2,3)", &[&f]).is_err());
-        let parsed = parse_expr_with_scope("f()", &[&f]);
+        }
+        .insert();
+        assert!(parse_expr_with_scope("f(1,2,3)", &[f]).is_err());
+        let parsed = parse_expr_with_scope("f()", &[f]);
         assert!(match parsed {
             Ok(Expr {
                 expr: ExprType::FuncCall(_, _),
@@ -1264,7 +1250,6 @@ mod test {
             _ => false,
         },);
     }
-    */
     #[test]
     fn test_type_errors() {
         assert!(parse_expr("1 % 2.0").is_err());

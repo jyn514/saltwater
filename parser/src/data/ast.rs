@@ -240,11 +240,6 @@ pub enum ExprType {
     // Ternary: if ? then : else
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
     Comma(Box<Expr>, Box<Expr>),
-    // &expr in static context
-    // requires cooperation with the linker
-    StaticRef(Box<Expr>),
-    // used to work around various bugs, see places this is constructed for details
-    Noop(Box<Expr>),
 }
 
 /*
@@ -700,9 +695,7 @@ impl Display for Expr {
                 write!(f, "({}){}", expr, if *inc { "++" } else { "--" })
             }
             ExprType::Index(array, index) => write!(f, "({})[{}]", array, index),
-            // hacks
-            ExprType::StaticRef(expr) => write!(f, "&{}", expr),
-            ExprType::Noop(expr) => write!(f, "{}", expr),
+            // intrinsics
             ExprType::AddressOf(expr) => write!(f, "&({})", expr),
             ExprType::SizeofExpr(expr) => write!(f, "sizeof({})", expr),
             ExprType::SizeofType(ty) => write!(f, "sizeof({})", ty),

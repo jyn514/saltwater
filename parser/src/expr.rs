@@ -20,24 +20,26 @@ enum BinaryPrecedence {
     LogOr,
     Ternary,
     Assignment(AssignmentToken),
+    Comma,
 }
 
 impl BinaryPrecedence {
     fn prec(self) -> usize {
         use BinaryPrecedence::*;
         match self {
-            Mul | Div | Mod => 11,
-            Add | Sub => 10,
-            Shl | Shr => 9,
-            Less | Greater | LessEq | GreaterEq => 8,
-            Eq | Ne => 7,
-            BitAnd => 6,
-            BitXor => 5,
-            BitOr => 4,
-            LogAnd => 3,
-            LogOr => 2,
-            Ternary => 1,
-            Assignment(_) => 0,
+            Mul | Div | Mod => 12,
+            Add | Sub => 11,
+            Shl | Shr => 10,
+            Less | Greater | LessEq | GreaterEq => 9,
+            Eq | Ne => 8,
+            BitAnd => 7,
+            BitXor => 6,
+            BitOr => 5,
+            LogAnd => 4,
+            LogOr => 3,
+            Ternary => 2,
+            Assignment(_) => 1,
+            Comma => 0,
         }
     }
     fn left_associative(self) -> bool {
@@ -72,6 +74,7 @@ impl BinaryPrecedence {
             LogOr => Box::new(LogicalOr),
             Self::Assignment(token) => Box::new(move |a, b| Assign(a, b, token)),
             Self::Ternary => panic!("lol no"),
+            Self::Comma => Box::new(ExprType::Comma),
         };
         move |a, b| func(Box::new(a), Box::new(b))
     }
@@ -104,6 +107,7 @@ impl TryFrom<&Token> for BinaryPrecedence {
             LogicalOr => LogOr,
             Token::Assignment(x) => Bin::Assignment(*x),
             Question => Ternary,
+            Token::Comma => Bin::Comma,
             _ => return Err(()),
         })
     }

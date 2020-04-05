@@ -129,7 +129,26 @@ impl Analyzer {
                 self.sizeof(inner.ctype, expr.location)
             }
             BitwiseNot(inner) => self.bitwise_not(*inner),
-            _ => unimplemented!("expression: {}", expr),
+            UnaryPlus(inner) => self.unary_add(*inner, true, expr.location),
+            Negate(inner) => self.unary_add(*inner, false, expr.location),
+            LogicalNot(inner) => self.logical_not(*inner, expr.location),
+            LogicalAnd(left, right) => {
+                self.binary_helper(left, right, BinaryOp::LogicalAnd, Self::logical_bin_op)
+            }
+            LogicalOr(left, right) => {
+                self.binary_helper(left, right, BinaryOp::LogicalOr, Self::logical_bin_op)
+            }
+            Comma(left, right) => {
+                let left = self.parse_expr(*left);
+                let right = self.parse_expr(*right).rval();
+                Expr {
+                    ctype: right.ctype.clone(),
+                    lval: false,
+                    expr: ExprType::Comma(Box::new(left), Box::new(right)),
+                    location: expr.location,
+                }
+            }
+            Ternary(_, _, _) => unimplemented!(),
         }
     }
     // only meant for use with `parse_expr`
@@ -556,6 +575,7 @@ impl Analyzer {
         });
         literal(Literal::UnsignedInt(align), location)
     }
+    // ~expr
     fn bitwise_not(&mut self, expr: ast::Expr) -> Expr {
         let expr = self.parse_expr(expr);
         if !expr.ctype.is_integral() {
@@ -572,6 +592,57 @@ impl Analyzer {
                 location: expr.location,
                 expr: ExprType::BitwiseNot(Box::new(expr)),
             }
+        }
+    }
+    // -x and +x
+    fn unary_add(&mut self, expr: ast::Expr, add: bool, location: Location) -> Expr {
+        let expr = self.parse_expr(expr);
+        if !expr.ctype.is_arithmetic() {
+            self.err(SemanticError::NotArithmetic(expr.ctype.clone()), location);
+            return expr;
+        }
+        let expr = expr.integer_promote(&mut self.error_handler);
+        if add {
+            Expr {
+                lval: false,
+                location,
+                ..expr
+            }
+        } else {
+            Expr {
+                lval: false,
+                ctype: expr.ctype.clone(),
+                location,
+                expr: ExprType::Negate(Box::new(expr)),
+            }
+        }
+    }
+    // !expr
+    fn logical_not(&mut self, expr: ast::Expr, location: Location) -> Expr {
+        let expr = self.parse_expr(expr);
+        let boolean = expr.truthy(&mut self.error_handler);
+        debug_assert!(boolean.ctype == Type::Bool);
+        let zero = Expr::zero(boolean.location).implicit_cast(&Type::Bool, &mut self.error_handler);
+        Expr {
+            lval: false,
+            location: boolean.location,
+            ctype: Type::Bool,
+            expr: ExprType::Binary(
+                BinaryOp::Compare(ComparisonToken::EqualEqual),
+                Box::new(boolean),
+                Box::new(zero),
+            ),
+        }
+    }
+    // a || b or a && b
+    fn logical_bin_op(&mut self, a: Expr, b: Expr, op: BinaryOp) -> Expr {
+        let a = a.implicit_cast(&Type::Bool, &mut self.error_handler);
+        let b = b.implicit_cast(&Type::Bool, &mut self.error_handler);
+        Expr {
+            lval: false,
+            ctype: Type::Bool,
+            location: a.location,
+            expr: ExprType::Binary(op, Box::new(a), Box::new(b)),
         }
     }
 

@@ -128,6 +128,7 @@ impl Analyzer {
                 let inner = self.parse_expr(*inner);
                 self.sizeof(inner.ctype, expr.location)
             }
+            BitwiseNot(inner) => self.bitwise_not(*inner),
             _ => unimplemented!("expression: {}", expr),
         }
     }
@@ -555,6 +556,25 @@ impl Analyzer {
         });
         literal(Literal::UnsignedInt(align), location)
     }
+    fn bitwise_not(&mut self, expr: ast::Expr) -> Expr {
+        let expr = self.parse_expr(expr);
+        if !expr.ctype.is_integral() {
+            self.err(
+                SemanticError::NonIntegralExpr(expr.ctype.clone()),
+                expr.location,
+            );
+            expr
+        } else {
+            let expr = expr.integer_promote(&mut self.error_handler);
+            Expr {
+                lval: false,
+                ctype: expr.ctype.clone(),
+                location: expr.location,
+                expr: ExprType::BitwiseNot(Box::new(expr)),
+            }
+        }
+    }
+
     fn assignment_expr(
         &mut self, lval: Expr, mut rval: Expr, token: lex::AssignmentToken, location: Location,
     ) -> Expr {
@@ -882,6 +902,15 @@ impl Expr {
                 ),
             }
         }
+    }
+
+    // Perform an integer conversion, including all relevant casts.
+    //
+    // See `Type::integer_promote` for conversion rules.
+    fn integer_promote(self, error_handler: &mut ErrorHandler) -> Expr {
+        let expr = self.rval();
+        let ctype = expr.ctype.clone().integer_promote();
+        expr.implicit_cast(&ctype, error_handler)
     }
 
     // Perform a binary conversion, including all relevant casts.

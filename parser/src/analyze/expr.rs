@@ -112,6 +112,14 @@ impl Analyzer {
                 self.increment_op(false, increment, *inner, expr.location)
             }
             Index(left, right) => self.index(*left, *right, expr.location),
+            AlignofType(type_name) => {
+                let ctype = self.parse_typename(type_name, expr.location);
+                self.align(ctype, expr.location)
+            }
+            AlignofExpr(inner) => {
+                let inner = self.parse_expr(*inner);
+                self.align(inner.ctype, expr.location)
+            }
             _ => unimplemented!("expression: {}", expr),
         }
     }
@@ -522,6 +530,14 @@ impl Analyzer {
         addr.ctype = target_type;
         addr.lval = true;
         addr
+    }
+    // _Alignof(int)
+    fn align(&mut self, ctype: Type, location: Location) -> Expr {
+        let align = ctype.alignof().unwrap_or_else(|err| {
+            self.err(err.into(), location);
+            1
+        });
+        literal(Literal::UnsignedInt(align), location)
     }
     fn assignment_expr(
         &mut self, lval: Expr, mut rval: Expr, token: lex::AssignmentToken, location: Location,

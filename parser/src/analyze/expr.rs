@@ -396,7 +396,7 @@ impl Analyzer {
 }
 
 // literal
-fn literal(literal: Literal, location: Location) -> Expr {
+pub(super) fn literal(literal: Literal, location: Location) -> Expr {
     use crate::data::types::ArrayType;
 
     let ctype = match &literal {
@@ -557,7 +557,7 @@ impl Type {
 }
 
 impl Expr {
-    fn zero(location: Location) -> Expr {
+    pub(super) fn zero(location: Location) -> Expr {
         Expr {
             ctype: Type::Int(true),
             expr: ExprType::Literal(Literal::Int(0)),

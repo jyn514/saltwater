@@ -78,21 +78,52 @@ impl FunctionAnalyzer<'_> {
             }
             Expr(expr) => S::Expr(self.parse_expr(expr)),
             Return(value) => self.return_statement(value, stmt.location),
-            //Label()
+            Label(name, inner) => {
+                let inner = self.parse_stmt(*inner);
+                S::Label(name, Box::new(inner))
+            }
+            Case(expr, inner) => self.case_statement(*expr, *inner, stmt.location),
             _ => unimplemented!("most statements"),
             /*
-            Label(InternedStr, Box<Stmt>),
-            Case(u64, Box<Stmt>),
             Default(Box<Stmt>),
-            Expr(Expr),
             Goto(InternedStr),
             Continue,
             Break,
-            Return(Option<Expr>),
             Decl(VecDeque<Locatable<Declaration>>),
             */
         };
         Locatable::new(data, stmt.location)
+    }
+    fn case_statement(
+        &mut self, expr: ast::Expr, inner: ast::Stmt, location: Location,
+    ) -> StmtType {
+        use super::expr::literal;
+        use crate::data::hir::Expr;
+        use crate::data::lex::Literal;
+
+        let expr = match self.parse_expr(expr).const_fold() {
+            Ok(e) => e,
+            Err(err) => {
+                self.analyzer.error_handler.push_back(err);
+                Expr::zero(location)
+            }
+        };
+        let int = match expr.into_literal() {
+            Ok(Literal::Int(i)) => i as u64,
+            Ok(Literal::UnsignedInt(u)) => u,
+            Ok(Literal::Char(c)) => c.into(),
+            Ok(other) => {
+                let ctype = literal(other, location).ctype;
+                self.err(SemanticError::NonIntegralExpr(ctype), location);
+                0
+            }
+            Err(other) => {
+                self.err(SemanticError::NotConstant(other), location);
+                0
+            }
+        };
+        let inner = self.parse_stmt(inner);
+        StmtType::Case(int, Box::new(inner))
     }
     fn return_statement(&mut self, expr: Option<ast::Expr>, location: Location) -> StmtType {
         use crate::data::Type;
@@ -289,152 +320,6 @@ impl FunctionAnalyzer<'_> {
             }
             _ => self.expression_statement(),
         }
-    }
-    // expr ;
-    fn expression_statement(&mut self) -> SyntaxResult<Stmt> {
-        let expr = self.expr()?;
-        let end = self.expect(Token::Semicolon)?;
-        Ok(Stmt {
-            data: StmtType::Expr(expr),
-            location: end.location,
-        })
-    }
-    // return (expr)? ;
-    fn return_statement(&mut self) -> StmtResult {
-        let ret_token = self.expect(Token::Keyword(Keyword::Return)).unwrap();
-        let expr = self.expr_opt(Token::Semicolon)?;
-        let current = self
-            .current_function
-            .as_ref()
-            .expect("should have current_function set when parsing statements");
-        let ret_type = &current.return_type;
-        let stmt = match (expr, *ret_type != Type::Void) {
-            (None, false) => StmtType::Return(None),
-            (None, true) => {
-                let err = format!("function '{}' does not return a value", current.id);
-                self.semantic_err(err, ret_token.location);
-                // TODO: will this break codegen?
-                StmtType::Return(None)
-            }
-            (Some(expr), false) => {
-                let err = format!("void function '{}' should not return a value", current.id);
-                self.semantic_err(err, expr.location);
-                StmtType::Return(None)
-            }
-            (Some(expr), true) => {
-                let expr = expr.rval();
-                if expr.ctype != *ret_type {
-                    StmtType::Return(Some(
-                        Expr::cast(expr, ret_type).recover(&mut self.error_handler),
-                    ))
-                } else {
-                    StmtType::Return(Some(expr))
-                }
-            }
-        };
-        Ok(Stmt {
-            data: stmt,
-            location: ret_token.location,
-        })
-    }
-    /// if_statement:
-    ///     IF '(' expr ')' statement
-    ///   | IF '(' expr ')' statement ELSE statement
-    fn if_statement(&mut self) -> StmtResult {
-        let start = self
-            .expect(Token::Keyword(Keyword::If))
-            .expect("parser shouldn't call if_statement without an if");
-        self.expect(Token::LeftParen)?;
-        let condition = self.expr()?.rval();
-        self.expect(Token::RightParen)?;
-        let body = self.statement()?;
-        let otherwise = if self.match_next(&Token::Keyword(Keyword::Else)).is_some() {
-            // NOTE: `if (1) ; else ;` is legal!
-            Some(Box::new(self.statement()?))
-        } else {
-            None
-        };
-        let stmt = StmtType::If(condition, Box::new(body), otherwise);
-        Ok(Stmt {
-            data: stmt,
-            location: start.location,
-        })
-    }
-    /// switch_statement: SWITCH '(' expr ')' statement
-    fn switch_statement(&mut self) -> StmtResult {
-        let start = self.expect(Token::Keyword(Keyword::Switch))?;
-        self.expect(Token::LeftParen)?;
-        let expr = self.expr()?.rval();
-        self.expect(Token::RightParen)?;
-        let body = self.statement()?;
-        let stmt = StmtType::Switch(expr, Box::new(body));
-        Ok(Stmt {
-            data: stmt,
-            location: start.location,
-        })
-    }
-    /// while_statement: WHILE '(' expr ')' statement
-    fn while_statement(&mut self) -> StmtResult {
-        let start = self.expect(Token::Keyword(Keyword::While))?;
-        self.expect(Token::LeftParen)?;
-        let condition = self.expr()?.truthy().recover(&mut self.error_handler);
-        self.expect(Token::RightParen)?;
-        let body = self.statement()?;
-        Ok(Stmt {
-            data: StmtType::While(condition, Box::new(body)),
-            location: start.location,
-        })
-    }
-    /// for_statement:
-    ///     FOR '(' expr_opt ';' expr_opt ';' expr_opt ') statement
-    ///   | FOR '(' declaration expr_opt ';' expr_opt ') statement
-    fn for_statement(&mut self) -> StmtResult {
-        let start = self.expect(Token::Keyword(Keyword::For))?;
-        let paren = self.expect(Token::LeftParen)?;
-        self.enter_scope();
-        let decl_stmt = match self.peek_token() {
-            Some(Token::Keyword(k)) if k.is_decl_specifier() => StmtType::Decl(self.declaration()?),
-            Some(Token::Id(id)) => {
-                let id = *id;
-                match self.scope.get(&id) {
-                    Some(symbol) if symbol.storage_class == StorageClass::Typedef => {
-                        StmtType::Decl(self.declaration()?)
-                    }
-                    _ => match self.expr_opt(Token::Semicolon)? {
-                        Some(expr) => StmtType::Expr(expr),
-                        None => Default::default(),
-                    },
-                }
-            }
-            Some(_) => match self.expr_opt(Token::Semicolon)? {
-                Some(expr) => StmtType::Expr(expr),
-                None => Default::default(),
-            },
-            None => {
-                return Err(self
-                    .last_location
-                    .with(SyntaxError::EndOfFile("expression or ';'")));
-            }
-        };
-        let decl = Box::new(Stmt {
-            data: decl_stmt,
-            location: paren.location,
-        });
-        let controlling_expr = self
-            .expr_opt(Token::Semicolon)?
-            .map(|expr| Expr::truthy(expr).recover(&mut self.error_handler));
-        let iter_expr = self.expr_opt(Token::RightParen)?;
-        let body = Box::new(self.statement()?);
-        self.leave_scope(self.last_location);
-        Ok(Stmt {
-            data: StmtType::For(
-                decl,
-                controlling_expr.map(Box::new),
-                iter_expr.map(Box::new),
-                body,
-            ),
-            location: start.location,
-        })
     }
     /// goto_statement: GOTO identifier ';'
     fn goto_statement(&mut self) -> StmtResult {

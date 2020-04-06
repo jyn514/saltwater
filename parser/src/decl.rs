@@ -487,7 +487,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 )));
             }
         };
-        self.postfix_type(decl)
+        self.postfix_type(decl, allow_abstract)
     }
     /*
      * not in original reference, see comments to `direct_declarator`
@@ -503,13 +503,21 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      */
     #[inline]
     fn postfix_type(
-        &mut self, mut prefix: Option<Locatable<InternalDeclarator>>,
+        &mut self, mut prefix: Option<Locatable<InternalDeclarator>>, allow_abstract: bool,
     ) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
         while let Some(data) = self.peek_token() {
             let current = match data {
                 // Array; Specified in section 6.7.6.2 of the C11 spec
                 Token::LeftBracket => {
                     self.expect(Token::LeftBracket).unwrap();
+                    if let Some(token) = self.match_next(&Token::Keyword(Keyword::Static)) {
+                        if !allow_abstract {
+                            self.error_handler.push_back(Locatable::new(
+                                SyntaxError::StaticInConcreteArray,
+                                token.location,
+                            ));
+                        }
+                    }
                     let (size, location) =
                         if let Some(token) = self.match_next(&Token::RightBracket) {
                             (None, token.location)
@@ -675,12 +683,6 @@ impl TryFrom<Keyword> for DeclarationSpecifier {
         use DeclarationSpecifier::*;
         use Keyword::*;
 
-        /*
-        if let Ok(t) = TypeSpecifier::try_from(k) {
-            return Ok(DeclarationSpecifier::Type(t));
-        }
-        */
-
         // TODO: get rid of this macro and store a `enum Keyword { Qualifier(Qualifier), etc. }` instead
         macro_rules! change_enum {
             ($val: expr, $source: path, $dest: ident, $($name: ident),* $(,)?) => {
@@ -690,45 +692,15 @@ impl TryFrom<Keyword> for DeclarationSpecifier {
                 }
             }
         }
+
         change_enum!(k, Keyword, DeclarationSpecifier,
             Const, Volatile, Restrict, Atomic, ThreadLocal,
             Unsigned, Signed,
             Bool, Char, Short, Int, Long, Float, Double, Void,
             Complex, Imaginary, VaList,
-            Extern, Static, Auto,
+            Extern, Static, Auto, Register, Typedef,
+            Inline, NoReturn,
         )
-        /*
-        macro_rules! change_enum {
-            ( $($name: ident),* ) => {
-                    $(Keyword::$name => Ok(DeclarationSpecifier::$name),)*
-            }
-        }
-        */
-        /*
-        match k {
-            // type specifier
-            //Unsigned | Signed | Bool | Char | Short | Int | Long | Float | Double | Void
-            // complex type specifier
-            //Struct | Union | Enum | VaList | Complex | Imaginary
-            // storage class
-            Keyword::Extern => DeclarationSpecifier::Extern,
-            Keyword::Static => DeclarationSpecifier::Static,
-            Keyword::Auto => DeclarationSpecifier::Auto,
-            Keyword::Register => DeclarationSpecifier::Register,
-            Keyword::Typedef => DeclarationSpecifier::Typedef,
-            Keyword::Const => DeclarationSpecifier::Const,
-            Keyword::Static => DeclarationSpecifier::Static,
-            //change_enum!(Extern, Static)
-            | Keyword::Auto | Keyword::Register | Keyword::Typedef
-            // qualifier
-            | Keyword::Const | Keyword::Volatile | Keyword::Restrict | Keyword::Atomic | Keyword::ThreadLocal
-            // function qualifier
-            | Inline | NoReturn => true,
-            _ => false,
-            Keyword::Const => DeclarationSpecifier::Const,
-        }
-        */
-        //*/
     }
 }
 
@@ -736,7 +708,7 @@ impl Token {
     pub(super) fn is_decl_specifier(&self) -> bool {
         match self {
             Token::Keyword(k) => k.is_decl_specifier(),
-            //Token::Id(id) => id.is_typedef(),
+            //Token::Id(id) => typedefs.get(id).is_some(),
             _ => false,
         }
     }

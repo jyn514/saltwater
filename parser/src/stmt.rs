@@ -158,7 +158,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         location: id.location,
                     });
                 }
-                let is_typedef = self.typedefs.contains(&id.data);
+                let is_typedef = self.typedefs.get(&id.data).is_some();
                 self.unput(Some(Locatable {
                     data: Token::Id(id.data),
                     location: id.location,
@@ -294,7 +294,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(Token::Keyword(k)) if k.is_decl_specifier() => self.declaration()?,
             Some(Token::Id(id)) => {
                 let id = *id;
-                if self.typedefs.contains(&id) {
+                if self.typedefs.get(&id).is_some() {
                     self.declaration()?
                 } else {
                     expr_opt(self)?

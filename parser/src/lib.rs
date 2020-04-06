@@ -19,7 +19,7 @@ use std::mem;
 use std::rc::Rc;
 
 pub use crate::analyze::Analyzer;
-use crate::data::{ast::ExternalDeclaration, lex::Keyword};
+use crate::data::{ast::ExternalDeclaration, hir::Scope, lex::Keyword};
 pub use crate::data::{lex as lexer, *};
 pub use crate::lex::Lexer;
 
@@ -40,7 +40,8 @@ struct RecursionGuard(Rc<()>);
 
 #[derive(Debug)]
 pub struct Parser<I: Iterator<Item = Lexeme<L>>, L: LocationTrait = Location> {
-    typedefs: HashSet<InternedStr>,
+    /// hack so that we know that `typedef int i; i j;` is legal
+    typedefs: Scope<InternedStr, ()>,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
     tokens: I,
@@ -105,10 +106,10 @@ impl<I: Iterator<Item = Lexeme>> Iterator for Parser<I> {
     /// ;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self
-            .pending
+            .error_handler
             .pop_front()
-            .map(Result::Ok)
-            .or_else(|| self.error_handler.pop_front().map(Result::Err))
+            .map(Result::Err)
+            .or_else(|| self.pending.pop_front().map(Result::Ok))
             .or_else(|| {
                 // Parse more of our file
 

@@ -365,7 +365,7 @@ fn pretty_print<T: std::fmt::Display>(
 
 #[inline]
 fn get_warnings() -> usize {
-    ERRORS.load(Ordering::SeqCst)
+    WARNINGS.load(Ordering::SeqCst)
 }
 
 #[inline]

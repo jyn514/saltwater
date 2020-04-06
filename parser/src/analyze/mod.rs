@@ -140,6 +140,14 @@ impl Analyzer {
         for d in declaration.declarators {
             let ctype =
                 self.parse_declarator(original.ctype.clone(), d.data.declarator.decl, d.location);
+
+            if !ctype.is_function() && original.qualifiers.func != FunctionQualifiers::default() {
+                self.err(
+                    SemanticError::FuncQualifiersNotAllowed(original.qualifiers.func),
+                    d.location,
+                );
+            }
+
             let id = d.data.declarator.id;
             let id = id.expect("declarations should never be abstract");
             let init = if let Some(init) = d.data.init {
@@ -147,6 +155,9 @@ impl Analyzer {
             } else {
                 None
             };
+            if sc == StorageClass::Typedef {
+                self.declarations.typedefs.insert(id, ());
+            }
             let meta = Metadata {
                 ctype,
                 id,
@@ -154,7 +165,13 @@ impl Analyzer {
                 storage_class: sc,
             }
             .insert();
-            self.scope.insert(id, meta);
+            if let Some(existing_def) = self.scope.insert(id, meta) {
+                // special case redefining the same type
+                if existing_def.get() != meta.get() {
+                    let err = SemanticError::IncompatibleRedeclaration(id, existing_def, meta);
+                    self.err(err, d.location);
+                }
+            }
             decls.push(Locatable::new(
                 Declaration { symbol: meta, init },
                 d.location,
@@ -183,6 +200,14 @@ impl Analyzer {
     ) -> ParsedType {
         let mut specs = self.parse_specifiers(specifiers, location);
         specs.ctype = self.parse_declarator(specs.ctype, declarator, location);
+
+        if !specs.ctype.is_function() && specs.qualifiers.func != FunctionQualifiers::default() {
+            self.err(
+                SemanticError::FuncQualifiersNotAllowed(specs.qualifiers.func),
+                location,
+            );
+        }
+
         specs
     }
     fn parse_specifiers(
@@ -244,6 +269,7 @@ impl Analyzer {
             (Register, StorageClass::Register),
             (Static, StorageClass::Static),
             (Extern, StorageClass::Extern),
+            (UnitSpecifier::Typedef, StorageClass::Typedef),
         ] {
             if counter.get(spec).is_some() {
                 if let Some(existing) = storage_class {
@@ -283,16 +309,9 @@ impl Analyzer {
         for compound in compounds {
             match compound {
                 Unit(_) => unreachable!("already caught"),
-                Typedef => {
-                    if let Some(existing) = storage_class {
-                        self.err(
-                            SemanticError::ConflictingStorageClass(existing, StorageClass::Typedef),
-                            location,
-                        );
-                    }
-                    storage_class = Some(StorageClass::Typedef);
+                DeclarationSpecifier::Typedef(_) | Enum { .. } | Struct(_) | Union(_) => {
+                    unimplemented!("user-defined types")
                 }
-                Enum { .. } | Struct(_) | Union(_) => unimplemented!("compound types"),
             }
         }
         // Check to see if we had a conflicting `signed` specifier
@@ -395,8 +414,13 @@ impl Analyzer {
                 let mut params = Vec::new();
                 for param in func.params {
                     // TODO: this location should be that of the param, not of the function
-                    let param_type =
+                    let mut param_type =
                         self.parse_type(param.specifiers, param.declarator.decl, location);
+
+                    if let Type::Array(to, _) = param_type.ctype {
+                        param_type.ctype = Type::Pointer(to, Qualifiers::default());
+                    }
+
                     if let Some(sc) = param_type.storage_class {
                         self.err(SemanticError::ParameterStorageClass(sc), location);
                     }
@@ -908,11 +932,7 @@ pub(crate) mod test {
     }
 
     fn maybe_decl(s: &str) -> Option<CompileResult<Declaration>> {
-        let mut parser = parser(s);
-        if let Some(err) = parser.error_handler.pop_front() {
-            return Some(Err(err));
-        }
-        Analyzer::new(parser).next().map(|o| o.map(|l| l.data))
+        Analyzer::new(parser(s)).next().map(|o| o.map(|l| l.data))
     }
 
     pub(crate) fn decl(s: &str) -> CompileResult<Declaration> {
@@ -943,6 +963,20 @@ pub(crate) mod test {
     fn match_type(lexed: CompileResult<Declaration>, given_type: Type) -> bool {
         lexed.map_or(false, |data| data.symbol.get().ctype == given_type)
     }
+
+    /*
+    fn match_all<F>(parsed: Vec<CompileResult<Declaration>>, f: F) -> bool
+    where
+        F: Fn(Declaration) -> bool,
+    {
+        for p in parsed {
+            if !f(p.unwrap()) {
+                return false;
+            }
+        }
+        return true;
+    }
+    */
 
     #[test]
     fn no_name_should_be_syntax_error() {
@@ -1169,104 +1203,134 @@ pub(crate) mod test {
             ));
             */
     }
-    /*
-        #[test]
-        fn test_functions_array_parameter_static() {
-            assert!(match_type(
-                decl("void f(int a[static 5]);"),
-                Function(FunctionType {
-                    return_type: Box::new(Void),
-                    params: vec![Symbol {
-                        id: InternedStr::get_or_intern("a"),
-                        ctype: Pointer(Box::new(Int(true))),
-                        qualifiers: Default::default(),
-                        storage_class: Default::default(),
-                        init: true,
-                    }],
-                    varargs: false
-                })
-            ));
+    #[test]
+    fn test_functions_array_parameter_static() {
+        assert!(match_type(
+            decl("void f(int a[static 5]);"),
+            Function(FunctionType {
+                return_type: Box::new(Void),
+                params: vec![Metadata {
+                    id: InternedStr::get_or_intern("a"),
+                    ctype: Pointer(Box::new(Int(true)), Qualifiers::default()),
+                    qualifiers: Default::default(),
+                    storage_class: Default::default(),
+                }],
+                varargs: false
+            })
+        ));
 
-            assert!(decl("int b[static 10];").unwrap().is_err());
-        }
-        #[test]
-        fn test_inline_keyword() {
-            // Correct usage
-            assert!(match_type(
-                decl("inline void f(void);"),
-                Function(FunctionType {
-                    return_type: Box::new(Void),
-                    params: vec![],
-                    varargs: false,
-                })
-            ));
+        assert!(decl("int b[static 10];").is_err());
+    }
+    #[test]
+    fn test_inline_keyword() {
+        // Correct usage
+        assert!(match_type(
+            decl("inline void f(void);"),
+            Function(FunctionType {
+                return_type: Box::new(Void),
+                params: vec![Metadata {
+                    id: InternedStr::default(),
+                    ctype: Type::Void,
+                    qualifiers: Qualifiers::default(),
+                    storage_class: StorageClass::default(),
+                }],
+                varargs: false,
+            })
+        ));
 
-            // `inline` is not allowed in the following cases
-            assert!(decl("inline int a;").unwrap().is_err()); // Normal declarations
-            assert!(decl("void f(inline int a);").unwrap().is_err()); // Parameter lists
-            assert!(decl("struct F { inline int a; } f;").unwrap().is_err()); // Struct members
-            assert!(
-                decl("int main() { char a = (inline char)(4); }") // Type names
-                .unwrap()
-                .is_err()
+        // `inline` is not allowed in the following cases
+        assert!(decl("inline int a;").is_err()); // Normal declarations
+        assert!(decl("void f(inline int a);").is_err()); // Parameter lists
+                                                         //assert!(decl("struct F { inline int a; } f;").is_err()); // Struct members
+        assert!(
+            // Type names
+            decl("int main() { char a = (inline char)(4); }").is_err()
         );
-        assert!(decl("typedef a inline int;").unwrap().is_err());
+        assert!(decl("typedef a inline int;").is_err());
     }
     #[test]
     fn test_complex() {
-        // cdecl: declare bar as const pointer to array 10 of pointer to function (int) returning const pointer to char
+        // cdecl: declare bar as const pointer to array 10 of pointer to function (int) returning volatile pointer to char
         assert!(match_type(
-            decl("char * const (*(* const bar)[])(int );"),
-            Pointer(Box::new(Array(
-                Box::new(Pointer(Box::new(Function(FunctionType {
-                    return_type: Box::new(Pointer(Box::new(Char(true)))),
-                    params: vec![Symbol {
-                        ctype: Int(true),
-                        storage_class: Default::default(),
-                        id: Default::default(),
-                        qualifiers: Qualifiers::NONE,
-                        init: true,
-                    }],
-                    varargs: false,
-                })),)),
-                ArrayType::Unbounded,
-            )),)
+            decl("char * volatile (*(* const bar)[])(int );"),
+            Pointer(
+                Box::new(Array(
+                    Box::new(Pointer(
+                        Box::new(Function(FunctionType {
+                            return_type: Box::new(Pointer(
+                                Box::new(Char(true)),
+                                Qualifiers {
+                                    volatile: true,
+                                    ..Qualifiers::default()
+                                }
+                            )),
+                            params: vec![Metadata {
+                                ctype: Int(true),
+                                storage_class: Default::default(),
+                                id: Default::default(),
+                                qualifiers: Qualifiers::NONE,
+                            }],
+                            varargs: false,
+                        })),
+                        Qualifiers::default()
+                    )),
+                    ArrayType::Unbounded,
+                )),
+                Qualifiers {
+                    c_const: true,
+                    ..Qualifiers::default()
+                }
+            )
         ));
         // cdecl: declare foo as pointer to function (void) returning pointer to array 3 of int
         assert!(match_type(
             decl("int (*(*foo)(void))[];"),
-            Pointer(Box::new(Function(FunctionType {
-                return_type: Box::new(Pointer(Box::new(Array(
-                    Box::new(Int(true)),
-                    ArrayType::Unbounded
-                )),)),
-                params: vec![Symbol {
-                    ctype: Void,
-                    storage_class: Default::default(),
-                    id: Default::default(),
-                    qualifiers: Default::default(),
-                    init: true,
-                }],
-                varargs: false,
-            })),)
+            Pointer(
+                Box::new(Function(FunctionType {
+                    return_type: Box::new(Pointer(
+                        Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),
+                        Qualifiers::default()
+                    )),
+                    params: vec![Metadata {
+                        ctype: Void,
+                        storage_class: Default::default(),
+                        id: Default::default(),
+                        qualifiers: Default::default(),
+                    }],
+                    varargs: false,
+                })),
+                Qualifiers::default()
+            )
         ));
         // cdecl: declare bar as volatile pointer to array 64 of const int
         assert!(match_type(
             decl("const int (* volatile bar)[];"),
-            Pointer(Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),)
+            Pointer(
+                Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),
+                Qualifiers {
+                    volatile: true,
+                    ..Qualifiers::default()
+                }
+            )
         ));
         // cdecl: declare x as function returning pointer to array 5 of pointer to function returning char
         assert!(match_type(
             decl("char (*(*x())[])();"),
             Function(FunctionType {
-                return_type: Box::new(Pointer(Box::new(Array(
-                    Box::new(Pointer(Box::new(Function(FunctionType {
-                        return_type: Box::new(Char(true)),
-                        params: vec![],
-                        varargs: false,
-                    })),)),
-                    ArrayType::Unbounded
-                )),)),
+                return_type: Box::new(Pointer(
+                    Box::new(Array(
+                        Box::new(Pointer(
+                            Box::new(Function(FunctionType {
+                                return_type: Box::new(Char(true)),
+                                params: vec![],
+                                varargs: false,
+                            })),
+                            Qualifiers::default()
+                        )),
+                        ArrayType::Unbounded
+                    )),
+                    Qualifiers::default()
+                )),
                 params: vec![],
                 varargs: false,
             })
@@ -1274,56 +1338,17 @@ pub(crate) mod test {
     }
     #[test]
     fn test_multiple() {
-        let parsed = parse_all("int i, j, k;");
-        assert!(parsed.len() == 3);
-        assert!(match_all(parsed.into_iter(), |i| i.symbol.ctype == Type::Int(true)))
-        assert!(match_all(parsed.into_iter(), |i| i.symbol.ctype == Type::Int(true)));
-        let mut parsed = parse_all("char *p, c, **pp, f();");
-        assert!(parsed.len() == 4);
-        assert!(match_type(
-            Some(parsed.remove(0)),
-            Type::Pointer(Box::new(Type::Char(true))),
-        ));
-        assert!(match_type(Some(parsed.remove(0)), Type::Char(true)));
-        assert!(match_type(
-            Some(parsed.remove(0)),
-            Type::Pointer(Box::new(Type::Pointer(Box::new(Type::Char(true)),)),)
-        ));
-        assert!(match_type(
-            Some(parsed.remove(0)),
-            Type::Function(FunctionType {
-                params: vec![],
-                return_type: Box::new(Type::Char(true)),
-                varargs: false,
-            })
-        ));
+        assert_same("int i, j, k;", "int i; int j; int k;");
+        assert_same(
+            "char *p, c, **pp, f();",
+            "char *p; char c; char **p; char f();",
+        );
     }
     #[test]
     fn test_no_specifiers() {
-        let parsed = parse_all("i, j, k;");
-        assert!(parsed.len() == 3);
-        assert!(match_all(parsed.into_iter(), |i| i.symbol.ctype == Type::Int(true)));
-        let mut parsed = parse_all("*p, c, **pp, f();");
-        assert!(parsed.len() == 4);
-        assert!(match_type(
-            Some(parsed.remove(0)),
-            Type::Pointer(Box::new(Type::Int(true)))
-        ));
-        assert!(match_type(Some(parsed.remove(0)), Type::Int(true)));
-        assert!(match_type(
-            Some(parsed.remove(0)),
-            Type::Pointer(Box::new(Type::Pointer(Box::new(Type::Int(true)))))
-        ));
-        assert!(match_type(
-            Some(parsed.remove(0)),
-            Type::Function(FunctionType {
-                params: vec![],
-                return_type: Box::new(Type::Int(true)),
-                varargs: false,
-            })
-        ));
+        assert_same("i, j, k;", "int i, j, k;");
+        assert_same("*p, c, **pp, f();", "int *p, c, **pp, f();");
     }
-    */
     #[test]
     fn test_decl_errors() {
         // no semicolon

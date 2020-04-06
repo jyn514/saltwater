@@ -324,6 +324,9 @@ pub enum SemanticError {
     #[error("redeclaration of '{0}' with different type or qualifiers (originally {}, now {})", .1.get(), .2.get())]
     IncompatibleRedeclaration(InternedStr, hir::MetadataRef, hir::MetadataRef),
 
+    #[error("'{0}' can only appear on functions")]
+    FuncQualifiersNotAllowed(hir::FunctionQualifiers),
+
     // stmt errors
     // new with the new parser
     #[error("switch expressions must have an integer type (got {0})")]
@@ -384,6 +387,9 @@ pub enum SyntaxError {
 
     #[error("function definitions must have a name")]
     MissingFunctionName,
+
+    #[error("`static` for array sizes is only allowed in function declarations")]
+    StaticInConcreteArray,
 
     #[doc(hidden)]
     #[error("internal error: do not construct nonexhaustive variants")]

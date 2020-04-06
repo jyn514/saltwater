@@ -36,7 +36,9 @@ pub enum DeclarationSpecifier {
         name: Option<InternedStr>,
         members: Option<Vec<(InternedStr, Option<Expr>)>>,
     },
-    Typedef,
+    // NOTE: _not_ the same as UnitSpecifier::Typedef
+    // that represents the `typedef` keyword, this represents a name that has been typedef-ed
+    Typedef(InternedStr),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -74,6 +76,7 @@ pub enum UnitSpecifier {
     Register,
     Static,
     Extern,
+    Typedef,
 }
 
 impl From<UnitSpecifier> for DeclarationSpecifier {
@@ -403,7 +406,7 @@ impl Display for DeclarationSpecifier {
             }
             Union(spec) => write!(f, "union {}", spec),
             Struct(spec) => write!(f, "struct {}", spec),
-            Typedef => write!(f, "typedef"),
+            Typedef(name) => write!(f, "{}", name),
         }
     }
 }
@@ -417,6 +420,7 @@ impl Display for UnitSpecifier {
             Extern => write!(f, "extern"),
             Register => write!(f, "register"),
             Auto => write!(f, "auto"),
+            Typedef => write!(f, "typedef"),
 
             Const => write!(f, "const"),
             Volatile => write!(f, "volatile"),

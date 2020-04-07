@@ -42,6 +42,8 @@ default = ["cc", "codegen"]
 cc = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "codegen"]
 codegen = ["cranelift", "cranelift-module", "cranelift-object"]
 jit = ["codegen", "cranelift-simplejit"]
+# for internal use
+_test_headers = []
 
 [[bin]]
 name = "rcc"
@@ -67,7 +69,8 @@ required-features = ["cc"]
 
 [[test]]
 name = "headers"
-required-features = ["cc"]
+# MacOS breaks if you pass -undef to the system preprocessor
+required-features = ["cc", "_test_header"]
 
 [profile.release]
 lto = true

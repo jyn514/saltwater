@@ -10,6 +10,7 @@ jobs:
 
           script:
             - tests/pre-commit.sh
+            # this also tests the header files
             - cargo test --all-features
             - cargo test --no-default-features
           # upload coverage statistics to codecov.io

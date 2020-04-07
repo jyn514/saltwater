@@ -1,7 +1,14 @@
 [package]
 name = "rcc"
 version = "0.8.0"
-authors = ["Joshua Nelson <jyn514@gmail.com>", "Graham Scheaffer <me@gisch.dev>", "Wesley Norris <repnop@outlook.com>", "playX"]
+authors = [
+  "Joshua Nelson <jyn514@gmail.com>",
+  "Graham Scheaffer <me@gisch.dev>",
+  "Wesley Norris <repnop@outlook.com>",
+  "playX",
+  "Kevin Becker <k.becker@byter.dev>",
+  "Hunter Damron <hdamron@email.sc.edu>",
+]
 edition = "2018"
 description = "A C compiler written in Rust, with a focus on good error messages."
 repository = "https://github.com/jyn514/rcc/"

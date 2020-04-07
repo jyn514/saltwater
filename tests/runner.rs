@@ -51,7 +51,7 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
         // tests can only be ignored if they have an issue open on github
         "// ignore" => panic!("ignored tests should have an associated issue"),
         line => {
-            // `code: x` - it should compile, run, and exit with code 1
+            // `code: x` - it should compile, run, and exit with code x
             // NOTE: x should not be negative
             // NOTE: x should be less than 256 since Linux only has 8-bit exit codes
             if line.starts_with("// code: ") {

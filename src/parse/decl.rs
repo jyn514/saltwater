@@ -948,10 +948,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     ctype = Type::Pointer(to);
                 }
 
-                // Fix #142 (C11 Standard 6.7.6.3 paragraph 8)
+                // C11 Standard 6.7.6.3 paragraph 8
                 // "A declaration of a parameter as 'function returning type' shall be
                 //  adjusted to 'pointer to function returning type', as in 6.3.2.1."
-                if let Type::Function(_) = ctype {
+                if ctype.is_function() {
                     ctype = Type::Pointer(Box::new(ctype));
                 }
 

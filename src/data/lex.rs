@@ -4,9 +4,6 @@ use codespan::{FileId, Span};
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-#[cfg(test)]
-use test::arb_interned_str;
-
 use crate::intern::InternedStr;
 
 // holds where a piece of code came from
@@ -169,7 +166,6 @@ pub enum Token {
 
     Keyword(Keyword),
     Literal(Literal),
-    #[cfg_attr(test, proptest(strategy(arb_interned_str)))]
     Id(InternedStr),
 
     // Misc
@@ -386,8 +382,6 @@ impl From<ComparisonToken> for Token {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use proptest::prelude::*;
-
     use crate::*;
 
     /// Create a new preprocessor with `s` as the input
@@ -412,9 +406,5 @@ pub(crate) mod test {
             let first = lexer.next().unwrap().unwrap().data;
             assert_eq!(&first.to_string(), *token);
         }
-    }
-
-    pub(crate) fn arb_interned_str() -> impl Strategy<Value = Token> {
-        ".*".prop_map(|s| Token::Id(InternedStr::from(s)))
     }
 }

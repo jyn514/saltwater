@@ -165,11 +165,14 @@ impl Type {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use proptest::prelude::*;
+
     use crate::data::{
-        types::{StructType, Type},
+        types::{tests::arb_type, StructType, Type},
         Qualifiers, StorageClass, Symbol,
     };
+
+    use super::*;
 
     fn type_for_size(size: u16) -> Type {
         match size {
@@ -258,5 +261,24 @@ mod tests {
     fn align_of_non_char_struct() {
         let ty = struct_for_types(vec![Pointer(Box::new(Int(true))), Int(true)]);
         assert_eq!(ty.alignof(), Ok(8));
+    }
+
+    proptest! {
+        // https://github.com/jyn514/rcc/pull/325#issuecomment-596297785
+        // prop_assert_eq!(discriminant(&t.sizeof()), discriminant(&t.alignof()));
+
+        #[test]
+        fn proptest_align_power_of_two(t in arb_type()) {
+            if let Ok(align) = t.alignof() {
+                prop_assert!(align.is_power_of_two());
+            }
+        }
+
+        #[test]
+        fn proptest_sizeof_multiple_of_alignof(t in arb_type()) {
+            if let Ok(sizeof) = t.sizeof() {
+                prop_assert_eq!(sizeof % t.alignof().unwrap(), 0);
+            }
+        }
     }
 }

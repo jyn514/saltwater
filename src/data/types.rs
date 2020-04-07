@@ -1,7 +1,14 @@
-use super::Symbol;
+use std::fmt::{self, Formatter};
+
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
+pub use struct_ref::{StructRef, StructType};
+
 use crate::arch::SIZE_T;
 use crate::intern::InternedStr;
-pub use struct_ref::{StructRef, StructType};
+
+use super::Symbol;
 
 mod struct_ref {
     use std::cell::RefCell;
@@ -157,6 +164,7 @@ pub enum Type {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum ArrayType {
     Fixed(SIZE_T),
     Unbounded,
@@ -287,8 +295,6 @@ impl std::fmt::Display for Type {
     }
 }
 
-use std::fmt::{self, Formatter};
-
 pub(super) fn print_type(
     ctype: &Type,
     name: Option<InternedStr>,
@@ -384,5 +390,41 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
 impl FunctionType {
     pub(crate) fn should_return(&self) -> bool {
         *self.return_type != Type::Void
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use proptest::prelude::*;
+
+    use super::{ArrayType, InternedStr, Type};
+
+    pub(crate) fn arb_type() -> impl Strategy<Value = Type> {
+        let leaf = prop_oneof![
+            Just(Type::Void),
+            Just(Type::Bool),
+            any::<bool>().prop_map(Type::Char),
+            any::<bool>().prop_map(Type::Short),
+            any::<bool>().prop_map(Type::Int),
+            any::<bool>().prop_map(Type::Long),
+            Just(Type::Float),
+            Just(Type::Double),
+            // enum
+            any::<(Option<InternedStr>, Vec<(InternedStr, i64)>)>()
+                .prop_map(|(name, members)| Type::Enum(name, members)),
+            Just(Type::VaList),
+            Just(Type::Error),
+        ];
+
+        leaf.prop_recursive(8, 256, 10, |inner| {
+            prop_oneof![
+                inner.clone().prop_map(|t| Type::Pointer(Box::new(t))),
+                (inner, any::<ArrayType>()).prop_map(|(t, at)| Type::Array(Box::new(t), at)),
+                //Type::Function(FunctionType),
+                //Type::Union(StructType),
+                //Type::Struct(StructType),
+                //Type::Bitfield(Vec<BitfieldType>),
+            ]
+        })
     }
 }

@@ -46,7 +46,7 @@ Instead, rcc uses 'Runner tests', which are C files in
 `tests/runner-tests` that are compiled and run by `tests/runner.rs`.
 You can control the expected output using a comment at the top of the file
 (usually something like `// succeeds` or `code: 1`).
-See [`runner.rs:run_one`](https://github.com/jyn514/rcc/blob/4b0ee92a0d68abd54564a24eaf59248f8adf47f4/tests/runner.rs#L31)
+See [`runner.rs:run_one`](https://github.com/jyn514/rcc/blob/697dd04f1e838d63b35a848ead3222750111f041/tests/runner.rs#L31)
 for a full list of options.
 See `tests/runner-tests` for examples of existing tests.
 

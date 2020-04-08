@@ -139,6 +139,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Keyword::Struct => self.struct_specifier(true, location)?,
                 Keyword::Union => self.struct_specifier(false, location)?,
                 Keyword::Enum => self.enum_specifier(location)?,
+                Keyword::UserTypedef(name) => {
+                    Locatable::new(DeclarationSpecifier::Typedef(name), location)
+                }
                 other if !other.is_decl_specifier() => {
                     let err = SyntaxError::ExpectedDeclSpecifier(keyword);
                     return Err(location.with(err));
@@ -722,6 +725,8 @@ impl Keyword {
             Unsigned | Signed | Bool | Char | Short | Int | Long | Float | Double | Void
             // complex type specifier
             | Struct | Union | Enum | VaList | Complex | Imaginary
+            // user-defined type
+            | UserTypedef(_)
             // storage class
             | Extern | Static | Auto | Register | Typedef
             // qualifier

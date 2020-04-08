@@ -16,11 +16,11 @@ use lex::Keyword;
 // used by both `ast` and `hir`
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StorageClass {
-    Static = Keyword::Static as isize,
-    Extern = Keyword::Extern as isize,
-    Auto = Keyword::Auto as isize,
-    Register = Keyword::Register as isize,
-    Typedef = Keyword::Typedef as isize,
+    Static,
+    Extern,
+    Auto,
+    Register,
+    Typedef,
 }
 
 // helper functions for `Display` impls

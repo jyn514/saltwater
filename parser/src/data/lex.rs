@@ -97,9 +97,14 @@ pub enum Keyword {
     Signed,
     Unsigned,
     Typedef,
+
+    // user-defined types
     Union,
     Struct,
     Enum,
+    // the `i` in `typedef int i;`
+    UserTypedef(InternedStr),
+
     // weird types
     Bool,
     Complex,

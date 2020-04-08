@@ -307,12 +307,27 @@ impl Analyzer {
             }
         }
         for compound in compounds {
-            match compound {
+            let parsed = match compound {
                 Unit(_) => unreachable!("already caught"),
-                DeclarationSpecifier::Typedef(_) | Enum { .. } | Struct(_) | Union(_) => {
-                    unimplemented!("user-defined types")
+                DeclarationSpecifier::Typedef(name) => {
+                    let meta = self
+                        .scope
+                        .get(&name)
+                        .expect("scope of parser and analyzer should match")
+                        .get();
+                    assert_eq!(meta.storage_class, StorageClass::Typedef);
+                    meta.ctype.clone()
                 }
+                Enum { .. } | Struct(_) | Union(_) => unimplemented!("tagged types"),
+            };
+            // TODO: this should report the name of the typedef, not the type itself
+            if let Some(existing) = &ctype {
+                self.err(
+                    SemanticError::ConflictingType(existing.clone(), parsed.clone()),
+                    location,
+                );
             }
+            ctype = Some(parsed);
         }
         // Check to see if we had a conflicting `signed` specifier
         // Note we use `counter` instead of the `signed` bool

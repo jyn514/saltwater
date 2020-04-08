@@ -187,8 +187,17 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
         loop {
             match self.tokens.next() {
-                Some(Ok(token)) => {
+                Some(Ok(mut token)) => {
                     self.last_location = token.location;
+                    // This is _such_ a hack
+                    // I'd much rather use `Token::is_decl_specifier()` at the various places it's necessary,
+                    // but that runs into limits of the lifetime system since `peek_token()` takes `&mut self`:
+                    // https://doc.rust-lang.org/nomicon/lifetime-mismatch.html#limits-of-lifetimes
+                    if let Token::Id(id) = token.data {
+                        if self.typedefs.get(&id).is_some() {
+                            token.data = Token::Keyword(Keyword::UserTypedef(id));
+                        }
+                    }
                     break Some(token);
                 }
                 Some(Err(err)) => {

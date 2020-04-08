@@ -1150,73 +1150,45 @@ pub(crate) mod test {
                 Qualifiers::default()
             )
         ));
-        assert_no_change("extern int (*i)(int, char, float);");
-        /*
         // cdecl: declare i as pointer to function (int, char, float) returning int
+        assert_no_change("extern int (*i)(int, char, float);");
+        // cdecl: declare i as pointer to function (pointer to function returning int) returning int
         assert!(match_type(
-            decl("int (*i)(int, char, float);"),
-            Pointer(Box::new(Function(FunctionType {
-                return_type: Box::new(Int(true)),
-                params: vec![
-                    Symbol {
-                        id: Default::default(),
-                        ctype: Int(true),
-                        qualifiers: Default::default(),
-                        init: true,
-                        storage_class: Default::default()
-                    },
-                    Symbol {
-                        id: Default::default(),
-                        ctype: Char(true),
-                        qualifiers: Default::default(),
-                        init: true,
-                        storage_class: Default::default()
-                    },
-                    Symbol {
-                        id: Default::default(),
-                        ctype: Float,
-                        qualifiers: Default::default(),
-                        init: true,
-                        storage_class: Default::default()
-                    }
-                ],
-                varargs: false,
-            })),)
-        ));
-            // cdecl: declare i as pointer to function (pointer to function returning int) returning int
-            assert!(match_type(
-                decl("int (*i)(int (*f)());"),
-                Pointer(Box::new(Function(FunctionType {
+            decl("int (*i)(int (*f)());"),
+            Pointer(
+                Box::new(Function(FunctionType {
                     return_type: Box::new(Int(true)),
-                    params: vec![Symbol {
+                    params: vec![Metadata {
                         id: InternedStr::get_or_intern("f"),
-                        ctype: Pointer(Box::new(Function(FunctionType {
-                            return_type: Box::new(Int(true)),
-                            params: vec![],
-                            varargs: false
-                        })),),
+                        ctype: Pointer(
+                            Box::new(Function(FunctionType {
+                                return_type: Box::new(Int(true)),
+                                params: vec![],
+                                varargs: false
+                            })),
+                            Qualifiers::default()
+                        ),
                         qualifiers: Default::default(),
                         storage_class: Default::default(),
-                        init: true,
                     }],
                     varargs: false,
-                }),),)
-            ));
-            assert!(match_type(
-                decl("int f(int, ...);"),
-                Function(FunctionType {
-                    return_type: Box::new(Int(true)),
-                    params: vec![Symbol {
-                        id: Default::default(),
-                        ctype: Int(true),
-                        qualifiers: Default::default(),
-                        init: true,
-                        storage_class: Default::default()
-                    }],
-                    varargs: true,
-                })
-            ));
-            */
+                })),
+                Qualifiers::default()
+            )
+        ));
+        assert!(match_type(
+            decl("int f(int, ...);"),
+            Function(FunctionType {
+                return_type: Box::new(Int(true)),
+                params: vec![Metadata {
+                    id: Default::default(),
+                    ctype: Int(true),
+                    qualifiers: Default::default(),
+                    storage_class: Default::default()
+                }],
+                varargs: true,
+            })
+        ));
     }
     #[test]
     fn test_functions_array_parameter_static() {

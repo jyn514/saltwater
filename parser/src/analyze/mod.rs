@@ -158,24 +158,33 @@ impl Analyzer {
             if sc == StorageClass::Typedef {
                 self.declarations.typedefs.insert(id, ());
             }
-            let meta = Metadata {
+            let symbol = Metadata {
                 ctype,
                 id,
                 qualifiers: original.qualifiers,
                 storage_class: sc,
             }
             .insert();
-            if let Some(existing_def) = self.scope.insert(id, meta) {
+            if let Some(existing_def) = self.scope.insert(id, symbol) {
+                let existing = existing_def.get();
+                let meta = symbol.get();
+                // 6.2.2p4
+                // For an identifier declared with the storage-class specifier extern in a scope in which a prior declaration of that identifier is visible,
+                // if the prior declaration specifies internal or external linkage,
+                // the linkage of the identifier at the later declaration is the same as the linkage specified at the prior declaration.
+                // If no prior declaration is visible, or if the prior declaration specifies no linkage, then the identifier has external linkage.
+                //
+                // i.e. `static int f(); int f();` is the same as `static int f(); static int f();`
                 // special case redefining the same type
-                if existing_def.get() != meta.get() {
-                    let err = SemanticError::IncompatibleRedeclaration(id, existing_def, meta);
+                if existing != meta
+                    && !(existing.storage_class == StorageClass::Static
+                        && meta.storage_class == StorageClass::Extern)
+                {
+                    let err = SemanticError::IncompatibleRedeclaration(id, existing_def, symbol);
                     self.err(err, d.location);
                 }
             }
-            decls.push(Locatable::new(
-                Declaration { symbol: meta, init },
-                d.location,
-            ));
+            decls.push(Locatable::new(Declaration { symbol, init }, d.location));
         }
         decls
     }
@@ -954,6 +963,34 @@ pub(crate) mod test {
         maybe_decl(s).unwrap()
     }
 
+    pub(crate) fn assert_errs_decls(input: &str, errs: usize, warnings: usize, decls: usize) {
+        //let mut parser = parser(input);
+        //let (decl_iter, err_iter) = parser.collect_results();
+        //let warn_iter = parser.warnings().into_iter();
+        let mut a = Analyzer::new(parser(input));
+        let (mut a_errs, mut a_decls) = (0, 0);
+        for res in &mut a {
+            if res.is_err() {
+                a_errs += 1;
+            } else {
+                a_decls += 1;
+            }
+        }
+        let a_warns = a.error_handler.warnings.len();
+
+        assert!(
+            (a_errs, a_warns, a_decls) == (errs, warnings, decls),
+            "({} errs, {} warnings, {} decls) != ({}, {}, {}) when parsing {}",
+            a_errs,
+            a_warns,
+            a_decls,
+            errs,
+            warnings,
+            decls,
+            input
+        );
+    }
+
     pub(crate) fn analyze_expr(s: &str) -> CompileResult<Expr> {
         analyze(s, Parser::expr, Analyzer::parse_expr)
     }
@@ -1402,43 +1439,43 @@ pub(crate) mod test {
         //assert_same("struct { int i; float f; } s = {1, 1.2};", "struct { int i; float f; } s = {(int)1, (float)1.2};");
     }
     /*
+    #[test]
+    fn default_type_specifier_warns() {
+        let default_type_decls = &[
+            "i;",
+            "f();",
+            "a[1];",
+            "(*fp)();",
+            "(i);",
+            "((*f)());",
+            "(a[1]);",
+            "(((((((((i)))))))));",
+        ];
 
-        #[test]
-        fn default_type_specifier_warns() {
-            let default_type_decls = &[
-                "i;",
-                "f();",
-                "a[1];",
-                "(*fp)();",
-                "(i);",
-                "((*f)());",
-                "(a[1]);",
-                "(((((((((i)))))))));",
-            ];
-
-            for decl in default_type_decls {
-                assert_errs_decls(decl, 0, 1, 1);
-            }
+        for decl in default_type_decls {
+            assert_errs_decls(decl, 0, 1, 1);
         }
+    }
+    */
 
-        #[test]
-        fn extern_redeclaration_of_static_fn_does_not_error() {
-            let code = "
-                static int f();
-                extern int f();
-            ";
+    #[test]
+    fn extern_redeclaration_of_static_fn_does_not_error() {
+        assert_same(
+            "static int f(); int f();",
+            "static int f(); extern int f();",
+        );
 
-            assert_errs_decls(code, 0, 0, 2);
+        // However the opposite should still error
+        assert_errs_decls(
+            "extern int f();
+                static int f();",
+            1,
+            0,
+            2,
+        );
+    }
 
-            // However the opposite should still error
-            let code = "
-                extern int f();
-                static int f();
-            ";
-
-            assert_errs_decls(code, 1, 0, 2);
-        }
-
+    /*
         #[test]
         fn enum_declaration() {
             assert!(decl("enum;").unwrap().is_err());

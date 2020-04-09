@@ -956,11 +956,17 @@ pub(crate) mod test {
     }
 
     fn maybe_decl(s: &str) -> Option<CompileResult<Declaration>> {
-        Analyzer::new(parser(s)).next().map(|o| o.map(|l| l.data))
+        decls(s).into_iter().next()
     }
 
     pub(crate) fn decl(s: &str) -> CompileResult<Declaration> {
         maybe_decl(s).unwrap()
+    }
+
+    pub(crate) fn decls(s: &str) -> Vec<CompileResult<Declaration>> {
+        Analyzer::new(parser(s))
+            .map(|o| o.map(|l| l.data))
+            .collect()
     }
 
     pub(crate) fn assert_errs_decls(input: &str, errs: usize, warnings: usize, decls: usize) {
@@ -1502,11 +1508,26 @@ pub(crate) mod test {
                 )
             ));
         }
-        #[test]
-        fn typedef_signed() {
-            let mut parsed = parse_all("typedef unsigned uint; uint i;");
-            assert!(match_type(parsed.pop(), Type::Int(false)));
+    */
+    #[test]
+    fn typedef_signed() {
+        let mut ds = decls("typedef unsigned uint; uint i;").into_iter();
+        assert_eq!(
+            ds.next().unwrap().unwrap().to_string(),
+            "typedef unsigned int uint;"
+        );
+        assert_eq!(
+            ds.next().unwrap().unwrap().to_string(),
+            "extern unsigned int i;"
+        );
+        /*
+        match parsed.pop().unwrap().unwrap().data {
+            ast::ExternalDeclaration::Declaration(d) => assert!(d, Type::Int(false))),
+            _ => panic!("not a declaration"),
         }
+        */
+    }
+    /*
         #[test]
         fn bitfields() {
             assert!(decl("struct { int:5; } a;").unwrap().is_err());
@@ -1514,20 +1535,20 @@ pub(crate) mod test {
             assert!(decl("struct { int a:5, b:6; } c;").unwrap().is_ok());
             assert!(decl("struct { extern int a:5; } d;").unwrap().is_err());
         }
-        #[test]
-        fn lol() {
-            let lol = "
-    int *jynelson(int(*fp)(int)) {
-        return 0;
+    */
+    #[test]
+    fn lol() {
+        let lol = "
+int *jynelson(int(*fp)(int)) {
+    return 0;
+}
+int f(int i) {
+    return 0;
+}
+int main() {
+    return *((int*(*)(int(*)(int)))jynelson)(&f);
+}
+";
+        assert!(parse_all(lol).iter().all(Result::is_ok));
     }
-    int f(int i) {
-        return 0;
-    }
-    int main() {
-        return *((int*(*)(int(*)(int)))jynelson)(&f);
-    }
-    ";
-            assert!(parse_all(lol).iter().all(Result::is_ok));
-        }
-        */
 }

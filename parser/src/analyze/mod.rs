@@ -1438,7 +1438,6 @@ pub(crate) mod test {
         );
         //assert_same("struct { int i; float f; } s = {1, 1.2};", "struct { int i; float f; } s = {(int)1, (float)1.2};");
     }
-    /*
     #[test]
     fn default_type_specifier_warns() {
         let default_type_decls = &[
@@ -1456,7 +1455,6 @@ pub(crate) mod test {
             assert_errs_decls(decl, 0, 1, 1);
         }
     }
-    */
 
     #[test]
     fn extern_redeclaration_of_static_fn_does_not_error() {

@@ -165,25 +165,10 @@ impl Analyzer {
                 storage_class: sc,
             }
             .insert();
-            if let Some(existing_def) = self.scope.insert(id, symbol) {
-                let existing = existing_def.get();
-                let meta = symbol.get();
-                // 6.2.2p4
-                // For an identifier declared with the storage-class specifier extern in a scope in which a prior declaration of that identifier is visible,
-                // if the prior declaration specifies internal or external linkage,
-                // the linkage of the identifier at the later declaration is the same as the linkage specified at the prior declaration.
-                // If no prior declaration is visible, or if the prior declaration specifies no linkage, then the identifier has external linkage.
-                //
-                // i.e. `static int f(); int f();` is the same as `static int f(); static int f();`
-                // special case redefining the same type
-                if existing != meta
-                    && !(existing.storage_class == StorageClass::Static
-                        && meta.storage_class == StorageClass::Extern)
-                {
-                    let err = SemanticError::IncompatibleRedeclaration(id, existing_def, symbol);
-                    self.err(err, d.location);
-                }
+            if init.is_some() {
+                self.initialized.insert(symbol);
             }
+            self.declare(symbol, d.location);
             decls.push(Locatable::new(Declaration { symbol, init }, d.location));
         }
         decls
@@ -315,6 +300,8 @@ impl Analyzer {
                 ctype = Some(new_ctype);
             }
         }
+        // TODO: set this properly when I implement enum/struct/union
+        let mut declared_compound_type = false;
         for compound in compounds {
             let parsed = match compound {
                 Unit(_) => unreachable!("already caught"),
@@ -364,8 +351,7 @@ impl Analyzer {
             qualifiers,
             storage_class,
             ctype,
-            // TODO: set this properly when I implement enum/struct/union
-            declared_compound_type: false,
+            declared_compound_type,
         }
     }
     /// Parse the declarator for a variable, given a starting type.
@@ -618,8 +604,8 @@ impl Analyzer {
         }
         Initializer::InitializerList(elems)
     }
-    fn declare(&mut self, meta: MetadataRef, location: Location) {
-        let decl = meta.get();
+    fn declare(&mut self, symbol: MetadataRef, location: Location) {
+        let decl = symbol.get();
         if decl.id == "main".into() {
             if let Type::Function(ftype) = &decl.ctype {
                 if !ftype.is_main_func_signature() {
@@ -627,24 +613,36 @@ impl Analyzer {
                 }
             }
         }
-        let decl_init = self.initialized.contains(&meta);
+        let decl_init = self.initialized.contains(&symbol);
         // e.g. extern int i = 1;
         // this is a silly thing to do, but valid: https://stackoverflow.com/a/57900212/7669110
         if decl.storage_class == StorageClass::Extern && !decl.ctype.is_function() && decl_init {
             self.warn(Warning::ExtraneousExtern, location);
-            //decl.storage_class = StorageClass::Auto;
         }
-        if let Some(existing) = self.scope.get_immediate(&decl.id) {
-            if existing.get() == decl {
-                if decl_init && self.initialized.contains(existing) {
+        //
+        if let Some(existing_ref) = self.scope.insert(decl.id, symbol) {
+            let existing = existing_ref.get();
+            let meta = symbol.get();
+            // 6.2.2p4
+            // For an identifier declared with the storage-class specifier extern in a scope in which a prior declaration of that identifier is visible,
+            // if the prior declaration specifies internal or external linkage,
+            // the linkage of the identifier at the later declaration is the same as the linkage specified at the prior declaration.
+            // If no prior declaration is visible, or if the prior declaration specifies no linkage, then the identifier has external linkage.
+            //
+            // i.e. `static int f(); int f();` is the same as `static int f(); static int f();`
+            // special case redefining the same type
+            if existing == meta
+                || (existing.storage_class == StorageClass::Static
+                    && meta.storage_class == StorageClass::Extern)
+            {
+                if decl_init && self.initialized.contains(&existing_ref) {
                     self.err(SemanticError::Redefinition(decl.id), location);
                 }
             } else {
-                let err = SemanticError::IncompatibleRedeclaration(decl.id, *existing, meta);
+                let err = SemanticError::IncompatibleRedeclaration(decl.id, existing_ref, symbol);
                 self.err(err, location);
             }
         }
-        self.scope.insert(decl.id, meta);
     }
 }
 
@@ -984,17 +982,16 @@ pub(crate) mod test {
         }
         let a_warns = a.error_handler.warnings.len();
 
-        assert!(
-            (a_errs, a_warns, a_decls) == (errs, warnings, decls),
-            "({} errs, {} warnings, {} decls) != ({}, {}, {}) when parsing {}",
-            a_errs,
-            a_warns,
-            a_decls,
-            errs,
-            warnings,
-            decls,
-            input
-        );
+        if (a_errs, a_warns, a_decls) != (errs, warnings, decls) {
+            println!(
+                "({} errs, {} warnings, {} decls) != ({}, {}, {}) when parsing {}",
+                a_errs, a_warns, a_decls, errs, warnings, decls, input
+            );
+            println!("note: warnings:");
+            for warning in a.error_handler.warnings {
+                println!("- {}", warning.data);
+            }
+        };
     }
 
     pub(crate) fn analyze_expr(s: &str) -> CompileResult<Expr> {
@@ -1550,5 +1547,9 @@ int main() {
 }
 ";
         assert!(parse_all(lol).iter().all(Result::is_ok));
+    }
+    #[test]
+    fn redefinition_is_err() {
+        assert_errs_decls("int i = 1, i = 2;", 1, 0, 2);
     }
 }

@@ -127,6 +127,29 @@ pub struct PreProcessor<'a> {
     search_path: Vec<Cow<'a, Path>>,
 }
 
+impl Drop for PreProcessor<'_> {
+    fn drop(&mut self) {
+        for (key, value) in self.definitions.iter() {
+            println!("{}={}", key, value);
+        }
+    }
+}
+
+use std::fmt::{self, Display};
+impl Display for Definition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Definition::Object(tokens) => {
+                for token in tokens {
+                    write!(f, "{}", token)?;
+                }
+                Ok(())
+            }
+            Definition::Function {} => {}
+        }
+    }
+}
+
 #[derive(Clone)]
 enum PendingToken {
     Replacement(Token),

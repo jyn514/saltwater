@@ -507,6 +507,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             _ => unreachable!("match_next"),
         };
         if self.match_next(&Token::LeftBrace).is_none() {
+            println!("saw `struct s` in compound_specifier");
             let (ident, location) = match ident {
                 Some(token) => (token.data, token.location),
                 // struct *s; or struct;
@@ -528,12 +529,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // struct s; { union s; }
                 return Ok(self.forward_declaration(kind, ident, location));
             }
+            println!("not a forward declaration");
             // struct s; struct s;
             return match entry {
                 TagEntry::Struct(struct_ref) => {
                     let s = *struct_ref;
                     if kind != Keyword::Struct {
                         self.semantic_err(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", ident, kind), location);
+                        println!("oops error 2");
                     }
                     Ok(Type::Struct(StructType::Named(ident, s)))
                 }
@@ -805,6 +808,25 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 init: false,
                 id,
             };
+            match symbol.ctype {
+                Type::Struct(StructType::Named(_, inner_members))
+                | Type::Union(StructType::Named(_, inner_members))
+                    if inner_members.get().is_empty() =>
+                {
+                    self.semantic_err(
+                        format!(
+                            "cannot use type '{}' before it has been defined",
+                            symbol.ctype
+                        ),
+                        location,
+                    );
+                    // add this as a member anyway because
+                    // later code depends on structs being non-empty
+                    symbol.ctype = Type::Error;
+                    println!("saw error");
+                }
+                _ => {}
+            }
             if let Some(token) = self.match_next(&Token::Colon) {
                 let bit_size = self.bitfield()?;
                 let type_size = symbol.ctype.sizeof().unwrap_or(0);
@@ -826,25 +848,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     token.location,
                 );
             };
-            match symbol.ctype {
-                Type::Struct(StructType::Named(_, inner_members))
-                | Type::Union(StructType::Named(_, inner_members))
-                    if inner_members.get().is_empty() =>
-                {
-                    self.semantic_err(
-                        format!(
-                            "cannot use type '{}' before it has been defined",
-                            symbol.ctype
-                        ),
-                        location,
-                    );
-                    // add this as a member anyway because
-                    // later code depends on structs being non-empty
-                    symbol.ctype = Type::Error;
-                    members.push(symbol);
-                }
-                _ => members.push(symbol),
-            }
+            members.push(symbol);
             last_location = location;
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon)?;

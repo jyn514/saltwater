@@ -9,7 +9,13 @@ use std::iter::Peekable;
 use counter::Counter;
 
 use crate::arch;
-use crate::data::{self, error::Warning, hir::*, lex::ComparisonToken, *};
+use crate::data::{
+    self,
+    error::Warning,
+    hir::*,
+    lex::{ComparisonToken, Keyword},
+    *,
+};
 use crate::intern::InternedStr;
 use expr::literal;
 
@@ -383,7 +389,17 @@ impl Analyzer {
                         self.error_handler.push_back(Locatable::new(err, location));
                         return Type::Error;
                     }
-                    (_, None) => return self.forward_declaration(),
+                    (_, None) => {
+                        return self.forward_declaration(
+                            if is_struct {
+                                Keyword::Struct
+                            } else {
+                                Keyword::Union
+                            },
+                            name,
+                            location,
+                        )
+                    }
                 }
             }
         };
@@ -393,8 +409,6 @@ impl Analyzer {
             .flatten()
             .collect();
         if members.is_empty() {
-            use lex::Keyword;
-
             self.err(SemanticError::from("cannot have empty struct"), location);
             return Type::Error;
         }
@@ -544,7 +558,7 @@ impl Analyzer {
                         self.error_handler.push_back(Locatable::new(err, location));
                         return Type::Error;
                     }
-                    None => return self.forward_declaration(),
+                    None => return self.forward_declaration(Keyword::Enum, name, location),
                 }
             }
         };
@@ -640,8 +654,29 @@ impl Analyzer {
         }
         ctype
     }
-    fn forward_declaration(&mut self) -> Type {
-        unimplemented!()
+    fn forward_declaration(
+        &mut self, kind: Keyword, ident: InternedStr, location: Location,
+    ) -> Type {
+        if kind == Keyword::Enum {
+            // see section 6.7.2.3 of the C11 standard
+            self.err(
+                SemanticError::from(format!(
+                    "cannot have forward reference to enum type '{}'",
+                    ident
+                )),
+                location,
+            );
+            return Type::Enum(Some(ident), vec![]);
+        }
+        let struct_ref = StructRef::new();
+        let (entry_type, tag_type): (fn(_) -> _, fn(_) -> _) = if kind == Keyword::Struct {
+            (TagEntry::Struct, Type::Struct)
+        } else {
+            (TagEntry::Union, Type::Union)
+        };
+        let entry = entry_type(struct_ref);
+        self.tag_scope.insert(ident, entry);
+        tag_type(StructType::Named(ident, struct_ref))
     }
     /// Parse the declarator for a variable, given a starting type.
     /// e.g. for `int *p`, takes `start: Type::Int(true)` and returns `Type::Pointer(Type::Int(true))`

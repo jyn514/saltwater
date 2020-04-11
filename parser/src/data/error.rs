@@ -287,10 +287,10 @@ pub enum SemanticError {
     #[error("cannot have multiple {}cases in a switch statement",
             if *(.is_default) { "default " } else { "" } )]
     DuplicateCase { is_default: bool },
-
+    */
     #[error("void must be the first and only parameter if specified")]
     InvalidVoidParameter,
-    */
+
     #[error("overflow in enumeration constant")]
     EnumOverflow,
 

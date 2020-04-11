@@ -315,7 +315,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         } else {
             None
         };
-        // TODO: this is wrong
+        // TODO: this location is wrong
         let location = self.last_location;
         let decl = decl.ok_or_else(|| location.with(SyntaxError::ExpectedDeclarator))?;
         Ok(decl.map(|d| ast::InitDeclarator {

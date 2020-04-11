@@ -290,10 +290,10 @@ pub enum SemanticError {
 
     #[error("void must be the first and only parameter if specified")]
     InvalidVoidParameter,
-
+    */
     #[error("overflow in enumeration constant")]
     EnumOverflow,
-    */
+
     // Initializer errors
     #[error("initializers cannot be empty")]
     EmptyInitializer,

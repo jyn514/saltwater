@@ -314,7 +314,8 @@ impl Analyzer {
                     assert_eq!(meta.storage_class, StorageClass::Typedef);
                     meta.ctype.clone()
                 }
-                Enum { .. } | Struct(_) | Union(_) => unimplemented!("tagged types"),
+                Struct(s) | Union(s) => self.struct_specifier(s),
+                Enum { name, members } => self.enum_specifier(name, members, location),
             };
             // TODO: this should report the name of the typedef, not the type itself
             if let Some(existing) = &ctype {
@@ -353,6 +354,135 @@ impl Analyzer {
             ctype,
             declared_compound_type,
         }
+    }
+    fn struct_specifier(&mut self, struct_spec: ast::StructSpecifier) -> Type {
+        unimplemented!("structs");
+    }
+    fn enum_members() {}
+    fn enum_specifier(
+        &mut self, enum_name: Option<InternedStr>,
+        ast_members: Option<Vec<(InternedStr, Option<ast::Expr>)>>, location: Location,
+    ) -> Type {
+        use expr::literal;
+        use std::convert::TryFrom;
+
+        let ast_members = match ast_members {
+            Some(members) => members,
+            None => {
+                let name = if let Some(name) = enum_name {
+                    name
+                } else {
+                    let err = SemanticError::from("bare 'enum' as enum specifier is not allowed");
+                    self.error_handler.error(err, location);
+                    return Type::Enum(None, Vec::new());
+                };
+                match self.tag_scope.get(&name) {
+                    Some(TagEntry::Enum(members)) => {
+                        return Type::Enum(Some(name), members.clone());
+                    }
+                    Some(other) => {
+                        let err = SemanticError::from(format!("use of '{}' with type tag 'enum' that does not match previous struct declaration", name));
+                        self.error_handler.push_back(Locatable::new(err, location));
+                        return Type::Error;
+                    }
+                    None => return self.forward_declaration(),
+                }
+            }
+        };
+
+        let mut discriminant = 0;
+        let mut members = vec![];
+        for (name, maybe_value) in ast_members {
+            if let Some(value) = maybe_value {
+                let location = value.location;
+                let constant = self
+                    .parse_expr(value)
+                    .const_fold()
+                    .unwrap_or_else(|err| {
+                        let location = err.location;
+                        self.error_handler.push_back(err);
+                        literal(Literal::Int(std::i64::MIN), location)
+                    })
+                    .into_literal()
+                    .unwrap_or_else(|expr| {
+                        let location = expr.location;
+                        self.err(SemanticError::NotConstant(expr), location);
+                        Literal::Int(-1)
+                    });
+                discriminant = match constant {
+                    Literal::Int(i) => i,
+                    Literal::UnsignedInt(u) => match i64::try_from(u) {
+                        Ok(i) => i,
+                        Err(_) => {
+                            self.err(
+                                "enumeration constants must be representable in `int`".into(),
+                                location,
+                            );
+                            std::i64::MAX
+                        }
+                    },
+                    Literal::Char(c) => c.into(),
+                    _ => {
+                        self.err(
+                            SemanticError::NonIntegralExpr(literal(constant, location).ctype),
+                            location,
+                        );
+                        0
+                    }
+                };
+            }
+            members.push((name, discriminant));
+            // TODO: this is such a hack
+            let tmp_symbol = Metadata {
+                id: name,
+                qualifiers: Qualifiers {
+                    c_const: true,
+                    ..Default::default()
+                },
+                storage_class: StorageClass::Register,
+                ctype: Type::Enum(None, vec![(name, discriminant)]),
+            };
+            self.scope.insert(name, tmp_symbol.insert());
+            discriminant = discriminant.checked_add(1).unwrap_or_else(|| {
+                self.error_handler
+                    .push_back(location.error(SemanticError::EnumOverflow));
+                0
+            });
+        }
+        for (name, _) in &members {
+            self.scope._remove(name);
+        }
+        if let Some(id) = enum_name {
+            if self
+                .tag_scope
+                .insert(id.clone(), TagEntry::Enum(members.clone()))
+                .is_some()
+            {
+                self.err(format!("redefition of enum '{}'", id).into(), location);
+            }
+        }
+        let ctype = Type::Enum(enum_name, members);
+        match &ctype {
+            Type::Enum(_, members) => {
+                for (id, _) in members {
+                    self.scope.insert(
+                        id.clone(),
+                        Metadata {
+                            id: *id,
+                            storage_class: StorageClass::Register,
+                            qualifiers: Qualifiers::NONE,
+                            ctype: ctype.clone(),
+                        }
+                        .insert(),
+                    );
+                }
+            }
+            _ => unreachable!(),
+        }
+        ctype
+    }
+    fn forward_declaration(&mut self) -> Type {
+        unimplemented!()
     }
     /// Parse the declarator for a variable, given a starting type.
     /// e.g. for `int *p`, takes `start: Type::Int(true)` and returns `Type::Pointer(Type::Int(true))`

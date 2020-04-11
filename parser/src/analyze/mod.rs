@@ -322,9 +322,11 @@ impl Analyzer {
                     assert_eq!(meta.storage_class, StorageClass::Typedef);
                     meta.ctype.clone()
                 }
-                Struct(s) => self.struct_specifier(s, true, location),
-                Union(s) => self.struct_specifier(s, false, location),
-                Enum { name, members } => self.enum_specifier(name, members, location),
+                Struct(s) => self.struct_specifier(s, true, &mut declared_compound_type, location),
+                Union(s) => self.struct_specifier(s, false, &mut declared_compound_type, location),
+                Enum { name, members } => {
+                    self.enum_specifier(name, members, &mut declared_compound_type, location)
+                }
             };
             // TODO: this should report the name of the typedef, not the type itself
             if let Some(existing) = &ctype {
@@ -365,7 +367,8 @@ impl Analyzer {
         }
     }
     fn struct_specifier(
-        &mut self, struct_spec: ast::StructSpecifier, is_struct: bool, location: Location,
+        &mut self, struct_spec: ast::StructSpecifier, is_struct: bool, declared_struct: &mut bool,
+        location: Location,
     ) -> Type {
         let ast_members = match struct_spec.members {
             Some(members) => members,
@@ -441,6 +444,7 @@ impl Analyzer {
                 TagEntry::Union
             }(struct_ref);
             self.tag_scope.insert(id, entry);
+            *declared_struct = true;
             constructor(StructType::Named(id, struct_ref))
         } else {
             constructor(StructType::Anonymous(std::rc::Rc::new(members)))
@@ -479,7 +483,7 @@ impl Analyzer {
                 id: decl.id.expect("struct members should have an id"),
             };
             if let Some(bitfield) = bitfield {
-                let bit_size = match Self::const_int(self.parse_expr(bitfield)) {
+                let bit_size = match Self::const_int(self.parse_expr(bitfield), false) {
                     Ok(e) => e,
                     Err(err) => {
                         self.error_handler.push_back(err);
@@ -541,7 +545,8 @@ impl Analyzer {
     }
     fn enum_specifier(
         &mut self, enum_name: Option<InternedStr>,
-        ast_members: Option<Vec<(InternedStr, Option<ast::Expr>)>>, location: Location,
+        ast_members: Option<Vec<(InternedStr, Option<ast::Expr>)>>, saw_enum: &mut bool,
+        location: Location,
     ) -> Type {
         use std::convert::TryFrom;
 
@@ -574,41 +579,13 @@ impl Analyzer {
         for (name, maybe_value) in ast_members {
             if let Some(value) = maybe_value {
                 let location = value.location;
-                let constant = self
-                    .parse_expr(value)
-                    .const_fold()
-                    .unwrap_or_else(|err| {
-                        let location = err.location;
+                discriminant = Self::const_int(self.parse_expr(value), true).map_or_else(
+                    |err| {
                         self.error_handler.push_back(err);
-                        literal(Literal::Int(std::i64::MIN), location)
-                    })
-                    .into_literal()
-                    .unwrap_or_else(|expr| {
-                        let location = expr.location;
-                        self.err(SemanticError::NotConstant(expr), location);
-                        Literal::Int(-1)
-                    });
-                discriminant = match constant {
-                    Literal::Int(i) => i,
-                    Literal::UnsignedInt(u) => match i64::try_from(u) {
-                        Ok(i) => i,
-                        Err(_) => {
-                            self.err(
-                                "enumeration constants must be representable in `int`".into(),
-                                location,
-                            );
-                            std::i64::MAX
-                        }
+                        std::i64::MIN
                     },
-                    Literal::Char(c) => c.into(),
-                    _ => {
-                        self.err(
-                            SemanticError::NonIntegralExpr(literal(constant, location).ctype),
-                            location,
-                        );
-                        0
-                    }
-                };
+                    |unsigned| unsigned as i64,
+                );
             }
             members.push((name, discriminant));
             // TODO: this is such a hack
@@ -722,10 +699,11 @@ impl Analyzer {
             }
             Array { of, size } => {
                 let size = if let Some(expr) = size {
-                    let size = Self::const_int(self.parse_expr(*expr)).unwrap_or_else(|err| {
-                        self.error_handler.push_back(err);
-                        1
-                    });
+                    let size =
+                        Self::const_int(self.parse_expr(*expr), false).unwrap_or_else(|err| {
+                            self.error_handler.push_back(err);
+                            1
+                        });
                     ArrayType::Fixed(size)
                 } else {
                     ArrayType::Unbounded
@@ -793,8 +771,8 @@ impl Analyzer {
             }
         }
     }
-    // used for arrays like `int a[BUF_SIZE - 1];`
-    fn const_int(expr: Expr) -> CompileResult<crate::arch::SIZE_T> {
+    // used for arrays like `int a[BUF_SIZE - 1];` and enums like `enum { A = 1 }`
+    fn const_int(expr: Expr, allow_negative: bool) -> CompileResult<crate::arch::SIZE_T> {
         use Literal::*;
 
         let location = expr.location;
@@ -807,7 +785,7 @@ impl Analyzer {
         match lit {
             UnsignedInt(i) => Ok(i),
             Int(i) => {
-                if i < 0 {
+                if !allow_negative && i < 0 {
                     Err(Locatable::new(
                         SemanticError::NegativeLength.into(),
                         location,

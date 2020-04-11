@@ -138,7 +138,7 @@ pub enum SemanticError {
     AutoAtGlobalScope,
 
     // Declarator errors
-    #[error("arrays must have integer length")]
+    #[error("expected an integer")]
     NonIntegralLength,
 
     #[error("arrays must have a positive length")]

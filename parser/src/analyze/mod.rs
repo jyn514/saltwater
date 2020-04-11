@@ -11,6 +11,7 @@ use counter::Counter;
 use crate::arch;
 use crate::data::{self, error::Warning, hir::*, lex::ComparisonToken, *};
 use crate::intern::InternedStr;
+use expr::literal;
 
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
 type Parser = super::Parser<super::Lexer>;
@@ -314,7 +315,8 @@ impl Analyzer {
                     assert_eq!(meta.storage_class, StorageClass::Typedef);
                     meta.ctype.clone()
                 }
-                Struct(s) | Union(s) => self.struct_specifier(s),
+                Struct(s) => self.struct_specifier(s, true, location),
+                Union(s) => self.struct_specifier(s, false, location),
                 Enum { name, members } => self.enum_specifier(name, members, location),
             };
             // TODO: this should report the name of the typedef, not the type itself
@@ -355,15 +357,172 @@ impl Analyzer {
             declared_compound_type,
         }
     }
-    fn struct_specifier(&mut self, struct_spec: ast::StructSpecifier) -> Type {
-        unimplemented!("structs");
+    fn struct_specifier(
+        &mut self, struct_spec: ast::StructSpecifier, is_struct: bool, location: Location,
+    ) -> Type {
+        let ast_members = match struct_spec.members {
+            Some(members) => members,
+            None => {
+                let name = if let Some(name) = struct_spec.name {
+                    name
+                } else {
+                    let err = SemanticError::from("bare 'enum' as type specifier is not allowed");
+                    self.error_handler.error(err, location);
+                    return Type::Error;
+                };
+                match (is_struct, self.tag_scope.get(&name)) {
+                    (true, Some(TagEntry::Struct(s))) => {
+                        return Type::Struct(StructType::Named(name, *s));
+                    }
+                    (false, Some(TagEntry::Union(s))) => {
+                        return Type::Union(StructType::Named(name, *s));
+                    }
+                    (_, Some(other)) => {
+                        let kind = if is_struct { "struct" } else { "union " };
+                        let err = SemanticError::from(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", name, kind));
+                        self.error_handler.push_back(Locatable::new(err, location));
+                        return Type::Error;
+                    }
+                    (_, None) => return self.forward_declaration(),
+                }
+            }
+        };
+        let members: Vec<_> = ast_members
+            .into_iter()
+            .map(|m| self.struct_declarator_list(m, location).into_iter())
+            .flatten()
+            .collect();
+        if members.is_empty() {
+            use lex::Keyword;
+
+            self.err(SemanticError::from("cannot have empty struct"), location);
+            return Type::Error;
+        }
+        let constructor = if is_struct { Type::Struct } else { Type::Union };
+        if let Some(id) = struct_spec.name {
+            let struct_ref = if let Some(TagEntry::Struct(struct_ref))
+            | Some(TagEntry::Union(struct_ref)) =
+                self.tag_scope.get_immediate(&id)
+            {
+                let struct_ref = *struct_ref;
+                if !struct_ref.get().is_empty() {
+                    self.err(
+                        SemanticError::from(format!(
+                            "redefinition of {} '{}'",
+                            if is_struct { "struct" } else { "union" },
+                            id
+                        )),
+                        location,
+                    );
+                }
+                struct_ref
+            } else {
+                StructRef::new()
+            };
+            struct_ref.update(members);
+            let entry = if is_struct {
+                TagEntry::Struct
+            } else {
+                TagEntry::Union
+            }(struct_ref);
+            self.tag_scope.insert(id, entry);
+            constructor(StructType::Named(id, struct_ref))
+        } else {
+            constructor(StructType::Anonymous(std::rc::Rc::new(members)))
+        }
     }
-    fn enum_members() {}
+    /*
+    struct_declarator_list: struct_declarator (',' struct_declarator)* ;
+    struct_declarator
+        : declarator
+        | ':' constant_expr  // bitfield, not supported
+        | declarator ':' constant_expr
+        ;
+    */
+    fn struct_declarator_list(
+        &mut self, members: ast::StructDeclarationList, location: Location,
+    ) -> Vec<Metadata> {
+        let parsed_type = self.parse_specifiers(members.specifiers, location);
+
+        let mut parsed_members = Vec::new();
+        for ast::StructDeclarator { decl, bitfield } in members.declarators {
+            let decl = match decl {
+                None => continue,
+                Some(d) => d,
+            };
+            let ctype = self.parse_declarator(parsed_type.ctype.clone(), decl.decl, location);
+            // TODO: Declarator needs to be redesigned so there's only one unwrap
+            let mut symbol = Metadata {
+                storage_class: StorageClass::Auto,
+                qualifiers: parsed_type.qualifiers,
+                ctype,
+                id: decl.id.expect("struct members should have an id"),
+            };
+            if let Some(bitfield) = bitfield {
+                let bit_size = match Self::const_int(self.parse_expr(bitfield)) {
+                    Ok(e) => e,
+                    Err(err) => {
+                        self.error_handler.push_back(err);
+                        1
+                    }
+                };
+                let type_size = symbol.ctype.sizeof().unwrap_or(0);
+                if bit_size == 0 {
+                    let err = SemanticError::from(format!(
+                        "C does not have zero-sized types. hint: omit the declarator {}",
+                        symbol.id
+                    ));
+                    self.err(err, location);
+                } else if bit_size > type_size * u64::from(crate::arch::CHAR_BIT) {
+                    let err = SemanticError::from(format!(
+                        "cannot have bitfield {} with size {} larger than containing type {}",
+                        symbol.id, bit_size, symbol.ctype
+                    ));
+                    self.err(err, location);
+                }
+                self.error_handler.warn(
+                    "bitfields are not implemented and will be ignored",
+                    location,
+                );
+            }
+            match symbol.ctype {
+                Type::Struct(StructType::Named(_, inner_members))
+                | Type::Union(StructType::Named(_, inner_members))
+                    if inner_members.get().is_empty() =>
+                {
+                    self.err(
+                        SemanticError::from(format!(
+                            "cannot use type '{}' before it has been defined",
+                            symbol.ctype
+                        )),
+                        location,
+                    );
+                    // add this as a member anyway because
+                    // later code depends on structs being non-empty
+                    symbol.ctype = Type::Error;
+                }
+                _ => {}
+            }
+            parsed_members.push(symbol);
+        }
+        if let Some(class) = parsed_type.storage_class {
+            let member = parsed_members
+                .last()
+                .expect("should have seen at least one declaration");
+            self.err(
+                SemanticError::from(format!(
+                    "cannot specify storage class '{}' for struct member '{}'",
+                    class, member.id,
+                )),
+                location,
+            );
+        }
+        parsed_members
+    }
     fn enum_specifier(
         &mut self, enum_name: Option<InternedStr>,
         ast_members: Option<Vec<(InternedStr, Option<ast::Expr>)>>, location: Location,
     ) -> Type {
-        use expr::literal;
         use std::convert::TryFrom;
 
         let ast_members = match ast_members {
@@ -372,9 +531,9 @@ impl Analyzer {
                 let name = if let Some(name) = enum_name {
                     name
                 } else {
-                    let err = SemanticError::from("bare 'enum' as enum specifier is not allowed");
+                    let err = SemanticError::from("bare 'enum' as type specifier is not allowed");
                     self.error_handler.error(err, location);
-                    return Type::Enum(None, Vec::new());
+                    return Type::Error;
                 };
                 match self.tag_scope.get(&name) {
                     Some(TagEntry::Enum(members)) => {

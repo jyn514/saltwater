@@ -458,6 +458,12 @@ impl Analyzer {
         &mut self, members: ast::StructDeclarationList, location: Location,
     ) -> Vec<Metadata> {
         let parsed_type = self.parse_specifiers(members.specifiers, location);
+        if parsed_type.qualifiers.has_func_qualifiers() {
+            self.err(
+                SemanticError::FuncQualifiersNotAllowed(parsed_type.qualifiers.func),
+                location,
+            );
+        }
 
         let mut parsed_members = Vec::new();
         for ast::StructDeclarator { decl, bitfield } in members.declarators {
@@ -466,7 +472,6 @@ impl Analyzer {
                 Some(d) => d,
             };
             let ctype = self.parse_declarator(parsed_type.ctype.clone(), decl.decl, location);
-            // TODO: Declarator needs to be redesigned so there's only one unwrap
             let mut symbol = Metadata {
                 storage_class: StorageClass::Auto,
                 qualifiers: parsed_type.qualifiers,
@@ -625,6 +630,9 @@ impl Analyzer {
         }
         for (name, _) in &members {
             self.scope._remove(name);
+        }
+        if members.is_empty() {
+            self.err(SemanticError::from("enums cannot be empty"), location)
         }
         if let Some(id) = enum_name {
             if self
@@ -830,7 +838,6 @@ impl Analyzer {
         if decl.storage_class == StorageClass::Extern && !decl.ctype.is_function() && decl_init {
             self.warn(Warning::ExtraneousExtern, location);
         }
-        //
         if let Some(existing_ref) = self.scope.insert(decl.id, symbol) {
             let existing = existing_ref.get();
             let meta = symbol.get();
@@ -1118,7 +1125,7 @@ pub(crate) mod test {
     }
 
     pub(crate) fn decl(s: &str) -> CompileResult<Declaration> {
-        maybe_decl(s).unwrap()
+        maybe_decl(s).unwrap_or_else(|| panic!("expected a declaration or error: '{}'", s))
     }
 
     pub(crate) fn decls(s: &str) -> Vec<CompileResult<Declaration>> {
@@ -1128,9 +1135,6 @@ pub(crate) mod test {
     }
 
     pub(crate) fn assert_errs_decls(input: &str, errs: usize, warnings: usize, decls: usize) {
-        //let mut parser = parser(input);
-        //let (decl_iter, err_iter) = parser.collect_results();
-        //let warn_iter = parser.warnings().into_iter();
         let mut a = Analyzer::new(parser(input));
         let (mut a_errs, mut a_decls) = (0, 0);
         for res in &mut a {
@@ -1178,20 +1182,6 @@ pub(crate) mod test {
     fn match_type(lexed: CompileResult<Declaration>, given_type: Type) -> bool {
         lexed.map_or(false, |data| data.symbol.get().ctype == given_type)
     }
-
-    /*
-    fn match_all<F>(parsed: Vec<CompileResult<Declaration>>, f: F) -> bool
-    where
-        F: Fn(Declaration) -> bool,
-    {
-        for p in parsed {
-            if !f(p.unwrap()) {
-                return false;
-            }
-        }
-        return true;
-    }
-    */
 
     #[test]
     fn no_name_should_be_syntax_error() {
@@ -1428,7 +1418,7 @@ pub(crate) mod test {
         // `inline` is not allowed in the following cases
         assert!(decl("inline int a;").is_err()); // Normal declarations
         assert!(decl("void f(inline int a);").is_err()); // Parameter lists
-                                                         //assert!(decl("struct F { inline int a; } f;").is_err()); // Struct members
+        assert!(decl("struct F { inline int a; } f;").is_err()); // Struct members
         assert!(
             // Type names
             decl("int main() { char a = (inline char)(4); }").is_err()
@@ -1584,36 +1574,35 @@ pub(crate) mod test {
         );
     }
 
-    /*
-        #[test]
-        fn enum_declaration() {
-            assert!(decl("enum;").unwrap().is_err());
-            assert!(decl("enum e;").unwrap().is_err());
-            assert!(decl("enum e {};").unwrap().is_err());
-            assert!(decl("enum e { A }").unwrap().is_err());
-            assert!(decl("enum { A };").is_none());
-            assert!(match_type(
-                decl("enum { A } E;"),
-                Type::Enum(None, vec![("A".into(), 0)])
-            ));
-            assert!(match_type(
-                decl("enum e { A = 1, B } E;"),
-                Type::Enum(Some("e".into()), vec![("A".into(), 1), ("B".into(), 2)])
-            ));
-            assert!(match_type(
-                decl("enum { A = -5, B, C = 2, D } E;"),
-                Type::Enum(
-                    None,
-                    vec![
-                        ("A".into(), -5),
-                        ("B".into(), -4),
-                        ("C".into(), 2),
-                        ("D".into(), 3)
-                    ]
-                )
-            ));
-        }
-    */
+    #[test]
+    fn enum_declaration() {
+        assert!(decl("enum;").is_err());
+        assert!(decl("enum e;").is_err());
+        assert!(decl("enum e {};").is_err());
+        assert!(decl("enum e { A }").is_err());
+        assert!(maybe_decl("enum { A };").is_none());
+        assert!(match_type(
+            decl("enum { A } E;"),
+            Type::Enum(None, vec![("A".into(), 0)])
+        ));
+        assert!(match_type(
+            decl("enum e { A = 1, B } E;"),
+            Type::Enum(Some("e".into()), vec![("A".into(), 1), ("B".into(), 2)])
+        ));
+        assert!(match_type(
+            decl("enum { A = -5, B, C = 2, D } E;"),
+            Type::Enum(
+                None,
+                vec![
+                    ("A".into(), -5),
+                    ("B".into(), -4),
+                    ("C".into(), 2),
+                    ("D".into(), 3)
+                ]
+            )
+        ));
+    }
+
     #[test]
     fn typedef_signed() {
         let mut ds = decls("typedef unsigned uint; uint i;").into_iter();
@@ -1625,22 +1614,14 @@ pub(crate) mod test {
             ds.next().unwrap().unwrap().to_string(),
             "extern unsigned int i;"
         );
-        /*
-        match parsed.pop().unwrap().unwrap().data {
-            ast::ExternalDeclaration::Declaration(d) => assert!(d, Type::Int(false))),
-            _ => panic!("not a declaration"),
-        }
-        */
     }
-    /*
-        #[test]
-        fn bitfields() {
-            assert!(decl("struct { int:5; } a;").unwrap().is_err());
-            assert!(decl("struct { int a:5; } b;").unwrap().is_ok());
-            assert!(decl("struct { int a:5, b:6; } c;").unwrap().is_ok());
-            assert!(decl("struct { extern int a:5; } d;").unwrap().is_err());
-        }
-    */
+    #[test]
+    fn bitfields() {
+        assert!(decl("struct { int:5; } a;").is_err());
+        assert!(decl("struct { int a:5; } b;").is_ok());
+        assert!(decl("struct { int a:5, b:6; } c;").is_ok());
+        assert!(decl("struct { extern int a:5; } d;").is_err());
+    }
     #[test]
     fn lol() {
         let lol = "

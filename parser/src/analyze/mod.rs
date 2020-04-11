@@ -308,7 +308,6 @@ impl Analyzer {
                 ctype = Some(new_ctype);
             }
         }
-        // TODO: set this properly when I implement enum/struct/union
         let mut declared_compound_type = false;
         for compound in compounds {
             let parsed = match compound {
@@ -763,6 +762,22 @@ impl Analyzer {
                     };
                     params.push(meta);
                 }
+                // int f(void);
+                let is_void = match params.as_slice() {
+                    [Metadata {
+                        ctype: Type::Void, ..
+                    }] => true,
+                    _ => false,
+                };
+                // int f(void, int) or int f(int, void) or ...
+                if !is_void
+                    && params.iter().any(|param| match param.ctype {
+                        Type::Void => true,
+                        _ => false,
+                    })
+                {
+                    self.err(SemanticError::InvalidVoidParameter, location);
+                }
                 Type::Function(FunctionType {
                     params,
                     return_type: Box::new(return_type),
@@ -950,7 +965,6 @@ impl<'a> FunctionAnalyzer<'a> {
             analyzer,
         };
         func_analyzer.enter_scope();
-        // TODO: handle `Void`
         for (i, param) in func_type.params.into_iter().enumerate() {
             if param.id == InternedStr::default() && param.ctype != Type::Void {
                 func_analyzer.err(
@@ -1618,5 +1632,18 @@ int main() {
     #[test]
     fn redefinition_is_err() {
         assert_errs_decls("int i = 1, i = 2;", 1, 0, 2);
+    }
+    #[test]
+    fn void() {
+        assert_no_change("extern int f(void);");
+        assert_no_change("extern int f(int);");
+        assert!(decl("int f(int, void);").is_err());
+        assert!(decl("int f(void, int);").is_err());
+        assert!(decl("int f(void, void);").is_err());
+        assert!(decl("int f(int) { return 1; }").is_err());
+        assert_decl_display(
+            "int f(void) { return 1; }",
+            "extern int f(void) {\n    return (int)(1);\n}\n",
+        );
     }
 }

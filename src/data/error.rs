@@ -3,14 +3,6 @@ use thiserror::Error;
 
 use super::hir::Expr;
 use super::*;
-/*
-    ast,
-    lex::{Keyword, Token},
-    prelude::{Location, LocationTrait},
-    hir::{Expr, Locatable},
-};
-use crate::intern::InternedStr;
-*/
 
 use super::Radix;
 
@@ -173,10 +165,6 @@ pub enum SemanticError {
     #[error("overflow in enumeration constant")]
     EnumOverflow,
 
-    /*
-    #[error("`{0}` is only allowed on function declarations")]
-    InvalidFuncQualifiers(super::FunctionQualifiers),
-    */
     // expression errors
     #[error("use of undeclared identifier '{0}'")]
     UndeclaredVar(InternedStr),

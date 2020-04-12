@@ -113,37 +113,6 @@ impl TryFrom<&Token> for BinaryPrecedence {
     }
 }
 
-/*
-enum PrefixPrecedence {
-    Primary = 0,
-    // this is only ops that do _not_ allow a trailing cast
-    Unary = 1,
-    // this includes all ops which allows a following cast
-    Cast = 2,
-}
-
-impl TryFrom<Token> for PrefixPrecedence {
-    type Error = ();
-
-    fn try_from(token: Token) -> Result<Self, Self::Error> {
-        use PrefixPrecedence::*;
-        Ok(match token {
-            Token::Keyword(Keyword::Sizeof)
-            | Token::Keyword(Keyword::Alignof)
-            | Token::PlusPlus | Token::MinusMinus => Unary,
-            Token::Star
-            | Token::BinaryNot
-            | Token::LogicalNot
-            | Token::Plus
-            | Token::Minus
-            | Token::Ampersand => Cast,
-            Token::Literal(_) =>
-            _ => return Err(()),
-        })
-    }
-}
-*/
-
 impl<I: Lexer> Parser<I> {
     #[inline]
     pub fn expr(&mut self) -> SyntaxResult<Expr> {
@@ -202,12 +171,6 @@ impl<I: Lexer> Parser<I> {
         }
         Ok(left)
     }
-    /*
-    #[inline(always)]
-    fn unary_expr(&mut self) -> SyntaxResult<Expr> {
-        self.cast_expr()
-    }
-    */
     // ambiguity between '(' expr ')' and '(' type_name ')'
     // NOTE: there is no distinction between EOF and a non-parenthesized type here
     fn parenthesized_type(&mut self) -> SyntaxResult<Option<Locatable<TypeName>>> {

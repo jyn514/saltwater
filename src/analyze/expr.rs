@@ -166,9 +166,10 @@ impl<T: Lexer> Analyzer<T> {
         let func = |a, b, this: &mut Self| expr_checker(this, a, b, op);
         self.parse_binary(*left, *right, func)
     }
+    // TODO: these functions should have the locations of the parent expression, not the children
     fn parse_binary<F>(&mut self, left: ast::Expr, right: ast::Expr, f: F) -> Expr
     where
-        F: FnOnce(Expr, Expr, &mut Self /*, Location*/) -> Expr,
+        F: FnOnce(Expr, Expr, &mut Self) -> Expr,
     {
         let left = self.parse_expr(left);
         let right = self.parse_expr(right);

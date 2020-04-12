@@ -25,6 +25,9 @@ impl<B: Backend> Compiler<B> {
     ) -> CompileResult<()> {
         use crate::get_str;
         let metadata = symbol.get();
+        if let StorageClass::Typedef = metadata.storage_class {
+            return Ok(());
+        }
         let err_closure = |err| Locatable {
             data: err,
             location,

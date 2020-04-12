@@ -756,7 +756,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         }
                     };
                     let mut expected = functype.params.len();
-                    if expected == 1 && functype.params[0].ctype == Type::Void {
+                    if expected == 1 && functype.params[0].get().ctype == Type::Void {
                         expected = 0;
                     }
                     if !functype.params.is_empty()
@@ -775,7 +775,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     let mut promoted_args = vec![];
                     for (i, arg) in args.into_iter().enumerate() {
                         let maybe_err = match functype.params.get(i) {
-                            Some(expected) => arg.rval().cast(&expected.ctype),
+                            Some(expected) => arg.rval().cast(&expected.get().ctype),
                             None => arg.default_promote(),
                         };
                         let promoted = maybe_err.recover(&mut self.error_handler);
@@ -1819,7 +1819,8 @@ pub(crate) mod tests {
                     init: false,
                     qualifiers: Default::default(),
                     storage_class: StorageClass::Auto,
-                }],
+                }
+                .insert()],
                 return_type: Box::new(Type::Int(true)),
                 varargs: false,
             }),

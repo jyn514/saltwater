@@ -549,13 +549,16 @@ impl<B: Backend> Compiler<B> {
                 if arg.ctype.is_floating() {
                     float_variadic += 1;
                 }
-                ftype.params.push(Metadata {
-                    ctype: arg.ctype.clone(),
-                    id: Default::default(),
-                    init: true,
-                    qualifiers: Qualifiers::NONE,
-                    storage_class: StorageClass::Auto,
-                });
+                ftype.params.push(
+                    Metadata {
+                        ctype: arg.ctype.clone(),
+                        id: Default::default(),
+                        qualifiers: Qualifiers::NONE,
+                        storage_class: StorageClass::Auto,
+                        init: true,
+                    }
+                    .insert(),
+                );
             }
         }
         let mut compiled_args: Vec<IrValue> = args
@@ -588,7 +591,7 @@ impl<B: Backend> Compiler<B> {
                     let abi_params = ftype
                         .params
                         .into_iter()
-                        .map(|param| AbiParam::new(param.ctype.as_ir_type()))
+                        .map(|param| AbiParam::new(param.get().ctype.as_ir_type()))
                         .chain(std::iter::once(float_arg))
                         .collect();
                     builder.func.dfg.signatures[call_sig].params = abi_params;

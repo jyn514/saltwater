@@ -248,7 +248,7 @@ impl<B: Backend> Compiler<B> {
     // there's an easier way to make parameters modifiable.
     fn store_stack_params(
         &mut self,
-        params: Vec<Metadata>,
+        params: &[MetadataRef],
         func_start: Block,
         location: &Location,
         builder: &mut FunctionBuilder,
@@ -257,12 +257,12 @@ impl<B: Backend> Compiler<B> {
         let ir_vals: Vec<_> = params
             .iter()
             .map(|param| {
-                let ir_type = param.ctype.as_ir_type();
+                let ir_type = param.get().ctype.as_ir_type();
                 Ok(builder.append_block_param(func_start, ir_type))
             })
             .collect::<CompileResult<_>>()?;
-        for (param, ir_val) in params.into_iter().zip(ir_vals) {
-            let u64_size = match param.ctype.sizeof() {
+        for (&param, ir_val) in params.iter().zip(ir_vals) {
+            let u64_size = match param.get().ctype.sizeof() {
                 Err(data) => semantic_err!(data.into(), *location),
                 Ok(size) => size,
             };
@@ -288,7 +288,7 @@ impl<B: Backend> Compiler<B> {
             // See https://github.com/CraneStation/cranelift/issues/433
             let addr = builder.ins().stack_addr(Type::ptr_type(), slot, 0);
             builder.ins().store(MemFlags::new(), ir_val, addr, 0);
-            self.declarations.insert(param.insert(), Id::Local(slot));
+            self.declarations.insert(param, Id::Local(slot));
         }
         Ok(())
     }
@@ -319,7 +319,7 @@ impl<B: Backend> Compiler<B> {
         if func_type.has_params() {
             self.store_stack_params(
                 // TODO: get rid of this clone
-                func_type.params.clone(),
+                &func_type.params,
                 func_start,
                 &location,
                 &mut builder,
@@ -375,18 +375,18 @@ impl<B: Backend> Compiler<B> {
 
 impl FunctionType {
     fn has_params(&self) -> bool {
-        !(self.params.len() == 1 && self.params[0].ctype == Type::Void)
+        !(self.params.len() == 1 && self.params[0].get().ctype == Type::Void)
     }
 
     /// Generate the IR function signature for `self`
     pub fn signature(&self, isa: &dyn TargetIsa) -> Signature {
-        let mut params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
+        let mut params = if self.params.len() == 1 && self.params[0].get().ctype == Type::Void {
             // no arguments
             Vec::new()
         } else {
             self.params
                 .iter()
-                .map(|param| AbiParam::new(param.ctype.as_ir_type()))
+                .map(|param| AbiParam::new(param.get().ctype.as_ir_type()))
                 .collect()
         };
         if self.varargs {

@@ -139,42 +139,6 @@ impl<I: Lexer> Iterator for Parser<I> {
 }
 
 impl<I: Lexer> Parser<I> {
-    /* utility functions */
-    /*
-    #[inline]
-    fn enter_scope(&mut self) {
-        self.scope.enter();
-        self.tag_scope.enter();
-    }
-    */
-    /*
-    fn leave_scope(&mut self, location: Location) {
-        use crate::data::StorageClass;
-        for object in self.scope.get_all_immediate().values() {
-            match &object.ctype {
-                Type::Struct(StructType::Named(name, members))
-                | Type::Union(StructType::Named(name, members)) => {
-                    if members.get().is_empty()
-                        && object.storage_class != StorageClass::Extern
-                        && object.storage_class != StorageClass::Typedef
-                    {
-                        self.error_handler
-                            .push_back(CompileError::semantic(Locatable {
-                                data: format!(
-                                    "forward declaration of {} is never completed (used in {})",
-                                    name, object.id
-                                ),
-                                location,
-                            }));
-                    }
-                }
-                _ => {}
-            }
-        }
-        self.scope.exit();
-        self.tag_scope.exit();
-    }
-    */
     // don't use this, use next_token instead
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
         loop {

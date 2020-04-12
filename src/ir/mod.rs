@@ -26,7 +26,6 @@ use cranelift_module::{self, Backend, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
 use lazy_static::lazy_static;
 
-//use crate::arch::TARGET;
 use crate::data::{
     hir::{Declaration, Initializer, MetadataRef, Stmt},
     types::FunctionType,

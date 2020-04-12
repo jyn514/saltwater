@@ -183,7 +183,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     });
                 }
                 let is_typedef = match self.scope.get(&id.data) {
-                    Some(typedef) => typedef.storage_class == StorageClass::Typedef,
+                    Some(typedef) => typedef.get().storage_class == StorageClass::Typedef,
                     _ => false,
                 };
                 self.unput(Some(Locatable {
@@ -338,7 +338,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             Some(Token::Id(id)) => {
                 let id = *id;
                 match self.scope.get(&id) {
-                    Some(symbol) if symbol.storage_class == StorageClass::Typedef => {
+                    Some(symbol) if symbol.get().storage_class == StorageClass::Typedef => {
                         StmtType::Decl(self.declaration()?)
                     }
                     _ => match self.expr_opt(Token::Semicolon)? {

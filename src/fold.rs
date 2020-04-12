@@ -105,10 +105,12 @@ impl Expr {
         let folded = match self.expr {
             ExprType::Literal(_) => self.expr,
             ExprType::Id(ref name) => match &self.ctype {
-                Type::Enum(_, members) => match members.iter().find(|member| member.0 == name.id) {
-                    Some(enum_literal) => ExprType::Literal(Int(enum_literal.1)),
-                    _ => self.expr,
-                },
+                Type::Enum(_, members) => {
+                    match members.iter().find(|member| member.0 == name.get().id) {
+                        Some(enum_literal) => ExprType::Literal(Int(enum_literal.1)),
+                        _ => self.expr,
+                    }
+                }
                 // TODO: if a variable were const, could we const fold Ids?
                 _ => self.expr,
             },

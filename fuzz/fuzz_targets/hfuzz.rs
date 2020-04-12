@@ -1,16 +1,16 @@
-extern crate codespan;
 #[macro_use]
 extern crate honggfuzz;
 extern crate rcc;
 
+use rcc::codespan;
 use codespan::FileId;
 use rcc::{Files, Locatable};
 use rcc::data::lex::{Keyword::*, Token};
-use rcc::PreProcessor;
+use rcc::PreProcessorBuilder;
 use std::default::Default;
 
 fn is_exotic_keyword(s: &str, file: FileId, files: &mut Files) -> bool {
-    let (first, _) = PreProcessor::new(file, s, false, vec![], files).first_token();
+    let (first, _) = PreProcessorBuilder::new(s, file, files).build().first_token();
     let first = match first {
         Some(Locatable {
             data: Token::Keyword(k),
@@ -35,7 +35,8 @@ fn main() {
                 let mut files = Files::new();
                 let file = files.add("<test-suite>", String::from(s).into());
                 if !is_exotic_keyword(s, file, &mut files) {
-                    let _ = rcc::compile(s, &opt, file, &mut files);
+                    let module = rcc::initialize_aot_module("<test-suite>".into());
+                    let _ = rcc::compile(module, s, &opt, file, &mut files);
                 }
             }
         });

@@ -1,0 +1,192 @@
+use super::FunctionAnalyzer;
+use crate::data::{ast, error::SemanticError, hir::*, lex::Locatable, Location};
+use crate::parse::Lexer;
+
+impl<T: Lexer> FunctionAnalyzer<'_, T> {
+    #[inline(always)]
+    fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
+        self.analyzer.parse_expr(expr)
+    }
+    pub(crate) fn parse_stmt(&mut self, stmt: ast::Stmt) -> Stmt {
+        use ast::StmtType::*;
+        use StmtType as S;
+
+        // ugh so much boilerplate
+        let data = match stmt.data {
+            Compound(stmts) => {
+                self.enter_scope();
+                let mut parsed = Vec::new();
+                for inner in stmts {
+                    parsed.push(self.parse_stmt(inner));
+                }
+                self.leave_scope(stmt.location);
+                S::Compound(parsed)
+            }
+            If(condition, then, otherwise) => {
+                let condition = self
+                    .parse_expr(condition)
+                    .truthy(&mut self.analyzer.error_handler);
+                let then = self.parse_stmt(*then);
+                let otherwise = otherwise.map(|s| Box::new(self.parse_stmt(*s)));
+                S::If(condition, Box::new(then), otherwise)
+            }
+            Do(body, condition) => {
+                let body = self.parse_stmt(*body);
+                let condition = self
+                    .parse_expr(condition)
+                    .truthy(&mut self.analyzer.error_handler);
+                S::Do(Box::new(body), condition)
+            }
+            While(condition, body) => {
+                let condition = self
+                    .parse_expr(condition)
+                    .truthy(&mut self.analyzer.error_handler);
+                let body = self.parse_stmt(*body);
+                S::While(condition, Box::new(body))
+            }
+            For {
+                initializer,
+                condition,
+                post_loop,
+                body,
+            } => {
+                // TODO: maybe a sanity check here that the init statement is only an expression or declaration?
+                // Or encode that in the type somehow?
+                let initializer = self.parse_stmt(*initializer);
+                let condition = condition.map(|e| {
+                    Box::new(self.parse_expr(*e).truthy(&mut self.analyzer.error_handler))
+                });
+                let post_loop = post_loop.map(|e| Box::new(self.parse_expr(*e)));
+                let body = self.parse_stmt(*body);
+                S::For(Box::new(initializer), condition, post_loop, Box::new(body))
+            }
+            Switch(value, body) => {
+                let value = self.parse_expr(value).rval();
+                if !value.ctype.is_integral() {
+                    self.err(
+                        SemanticError::NonIntegralSwitch(value.ctype.clone()),
+                        stmt.location,
+                    )
+                }
+                let body = self.parse_stmt(*body);
+                S::Switch(value, Box::new(body))
+            }
+            Expr(expr) => S::Expr(self.parse_expr(expr)),
+            Return(value) => self.return_statement(value, stmt.location),
+            // TODO: all of these should have semantic checking here, not in the backend
+            Label(name, inner) => {
+                let inner = self.parse_stmt(*inner);
+                S::Label(name, Box::new(inner))
+            }
+            Case(expr, inner) => self.case_statement(*expr, *inner, stmt.location),
+            Default(inner) => S::Default(Box::new(self.parse_stmt(*inner))),
+            Goto(label) => S::Goto(label),
+            Continue => S::Continue,
+            Break => S::Break,
+            Decl(decls) => S::Decl(self.analyzer.parse_declaration(decls, stmt.location)),
+        };
+        Locatable::new(data, stmt.location)
+    }
+    fn case_statement(
+        &mut self, expr: ast::Expr, inner: ast::Stmt, location: Location,
+    ) -> StmtType {
+        use super::expr::literal;
+        use crate::data::lex::Literal;
+
+        let expr = match self.parse_expr(expr).const_fold() {
+            Ok(e) => e,
+            Err(err) => {
+                self.analyzer.error_handler.push_back(err);
+                Expr::zero(location)
+            }
+        };
+        let int = match expr.into_literal() {
+            Ok(Literal::Int(i)) => i as u64,
+            Ok(Literal::UnsignedInt(u)) => u,
+            Ok(Literal::Char(c)) => c.into(),
+            Ok(other) => {
+                let ctype = literal(other, location).ctype;
+                self.err(SemanticError::NonIntegralExpr(ctype), location);
+                0
+            }
+            Err(other) => {
+                self.err(SemanticError::NotConstant(other), location);
+                0
+            }
+        };
+        let inner = self.parse_stmt(inner);
+        StmtType::Case(int, Box::new(inner))
+    }
+    fn return_statement(&mut self, expr: Option<ast::Expr>, location: Location) -> StmtType {
+        use crate::data::Type;
+
+        let expr = expr.map(|e| self.parse_expr(e));
+        let ret_type = &self.metadata.return_type;
+        match (expr, *ret_type != Type::Void) {
+            (None, false) => StmtType::Return(None),
+            (None, true) => {
+                let err = format!("function '{}' does not return a value", self.metadata.id);
+                self.err(
+                    SemanticError::MissingReturnValue(self.metadata.id),
+                    location,
+                );
+                StmtType::Return(None)
+            }
+            (Some(expr), false) => {
+                self.err(
+                    SemanticError::ReturnFromVoid(self.metadata.id),
+                    expr.location,
+                );
+                StmtType::Return(None)
+            }
+            (Some(expr), true) => {
+                let expr = expr.rval();
+                if expr.ctype != *ret_type {
+                    StmtType::Return(Some(
+                        expr.implicit_cast(ret_type, &mut self.analyzer.error_handler),
+                    ))
+                } else {
+                    StmtType::Return(Some(expr))
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analyze::test::{analyze, analyze_expr};
+    use crate::analyze::FunctionData;
+    use crate::data::*;
+    use crate::Parser;
+
+    fn parse_stmt(stmt: &str) -> CompileResult<Stmt> {
+        analyze(stmt, Parser::statement, |a, stmt| {
+            let mut func_analyzer = FunctionAnalyzer {
+                analyzer: a,
+                metadata: FunctionData {
+                    id: "<test func>".into(),
+                    location: Location::default(),
+                    return_type: Type::Int(true),
+                },
+            };
+            func_analyzer.parse_stmt(stmt)
+        })
+    }
+    #[test]
+    // NOTE: this seems to be one of the few tests that checks that the location
+    // is correct. If it starts failing, maybe look at the lexer first
+    fn test_expr_stmt() {
+        let parsed = parse_stmt("1;");
+        let expected = Ok(Stmt {
+            data: StmtType::Expr(analyze_expr("1").unwrap()),
+            location: Location {
+                file: Location::default().file,
+                span: (0..2).into(),
+            },
+        });
+        assert_eq!(parsed, expected);
+        assert_eq!(parsed.unwrap().location, expected.unwrap().location);
+    }
+}

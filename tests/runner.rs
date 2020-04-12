@@ -38,19 +38,29 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
     first_line.pop();
     let path = path.into();
     let test_func = match first_line.as_str() {
+        // make sure the test compiles, but don't run it
         "// compile" => utils::assert_compiles,
+        // the test compiles, and don't require a `main` function
         "// no-main" => utils::assert_compiles_no_main,
+        // the test shouldn't compile
         "// fail" | "// compile-fail" | "// compile-error" => utils::assert_compile_error,
+        // it should compile, run, and exit successfully
         "// succeeds" => utils::assert_succeeds,
+        // it should compile successfully then crash at runtime
         "// crash" => utils::assert_crash,
+        // tests can only be ignored if they have an issue open on github
         "// ignore" => panic!("ignored tests should have an associated issue"),
         line => {
+            // `code: x` - it should compile, run, and exit with code x
+            // NOTE: x should not be negative
+            // NOTE: x should be less than 256 since Linux only has 8-bit exit codes
             if line.starts_with("// code: ") {
                 let code = line["// code: ".len()..]
                     .parse()
                     .expect("tests should have an integer after code:");
                 utils::assert_code(&program, path, code);
                 return Ok(());
+            // `errors: x` - it should not compile and rcc should output `x` errors
             } else if line.starts_with("// errors: ") {
                 let errors = line["// errors: ".len()..]
                     .parse()
@@ -64,6 +74,8 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
                     "ignored tests should have an associated issue"
                 );
                 return Ok(());
+            // `output: x` - it should run and output `x`
+            // this has a convoluted syntax for multiline strings, see `output_test`
             } else if line.starts_with("// output: ") {
                 return output_test(&line["// output: ".len()..], &mut reader, &program, path);
             } else {
@@ -81,6 +93,18 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
 /// syntax: '// output: ' expected_output
 /// expected_output: '[^\n]*' | 'BEGIN: ' (comment_line* '\n' | [^\n]+) 'END'
 /// comment_line: '\n// ' [^\n+]
+///
+/// Examples:
+/// No output: `// output: `
+/// Single-line output: `// output: hello, world!`
+/// Single-line with no trailing newline: `// output: BEGIN: hi END`
+/// Multi-line output:
+/// ```c
+/// // output: BEGIN:
+/// // multi-line
+/// // string
+/// // END
+/// ```
 fn output_test<B: BufRead>(
     line: &str, reader: &mut B, program: &str, path: path::PathBuf,
 ) -> Result<(), io::Error> {

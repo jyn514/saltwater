@@ -1,5 +1,8 @@
 use super::hir::Metadata;
 use crate::intern::InternedStr;
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+use std::fmt::{self, Formatter};
 pub use struct_ref::{StructRef, StructType};
 
 mod struct_ref {
@@ -155,6 +158,7 @@ pub enum Type {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum ArrayType {
     Fixed(u64),
     Unbounded,
@@ -277,8 +281,6 @@ impl std::fmt::Display for Type {
     }
 }
 
-use std::fmt::{self, Formatter};
-
 pub(super) fn print_type(
     ctype: &Type, name: Option<InternedStr>, f: &mut Formatter,
 ) -> fmt::Result {
@@ -393,5 +395,41 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
 impl FunctionType {
     pub(crate) fn should_return(&self) -> bool {
         *self.return_type != Type::Void
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use proptest::prelude::*;
+
+    use super::{ArrayType, InternedStr, Type};
+
+    pub(crate) fn arb_type() -> impl Strategy<Value = Type> {
+        let leaf = prop_oneof![
+            Just(Type::Void),
+            Just(Type::Bool),
+            any::<bool>().prop_map(Type::Char),
+            any::<bool>().prop_map(Type::Short),
+            any::<bool>().prop_map(Type::Int),
+            any::<bool>().prop_map(Type::Long),
+            Just(Type::Float),
+            Just(Type::Double),
+            // enum
+            any::<(Option<InternedStr>, Vec<(InternedStr, i64)>)>()
+                .prop_map(|(name, members)| Type::Enum(name, members)),
+            Just(Type::VaList),
+            Just(Type::Error),
+        ];
+
+        leaf.prop_recursive(8, 256, 10, |inner| {
+            prop_oneof![
+                inner.clone().prop_map(|t| Type::Pointer(Box::new(t))),
+                (inner, any::<ArrayType>()).prop_map(|(t, at)| Type::Array(Box::new(t), at)),
+                //Type::Function(FunctionType),
+                //Type::Union(StructType),
+                //Type::Struct(StructType),
+                //Type::Bitfield(Vec<BitfieldType>),
+            ]
+        })
     }
 }

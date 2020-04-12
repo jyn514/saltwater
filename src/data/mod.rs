@@ -11,6 +11,9 @@ pub use lex::{DefaultLocation as Location, Literal, Locatable, LocationTrait, To
 pub use types::Type;
 pub use types::{StructRef, StructType};
 
+use std::convert::TryFrom;
+use std::fmt::{self, Display};
+
 use lex::Keyword;
 
 // used by both `ast` and `hir`
@@ -35,4 +38,75 @@ fn joined_locatable<'a, I: IntoIterator<Item = &'a Locatable<T>>, T: ToString + 
     it: I, delim: &str,
 ) -> String {
     joined(it.into_iter().map(|s| s.data.to_string()), delim)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Radix {
+    Binary,
+    Octal,
+    Decimal,
+    Hexadecimal,
+}
+
+impl Radix {
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Radix::Binary => 2,
+            Radix::Octal => 8,
+            Radix::Decimal => 10,
+            Radix::Hexadecimal => 16,
+        }
+    }
+}
+
+impl Display for Radix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let word = match self {
+            Radix::Binary => "binary",
+            Radix::Octal => "octal",
+            Radix::Decimal => "decimal",
+            Radix::Hexadecimal => "hexadecimal",
+        };
+        write!(f, "{}", word)
+    }
+}
+
+impl TryFrom<u32> for Radix {
+    type Error = ();
+    fn try_from(int: u32) -> Result<Radix, ()> {
+        match int {
+            2 => Ok(Radix::Binary),
+            8 => Ok(Radix::Octal),
+            10 => Ok(Radix::Decimal),
+            16 => Ok(Radix::Hexadecimal),
+            _ => Err(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::data::lex::test::cpp;
+    use crate::Parser;
+
+    #[test]
+    fn type_display() {
+        let types = [
+            "int",
+            "int *",
+            "int[1][2][3]",
+            "char *(*)(float)",
+            "short *(*)[1][2][3]",
+            "_Bool",
+            "struct s",
+        ];
+        for ty in types.iter() {
+            let mut lexer = cpp(ty);
+            let first = lexer.next().unwrap().unwrap();
+            let mut parser = Parser::new(first, &mut lexer, false);
+
+            let parsed_ty = parser.type_name().unwrap().data.0;
+            assert_eq!(&parsed_ty.to_string(), *ty);
+        }
+    }
 }

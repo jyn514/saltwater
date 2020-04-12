@@ -1,7 +1,14 @@
 [package]
 name = "rcc"
-version = "0.6.0"
-authors = ["Joshua Nelson <jyn514@gmail.com>", "Graham Scheaffer <me@gisch.dev>"]
+version = "0.8.0"
+authors = [
+  "Joshua Nelson <jyn514@gmail.com>",
+  "Graham Scheaffer <me@gisch.dev>",
+  "Wesley Norris <repnop@outlook.com>",
+  "playX",
+  "Kevin Becker <k.becker@byter.dev>",
+  "Hunter Damron <hdamron@email.sc.edu>",
+]
 edition = "2018"
 description = "A C compiler written in Rust, with a focus on good error messages."
 repository = "https://github.com/jyn514/rcc/"
@@ -15,18 +22,17 @@ documentation = "https://docs.rs/rcc"
 [dependencies]
 lazy_static = "1"
 ansi_term = { version = "0.12", optional = true }
-cranelift = "0.59"
-cranelift-module = "0.59"
-cranelift-object = "0.59"
-env_logger = { version = "0.7", default-features = false, optional = true }
-hexf-parse = "0.1"
-thiserror = ">=1.0.9"
-log = "0.4"
+cranelift = { version = "0.59", optional = true }
+cranelift-module = { version = "0.59", optional = true }
+cranelift-object = { version = "0.59", optional = true }
+cranelift-simplejit = { version = "0.59", optional = true }
+hexponent = "0.2.2"
+thiserror = ">=1.0.10"
 target-lexicon = "0.10"
 tempfile = { version = "3", optional = true }
 pico-args = { version = "0.3", optional = true }
-string-interner = "0.7"
-codespan = { git = "https://github.com/brendanzab/codespan" }
+string-interner = { version = "0.7", default-features = false }
+codespan = "0.8"
 color-backtrace = { version = "0.3", default-features = false, optional = true }
 counter = "0.4"
 
@@ -36,21 +42,48 @@ default-features = false
 features = ["display"]
 
 [dev-dependencies]
+env_logger = { version = "0.7", default-features = false }
+log = "0.4"
 criterion = "0.3.1"
 walkdir = "2"
+proptest = "0.9"
+proptest-derive = "0.1"
 
 [features]
-default = ["bin"]
-bin = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "env_logger"]
+default = ["cc", "codegen"]
+# The `rcc` binary
+cc = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "codegen"]
+codegen = ["cranelift", "cranelift-module", "cranelift-object"]
+jit = ["codegen", "cranelift-simplejit"]
+# for internal use
+_test_headers = []
 
 [[bin]]
 name = "rcc"
 path = "src/main.rs"
-required-features = ["bin"]
+required-features = ["cc"]
 
 [[bench]]
 name = "examples"
 harness = false
+required-features = ["jit"]
+
+[[test]]
+name = "jit"
+required-features = ["jit"]
+
+[[test]]
+name = "runner"
+required-features = ["cc"]
+
+[[test]]
+name = "varargs"
+required-features = ["cc"]
+
+[[test]]
+name = "headers"
+# MacOS breaks if you pass -undef to the system preprocessor
+required-features = ["cc", "_test_header"]
 
 [profile.release]
 lto = true
@@ -66,3 +99,8 @@ debug-assertions = false
 codegen-units = 1
 incremental = false
 overflow-checks = false
+
+[package.metadata.docs.rs]
+all-features = true
+# opt-out of non-default targets
+targets = []

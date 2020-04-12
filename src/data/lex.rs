@@ -1,9 +1,13 @@
-use crate::intern::InternedStr;
+use std::cmp::Ordering;
 
 //use codespan::{FileId, Span};
 
 use std::borrow::Borrow;
-use std::cmp::Ordering;
+//use codespan::{FileId, Span};
+#[cfg(test)]
+use proptest_derive::Arbitrary;
+
+use crate::intern::InternedStr;
 
 /*
 // holds where a piece of code came from
@@ -71,6 +75,7 @@ impl<T> Locatable<T> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum Keyword {
     // statements
     If,
@@ -137,6 +142,7 @@ pub enum Keyword {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum AssignmentToken {
     Equal,
     AddEqual,
@@ -152,6 +158,7 @@ pub enum AssignmentToken {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum ComparisonToken {
     Less,
     Greater,
@@ -162,6 +169,7 @@ pub enum ComparisonToken {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum Literal {
     // literals
     Int(i64),
@@ -172,6 +180,7 @@ pub enum Literal {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum Token {
     PlusPlus,
     MinusMinus,
@@ -264,36 +273,6 @@ impl Literal {
             Literal::UnsignedInt(u) => u == 0,
             Literal::Char(c) => c == 0,
             _ => false,
-        }
-    }
-}
-
-use cranelift::codegen::ir::condcodes::{FloatCC, IntCC};
-impl ComparisonToken {
-    pub fn to_int_compare(self, signed: bool) -> IntCC {
-        use ComparisonToken::*;
-        match (self, signed) {
-            (Less, true) => IntCC::SignedLessThan,
-            (Less, false) => IntCC::UnsignedLessThan,
-            (LessEqual, true) => IntCC::SignedLessThanOrEqual,
-            (LessEqual, false) => IntCC::UnsignedLessThanOrEqual,
-            (Greater, true) => IntCC::SignedGreaterThan,
-            (Greater, false) => IntCC::UnsignedGreaterThan,
-            (GreaterEqual, true) => IntCC::SignedGreaterThanOrEqual,
-            (GreaterEqual, false) => IntCC::UnsignedGreaterThanOrEqual,
-            (EqualEqual, _) => IntCC::Equal,
-            (NotEqual, _) => IntCC::NotEqual,
-        }
-    }
-    pub fn to_float_compare(self) -> FloatCC {
-        use ComparisonToken::*;
-        match self {
-            Less => FloatCC::LessThan,
-            LessEqual => FloatCC::LessThanOrEqual,
-            Greater => FloatCC::GreaterThan,
-            GreaterEqual => FloatCC::GreaterThanOrEqual,
-            EqualEqual => FloatCC::Equal,
-            NotEqual => FloatCC::NotEqual,
         }
     }
 }

@@ -429,4 +429,39 @@ pub(crate) mod test {
     pub(crate) fn assert_same(left: &str, right: &str) {
         assert_eq!(parse_all(left), parse_all(right))
     }
+
+    prop_compose! {
+        fn arb_vec_result_locatable_token()(tokens in any::<Vec<Token>>()) -> Vec<CompileResult<Locatable<Token>>> {
+            tokens.into_iter().map(|token| Ok(Locatable { data: token, location: Location::default()})).collect()
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_peek_equals_token(
+            first in any::<Token>(),
+            tokens in arb_vec_result_locatable_token()
+            ) {
+            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), false);
+
+            let peek = parser.peek_token().cloned();
+            let next = parser.next_token().map(|l| l.data);
+
+            prop_assert_eq!(peek, next);
+        }
+
+        #[test]
+        fn proptest_peek_next_equals_2_next_token(
+            first in any::<Token>(),
+            tokens in arb_vec_result_locatable_token()
+            ) {
+            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), false);
+
+            let peek = parser.peek_next_token().cloned();
+            parser.next_token();
+            let next = parser.next_token().map(|l| l.data);
+
+            prop_assert_eq!(peek, next);
+        }
+    }
 }

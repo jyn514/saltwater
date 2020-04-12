@@ -1,6 +1,7 @@
 use cranelift::codegen::cursor::Cursor;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Block, FunctionBuilder, InstBuilder};
+use cranelift_module::Backend;
 
 use super::Compiler;
 use crate::data::{
@@ -8,7 +9,7 @@ use crate::data::{
     *,
 };
 
-impl Compiler {
+impl<B: Backend> Compiler<B> {
     pub(super) fn compile_all(
         &mut self, stmts: Vec<Stmt>, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {

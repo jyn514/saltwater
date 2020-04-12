@@ -785,7 +785,7 @@ impl<I: Lexer> Analyzer<I> {
                     self.err(SemanticError::InvalidVoidParameter, location);
                 }
                 Type::Function(FunctionType {
-                    params,
+                    params: params.into_iter().map(|m| m.insert()).collect(),
                     return_type: Box::new(return_type),
                     varargs: func.varargs,
                 })
@@ -874,9 +874,11 @@ impl types::FunctionType {
         if self.params.is_empty() {
             return true;
         }
-        let types: Vec<_> = self.params.iter().map(|param| &param.ctype).collect();
+        // so the borrow-checker doesn't complain
+        let meta: Vec<_> = self.params.iter().map(|param| param.get()).collect();
+        let types: Vec<_> = meta.iter().map(|param| &param.ctype).collect();
         // allow 'main(void)'
-        if types == vec![&Type::Void] {
+        if types == [&Type::Void] {
             return true;
         }
         // TODO: allow 'int main(int argc, char *argv[], char *environ[])'
@@ -972,16 +974,14 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
         };
         func_analyzer.enter_scope();
         for (i, param) in func_type.params.into_iter().enumerate() {
-            if param.id == InternedStr::default() && param.ctype != Type::Void {
+            let meta = param.get();
+            if meta.id == InternedStr::default() && meta.ctype != Type::Void {
                 func_analyzer.err(
-                    SemanticError::MissingParamName(i, param.ctype.clone()),
+                    SemanticError::MissingParamName(i, meta.ctype.clone()),
                     location,
                 );
             }
-            func_analyzer
-                .analyzer
-                .scope
-                .insert(param.id, param.insert());
+            func_analyzer.analyzer.scope.insert(meta.id, param);
         }
         let stmts = func
             .body
@@ -1174,7 +1174,23 @@ pub(crate) mod test {
     }
 
     fn match_type(lexed: CompileResult<Declaration>, given_type: Type) -> bool {
-        lexed.map_or(false, |data| data.symbol.get().ctype == given_type)
+        lexed.map_or(false, |data| {
+            match (&data.symbol.get().ctype, &given_type) {
+                // because the parameters use `MetadataRef`,
+                // it's impossible to have the same ref twice, even in unit tess
+                (Type::Function(actual), Type::Function(expected)) => {
+                    // TODO: this only handles one level of function nesting
+                    actual
+                        .params
+                        .iter()
+                        .zip(&expected.params)
+                        .all(|(left, right)| left.get() == right.get())
+                        && actual.return_type == expected.return_type
+                        && actual.varargs == expected.varargs
+                }
+                (a, b) => a == b,
+            }
+        })
     }
 
     #[test]
@@ -1354,7 +1370,8 @@ pub(crate) mod test {
                         ),
                         qualifiers: Default::default(),
                         storage_class: Default::default(),
-                    }],
+                    }
+                    .insert()],
                     varargs: false,
                 })),
                 Qualifiers::default()
@@ -1369,7 +1386,8 @@ pub(crate) mod test {
                     ctype: Int(true),
                     qualifiers: Default::default(),
                     storage_class: Default::default()
-                }],
+                }
+                .insert()],
                 varargs: true,
             })
         ));
@@ -1385,7 +1403,8 @@ pub(crate) mod test {
                     ctype: Pointer(Box::new(Int(true)), Qualifiers::default()),
                     qualifiers: Default::default(),
                     storage_class: Default::default(),
-                }],
+                }
+                .insert()],
                 varargs: false
             })
         ));
@@ -1404,7 +1423,8 @@ pub(crate) mod test {
                     ctype: Type::Void,
                     qualifiers: Qualifiers::default(),
                     storage_class: StorageClass::default(),
-                }],
+                }
+                .insert()],
                 varargs: false,
             })
         ));
@@ -1440,7 +1460,8 @@ pub(crate) mod test {
                                 storage_class: Default::default(),
                                 id: Default::default(),
                                 qualifiers: Qualifiers::NONE,
-                            }],
+                            }
+                            .insert()],
                             varargs: false,
                         })),
                         Qualifiers::default()
@@ -1467,7 +1488,8 @@ pub(crate) mod test {
                         storage_class: Default::default(),
                         id: Default::default(),
                         qualifiers: Default::default(),
-                    }],
+                    }
+                    .insert()],
                     varargs: false,
                 })),
                 Qualifiers::default()

@@ -1,4 +1,4 @@
-use super::hir::Metadata;
+use super::hir::{Metadata, MetadataRef};
 use crate::intern::InternedStr;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
@@ -180,7 +180,7 @@ pub struct FunctionType {
     //    (as opposed to concrete arguments).
     //    this is as good a place to store them as any.
     // None represents an abstract parameter
-    pub params: Vec<Metadata>,
+    pub params: Vec<MetadataRef>,
     pub varargs: bool,
 }
 
@@ -368,7 +368,8 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         Type::Function(func_type) => {
             write!(f, "(")?;
             let mut params = func_type.params.iter();
-            let print = |f: &mut _, symbol: &Metadata| {
+            let print = |f: &mut _, symbol: MetadataRef| {
+                let symbol = symbol.get();
                 let id = if symbol.id == InternedStr::default() {
                     None
                 } else {
@@ -376,10 +377,10 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
                 };
                 print_type(&symbol.ctype, id, f)
             };
-            if let Some(first) = params.next() {
+            if let Some(&first) = params.next() {
                 print(f, first)?;
             }
-            for symbol in params {
+            for &symbol in params {
                 write!(f, ", ")?;
                 print(f, symbol)?;
             }

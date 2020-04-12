@@ -12,7 +12,7 @@ use std::iter::Iterator;
 use std::mem;
 use std::rc::Rc;
 
-pub use crate::analyze::Analyzer;
+pub(crate) use crate::analyze::Analyzer;
 use crate::data::*;
 use crate::data::{ast::ExternalDeclaration, hir::Scope, lex::Keyword};
 

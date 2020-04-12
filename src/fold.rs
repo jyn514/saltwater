@@ -90,7 +90,6 @@ impl Expr {
         }
     }
     pub fn const_fold(self) -> CompileResult<Expr> {
-        use crate::data::lex::ComparisonToken::*;
         let location = self.location;
         let folded = match self.expr {
             ExprType::Literal(_) => self.expr,

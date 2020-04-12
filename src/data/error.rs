@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use thiserror::Error;
 
-use super::hir::{Expr, ExprType};
+use super::hir::Expr;
 use super::*;
 /*
     ast,

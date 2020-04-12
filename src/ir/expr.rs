@@ -6,7 +6,7 @@ use super::{Compiler, Id};
 use crate::data::*;
 use crate::data::{
     hir::{BinaryOp, Expr, ExprType, Metadata, MetadataRef},
-    lex::{AssignmentToken, ComparisonToken, Literal, Token},
+    lex::{AssignmentToken, ComparisonToken, Literal},
 };
 
 type IrResult = CompileResult<Value>;
@@ -466,7 +466,7 @@ impl Compiler {
         }
         // scalar assignment
         let target_val = target.ir_val;
-        let mut value = value;
+        let value = value;
         /*
         if token != AssignmentToken::Equal {
             // need to deref explicitly to get an rval, the frontend didn't do it for us
@@ -497,7 +497,7 @@ impl Compiler {
     fn call(
         &mut self, func: FuncCall, ctype: Type, args: Vec<Expr>, builder: &mut FunctionBuilder,
     ) -> IrResult {
-        use crate::data::{hir::Qualifiers, StorageClass};
+        use crate::data::hir::Qualifiers;
         use cranelift::codegen::ir::{AbiParam, ArgumentPurpose};
 
         let mut ftype = match ctype {

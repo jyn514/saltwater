@@ -6,7 +6,7 @@ use super::{Compiler, Id};
 use crate::data::*;
 use crate::data::{
     hir::{BinaryOp, Expr, ExprType, Metadata, MetadataRef},
-    lex::{AssignmentToken, ComparisonToken, Literal},
+    lex::{ComparisonToken, Literal},
 };
 
 type IrResult = CompileResult<Value>;
@@ -69,6 +69,9 @@ impl Compiler {
             }
             ExprType::Binary(BinaryOp::LogicalAnd, left, right) => {
                 self.logical_expr(*left, *right, true, builder)
+            }
+            ExprType::Binary(BinaryOp::Assign, left, right) => {
+                self.assignment(*left, *right, builder)
             }
             ExprType::Binary(op, left, right) => {
                 self.binary_assign_op(*left, *right, expr.ctype, op, builder)
@@ -274,7 +277,10 @@ impl Compiler {
             // logical shift: shifts in zeros
             (Shr, ty, false) if ty.is_int() => b::ushr,
             (Xor, ty, _) if ty.is_int() => b::bxor,
-            (LogicalAnd, _, _) | (LogicalOr, _, _) => unreachable!("should be handled earlier"),
+            (Compare(token), _, _) => return Self::compare(left, right, token, builder),
+            (Assign, _, _) | (LogicalAnd, _, _) | (LogicalOr, _, _) => {
+                unreachable!("should be handled earlier")
+            }
             _ => unreachable!(
                 "bug in parser: passed invalid type {} for binary op {}",
                 ctype, op
@@ -405,12 +411,8 @@ impl Compiler {
         })
     }
     fn compare(
-        &mut self, left: Expr, right: Expr, token: ComparisonToken, builder: &mut FunctionBuilder,
+        left: Value, right: Value, token: ComparisonToken, builder: &mut FunctionBuilder,
     ) -> IrResult {
-        let (left, right) = (
-            self.compile_expr(left, builder)?,
-            self.compile_expr(right, builder)?,
-        );
         assert_eq!(left.ir_type, right.ir_type);
 
         let ir_val = if left.ir_type.is_int() {
@@ -432,9 +434,7 @@ impl Compiler {
             ctype: left.ctype,
         })
     }
-    fn assignment(
-        &mut self, lval: Expr, rval: Expr, token: AssignmentToken, builder: &mut FunctionBuilder,
-    ) -> IrResult {
+    fn assignment(&mut self, lval: Expr, rval: Expr, builder: &mut FunctionBuilder) -> IrResult {
         let ctype = lval.ctype.clone();
         let location = lval.location;
         let (target, value) = (
@@ -442,9 +442,6 @@ impl Compiler {
             self.compile_expr(rval, builder)?,
         );
         if let Type::Union(_) | Type::Struct(_) = ctype {
-            if token != AssignmentToken::Equal {
-                unreachable!("struct should not have a valid complex assignment");
-            }
             use std::convert::TryInto;
             let size = ctype.sizeof().map_err(|e| location.with(e.to_string()))?;
             let align = ctype
@@ -467,28 +464,6 @@ impl Compiler {
         // scalar assignment
         let target_val = target.ir_val;
         let value = value;
-        /*
-        if token != AssignmentToken::Equal {
-            // need to deref explicitly to get an rval, the frontend didn't do it for us
-            let ir_type = ctype.as_ir_type();
-            let target = Value {
-                ir_val: builder
-                    .ins()
-                    .load(ir_type, MemFlags::new(), target.ir_val, 0),
-                ir_type,
-                ctype: ctype.clone(),
-            };
-            if value.ir_type != target.ir_type {
-                unimplemented!(
-                    "binary promotion for complex assignment ({} -> {})",
-                    value.ir_type,
-                    target.ir_type
-                );
-            }
-            value =
-                Self::binary_assign_ir(target, value, ctype, token.without_assignment(), builder)?;
-        }
-        */
         builder
             .ins()
             .store(MemFlags::new(), value.ir_val, target_val, 0);

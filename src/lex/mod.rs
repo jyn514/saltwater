@@ -5,7 +5,6 @@ use codespan::FileId;
 
 use super::data::{error::LexError, lex::*, *};
 use super::intern::InternedStr;
-use crate::get_str;
 
 mod cpp;
 pub use cpp::{PreProcessor, PreProcessorBuilder};
@@ -873,16 +872,6 @@ impl Iterator for Lexer {
             self.location.offset += 1;
             return Some(Err(location.with(LexError::NoNewlineAtEOF)));
         }
-        // mark tokens as keywords if appropriate
-        if let Some(Ok(Locatable {
-            data: Token::Id(id),
-            location,
-        })) = &c
-        {
-            if let Some(keyword) = lookup_keyword(get_str!(id)) {
-                c = Some(Ok(Locatable::new(Token::Keyword(keyword), *location)));
-            }
-        }
         if self.debug {
             if let Some(Ok(token)) = &c {
                 println!("token: {}", token.data);
@@ -890,67 +879,4 @@ impl Iterator for Lexer {
         }
         c.or_else(|| self.error_handler.pop_front().map(Err))
     }
-}
-
-fn lookup_keyword(s: &str) -> Option<Keyword> {
-    Some(match s {
-        // control flow
-        "if" => Keyword::If,
-        "else" => Keyword::Else,
-        "do" => Keyword::Do,
-        "while" => Keyword::While,
-        "for" => Keyword::For,
-        "switch" => Keyword::Switch,
-        "case" => Keyword::Case,
-        "default" => Keyword::Default,
-        "break" => Keyword::Break,
-        "continue" => Keyword::Continue,
-        "return" => Keyword::Return,
-        "goto" => Keyword::Goto,
-
-        // types
-        "__builtin_va_list" => Keyword::VaList,
-        "_Bool" => Keyword::Bool,
-        "char" => Keyword::Char,
-        "short" => Keyword::Short,
-        "int" => Keyword::Int,
-        "long" => Keyword::Long,
-        "float" => Keyword::Float,
-        "double" => Keyword::Double,
-        "_Complex" => Keyword::Complex,
-        "_Imaginary" => Keyword::Imaginary,
-        "void" => Keyword::Void,
-        "signed" => Keyword::Signed,
-        "unsigned" => Keyword::Unsigned,
-        "typedef" => Keyword::Typedef,
-        "enum" => Keyword::Enum,
-        "union" => Keyword::Union,
-        "struct" => Keyword::Struct,
-
-        // qualifiers
-        "const" => Keyword::Const,
-        "volatile" => Keyword::Volatile,
-        "restrict" => Keyword::Restrict,
-        "_Atomic" => Keyword::Atomic,
-        "_Thread_local" => Keyword::ThreadLocal,
-
-        // function qualifiers
-        "inline" => Keyword::Inline,
-        "_Noreturn" => Keyword::NoReturn,
-
-        // storage classes
-        "auto" => Keyword::Auto,
-        "register" => Keyword::Register,
-        "static" => Keyword::Static,
-        "extern" => Keyword::Extern,
-
-        // compiler intrinsics
-        "sizeof" => Keyword::Sizeof,
-        "_Alignof" => Keyword::Alignof,
-        "_Alignas" => Keyword::Alignas,
-        "_Generic" => Keyword::Generic,
-        "_Static_assert" => Keyword::StaticAssert,
-
-        _ => return None,
-    })
 }

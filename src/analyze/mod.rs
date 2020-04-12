@@ -1174,8 +1174,8 @@ pub(crate) mod test {
     }
 
     fn match_type(lexed: CompileResult<Declaration>, given_type: Type) -> bool {
-        lexed.map_or(false, |data| {
-            match (&data.symbol.get().ctype, &given_type) {
+        fn type_helper(ctype: &Type, given_type: &Type) -> bool {
+            match (ctype, given_type) {
                 // because the parameters use `MetadataRef`,
                 // it's impossible to have the same ref twice, even in unit tess
                 (Type::Function(actual), Type::Function(expected)) => {
@@ -1184,12 +1184,27 @@ pub(crate) mod test {
                         .params
                         .iter()
                         .zip(&expected.params)
-                        .all(|(left, right)| left.get() == right.get())
-                        && actual.return_type == expected.return_type
-                        && actual.varargs == expected.varargs
+                        .all(|(left, right)| metadata_helper(&left.get(), &right.get()))
+                        && {
+                            println!("all params match");
+                            true
+                        }
+                        && dbg!(type_helper(&actual.return_type, &expected.return_type))
+                        && dbg!(actual.varargs == expected.varargs)
                 }
+                (Type::Pointer(a, lq), Type::Pointer(b, rq)) => type_helper(&*a, &*b) && lq == rq,
+                (Type::Array(a, la), Type::Array(b, ra)) => type_helper(&*a, &*b) && la == ra,
                 (a, b) => a == b,
             }
+        }
+        fn metadata_helper(left: &Metadata, right: &Metadata) -> bool {
+            dbg!(type_helper(dbg!(&left.ctype), dbg!(&right.ctype)))
+                && left.storage_class == right.storage_class
+                && left.qualifiers == right.qualifiers
+                && left.id == right.id
+        }
+        lexed.map_or(false, |decl| {
+            type_helper(&decl.symbol.get().ctype, &given_type)
         })
     }
 
@@ -1215,8 +1230,9 @@ pub(crate) mod test {
         assert_decl_display("int f();", "extern int f();");
         assert_decl_display("int f(int i);", "extern int f(int i);");
         assert_decl_display("int f(int i, int j);", "extern int f(int i, int j);");
-        assert_decl_display("int f(int g());", "extern int f(int g());");
-        assert_decl_display("int f(int g(), ...);", "extern int f(int g(), ...);");
+        // functions decay to pointers when used as parameters
+        assert_decl_display("int f(int g());", "extern int f(int (*g)());");
+        assert_decl_display("int f(int g(), ...);", "extern int f(int (*g)(), ...);");
     }
 
     #[test]

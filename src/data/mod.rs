@@ -86,7 +86,7 @@ impl TryFrom<u32> for Radix {
 
 #[cfg(test)]
 mod tests {
-    use crate::data::lex::test::cpp;
+    use crate::analyze::test::analyze;
     use crate::Parser;
 
     #[test]
@@ -101,11 +101,10 @@ mod tests {
             "struct s",
         ];
         for ty in types.iter() {
-            let mut lexer = cpp(ty);
-            let first = lexer.next().unwrap().unwrap();
-            let mut parser = Parser::new(first, &mut lexer, false);
-
-            let parsed_ty = parser.type_name().unwrap().data.0;
+            let parsed_ty = analyze(ty, Parser::type_name, |a, b| {
+                a.parse_typename_test(b.data, b.location)
+            })
+            .unwrap();
             assert_eq!(&parsed_ty.to_string(), *ty);
         }
     }

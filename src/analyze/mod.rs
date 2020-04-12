@@ -178,6 +178,11 @@ impl<I: Lexer> Analyzer<I> {
         }
         decls
     }
+    #[cfg(test)]
+    #[inline(always)]
+    pub(crate) fn parse_typename_test(&mut self, ctype: ast::TypeName, location: Location) -> Type {
+        self.parse_typename(ctype, location)
+    }
     // TODO: I don't think this is a very good abstraction
     fn parse_typename(&mut self, ctype: ast::TypeName, location: Location) -> Type {
         let parsed = self.parse_type(ctype.specifiers, ctype.declarator.decl, location);

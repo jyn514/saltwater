@@ -403,6 +403,7 @@ pub(crate) mod tests {
     use proptest::prelude::*;
 
     use super::{ArrayType, InternedStr, Type};
+    use crate::data::hir::Qualifiers;
 
     pub(crate) fn arb_type() -> impl Strategy<Value = Type> {
         let leaf = prop_oneof![
@@ -423,7 +424,8 @@ pub(crate) mod tests {
 
         leaf.prop_recursive(8, 256, 10, |inner| {
             prop_oneof![
-                inner.clone().prop_map(|t| Type::Pointer(Box::new(t))),
+                (inner.clone(), any::<Qualifiers>())
+                    .prop_map(|(t, q)| Type::Pointer(Box::new(t), q)),
                 (inner, any::<ArrayType>()).prop_map(|(t, at)| Type::Array(Box::new(t), at)),
                 //Type::Function(FunctionType),
                 //Type::Union(StructType),

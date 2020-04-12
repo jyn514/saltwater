@@ -23,7 +23,7 @@ use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct, ObjectTrapCo
 
 use crate::arch::TARGET;
 use crate::data::{
-    hir::{Declaration, Expr, Initializer, Metadata, MetadataRef, Scope, Stmt},
+    hir::{Declaration, Initializer, Metadata, Scope, Stmt},
     types::FunctionType,
     StorageClass, *,
 };

@@ -21,10 +21,7 @@ use codespan::FileId;
 use pico_args::Arguments;
 use rcc::{
     assemble, compile,
-    data::{
-        error::{CompileWarning, RecoverableResult},
-        Location,
-    },
+    data::{error::CompileWarning, Location},
     link, preprocess, Error, Files, Opt,
 };
 use std::ffi::OsStr;

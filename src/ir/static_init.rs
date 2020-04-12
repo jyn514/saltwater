@@ -10,7 +10,7 @@ use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::*;
 use crate::data::{
-    hir::{Expr, ExprType, Initializer, Metadata, MetadataRef},
+    hir::{Expr, ExprType, Initializer, MetadataRef},
     lex::Literal,
     types::ArrayType,
     StorageClass,
@@ -21,7 +21,7 @@ const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
 
 impl Compiler {
     pub(super) fn store_static(
-        &mut self, mut symbol: MetadataRef, init: Option<Initializer>, location: Location,
+        &mut self, symbol: MetadataRef, init: Option<Initializer>, location: Location,
     ) -> CompileResult<()> {
         use crate::get_str;
         let symbol = symbol.get();

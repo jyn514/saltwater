@@ -1,9 +1,11 @@
 use crate::intern::InternedStr;
 
-use codespan::{FileId, Span};
+//use codespan::{FileId, Span};
 
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 
+/*
 // holds where a piece of code came from
 // should almost always be immutable
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -11,11 +13,52 @@ pub struct Location {
     pub span: Span,
     pub file: FileId,
 }
+*/
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Span {
+    pub start: u32,
+    pub end: u32,
+}
+pub trait LocationTrait: Copy + std::fmt::Debug + PartialEq + Sized {
+    fn merge<O: Borrow<Self>>(&self, other: O) -> Self;
+
+    /// WARNING: the location for `original` will be on the _left_, not on the right
+    fn maybe_merge<O: Borrow<Self>>(&self, original: Option<O>) -> Self {
+        original.map_or(*self, |l| l.borrow().merge(self))
+    }
+
+    fn with<T>(self, data: T) -> Locatable<T, Self> {
+        Locatable {
+            data,
+            location: self,
+        }
+    }
+
+    fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError<Self> {
+        self.with(error.into())
+    }
+}
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct DefaultLocation {
+    pub span: Span,
+    pub file: codespan::FileId,
+}
+
+use std::ops::Range;
+impl From<Range<u32>> for Span {
+    fn from(r: Range<u32>) -> Span {
+        Span {
+            start: r.start,
+            end: r.end,
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug)]
-pub struct Locatable<T> {
+pub struct Locatable<T, L: LocationTrait = DefaultLocation> {
     pub data: T,
-    pub location: Location,
+    pub location: L,
 }
 
 impl<T> Locatable<T> {
@@ -54,9 +97,14 @@ pub enum Keyword {
     Signed,
     Unsigned,
     Typedef,
+
+    // user-defined types
     Union,
     Struct,
     Enum,
+    // the `i` in `typedef int i;`
+    UserTypedef(InternedStr),
+
     // weird types
     Bool,
     Complex,
@@ -88,22 +136,22 @@ pub enum Keyword {
     Alignof,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AssignmentToken {
     Equal,
-    PlusEqual,
-    MinusEqual,
-    StarEqual,
-    DivideEqual,
+    AddEqual,
+    SubEqual,
+    MulEqual,
+    DivEqual,
     ModEqual,
-    LeftEqual,  // <<=
-    RightEqual, // >>=
+    ShlEqual, // <<=
+    ShrEqual, // >>=
     AndEqual,
     OrEqual,
     XorEqual, // ^=
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ComparisonToken {
     Less,
     Greater,
@@ -168,27 +216,25 @@ pub enum Token {
 }
 
 /* impls */
-
-impl Location {
-    pub fn with<T>(self, data: T) -> Locatable<T> {
-        Locatable {
-            data,
-            location: self,
-        }
-    }
-
-    pub fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError {
-        self.with(error.into())
+impl PartialOrd for DefaultLocation {
+    /// NOTE: this only compares the start of the spans, it ignores the end
+    fn partial_cmp(&self, other: &DefaultLocation) -> Option<Ordering> {
+        Some(self.span.cmp(&other.span))
     }
 }
 
-impl PartialOrd for Location {
-    /// NOTE: this only compares the start of the spans, it ignores the end
-    fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
-        if self.file == other.file {
-            Some(self.span.cmp(&other.span))
-        } else {
-            None
+impl LocationTrait for DefaultLocation {
+    fn merge<O: Borrow<Self>>(&self, other: O) -> Self {
+        use std::cmp::{max, min};
+
+        let other = other.borrow();
+        DefaultLocation {
+            span: Span {
+                start: min(self.span.start, other.span.start),
+                end: max(self.span.end, other.span.end),
+            },
+            // TODO: what should happen if these come from different files?
+            file: self.file,
         }
     }
 }
@@ -201,8 +247,8 @@ impl<T: PartialEq> PartialEq for Locatable<T> {
 
 impl<T: Eq> Eq for Locatable<T> {}
 
-impl<T> Locatable<T> {
-    pub fn new(data: T, location: Location) -> Locatable<T> {
+impl<T, L: LocationTrait> Locatable<T, L> {
+    pub fn new(data: T, location: L) -> Locatable<T, L> {
         location.with(data)
     }
 }
@@ -251,33 +297,32 @@ impl ComparisonToken {
         }
     }
 }
+
 impl AssignmentToken {
     pub fn without_assignment(self) -> Token {
         use AssignmentToken::*;
         match self {
             Equal => Equal.into(), // there's not really a good behavior here...
-            PlusEqual => Token::Plus,
-            MinusEqual => Token::Minus,
-            StarEqual => Token::Star,
-            DivideEqual => Token::Divide,
+            AddEqual => Token::Plus,
+            SubEqual => Token::Minus,
+            MulEqual => Token::Star,
+            DivEqual => Token::Divide,
             ModEqual => Token::Mod,
             AndEqual => Token::Ampersand,
             OrEqual => Token::BitwiseOr,
-            LeftEqual => Token::ShiftLeft,
-            RightEqual => Token::ShiftRight,
+            ShlEqual => Token::ShiftLeft,
+            ShrEqual => Token::ShiftRight,
             XorEqual => Token::Xor,
         }
     }
 }
 
 #[cfg(test)]
-impl Default for Location {
+impl Default for DefaultLocation {
     fn default() -> Self {
-        let mut files = crate::Files::default();
-        let id = files.add("<test suite>", String::new().into());
         Self {
             span: (0..1).into(),
-            file: id,
+            file: (),
         }
     }
 }
@@ -399,33 +444,5 @@ impl From<AssignmentToken> for Token {
 impl From<ComparisonToken> for Token {
     fn from(a: ComparisonToken) -> Self {
         Token::Comparison(a)
-    }
-}
-
-#[cfg(test)]
-pub(crate) mod test {
-    use crate::*;
-    /// Create a new preprocessor with `s` as the input
-    pub(crate) fn cpp(s: &str) -> PreProcessor {
-        let newline = format!("{}\n", s).into_boxed_str();
-        cpp_no_newline(Box::leak(newline))
-    }
-    /// Create a new preprocessor with `s` as the input, but without a trailing newline
-    pub(crate) fn cpp_no_newline(s: &str) -> PreProcessor {
-        let mut files: Files = Default::default();
-        let id = files.add("<test suite>", String::new().into());
-        PreProcessor::new(id, s, false, vec![], Box::leak(Box::new(files)))
-    }
-
-    #[test]
-    fn assignment_display() {
-        let tokens = [
-            "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", ">>=", "<<=", "^=",
-        ];
-        for token in &tokens {
-            let mut lexer = cpp(token);
-            let first = lexer.next().unwrap().unwrap().data;
-            assert_eq!(&first.to_string(), *token);
-        }
     }
 }

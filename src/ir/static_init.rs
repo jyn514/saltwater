@@ -24,19 +24,19 @@ impl<B: Backend> Compiler<B> {
         &mut self, symbol: MetadataRef, init: Option<Initializer>, location: Location,
     ) -> CompileResult<()> {
         use crate::get_str;
-        let symbol = symbol.get();
+        let metadata = symbol.get();
         let err_closure = |err| Locatable {
             data: err,
             location,
         };
-        let linkage = symbol.storage_class.try_into().map_err(err_closure)?;
-        let align = symbol
+        let linkage = metadata.storage_class.try_into().map_err(err_closure)?;
+        let align = metadata
             .ctype
             .alignof()
             .map_err(|err| err.to_string())
             .and_then(|size| {
                 size.try_into()
-                    .map_err(|_| format!("align of {} is greater than 256 bytes", symbol.id))
+                    .map_err(|_| format!("align of {} is greater than 256 bytes", metadata.id))
             })
             .map_err(err_closure)?;
         if align == 0 {
@@ -46,9 +46,9 @@ impl<B: Backend> Compiler<B> {
         let id = self
             .module
             .declare_data(
-                get_str!(symbol.id),
+                get_str!(metadata.id),
                 linkage,
-                !symbol.qualifiers.c_const,
+                !metadata.qualifiers.c_const,
                 Some(align),
             )
             .map_err(|err| Locatable {
@@ -56,7 +56,7 @@ impl<B: Backend> Compiler<B> {
                 location,
             })?;
 
-        self.scope.insert(symbol.id, Id::Global(id));
+        self.declarations.insert(symbol, Id::Global(id));
 
         if linkage == Linkage::Import {
             debug_assert!(init.is_none());
@@ -66,7 +66,7 @@ impl<B: Backend> Compiler<B> {
         let mut ctx = DataContext::new();
         // TODO: all of this should happen in the `analyze` module
         if let Some(init) = init {
-            let mut ctype = symbol.ctype.clone();
+            let mut ctype = metadata.ctype.clone();
             if let Type::Array(_, size @ ArrayType::Unbounded) = &mut ctype {
                 if let Some(len) = match &init {
                     Initializer::InitializerList(list) => Some(list.len()),
@@ -92,7 +92,7 @@ impl<B: Backend> Compiler<B> {
             ctx.define(buf.into_boxed_slice());
         } else {
             ctx.define_zeroinit(
-                symbol
+                metadata
                     .ctype
                     .sizeof()
                     .map_err(|err| err_closure(err.to_string()))? as usize,
@@ -182,7 +182,7 @@ impl<B: Backend> Compiler<B> {
     fn static_ref(
         &self, symbol: MetadataRef, member_offset: i64, offset: u32, ctx: &mut DataContext,
     ) {
-        match self.scope.get(&symbol.get().id) {
+        match self.declarations.get(&symbol) {
             Some(Id::Function(func_id)) => {
                 let func_ref = self.module.declare_func_in_data(*func_id, ctx);
                 debug_assert!(member_offset == 0);

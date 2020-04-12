@@ -6,7 +6,7 @@ use super::{Compiler, Id};
 use crate::data::prelude::*;
 use crate::data::{
     lex::{AssignmentToken, ComparisonToken, Literal},
-    BinaryOp, Expr, ExprType, Symbol,
+    BinaryOp, Expr, ExprType, MetadataRef,
 };
 
 type IrResult = CompileResult<Value>;
@@ -19,7 +19,7 @@ pub(super) struct Value {
 }
 
 enum FuncCall {
-    Named(InternedStr),
+    Named(MetadataRef),
     Indirect(Value),
 }
 
@@ -77,7 +77,7 @@ impl<B: Backend> Compiler<B> {
                 self.binary_assign_op(*left, *right, expr.ctype, op, builder)
             }
             ExprType::FuncCall(func, args) => match func.expr {
-                ExprType::Id(var) => self.call(FuncCall::Named(var.id), func.ctype, args, builder),
+                ExprType::Id(var) => self.call(FuncCall::Named(var), func.ctype, args, builder),
                 _ => {
                     let ctype = func.ctype.clone();
                     let val = self.compile_expr(*func, builder)?;
@@ -411,9 +411,10 @@ impl<B: Backend> Compiler<B> {
             _ => unreachable!("parser should catch illegal types"),
         })
     }
-    fn load_addr(&self, var: Metadata, builder: &mut FunctionBuilder) -> IrResult {
+    fn load_addr(&self, var: MetadataRef, builder: &mut FunctionBuilder) -> IrResult {
+        let metadata = var.get();
         let ptr_type = Type::ptr_type();
-        let ir_val = match self.scope.get(&var.id).unwrap() {
+        let ir_val = match self.declarations.get(&var).unwrap() {
             Id::Function(func_id) => {
                 let func_ref = self.module.declare_func_in_func(*func_id, builder.func);
                 builder.ins().func_addr(ptr_type, func_ref)
@@ -424,7 +425,7 @@ impl<B: Backend> Compiler<B> {
             }
             Id::Local(stack_slot) => builder.ins().stack_addr(ptr_type, *stack_slot, 0),
         };
-        let ctype = Type::Pointer(Box::new(var.ctype));
+        let ctype = Type::Pointer(Box::new(metadata.ctype.clone()));
         Ok(Value {
             ir_type: ptr_type,
             ir_val,
@@ -567,7 +568,7 @@ impl<B: Backend> Compiler<B> {
         }
         let call = match func {
             FuncCall::Named(func_name) => {
-                let func_id = match self.scope.get(&func_name) {
+                let func_id = match self.declarations.get(&func_name) {
                     Some(Id::Function(func_id)) => *func_id,
                     _ => panic!("parser should catch illegal function calls"),
                 };

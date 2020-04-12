@@ -1,7 +1,9 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
+use std::rc::Rc;
 
 pub mod error;
 pub mod lex;
@@ -17,7 +19,7 @@ pub mod prelude {
         },
         lex::{Literal, Locatable, Location, Token},
         types::{StructRef, StructType, Type},
-        Declaration, Expr, ExprType, Metadata, Radix, Stmt, StmtType,
+        Declaration, Expr, ExprType, Metadata, MetadataRef, Radix, Stmt, StmtType,
     };
     pub use crate::intern::InternedStr;
 }
@@ -59,7 +61,7 @@ impl Default for StmtType {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Declaration {
-    pub symbol: Metadata,
+    pub symbol: MetadataRef,
     pub init: Option<Initializer>,
 }
 
@@ -98,7 +100,7 @@ pub struct Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprType {
-    Id(Metadata),
+    Id(MetadataRef),
     Literal(Literal),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, InternedStr),
@@ -160,6 +162,47 @@ pub struct Metadata {
     pub qualifiers: Qualifiers,
     pub storage_class: StorageClass,
     pub init: bool,
+}
+
+/// An identifier used to look up the metadata for a variable.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MetadataRef(usize);
+
+thread_local!(
+    /// The global storage for all metadata.
+    ///
+    /// The type is read like so:
+    /// RefCell: A container with interior mutability, used because `LocalKey`
+    /// returns an immutable reference.
+    /// MetadataStore: metadata for all variables seen so far
+    static METADATA_STORE: RefCell<MetadataStore> = Default::default()
+);
+
+#[derive(Default)]
+struct MetadataStore(Vec<Rc<Metadata>>);
+
+impl MetadataStore {
+    fn insert(&mut self, m: Metadata) -> MetadataRef {
+        let i = self.0.len();
+        self.0.push(Rc::new(m));
+        MetadataRef(i)
+    }
+    /// Guaranteed not to panic since `MetadataRef` is always valid
+    fn get(&self, i: MetadataRef) -> Rc<Metadata> {
+        self.0[i.0].clone()
+    }
+}
+
+impl MetadataRef {
+    pub fn get(self) -> Rc<Metadata> {
+        METADATA_STORE.with(|store| store.borrow().get(self))
+    }
+}
+
+impl Metadata {
+    pub(crate) fn insert(self) -> MetadataRef {
+        METADATA_STORE.with(|store| store.borrow_mut().insert(self))
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -299,7 +342,7 @@ impl Display for Expr {
         match &self.expr {
             ExprType::Comma(left, right) => write!(f, "{}, {}", *left, *right),
             ExprType::Literal(token) => write!(f, "{}", token),
-            ExprType::Id(symbol) => write!(f, "{}", symbol.id),
+            ExprType::Id(symbol) => write!(f, "{}", symbol.get().id),
             ExprType::BitwiseNot(expr) => write!(f, "(~{})", expr),
             ExprType::Deref(expr) => write!(f, "*({})", expr),
             ExprType::Negate(expr) => write!(f, "-({})", expr),
@@ -430,7 +473,7 @@ impl Display for Metadata {
 
 impl Display for Declaration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.symbol)?;
+        write!(f, "{}", self.symbol.get().id)?;
         match &self.init {
             Some(Initializer::FunctionBody(body)) => {
                 writeln!(f, " {{")?;

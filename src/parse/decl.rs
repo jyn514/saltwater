@@ -98,7 +98,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             return Ok(VecDeque::new());
         }
 
-        let mut symbol = Metadata {
+        let mut metadata = Metadata {
             id: id.data,
             ctype: first_type,
             qualifiers,
@@ -106,36 +106,38 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             init: false,
         };
         // if it's not a function, we still need to handle it
-        let init = match (&symbol.ctype, self.peek_token()) {
+        let (symbol, init) = match (&metadata.ctype, self.peek_token()) {
             (Type::Function(ftype), Some(Token::LeftBrace)) => {
-                symbol.init = true;
+                metadata.init = true;
                 let ftype = ftype.clone();
-                self.declare(&mut symbol, &id.location);
-                Some(Initializer::FunctionBody(self.function_body(
-                    symbol.id.clone(),
+                let symbol = self.declare(metadata, &id.location);
+                let init = Some(Initializer::FunctionBody(self.function_body(
+                    id.data,
                     ftype,
                     id.location.clone(),
-                )?))
+                )?));
+                (symbol, init)
             }
             (Type::Function(_), Some(t)) if *t == Token::EQUAL => {
                 return Err(id.location.with(SyntaxError::from(format!(
                     "expected '{{', got '=' while parsing function body for {}",
-                    symbol.id,
+                    metadata.id,
                 ))));
             }
             (ctype, Some(t)) if *t == Token::EQUAL => {
                 self.next_token();
                 let init = Some(self.initializer(ctype)?);
-                symbol.init = true;
-                self.declare(&mut symbol, &id.location);
-                init
+                metadata.init = true;
+                let symbol = self.declare(metadata, &id.location);
+                (symbol, init)
             }
             _ => {
-                self.declare(&mut symbol, &id.location);
-                None
+                let symbol = self.declare(metadata, &id.location);
+                (symbol, None)
             }
         };
-        if symbol.ctype.is_function() && (qualifiers.c_const || qualifiers.volatile) {
+        let metadata = symbol.get();
+        if metadata.ctype.is_function() && (qualifiers.c_const || qualifiers.volatile) {
             self.error_handler.warn(
                 &format!("{} has no effect on function return type", qualifiers),
                 id.location,
@@ -143,12 +145,12 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             qualifiers.c_const = false;
             qualifiers.volatile = false;
         }
+        let is_function = metadata.ctype.is_function();
         let decl = Locatable {
             data: Declaration { symbol, init },
             location: id.location,
         };
         let init = decl.data.init.is_some();
-        let is_function = decl.data.symbol.ctype.is_function();
         let mut pending = VecDeque::from_iter(std::iter::once(decl));
         if (is_function && init) || self.match_next(&Token::Semicolon).is_some() {
             return Ok(pending);
@@ -156,8 +158,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             self.expect(Token::Comma)?;
         }
         loop {
-            let mut decl = self.init_declarator(sc, qualifiers, ctype.clone())?;
-            self.declare(&mut decl.data.symbol, &decl.location);
+            let decl = self.init_declarator(sc, qualifiers, ctype.clone())?;
             pending.push_back(decl);
             if self.match_next(&Token::Comma).is_none() {
                 self.expect(Token::Semicolon)?;
@@ -233,8 +234,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             qualifiers,
             storage_class: StorageClass::Typedef,
             init: true,
-        };
+        }
+        .insert();
         if let Some(existing_def) = self.scope.insert(id.data.clone(), typedef) {
+            let existing_def = existing_def.get();
             let message = if existing_def.storage_class == StorageClass::Typedef {
                 // special case redefining the same type
                 if existing_def.ctype == ctype {
@@ -250,7 +253,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             self.semantic_err(message, id.location);
         }
     }
-    fn declare(&mut self, decl: &mut Metadata, location: &Location) {
+    fn declare(&mut self, mut decl: Metadata, location: &Location) -> MetadataRef {
         if decl.id == InternedStr::get_or_intern("main") {
             if let Type::Function(ftype) = &decl.ctype {
                 if !Self::is_main_func_signature(ftype) {
@@ -271,12 +274,13 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             decl.storage_class = StorageClass::Auto;
         }
         if let Some(existing) = self.scope.get_immediate(&decl.id) {
+            let existing = existing.get();
             let extern_redecl_of_static = match (existing.storage_class, decl.storage_class) {
                 (StorageClass::Static, StorageClass::Extern) => true,
                 _ => false,
             };
 
-            if existing == decl {
+            if *existing == decl {
                 if decl.init && existing.init {
                     self.semantic_err(format!("redefinition of '{}'", decl.id), *location);
                 }
@@ -287,10 +291,11 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 );
                 self.semantic_err(err, *location);
             }
-            self.scope.insert(decl.id.clone(), decl.clone());
-        } else {
-            self.scope.insert(decl.id.clone(), decl.clone());
         }
+        let id = decl.id;
+        let symbol = decl.insert();
+        self.scope.insert(id, symbol);
+        symbol
     }
     fn init_declarator(
         &mut self,
@@ -316,7 +321,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
 
         // clean up and go home
-        let symbol = Metadata {
+        let metadata = Metadata {
             id: id.data,
             qualifiers,
             storage_class: if sc == StorageClass::Auto && ctype.is_function() {
@@ -327,6 +332,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             ctype,
             init: init.is_some(),
         };
+        let symbol = self.declare(metadata, &id.location);
         Ok(Locatable {
             data: Declaration { symbol, init },
             location: id.location,
@@ -386,9 +392,10 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Token::Keyword(k) if k.is_decl_specifier() => (locatable.location, k),
                 Token::Id(id) => match self.scope.get(&id) {
                     Some(typedef)
-                        if typedef.storage_class == StorageClass::Typedef && !seen_typedef =>
+                        if typedef.get().storage_class == StorageClass::Typedef
+                            && !seen_typedef =>
                     {
-                        ctype = Some(typedef.ctype.clone());
+                        ctype = Some(typedef.get().ctype.clone());
                         seen_typedef = true;
                         continue;
                     }
@@ -649,7 +656,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 init: true,
                 ctype: Type::Enum(None, vec![(name, current)]),
             };
-            self.scope.insert(name, tmp_symbol);
+            self.scope.insert(name, tmp_symbol.insert());
             // allow trailing commas
             if self.match_next(&Token::Comma).is_none()
                 || self.peek_token() == Some(&Token::RightBrace)
@@ -686,7 +693,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             storage_class: StorageClass::Register,
                             qualifiers: Qualifiers::NONE,
                             ctype: ctype.clone(),
-                        },
+                        }
+                        .insert(),
                     );
                 }
             }
@@ -1418,7 +1426,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location,
                 );
             }
-            self.scope.insert(param.id, param);
+            self.scope.insert(param.id, param.insert());
         }
         self.current_function = Some(FunctionData {
             return_type: *ftype.return_type,
@@ -1862,7 +1870,7 @@ mod tests {
     use Type::*;
 
     fn match_type(lexed: Option<ParseType>, given_type: Type) -> bool {
-        match_data(lexed, |data| data.symbol.ctype == given_type)
+        match_data(lexed, |data| data.symbol.get().ctype == given_type)
     }
     #[test]
     fn test_decl_specifiers() {
@@ -2160,7 +2168,8 @@ mod tests {
     fn test_multiple() {
         let parsed = parse_all("int i, j, k;");
         assert!(parsed.len() == 3);
-        assert!(match_all(parsed.into_iter(), |i| i.symbol.ctype == Type::Int(true)));
+        assert!(match_all(parsed.into_iter(), |i| i.symbol.get().ctype
+            == Type::Int(true)));
         let mut parsed = parse_all("char *p, c, **pp, f();");
         assert!(parsed.len() == 4);
         assert!(match_type(
@@ -2185,7 +2194,8 @@ mod tests {
     fn test_no_specifiers() {
         let parsed = parse_all("i, j, k;");
         assert!(parsed.len() == 3);
-        assert!(match_all(parsed.into_iter(), |i| i.symbol.ctype == Type::Int(true)));
+        assert!(match_all(parsed.into_iter(), |i| i.symbol.get().ctype
+            == Type::Int(true)));
         let mut parsed = parse_all("*p, c, **pp, f();");
         assert!(parsed.len() == 4);
         assert!(match_type(

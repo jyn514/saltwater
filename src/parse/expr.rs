@@ -458,7 +458,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Some(Token::Id(id)) => {
                     let id = *id;
                     match self.scope.get(&id) {
-                        Some(symbol) => symbol.storage_class == Typedef,
+                        Some(symbol) => symbol.get().storage_class == Typedef,
                         _ => false,
                     }
                 }
@@ -590,7 +590,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     Token::Ampersand => match expr.expr {
                         // parse &*p as p
                         ExprType::Deref(inner) => Ok(*inner),
-                        ExprType::Id(ref sym) if sym.storage_class == StorageClass::Register => {
+                        ExprType::Id(ref sym)
+                            if sym.get().storage_class == StorageClass::Register =>
+                        {
                             self.error_handler.push_back(location.error(
                                 SemanticError::InvalidAddressOf(
                                     "variable declared with `register`",
@@ -878,13 +880,14 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                         Ok(pretend_zero)
                     }
                     Some(symbol) => {
-                        if symbol.storage_class == StorageClass::Typedef {
+                        let meta = symbol.get();
+                        if meta.storage_class == StorageClass::Typedef {
                             self.error_handler.push_back(
                                 location.error(SemanticError::TypedefInExpressionContext),
                             );
                             return Ok(pretend_zero);
                         }
-                        if let Type::Enum(ident, members) = &symbol.ctype {
+                        if let Type::Enum(ident, members) = &meta.ctype {
                             let enumerator = members.iter().find_map(|(member, value)| {
                                 if name == *member {
                                     Some(*value)
@@ -901,7 +904,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                                 });
                             }
                         }
-                        Ok(Expr::id(symbol, location))
+                        Ok(Expr::id(*symbol, location))
                     }
                 },
                 Token::Literal(literal) => Ok(Expr::from((literal, location))),
@@ -1158,8 +1161,9 @@ impl Expr {
         }
         // const-qualified type
         if let ExprType::Id(sym) = &self.expr {
-            if sym.qualifiers.c_const {
-                return err(format!("variable '{}' with `const` qualifier", sym.id));
+            let meta = sym.get();
+            if meta.qualifiers.c_const {
+                return err(format!("variable '{}' with `const` qualifier", meta.id));
             }
         }
         match &self.ctype {
@@ -1498,11 +1502,11 @@ impl Expr {
             expr: ExprType::Binary(BinaryOp::Compare(token.data), left, right),
         })
     }
-    fn id(symbol: &Metadata, location: Location) -> Self {
+    fn id(symbol: MetadataRef, location: Location) -> Self {
         Self {
             // TODO: this clone will get expensive fast
-            expr: ExprType::Id(symbol.clone()),
-            ctype: symbol.ctype.clone(),
+            expr: ExprType::Id(symbol),
+            ctype: symbol.get().ctype.clone(),
             lval: true,
             location,
         }
@@ -1704,10 +1708,10 @@ impl Type {
     }
 }
 
-fn is_typedef(s: InternedStr, scope: &crate::data::Scope<InternedStr, Metadata>) -> bool {
+fn is_typedef(s: InternedStr, scope: &crate::data::Scope<InternedStr, MetadataRef>) -> bool {
     use crate::data::StorageClass;
     if let Some(symbol) = scope.get(&s) {
-        symbol.storage_class == StorageClass::Typedef
+        symbol.get().storage_class == StorageClass::Typedef
     } else {
         false
     }
@@ -1738,11 +1742,11 @@ pub(crate) mod tests {
         let parsed = parse_expr(&token.to_string());
         assert_eq!(parsed, Ok(Expr::from((token, get_location(&parsed)))));
     }
-    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[&Metadata]) -> CompileResult<Expr> {
+    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[MetadataRef]) -> CompileResult<Expr> {
         let mut parser = parser(input);
         let mut scope = Scope::new();
-        for var in variables {
-            scope.insert(var.id.clone(), (*var).clone());
+        for &var in variables {
+            scope.insert(var.get().id, var);
         }
         parser.scope = scope;
         let exp = parser.expr();
@@ -1782,8 +1786,9 @@ pub(crate) mod tests {
             qualifiers: Default::default(),
             storage_class: Default::default(),
             init: false,
-        };
-        let parsed = parse_expr_with_scope("x", &[&x]);
+        }
+        .insert();
+        let parsed = parse_expr_with_scope("x", &[x]);
         assert_eq!(
             parsed,
             Ok(Expr {
@@ -1818,9 +1823,10 @@ pub(crate) mod tests {
                 return_type: Box::new(Type::Int(true)),
                 varargs: false,
             }),
-        };
-        assert!(parse_expr_with_scope("f(1,2,3)", &[&f]).is_err());
-        let parsed = parse_expr_with_scope("f()", &[&f]);
+        }
+        .insert();
+        assert!(parse_expr_with_scope("f(1,2,3)", &[f]).is_err());
+        let parsed = parse_expr_with_scope("f()", &[f]);
         assert!(match parsed {
             Ok(Expr {
                 expr: ExprType::FuncCall(_, _),

@@ -28,6 +28,12 @@ pico-args = { version = "0.3", optional = true }
 string-interner = "0.7"
 codespan = { git = "https://github.com/brendanzab/codespan" }
 color-backtrace = { version = "0.3", default-features = false, optional = true }
+counter = "0.4"
+
+[dependencies.derive_more]
+version = "0.99"
+default-features = false
+features = ["display"]
 
 [dev-dependencies]
 criterion = "0.3.1"

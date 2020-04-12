@@ -22,7 +22,11 @@ use cranelift_module::{self, DataId, FuncId, Linkage, Module as CraneliftModule}
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct, ObjectTrapCollection};
 
 use crate::arch::TARGET;
-use crate::data::{prelude::*, types::FunctionType, Initializer, Scope, StorageClass};
+use crate::data::{
+    hir::{Declaration, Expr, Initializer, Metadata, MetadataRef, Scope, Stmt},
+    types::FunctionType,
+    StorageClass, *,
+};
 
 type Module = CraneliftModule<ObjectBackend>;
 
@@ -50,9 +54,7 @@ struct Compiler {
 
 /// Compile a program from a high level IR to a Cranelift Module
 pub(crate) fn compile(
-    program: Vec<Locatable<Declaration>>,
-    name: String,
-    debug: bool,
+    program: Vec<Locatable<Declaration>>, name: String, debug: bool,
 ) -> (
     Result<ObjectProduct, CompileError>,
     VecDeque<CompileWarning>,
@@ -61,24 +63,20 @@ pub(crate) fn compile(
     let mut err = None;
     let mut compiler = Compiler::new(name, debug);
     for decl in program {
-        let current = match (decl.data.symbol.ctype.clone(), decl.data.init) {
+        let meta = decl.data.symbol.get();
+        let current = match (meta.ctype.clone(), decl.data.init) {
             (Type::Function(func_type), None) => compiler
                 .declare_func(
-                    decl.data.symbol.id,
+                    meta.id,
                     &func_type.signature(compiler.module.isa()),
-                    decl.data.symbol.storage_class,
+                    meta.storage_class,
                     false,
                 )
                 .map(|_| ()),
             (Type::Void, _) => unreachable!("parser let an incomplete type through"),
-            (Type::Function(func_type), Some(Initializer::FunctionBody(stmts))) => compiler
-                .compile_func(
-                    decl.data.symbol.id,
-                    func_type,
-                    decl.data.symbol.storage_class,
-                    stmts,
-                    decl.location,
-                ),
+            (Type::Function(func_type), Some(Initializer::FunctionBody(stmts))) => {
+                compiler.compile_func(meta.id, func_type, meta.storage_class, stmts, decl.location)
+            }
             (_, Some(Initializer::FunctionBody(_))) => {
                 unreachable!("only functions should have a function body")
             }
@@ -151,11 +149,7 @@ impl Compiler {
     // 3. should always declare `id` as export or local.
     // 2. and 4. should be a no-op.
     fn declare_func(
-        &mut self,
-        id: InternedStr,
-        signature: &Signature,
-        sc: StorageClass,
-        is_definition: bool,
+        &mut self, id: InternedStr, signature: &Signature, sc: StorageClass, is_definition: bool,
     ) -> CompileResult<FuncId> {
         use crate::get_str;
         if !is_definition {
@@ -179,21 +173,19 @@ impl Compiler {
     }
     /// declare an object on the stack
     fn declare_stack(
-        &mut self,
-        decl: Declaration,
-        location: Location,
-        builder: &mut FunctionBuilder,
+        &mut self, decl: Declaration, location: Location, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
-        if let Type::Function(ftype) = decl.symbol.ctype {
+        let meta = decl.symbol.get();
+        if let Type::Function(ftype) = &meta.ctype {
             self.declare_func(
-                decl.symbol.id,
+                meta.id,
                 &ftype.signature(self.module.isa()),
-                decl.symbol.storage_class,
+                meta.storage_class,
                 false,
             )?;
             return Ok(());
         }
-        let u64_size = match decl.symbol.ctype.sizeof() {
+        let u64_size = match meta.ctype.sizeof() {
             Ok(size) => size,
             Err(err) => {
                 return Err(CompileError::semantic(Locatable {
@@ -216,17 +208,14 @@ impl Compiler {
             offset: None,
         };
         let stack_slot = builder.create_stack_slot(data);
-        self.scope.insert(decl.symbol.id, Id::Local(stack_slot));
+        self.scope.insert(meta.id, Id::Local(stack_slot));
         if let Some(init) = decl.init {
             self.store_stack(init, stack_slot, builder)?;
         }
         Ok(())
     }
     fn store_stack(
-        &mut self,
-        init: Initializer,
-        stack_slot: StackSlot,
-        builder: &mut FunctionBuilder,
+        &mut self, init: Initializer, stack_slot: StackSlot, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         match init {
             Initializer::Scalar(expr) => {
@@ -244,10 +233,7 @@ impl Compiler {
     // TODO: this is grossly inefficient, ask Cranelift devs if
     // there's an easier way to make parameters modifiable.
     fn store_stack_params(
-        &mut self,
-        params: Vec<Symbol>,
-        func_start: Block,
-        location: &Location,
+        &mut self, params: Vec<Metadata>, func_start: Block, location: &Location,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         // Cranelift requires that all block params are declared up front
@@ -290,11 +276,7 @@ impl Compiler {
         Ok(())
     }
     fn compile_func(
-        &mut self,
-        id: InternedStr,
-        func_type: FunctionType,
-        sc: StorageClass,
-        stmts: Vec<Stmt>,
+        &mut self, id: InternedStr, func_type: FunctionType, sc: StorageClass, stmts: Vec<Stmt>,
         location: Location,
     ) -> CompileResult<()> {
         let signature = func_type.signature(self.module.isa());

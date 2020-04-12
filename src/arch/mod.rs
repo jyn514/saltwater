@@ -14,8 +14,8 @@ use lazy_static::lazy_static;
 use target_lexicon::Triple;
 
 use crate::data::{
-    prelude::*,
     types::{ArrayType, FunctionType, StructType},
+    *,
 };
 use Type::*;
 
@@ -33,6 +33,7 @@ const CHAR_SIZE: u16 = 1;
 /// The target triple is represented as a struct and contains additional
 /// information like ABI and endianness.
 pub(crate) const TARGET: Triple = Triple::host();
+
 // TODO: make this const when const_if_match is stabilized
 // TODO: see https://github.com/rust-lang/rust/issues/49146
 lazy_static! {
@@ -124,7 +125,7 @@ impl Type {
             Long(_) => Ok(LONG_SIZE.into()),
             Float => Ok(FLOAT_SIZE.into()),
             Double => Ok(DOUBLE_SIZE.into()),
-            Pointer(_) => Ok(PTR_SIZE.into()),
+            Pointer(_, _) => Ok(PTR_SIZE.into()),
             // now for the hard ones
             Array(t, ArrayType::Fixed(l)) => t.sizeof().and_then(|n| Ok(n * l)),
             Array(_, ArrayType::Unbounded) => Err("cannot take sizeof variable length array"),
@@ -142,7 +143,6 @@ impl Type {
             }
             Union(struct_type) => struct_type.union_size(),
             Struct(struct_type) => struct_type.struct_size(),
-            Bitfield(_) => unimplemented!("sizeof(bitfield)"),
             // illegal operations
             Function(_) => Err("cannot take `sizeof` a function"),
             Void => Err("cannot take `sizeof` void"),
@@ -160,14 +160,13 @@ impl Type {
             | Long(_)
             | Float
             | Double
-            | Pointer(_)
+            | Pointer(_, _)
             | Enum(_, _) => self.sizeof(),
             Array(t, _) => t.alignof(),
             // Clang uses the largest alignment of any element as the alignment of the whole
             // Not sure why, but who am I to argue
             // Anyway, Faerie panics if the alignment isn't a power of two so it's probably for the best
             Union(struct_type) | Struct(struct_type) => struct_type.align(),
-            Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),
             VaList => Err("cannot take `alignof` va_list"),
@@ -183,7 +182,7 @@ impl Type {
         match self {
             // Integers
             Bool => types::B1,
-            Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_) | Enum(_, _) => {
+            Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_, _) => {
                 let int_size = SIZE_T::from(CHAR_BIT)
                     * self
                         .sizeof()
@@ -252,8 +251,10 @@ impl FunctionType {
 mod tests {
     use super::*;
     use crate::data::{
+        hir::Metadata as Symbol,
+        hir::Qualifiers,
         types::{StructType, Type},
-        Qualifiers, StorageClass, Symbol,
+        StorageClass,
     };
 
     fn type_for_size(size: u16) -> Type {
@@ -271,7 +272,6 @@ mod tests {
         Symbol {
             id,
             ctype,
-            init: false,
             qualifiers: Qualifiers::NONE,
             storage_class: StorageClass::Auto,
         }
@@ -341,7 +341,10 @@ mod tests {
     }
     #[test]
     fn align_of_non_char_struct() {
-        let ty = struct_for_types(vec![Pointer(Box::new(Int(true))), Int(true)]);
+        let ty = struct_for_types(vec![
+            Pointer(Box::new(Int(true)), Qualifiers::default()),
+            Int(true),
+        ]);
         assert_eq!(ty.alignof(), Ok(8));
     }
 }

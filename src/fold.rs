@@ -1,7 +1,12 @@
-use crate::arch::CHAR_BIT;
-use crate::data::prelude::*;
+#![allow(clippy::trivially_copy_pass_by_ref)]
+
+use crate::data::hir::{BinaryOp, Expr, ExprType};
+// TODO: architecture dependent stuff
+//use crate::arch::CHAR_BIT;
+const CHAR_BIT: u8 = 8;
+use crate::data::lex::Literal::*;
+use crate::data::*;
 use std::ops::{Add, Div, Mul, Sub};
-use Literal::*;
 
 macro_rules! fold_int_bin_op {
     ($op: tt) => {
@@ -16,10 +21,8 @@ macro_rules! fold_int_bin_op {
 
 #[inline]
 fn fold_scalar_bin_op(
-    simple: fn(f64, f64) -> f64,
-    overflowing: fn(i64, i64) -> (i64, bool),
-    wrapping: fn(u64, u64) -> u64,
-    wrapping_byte: fn(u8, u8) -> u8,
+    simple: fn(f64, f64) -> f64, overflowing: fn(i64, i64) -> (i64, bool),
+    wrapping: fn(u64, u64) -> u64, wrapping_byte: fn(u8, u8) -> u8,
 ) -> impl Fn(&Literal, &Literal, &Type) -> Result<Option<Literal>, SemanticError> {
     move |a: &Literal, b: &Literal, _ctype| match (a, b) {
         (Int(a), Int(b)) => {
@@ -54,10 +57,10 @@ macro_rules! fold_compare_op {
                     #[allow(clippy::float_cmp)]
                     (Float(a), Float(b)) => ExprType::Literal(Int((a $op b) as i64)),
                     (Char(a), Char(b)) => ExprType::Literal(Int((a $op b) as i64)),
-                    (_, _) => ExprType::$constructor(Box::new(left), Box::new(right), $compare),
+                    (_, _) => ExprType::Binary(BinaryOp::Compare($compare), Box::new(left), Box::new(right)),
                 }
             }
-            _ => ExprType::$constructor(Box::new(left), Box::new(right), $compare),
+            _ => ExprType::Binary(BinaryOp::Compare($compare), Box::new(left), Box::new(right)),
         }
     }}
 }
@@ -92,10 +95,12 @@ impl Expr {
         let folded = match self.expr {
             ExprType::Literal(_) => self.expr,
             ExprType::Id(ref name) => match &self.ctype {
-                Type::Enum(_, members) => match members.iter().find(|member| member.0 == name.id) {
-                    Some(enum_literal) => ExprType::Literal(Int(enum_literal.1)),
-                    _ => self.expr,
-                },
+                Type::Enum(_, members) => {
+                    match members.iter().find(|member| member.0 == name.get().id) {
+                        Some(enum_literal) => ExprType::Literal(Int(enum_literal.1)),
+                        _ => self.expr,
+                    }
+                }
                 // TODO: if a variable were const, could we const fold Ids?
                 _ => self.expr,
             },
@@ -136,10 +141,13 @@ impl Expr {
                 },
                 ExprType::BitwiseNot,
             )?,
+            ExprType::Binary(op, left, right) => {
+                fold_binary(*left, *right, op, &self.ctype, location)?
+            }
             ExprType::Comma(left, right) => {
                 let (left, right) = (left.const_fold()?, right.const_fold()?);
                 // check if we can ignore left or it has side effects
-                if left.constexpr {
+                if left.is_constexpr() {
                     right.expr
                 } else {
                     ExprType::Comma(Box::new(left), Box::new(right))
@@ -152,118 +160,12 @@ impl Expr {
             ExprType::Deref(expr) => {
                 let folded = expr.const_fold()?;
                 if let ExprType::Literal(Int(0)) = folded.expr {
-                    semantic_err!("cannot dereference NULL pointer".into(), folded.location);
+                    return Err(Locatable::new(
+                        SemanticError::NullPointerDereference.into(),
+                        location,
+                    ));
                 }
                 ExprType::Deref(Box::new(folded))
-            }
-            ExprType::Add(left, right) => left.literal_bin_op(
-                *right,
-                &location,
-                fold_scalar_bin_op(
-                    f64::add,
-                    i64::overflowing_add,
-                    u64::wrapping_add,
-                    u8::wrapping_add,
-                ),
-                ExprType::Add,
-            )?,
-            ExprType::Sub(left, right) => left.literal_bin_op(
-                *right,
-                &location,
-                fold_scalar_bin_op(
-                    f64::sub,
-                    i64::overflowing_sub,
-                    u64::wrapping_sub,
-                    u8::wrapping_sub,
-                ),
-                ExprType::Sub,
-            )?,
-            ExprType::Mul(left, right) => left.literal_bin_op(
-                *right,
-                &location,
-                fold_scalar_bin_op(
-                    f64::mul,
-                    i64::overflowing_mul,
-                    u64::wrapping_mul,
-                    u8::wrapping_mul,
-                ),
-                ExprType::Mul,
-            )?,
-            ExprType::Div(left, right) => {
-                let right = right.const_fold()?;
-                if right.is_zero() {
-                    return Err(location.error(SemanticError::DivideByZero));
-                }
-                left.literal_bin_op(
-                    right,
-                    &location,
-                    fold_scalar_bin_op(
-                        f64::div,
-                        i64::overflowing_div,
-                        u64::wrapping_div,
-                        u8::wrapping_div,
-                    ),
-                    ExprType::Div,
-                )?
-            }
-            ExprType::Mod(left, right) => {
-                let right = right.const_fold()?;
-                if right.is_zero() {
-                    return Err(location.error(SemanticError::DivideByZero));
-                }
-                left.literal_bin_op(
-                    right,
-                    &location,
-                    |a: &Literal, b: &Literal, _| match (a, b) {
-                        (Int(a), Int(b)) => {
-                            let (value, overflowed) = a.overflowing_rem(*b);
-
-                            if overflowed {
-                                Err(SemanticError::ConstOverflow {
-                                    is_positive: value.is_negative(),
-                                })
-                            } else {
-                                Ok(Some(Int(value)))
-                            }
-                        }
-                        (UnsignedInt(a), UnsignedInt(b)) => {
-                            Ok(Some(UnsignedInt(a.wrapping_rem(*b))))
-                        }
-                        (_, _) => Ok(None),
-                    },
-                    ExprType::Mod,
-                )?
-            }
-            ExprType::Xor(left, right) => {
-                left.literal_bin_op(*right, &location, fold_int_bin_op!(^), ExprType::Xor)?
-            }
-            ExprType::BitwiseAnd(left, right) => {
-                left.literal_bin_op(*right, &location, fold_int_bin_op!(&), ExprType::BitwiseAnd)?
-            }
-            ExprType::BitwiseOr(left, right) => {
-                left.literal_bin_op(*right, &location, fold_int_bin_op!(|), ExprType::BitwiseOr)?
-            }
-            ExprType::Shift(left, right, true) => {
-                shift_left(*left, *right, &self.ctype, &location)?
-            }
-            ExprType::Shift(left, right, false) => {
-                shift_right(*left, *right, &self.ctype, &location)?
-            }
-            ExprType::Compare(left, right, Less) => fold_compare_op!(left, right, Compare, <, Less),
-            ExprType::Compare(left, right, LessEqual) => {
-                fold_compare_op!(left, right, Compare, <=, LessEqual)
-            }
-            ExprType::Compare(left, right, Greater) => {
-                fold_compare_op!(left, right, Compare, >, Greater)
-            }
-            ExprType::Compare(left, right, GreaterEqual) => {
-                fold_compare_op!(left, right, Compare, >=, GreaterEqual)
-            }
-            ExprType::Compare(left, right, EqualEqual) => {
-                fold_compare_op!(left, right, Compare, ==, EqualEqual)
-            }
-            ExprType::Compare(left, right, NotEqual) => {
-                fold_compare_op!(left, right, Compare, !=, NotEqual)
             }
             ExprType::Ternary(condition, then, otherwise) => {
                 let (condition, then, otherwise) = (
@@ -295,48 +197,16 @@ impl Expr {
                 let expr = expr.const_fold()?;
                 ExprType::Member(Box::new(expr), member)
             }
-            ExprType::Assign(target, value, token) => {
-                let (target, value) = (target.const_fold()?, value.const_fold()?);
-                // TODO: could we propagate this information somehow?
-                // e.g. fold `int main() { int x = 1; return x; }` to `return 1;`
-                ExprType::Assign(Box::new(target), Box::new(value), token)
-            }
             ExprType::PostIncrement(expr, increase) => {
                 let expr = expr.const_fold()?;
                 // this isn't constant for the same reason assignment isn't constant
                 ExprType::PostIncrement(Box::new(expr), increase)
             }
             ExprType::Cast(expr) => cast(*expr, &self.ctype)?,
-            ExprType::LogicalAnd(left, right) => left.literal_bin_op(
-                *right,
-                &location,
-                |left, right, _| match (left, right) {
-                    (Int(1), Int(1)) => Ok(Some(Int(1))),
-                    (Int(0), _) | (_, Int(0)) => Ok(Some(Int(0))),
-                    _ => Ok(None),
-                },
-                ExprType::LogicalAnd,
-            )?,
-            ExprType::LogicalOr(left, right) => left.literal_bin_op(
-                *right,
-                &location,
-                |left, right, _| match (left, right) {
-                    (Int(0), Int(0)) => Ok(Some(Int(0))),
-                    (Int(1), _) | (_, Int(1)) => Ok(Some(Int(1))),
-                    _ => Ok(None),
-                },
-                ExprType::LogicalOr,
-            )?,
             ExprType::StaticRef(inner) => ExprType::StaticRef(Box::new(inner.const_fold()?)),
         };
-        let is_constexpr = match folded {
-            ExprType::Literal(_) => true,
-            _ => false,
-        };
-        //assert_eq!(self.constexpr, is_constexpr);
         Ok(Expr {
             expr: folded,
-            constexpr: is_constexpr,
             location,
             ..self
         })
@@ -346,16 +216,11 @@ impl Expr {
     /// `Ok(Some(_))`: Successfuly folded
     /// `Ok(None)`: Non-foldable expression
     /// `Err(_)`: Error while folding
-    fn literal_bin_op<F, C>(
-        self,
-        other: Expr,
-        location: &Location,
-        fold_func: F,
-        constructor: C,
+    fn literal_bin_op<F>(
+        self, other: Expr, location: &Location, fold_func: F, op: BinaryOp,
     ) -> CompileResult<ExprType>
     where
         F: FnOnce(&Literal, &Literal, &Type) -> Result<Option<Literal>, SemanticError>,
-        C: FnOnce(Box<Expr>, Box<Expr>) -> ExprType,
     {
         let (left, right) = (self.const_fold()?, other.const_fold()?);
         let literal: Option<ExprType> = match (&left.expr, &right.expr) {
@@ -369,13 +234,10 @@ impl Expr {
             }
             _ => None,
         };
-        Ok(literal.unwrap_or_else(|| constructor(Box::new(left), Box::new(right))))
+        Ok(literal.unwrap_or_else(|| ExprType::Binary(op, Box::new(left), Box::new(right))))
     }
     fn map_literal<F, C>(
-        self,
-        location: &Location,
-        literal_func: F,
-        constructor: C,
+        self, location: &Location, literal_func: F, constructor: C,
     ) -> CompileResult<ExprType>
     where
         F: FnOnce(Literal) -> Result<Literal, SemanticError>,
@@ -388,6 +250,133 @@ impl Expr {
             },
             _ => Ok(constructor(Box::new(self))),
         }
+    }
+}
+
+fn fold_binary(
+    left: Expr, right: Expr, op: BinaryOp, parent_type: &Type, location: Location,
+) -> CompileResult<ExprType> {
+    use lex::ComparisonToken::*;
+    use BinaryOp::*;
+
+    let left = left.const_fold()?;
+    let right = right.const_fold()?;
+
+    match op {
+        Add => left.literal_bin_op(
+            right,
+            &location,
+            fold_scalar_bin_op(
+                f64::add,
+                i64::overflowing_add,
+                u64::wrapping_add,
+                u8::wrapping_add,
+            ),
+            Add,
+        ),
+        Sub => left.literal_bin_op(
+            right,
+            &location,
+            fold_scalar_bin_op(
+                f64::sub,
+                i64::overflowing_sub,
+                u64::wrapping_sub,
+                u8::wrapping_sub,
+            ),
+            Sub,
+        ),
+        Mul => left.literal_bin_op(
+            right,
+            &location,
+            fold_scalar_bin_op(
+                f64::mul,
+                i64::overflowing_mul,
+                u64::wrapping_mul,
+                u8::wrapping_mul,
+            ),
+            Mul,
+        ),
+        Div => {
+            if right.is_zero() {
+                return Err(location.error(SemanticError::DivideByZero));
+            }
+            left.literal_bin_op(
+                right,
+                &location,
+                fold_scalar_bin_op(
+                    f64::div,
+                    i64::overflowing_div,
+                    u64::wrapping_div,
+                    u8::wrapping_div,
+                ),
+                Div,
+            )
+        }
+        Mod => {
+            if right.is_zero() {
+                return Err(location.error(SemanticError::DivideByZero));
+            }
+            left.literal_bin_op(
+                right,
+                &location,
+                |a: &Literal, b: &Literal, _| match (a, b) {
+                    (Int(a), Int(b)) => {
+                        let (value, overflowed) = a.overflowing_rem(*b);
+
+                        if overflowed {
+                            Err(SemanticError::ConstOverflow {
+                                is_positive: value.is_negative(),
+                            })
+                        } else {
+                            Ok(Some(Int(value)))
+                        }
+                    }
+                    (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a.wrapping_rem(*b)))),
+                    (_, _) => Ok(None),
+                },
+                Mod,
+            )
+        }
+        Xor => left.literal_bin_op(right, &location, fold_int_bin_op!(^), Xor),
+        BitwiseAnd => left.literal_bin_op(right, &location, fold_int_bin_op!(&), BitwiseAnd),
+        BitwiseOr => left.literal_bin_op(right, &location, fold_int_bin_op!(|), BitwiseOr),
+        Shl => shift_left(left, right, parent_type, &location),
+        Shr => shift_right(left, right, parent_type, &location),
+        LogicalAnd => left.literal_bin_op(
+            right,
+            &location,
+            |left, right, _| match (left, right) {
+                (Int(1), Int(1)) => Ok(Some(Int(1))),
+                (Int(0), _) | (_, Int(0)) => Ok(Some(Int(0))),
+                _ => Ok(None),
+            },
+            LogicalAnd,
+        ),
+        LogicalOr => left.literal_bin_op(
+            right,
+            &location,
+            |left, right, _| match (left, right) {
+                (Int(0), Int(0)) => Ok(Some(Int(0))),
+                (Int(1), _) | (_, Int(1)) => Ok(Some(Int(1))),
+                _ => Ok(None),
+            },
+            LogicalOr,
+        ),
+        Assign => {
+            // TODO: could we propagate this information somehow?
+            // e.g. fold `int main() { int x = 1; return x; }` to `return 1;`
+            Ok(ExprType::Binary(
+                BinaryOp::Assign,
+                Box::new(left),
+                Box::new(right),
+            ))
+        }
+        Compare(Less) => Ok(fold_compare_op!(left, right, Compare, <, Less)),
+        Compare(LessEqual) => Ok(fold_compare_op!(left, right, Compare, <=, LessEqual)),
+        Compare(Greater) => Ok(fold_compare_op!(left, right, Compare, >, Greater)),
+        Compare(GreaterEqual) => Ok(fold_compare_op!(left, right, Compare, >=, GreaterEqual)),
+        Compare(EqualEqual) => Ok(fold_compare_op!(left, right, Compare, ==, EqualEqual)),
+        Compare(NotEqual) => Ok(fold_compare_op!(left, right, Compare, !=, NotEqual)),
     }
 }
 
@@ -453,10 +442,7 @@ fn const_cast(token: &Literal, ctype: &Type) -> Option<Literal> {
 }
 
 fn shift_right(
-    left: Expr,
-    right: Expr,
-    ctype: &Type,
-    location: &Location,
+    left: Expr, right: Expr, ctype: &Type, location: &Location,
 ) -> CompileResult<ExprType> {
     let (left, right) = (left.const_fold()?, right.const_fold()?);
     if let ExprType::Literal(token) = right.expr {
@@ -485,25 +471,26 @@ fn shift_right(
                 _ => unreachable!("only ints and unsigned ints can be right shifted"),
             })
         } else {
-            Ok(ExprType::Shift(
+            Ok(ExprType::Binary(
+                BinaryOp::Shr,
                 Box::new(left),
                 Box::new(Expr {
                     expr: ExprType::Literal(token),
                     ..right
                 }),
-                false,
             ))
         }
     } else {
-        Ok(ExprType::Shift(Box::new(left), Box::new(right), false))
+        Ok(ExprType::Binary(
+            BinaryOp::Shr,
+            Box::new(left),
+            Box::new(right),
+        ))
     }
 }
 
 fn shift_left(
-    left: Expr,
-    right: Expr,
-    ctype: &Type,
-    location: &Location,
+    left: Expr, right: Expr, ctype: &Type, location: &Location,
 ) -> CompileResult<ExprType> {
     let (left, right) = (left.const_fold()?, right.const_fold()?);
     if let ExprType::Literal(token) = right.expr {
@@ -517,7 +504,12 @@ fn shift_left(
         if left.ctype.is_signed() {
             let size = match left.ctype.sizeof() {
                 Ok(s) => s,
-                Err(err) => semantic_err!(err.into(), *location),
+                Err(err) => {
+                    return Err(Locatable::new(
+                        SemanticError::Generic(err.into()).into(),
+                        *location,
+                    ))
+                }
             };
             let max_shift = u64::from(CHAR_BIT) * size;
             if shift >= max_shift {
@@ -540,27 +532,33 @@ fn shift_left(
             ExprType::Literal(UnsignedInt(u)) => {
                 ExprType::Literal(UnsignedInt(u.wrapping_shl(shift as u32)))
             }
-            _ => ExprType::Shift(
+            _ => ExprType::Binary(
+                BinaryOp::Shl,
                 Box::new(left),
                 Box::new(Expr {
                     expr: ExprType::Literal(token),
                     ..right
                 }),
-                false,
             ),
         })
     } else {
-        Ok(ExprType::Shift(Box::new(left), Box::new(right), false))
+        Ok(ExprType::Binary(
+            BinaryOp::Shl,
+            Box::new(left),
+            Box::new(right),
+        ))
     }
 }
 
-#[cfg(test)]
+#[cfg(never)]
 mod tests {
-    use crate::data::prelude::*;
-    use crate::parse::tests::parse_expr;
+    use crate::analyze::{test::analyze_expr, Analyzer};
+    use crate::data::hir::Expr;
+    use crate::data::*;
+    use crate::test::parser;
 
     fn test_const_fold(s: &str) -> CompileResult<Expr> {
-        parse_expr(s).unwrap().const_fold()
+        analyze_expr(s).unwrap().const_fold()
     }
     fn assert_fold(original: &str, expected: &str) {
         let (folded_a, folded_b) = (

@@ -82,10 +82,7 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
 /// expected_output: '[^\n]*' | 'BEGIN: ' (comment_line* '\n' | [^\n]+) 'END'
 /// comment_line: '\n// ' [^\n+]
 fn output_test<B: BufRead>(
-    line: &str,
-    reader: &mut B,
-    program: &str,
-    path: path::PathBuf,
+    line: &str, reader: &mut B, program: &str, path: path::PathBuf,
 ) -> Result<(), io::Error> {
     const BEGIN: &str = "BEGIN: ";
     const END: &str = "END";

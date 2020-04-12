@@ -39,13 +39,14 @@ impl AsRef<str> for Source {
 pub type Files = codespan::Files<Source>;
 pub type Product = <ObjectBackend as Backend>::Product;
 
-use data::prelude::CompileError;
-pub use data::prelude::*;
+pub use analyze::Analyzer;
+pub use data::*;
 pub use lex::{Lexer, PreProcessor};
 pub use parse::Parser;
 
 #[macro_use]
 mod macros;
+mod analyze;
 mod arch;
 pub mod data;
 mod fold;
@@ -108,10 +109,7 @@ pub struct Opt {
 /// Regardless, this always returns all warnings found.
 #[allow(clippy::type_complexity)]
 pub fn preprocess(
-    buf: &str,
-    opt: &Opt,
-    file: FileId,
-    files: &mut Files,
+    buf: &str, opt: &Opt, file: FileId, files: &mut Files,
 ) -> (
     Result<VecDeque<Locatable<Token>>, VecDeque<CompileError>>,
     VecDeque<CompileWarning>,
@@ -137,10 +135,7 @@ pub fn preprocess(
 
 /// Compile and return the declarations and warnings.
 pub fn compile(
-    buf: &str,
-    opt: &Opt,
-    file: FileId,
-    files: &mut Files,
+    buf: &str, opt: &Opt, file: FileId, files: &mut Files,
 ) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
     let path = opt.search_path.iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
@@ -180,7 +175,7 @@ pub fn compile(
     };
 
     let mut hir = vec![];
-    let mut parser = Parser::new(first, &mut cpp, opt.debug_ast);
+    let mut parser = Analyzer::new(Parser::new(first, &mut cpp, opt.debug_ast));
     for res in &mut parser {
         match res {
             Ok(decl) => hir.push(decl),

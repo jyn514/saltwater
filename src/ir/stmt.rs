@@ -3,13 +3,14 @@ use cranelift::frontend::Switch;
 use cranelift::prelude::{Block, FunctionBuilder, InstBuilder};
 
 use super::Compiler;
-use crate::data::prelude::*;
+use crate::data::{
+    hir::{Expr, Stmt, StmtType},
+    *,
+};
 
 impl Compiler {
     pub(super) fn compile_all(
-        &mut self,
-        stmts: Vec<Stmt>,
-        builder: &mut FunctionBuilder,
+        &mut self, stmts: Vec<Stmt>, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         for stmt in stmts {
             self.compile_stmt(stmt, builder)?;
@@ -17,9 +18,7 @@ impl Compiler {
         Ok(())
     }
     pub(super) fn compile_stmt(
-        &mut self,
-        stmt: Stmt,
-        builder: &mut FunctionBuilder,
+        &mut self, stmt: Stmt, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         if builder.is_filled() && !stmt.data.is_jump_target() {
             return Err(stmt.location.error(SemanticError::UnreachableStatement));
@@ -89,10 +88,7 @@ impl Compiler {
         }
     }
     fn if_stmt(
-        &mut self,
-        condition: Expr,
-        body: Stmt,
-        otherwise: Option<Box<Stmt>>,
+        &mut self, condition: Expr, body: Stmt, otherwise: Option<Box<Stmt>>,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         // If condtion is zero:
@@ -156,10 +152,7 @@ impl Compiler {
         self.last_saw_loop = old_saw_loop;
     }
     fn while_stmt(
-        &mut self,
-        maybe_condition: Option<Expr>,
-        body: Stmt,
-        builder: &mut FunctionBuilder,
+        &mut self, maybe_condition: Option<Expr>, body: Stmt, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         let (loop_body, end_body, old_saw_loop) = self.enter_loop(builder);
 
@@ -183,10 +176,7 @@ impl Compiler {
         builder.switch_to_block(bb);
     }
     fn do_loop(
-        &mut self,
-        body: Stmt,
-        condition: Expr,
-        builder: &mut FunctionBuilder,
+        &mut self, body: Stmt, condition: Expr, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         let (loop_body, end_body, old_saw_loop) = self.enter_loop(builder);
 
@@ -205,13 +195,8 @@ impl Compiler {
         Ok(())
     }
     fn for_loop(
-        &mut self,
-        init: Stmt,
-        condition: Option<Expr>,
-        post_loop: Option<Expr>,
-        mut body: Stmt,
-        location: Location,
-        builder: &mut FunctionBuilder,
+        &mut self, init: Stmt, condition: Option<Expr>, post_loop: Option<Expr>, mut body: Stmt,
+        location: Location, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         self.compile_stmt(init, builder)?;
         if let Some(post_loop) = post_loop {
@@ -235,10 +220,7 @@ impl Compiler {
         self.while_stmt(condition, body, builder)
     }
     fn switch(
-        &mut self,
-        condition: Expr,
-        body: Stmt,
-        builder: &mut FunctionBuilder,
+        &mut self, condition: Expr, body: Stmt, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         let cond_val = self.compile_expr(condition, builder)?;
         // works around https://github.com/CraneStation/cranelift/issues/1057
@@ -273,11 +255,7 @@ impl Compiler {
         Ok(())
     }
     fn case(
-        &mut self,
-        constexpr: u64,
-        stmt: Stmt,
-        location: Location,
-        builder: &mut FunctionBuilder,
+        &mut self, constexpr: u64, stmt: Stmt, location: Location, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         let (switch, _, _) = match self.switches.last_mut() {
             Some(x) => x,
@@ -300,10 +278,7 @@ impl Compiler {
         self.compile_stmt(stmt, builder)
     }
     fn default(
-        &mut self,
-        inner: Stmt,
-        location: Location,
-        builder: &mut FunctionBuilder,
+        &mut self, inner: Stmt, location: Location, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         let (_, default, _) = match self.switches.last_mut() {
             Some(x) => x,
@@ -327,10 +302,7 @@ impl Compiler {
         }
     }
     fn loop_exit(
-        &mut self,
-        is_break: bool,
-        location: Location,
-        builder: &mut FunctionBuilder,
+        &mut self, is_break: bool, location: Location, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         if self.last_saw_loop {
             // break from loop

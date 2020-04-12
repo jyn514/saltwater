@@ -8,20 +8,23 @@ use cranelift_module::{DataContext, DataId, Linkage};
 
 use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
-use crate::data::prelude::*;
-use crate::data::{lex::Literal, types::ArrayType, Initializer, StorageClass};
+use crate::data::*;
+use crate::data::{
+    hir::{Expr, ExprType, Initializer, Metadata, MetadataRef},
+    lex::Literal,
+    types::ArrayType,
+    StorageClass,
+};
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
 
 impl Compiler {
     pub(super) fn store_static(
-        &mut self,
-        mut symbol: Symbol,
-        init: Option<Initializer>,
-        location: Location,
+        &mut self, mut symbol: MetadataRef, init: Option<Initializer>, location: Location,
     ) -> CompileResult<()> {
         use crate::get_str;
+        let symbol = symbol.get();
         let err_closure = |err| Locatable {
             data: err,
             location,
@@ -61,8 +64,10 @@ impl Compiler {
         }
 
         let mut ctx = DataContext::new();
+        // TODO: all of this should happen in the `analyze` module
         if let Some(init) = init {
-            if let Type::Array(_, size @ ArrayType::Unbounded) = &mut symbol.ctype {
+            let mut ctype = symbol.ctype.clone();
+            if let Type::Array(_, size @ ArrayType::Unbounded) = &mut ctype {
                 if let Some(len) = match &init {
                     Initializer::InitializerList(list) => Some(list.len()),
                     Initializer::Scalar(expr) => match &expr.expr {
@@ -74,7 +79,7 @@ impl Compiler {
                     *size = ArrayType::Fixed(len.try_into().unwrap());
                 };
             }
-            let size_t = symbol.ctype.sizeof().map_err(|err| Locatable {
+            let size_t = ctype.sizeof().map_err(|err| Locatable {
                 data: err.to_string(),
                 location,
             })?;
@@ -83,7 +88,7 @@ impl Compiler {
                 .expect("initializer is larger than SIZE_T on host platform");
             let mut buf = vec![0; size];
             let offset = 0;
-            self.init_symbol(&mut ctx, &mut buf, offset, init, &symbol.ctype, &location)?;
+            self.init_symbol(&mut ctx, &mut buf, offset, init, &ctype, &location)?;
             ctx.define(buf.into_boxed_slice());
         } else {
             ctx.define_zeroinit(
@@ -101,9 +106,7 @@ impl Compiler {
         })
     }
     pub(super) fn compile_string(
-        &mut self,
-        string: Vec<u8>,
-        location: Location,
+        &mut self, string: Vec<u8>, location: Location,
     ) -> CompileResult<DataId> {
         use std::collections::hash_map::Entry;
         let len = self.strings.len();
@@ -134,11 +137,7 @@ impl Compiler {
         Ok(str_id)
     }
     fn init_expr(
-        &mut self,
-        ctx: &mut DataContext,
-        buf: &mut [u8],
-        offset: u32,
-        expr: Expr,
+        &mut self, ctx: &mut DataContext, buf: &mut [u8], offset: u32, expr: Expr,
     ) -> CompileResult<()> {
         let expr = expr.const_fold()?;
         // static address-of
@@ -180,8 +179,10 @@ impl Compiler {
         }
         Ok(())
     }
-    fn static_ref(&self, symbol: Symbol, member_offset: i64, offset: u32, ctx: &mut DataContext) {
-        match self.scope.get(&symbol.id) {
+    fn static_ref(
+        &self, symbol: MetadataRef, member_offset: i64, offset: u32, ctx: &mut DataContext,
+    ) {
+        match self.scope.get(&symbol.get().id) {
             Some(Id::Function(func_id)) => {
                 let func_ref = self.module.declare_func_in_data(*func_id, ctx);
                 debug_assert!(member_offset == 0);
@@ -196,13 +197,8 @@ impl Compiler {
         }
     }
     fn init_symbol(
-        &mut self,
-        ctx: &mut DataContext,
-        buf: &mut [u8],
-        mut offset: u32,
-        initializer: Initializer,
-        ctype: &Type,
-        location: &Location,
+        &mut self, ctx: &mut DataContext, buf: &mut [u8], mut offset: u32,
+        initializer: Initializer, ctype: &Type, location: &Location,
     ) -> CompileResult<()> {
         match initializer {
             Initializer::InitializerList(mut initializers) => match ctype {
@@ -256,8 +252,6 @@ impl Compiler {
                     }
                     Ok(())
                 }
-                Type::Bitfield(_) => unimplemented!("bitfield initalizers"),
-
                 Type::Function(_) => unreachable!("function initializers"),
                 Type::Void => unreachable!("initializer for void type"),
                 _ => unreachable!("scalar types should have been handled"),
@@ -269,13 +263,8 @@ impl Compiler {
         }
     }
     fn init_array(
-        &mut self,
-        ctx: &mut DataContext,
-        buf: &mut [u8],
-        mut offset: u32,
-        initializers: Vec<Initializer>,
-        inner_type: &Type,
-        location: &Location,
+        &mut self, ctx: &mut DataContext, buf: &mut [u8], mut offset: u32,
+        initializers: Vec<Initializer>, inner_type: &Type, location: &Location,
     ) -> CompileResult<()> {
         if let Type::Array(_, ArrayType::Unbounded) = inner_type {
             semantic_err!(
@@ -340,10 +329,7 @@ macro_rules! bytes {
 
 impl Literal {
     fn into_bytes(
-        self,
-        ctype: &Type,
-        location: &Location,
-        error_handler: &mut ErrorHandler,
+        self, ctype: &Type, location: &Location, error_handler: &mut ErrorHandler,
     ) -> CompileResult<Box<[u8]>> {
         let ir_type = ctype.as_ir_type();
         let big_endian = TARGET

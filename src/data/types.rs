@@ -1,5 +1,4 @@
-use super::Symbol;
-use crate::arch::SIZE_T;
+use super::hir::Metadata;
 use crate::intern::InternedStr;
 pub use struct_ref::{StructRef, StructType};
 
@@ -7,7 +6,7 @@ mod struct_ref {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use super::Symbol;
+    use super::Metadata;
 
     thread_local!(
         /// The global storage for all struct definitions.
@@ -19,7 +18,7 @@ mod struct_ref {
         /// Rc: A hack so that the members can be accessed across function boundaries,
         /// see the documentation for `StructRef::get`.
         /// Vec<Symbol>: The members of a single struct definition.
-        static TYPES: RefCell<Vec<Rc<Vec<Symbol>>>> = Default::default()
+        static TYPES: RefCell<Vec<Rc<Vec<Metadata>>>> = Default::default()
     );
 
     /// A reference to a struct definition. Allows self-referencing structs.
@@ -54,8 +53,8 @@ mod struct_ref {
         /// Returns the definition for a given struct.
         ///
         /// Examples:
-        /// ```
-        /// use rcc::data::types::StructRef;
+        /// ```ignore
+        /// use parser::data::types::StructRef;
         /// let struct_ref = StructRef::new();
         /// let members = struct_ref.get();
         /// for symbol in members.iter() {
@@ -65,7 +64,7 @@ mod struct_ref {
         // Implementation hack: because thread_local items cannot be returned
         // from a closure, this uses an Rc so that it can be `clone`d cheaply.
         // The clone is necessary so the members do not reference TYPES.
-        pub fn get(self) -> Rc<Vec<Symbol>> {
+        pub fn get(self) -> Rc<Vec<Metadata>> {
             TYPES.with(|list| list.borrow()[self.0].clone())
         }
 
@@ -83,7 +82,7 @@ mod struct_ref {
         /// ```
         pub(crate) fn update<V>(self, members: V)
         where
-            V: Into<Rc<Vec<Symbol>>>,
+            V: Into<Rc<Vec<Metadata>>>,
         {
             TYPES.with(|list| {
                 let mut types = list.borrow_mut();
@@ -93,7 +92,7 @@ mod struct_ref {
     }
 
     /// Structs can be either named or anonymous.
-    #[derive(Clone, Debug, PartialEq, Eq)]
+    #[derive(Clone, Debug, PartialEq)]
     pub enum StructType {
         /// Named structs can have forward declarations and be defined at any point
         /// in the program. In order to support self referential structs, named structs
@@ -104,12 +103,12 @@ mod struct_ref {
         Named(super::InternedStr, StructRef),
         /// Anonymous structs carry all their information with them,
         /// there's no need (or way) to use StructRef.
-        Anonymous(Rc<Vec<Symbol>>),
+        Anonymous(Rc<Vec<Metadata>>),
     }
 
     impl StructType {
         /// Get the members of a struct, regardless of which variant it is
-        pub fn members(&self) -> Rc<Vec<Symbol>> {
+        pub fn members(&self) -> Rc<Vec<Metadata>> {
             match self {
                 StructType::Anonymous(members) => Rc::clone(members),
                 StructType::Named(_, struct_ref) => struct_ref.get(),
@@ -131,7 +130,7 @@ mod struct_ref {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Void,
     Bool,
@@ -141,48 +140,44 @@ pub enum Type {
     Long(bool),
     Float,
     Double,
-    Pointer(Box<Type>),
+    // TODO: separate Qualifiers into LvalQualifiers and FunctionQualifiers
+    Pointer(Box<Type>, super::hir::Qualifiers),
     Array(Box<Type>, ArrayType),
     Function(FunctionType),
     Union(StructType),
     Struct(StructType),
     /// Enums should always have members, since tentative definitions are not allowed
     Enum(Option<InternedStr>, Vec<(InternedStr, i64)>),
-    /// This should probably be merged into Structs at some point
-    Bitfield(Vec<BitfieldType>),
     /// This is the type used for variadic arguments.
     VaList,
     /// A semantic error occured while parsing this type.
     Error,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ArrayType {
-    Fixed(SIZE_T),
+    Fixed(u64),
     Unbounded,
 }
 
-#[derive(Clone, Debug, Eq)]
-// note: old-style declarations are not supported at this time
+// NOTE: K&R declarations are not supported at this time
+// NOTE: previously, `PartialEq` for FunctionType returned whether the two functions had compatible prototypes,
+// which is _not_ the same as having the _same_ prototypes.
+// This #[derive(PartialEq)] returns whether the functions have the _same_ prototype.
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunctionType {
-    // why Symbol instead of Type?
+    // TODO: allow FunctionQualifiers as well
+    pub return_type: Box<Type>,
+    // why Metadata instead of Type?
     // 1. we need to know qualifiers for the params. if we made that part of Type,
     //    we'd need qualifiers for every step along the way
     //    (consider that int a[][][] parses as 4 nested types).
     // 2. when we do scoping, we need to know the names of formal parameters
     //    (as opposed to concrete arguments).
     //    this is as good a place to store them as any.
-    pub return_type: Box<Type>,
-    pub params: Vec<Symbol>,
+    // None represents an abstract parameter
+    pub params: Vec<Metadata>,
     pub varargs: bool,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BitfieldType {
-    pub offset: i32,
-    pub name: Option<InternedStr>,
-    pub ctype: Type,
 }
 
 impl Type {
@@ -234,7 +229,7 @@ impl Type {
     #[inline]
     pub fn is_pointer(&self) -> bool {
         match self {
-            Type::Pointer(_) => true,
+            Type::Pointer(_, _) => true,
             _ => false,
         }
     }
@@ -254,13 +249,7 @@ impl Type {
     }
 }
 
-impl PartialEq for ArrayType {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-impl Eq for ArrayType {}
-
+/*
 impl PartialEq for FunctionType {
     fn eq(&self, other: &Self) -> bool {
         // no prototype: any parameters are allowed
@@ -280,6 +269,7 @@ impl PartialEq for FunctionType {
                 })
     }
 }
+*/
 
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -290,9 +280,7 @@ impl std::fmt::Display for Type {
 use std::fmt::{self, Formatter};
 
 pub(super) fn print_type(
-    ctype: &Type,
-    name: Option<InternedStr>,
-    f: &mut Formatter,
+    ctype: &Type, name: Option<InternedStr>, f: &mut Formatter,
 ) -> fmt::Result {
     print_pre(ctype, f)?;
     print_mid(ctype, name, f)?;
@@ -312,15 +300,14 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         }
         Bool => write!(f, "_Bool"),
         Float | Double | Void => write!(f, "{}", format!("{:?}", ctype).to_lowercase()),
-        Pointer(inner) | Array(inner, _) => print_pre(inner, f),
-        Function(ftype) => write!(f, "{}", ftype.return_type),
+        Pointer(inner, _) | Array(inner, _) => print_pre(inner, f),
+        Function(ftype) => print_type(&ftype.return_type, None, f),
         Enum(Some(ident), _) => write!(f, "enum {}", ident),
         Enum(None, _) => write!(f, "<anonymous enum>"),
         Union(StructType::Named(ident, _)) => write!(f, "union {}", ident),
         Union(_) => write!(f, "<anonymous union>"),
         Struct(StructType::Named(ident, _)) => write!(f, "struct {}", ident),
         Struct(_) => write!(f, "<anonymous struct>"),
-        Bitfield(_) => unimplemented!("printing bitfield type"),
         VaList => write!(f, "va_list"),
         Error => write!(f, "<type error>"),
     }
@@ -328,27 +315,46 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
 
 fn print_mid(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt::Result {
     match ctype {
-        Type::Pointer(to) => {
+        Type::Pointer(to, qs) => {
+            let name = name.unwrap_or_default();
+            // what do we do for (**p)()?
+            // we have to look arbitrarily deep into the type,
+            // but also we have to only print the ( once,
+            // so how do we know we know if it's already been printed?
+            let depth = match &**to {
+                Type::Array(_, _) | Type::Function(_) => true,
+                _ => false,
+            };
             print_mid(to, None, f)?;
-            match &**to {
-                Type::Array(_, _) | Type::Function(_) => {
-                    write!(f, "(*{})", name.unwrap_or_default())?
-                }
-                _ => write!(f, " *{}", name.unwrap_or_default())?,
+
+            write!(f, " ")?;
+            if depth {
+                write!(f, "(")?;
             }
+
+            let pointer = if qs != &Default::default() && name != InternedStr::default() {
+                format!("*{} {}", qs, name)
+            } else {
+                format!("*{}{}", qs, name)
+            };
+            write!(f, "{}", pointer)?;
+            if depth {
+                write!(f, ")")?;
+            }
+            Ok(())
         }
-        Type::Array(to, _) => print_mid(to, name, f)?,
+        Type::Array(to, _) => print_mid(to, name, f),
         _ => {
             if let Some(name) = name {
                 write!(f, " {}", name)?;
             }
+            Ok(())
         }
     }
-    Ok(())
 }
 fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
     match ctype {
-        Type::Pointer(to) => print_post(to, f),
+        Type::Pointer(to, _) => print_post(to, f),
         Type::Array(to, size) => {
             write!(f, "[")?;
             if let ArrayType::Fixed(size) = size {
@@ -358,24 +364,27 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
             print_post(to, f)
         }
         Type::Function(func_type) => {
-            // https://stackoverflow.com/a/30325430
-            let mut comma_seperated = "(".to_string();
-            for param in &func_type.params {
-                comma_seperated.push_str(&param.ctype.to_string());
-                if param.id != Default::default() {
-                    comma_seperated.push(' ');
-                    comma_seperated.push_str(&param.id.to_string());
-                }
-                comma_seperated.push_str(", ");
+            write!(f, "(")?;
+            let mut params = func_type.params.iter();
+            let print = |f: &mut _, symbol: &Metadata| {
+                let id = if symbol.id == InternedStr::default() {
+                    None
+                } else {
+                    Some(symbol.id)
+                };
+                print_type(&symbol.ctype, id, f)
+            };
+            if let Some(first) = params.next() {
+                print(f, first)?;
+            }
+            for symbol in params {
+                write!(f, ", ")?;
+                print(f, symbol)?;
             }
             if func_type.varargs {
-                comma_seperated.push_str("...");
-            } else if !func_type.params.is_empty() {
-                comma_seperated.pop();
-                comma_seperated.pop();
+                write!(f, ", ...")?;
             }
-            comma_seperated.push(')');
-            write!(f, "{}", comma_seperated)
+            write!(f, ")")
         }
         _ => Ok(()),
     }

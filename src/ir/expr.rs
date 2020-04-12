@@ -70,6 +70,9 @@ impl<B: Backend> Compiler<B> {
             ExprType::Binary(BinaryOp::LogicalAnd, left, right) => {
                 self.logical_expr(*left, *right, true, builder)
             }
+            ExprType::Binary(BinaryOp::Assign(token), left, right) => {
+                self.assignment(*left, *right, token, builder)
+            }
             ExprType::Binary(op, left, right) => {
                 self.binary_assign_op(*left, *right, expr.ctype, op, builder)
             }
@@ -292,7 +295,10 @@ impl<B: Backend> Compiler<B> {
             // logical shift: shifts in zeros
             (Shr, ty, false) if ty.is_int() => b::ushr,
             (Xor, ty, _) if ty.is_int() => b::bxor,
-            (LogicalAnd, _, _) | (LogicalOr, _, _) => unreachable!("should be handled earlier"),
+            (Compare(token), _, _) => return Self::compare(left, right, token, builder),
+            (Assign(_), _, _) | (LogicalAnd, _, _) | (LogicalOr, _, _) => {
+                unreachable!("should be handled earlier")
+            }
             _ => unreachable!(
                 "bug in parser: passed invalid type {} for binary op {}",
                 ctype, op
@@ -426,16 +432,11 @@ impl<B: Backend> Compiler<B> {
         })
     }
     fn compare(
-        &mut self,
-        left: Expr,
-        right: Expr,
+        left: Value,
+        right: Value,
         token: ComparisonToken,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        let (left, right) = (
-            self.compile_expr(left, builder)?,
-            self.compile_expr(right, builder)?,
-        );
         assert_eq!(left.ir_type, right.ir_type);
 
         let ir_val = if left.ir_type.is_int() {
@@ -496,7 +497,6 @@ impl<B: Backend> Compiler<B> {
         // scalar assignment
         let target_val = target.ir_val;
         let mut value = value;
-        /*
         if token != AssignmentToken::Equal {
             // need to deref explicitly to get an rval, the frontend didn't do it for us
             let ir_type = ctype.as_ir_type();
@@ -517,7 +517,6 @@ impl<B: Backend> Compiler<B> {
             value =
                 Self::binary_assign_ir(target, value, ctype, token.without_assignment(), builder)?;
         }
-        */
         builder
             .ins()
             .store(MemFlags::new(), value.ir_val, target_val, 0);

@@ -398,7 +398,7 @@ pub(crate) mod test {
     use crate::data::ast::ExternalDeclaration;
     use crate::data::lex::test::cpp;
     use crate::data::*;
-    use crate::lex::{Lexer, PreProcessor};
+    use crate::lex::PreProcessor;
     use proptest::prelude::*;
 
     pub(crate) type ParseType = CompileResult<Locatable<ExternalDeclaration>>;

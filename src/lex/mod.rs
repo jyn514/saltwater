@@ -7,7 +7,6 @@ use super::data::{error::LexError, lex::*, *};
 use super::intern::InternedStr;
 use crate::get_str;
 
-//mod cpp;
 mod cpp;
 pub use cpp::{PreProcessor, PreProcessorBuilder};
 #[cfg(test)]
@@ -26,7 +25,7 @@ type LexResult<T = Token> = Result<T, Locatable<LexError>>;
 /// Lexer implements iterator, so you can loop over the tokens.
 /// ```
 #[derive(Debug)]
-pub struct Lexer {
+struct Lexer {
     location: SingleLocation,
     chars: Rc<str>,
     /// used for 2-character tokens

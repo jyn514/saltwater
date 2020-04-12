@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use parser::{Lexer, Locatable, Location, Parser, Token};
+use rcc::{Lexer, Locatable, Location, Parser, Token};
 use std::rc::Rc;
 
 fn parens(c: &mut Criterion) {

@@ -131,7 +131,7 @@ impl<I: Lexer> Iterator for Parser<I> {
             });
         if self.debug {
             if let Some(Ok(decl)) = &next {
-                println!("{:?}", decl.data);
+                println!("{}", decl.data);
             }
         }
         next

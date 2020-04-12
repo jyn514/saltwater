@@ -83,7 +83,7 @@ pub struct Expr {
 }
 
 /// An identifier used to look up the metadata for a variable.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct MetadataRef(usize);
 
 thread_local!(

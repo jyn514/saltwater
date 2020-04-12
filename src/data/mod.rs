@@ -95,8 +95,8 @@ mod tests {
             "int",
             "int *",
             "int[1][2][3]",
-            "char *(*)(float)",
-            "short *(*)[1][2][3]",
+            "char * (*)(float)",
+            "short * (*)[1][2][3]",
             "_Bool",
             "struct s",
         ];

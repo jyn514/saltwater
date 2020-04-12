@@ -1,23 +1,10 @@
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 
-//use codespan::{FileId, Span};
-
-use std::borrow::Borrow;
-//use codespan::{FileId, Span};
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
 use crate::intern::InternedStr;
-
-/*
-// holds where a piece of code came from
-// should almost always be immutable
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Location {
-    pub span: Span,
-    pub file: FileId,
-}
-*/
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
@@ -43,6 +30,7 @@ pub trait LocationTrait: Copy + std::fmt::Debug + PartialEq + Sized {
         self.with(error.into())
     }
 }
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct DefaultLocation {
     pub span: Span,

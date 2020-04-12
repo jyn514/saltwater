@@ -56,8 +56,8 @@ mod struct_ref {
         /// Returns the definition for a given struct.
         ///
         /// Examples:
-        /// ```ignore
-        /// use parser::data::types::StructRef;
+        /// ```
+        /// use rcc::data::types::StructRef;
         /// let struct_ref = StructRef::new();
         /// let members = struct_ref.get();
         /// for symbol in members.iter() {
@@ -95,7 +95,7 @@ mod struct_ref {
     }
 
     /// Structs can be either named or anonymous.
-    #[derive(Clone, Debug, PartialEq)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
     pub enum StructType {
         /// Named structs can have forward declarations and be defined at any point
         /// in the program. In order to support self referential structs, named structs
@@ -133,7 +133,7 @@ mod struct_ref {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     Void,
     Bool,
@@ -157,7 +157,7 @@ pub enum Type {
     Error,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum ArrayType {
     Fixed(u64),
@@ -168,7 +168,7 @@ pub enum ArrayType {
 // NOTE: previously, `PartialEq` for FunctionType returned whether the two functions had compatible prototypes,
 // which is _not_ the same as having the _same_ prototypes.
 // This #[derive(PartialEq)] returns whether the functions have the _same_ prototype.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FunctionType {
     // TODO: allow FunctionQualifiers as well
     pub return_type: Box<Type>,

@@ -439,7 +439,7 @@ impl<T: Lexer> Analyzer<T> {
         };
         let mut expected = functype.params.len();
         // f(void)
-        if expected == 1 && functype.params[0].ctype == Type::Void {
+        if expected == 1 && functype.params[0].get().ctype == Type::Void {
             expected = 0;
         }
         // f() takes _any_ number of arguments
@@ -457,7 +457,7 @@ impl<T: Lexer> Analyzer<T> {
             let promoted = match functype.params.get(i) {
                 Some(expected) => arg
                     .rval()
-                    .implicit_cast(&expected.ctype, &mut self.error_handler),
+                    .implicit_cast(&expected.get().ctype, &mut self.error_handler),
                 None => self.default_promote(arg),
             };
             promoted_args.push(promoted);
@@ -1235,7 +1235,8 @@ mod test {
                     id: Default::default(),
                     qualifiers: Default::default(),
                     storage_class: StorageClass::Auto,
-                }],
+                }
+                .insert()],
                 return_type: Box::new(Type::Int(true)),
                 varargs: false,
             }),

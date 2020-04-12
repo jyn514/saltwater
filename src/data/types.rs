@@ -8,7 +8,7 @@ pub use struct_ref::{StructRef, StructType};
 use crate::arch::SIZE_T;
 use crate::intern::InternedStr;
 
-use super::Metadata;
+use super::{Metadata, MetadataRef};
 
 mod struct_ref {
     use std::cell::RefCell;
@@ -171,6 +171,7 @@ pub enum ArrayType {
 #[derive(Clone, Debug, Eq)]
 // note: old-style declarations are not supported at this time
 pub struct FunctionType {
+    pub return_type: Box<Type>,
     // why Symbol instead of Type?
     // 1. we need to know qualifiers for the params. if we made that part of Type,
     //    we'd need qualifiers for every step along the way
@@ -178,8 +179,7 @@ pub struct FunctionType {
     // 2. when we do scoping, we need to know the names of formal parameters
     //    (as opposed to concrete arguments).
     //    this is as good a place to store them as any.
-    pub return_type: Box<Type>,
-    pub params: Vec<Metadata>,
+    pub params: Vec<MetadataRef>,
     pub varargs: bool,
 }
 
@@ -273,6 +273,7 @@ impl PartialEq for FunctionType {
                 .iter()
                 .zip(other.params.iter())
                 .all(|(this_param, other_param)| {
+                    let (this_param, other_param) = (this_param.get(), other_param.get());
                     this_param.ctype == other_param.ctype
                         && this_param.qualifiers == other_param.qualifiers
                 })
@@ -356,6 +357,7 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
             // https://stackoverflow.com/a/30325430
             let mut comma_seperated = "(".to_string();
             for param in &func_type.params {
+                let param = param.get();
                 comma_seperated.push_str(&param.ctype.to_string());
                 if param.id != Default::default() {
                     comma_seperated.push(' ');

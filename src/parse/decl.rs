@@ -177,7 +177,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if ftype.params.is_empty() {
             return true;
         }
-        let types: Vec<&Type> = ftype.params.iter().map(|param| &param.ctype).collect();
+        let meta: Vec<_> = ftype.params.iter().map(|param| param.get()).collect();
+        let types: Vec<_> = meta.iter().map(|param| &param.ctype).collect();
         // allow 'main(void)'
         if types == vec![&Type::Void] {
             return true;
@@ -186,7 +187,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if types.len() != 2 || *types[0] != Type::Int(true) {
             return false;
         }
-        match types[1] {
+        match &types[1] {
             Type::Pointer(t) | Type::Array(t, _) => match &**t {
                 Type::Pointer(inner) => inner.is_char(),
                 _ => false,
@@ -1412,7 +1413,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         // add parameters to scope
         self.enter_scope();
         let len = ftype.params.len();
-        for (i, param) in ftype.params.into_iter().enumerate() {
+        for (i, symbol) in ftype.params.into_iter().enumerate() {
+            let param = symbol.get();
             if param.id == Default::default() {
                 if param.ctype == Type::Void {
                     assert_eq!(len, 1);
@@ -1426,7 +1428,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location,
                 );
             }
-            self.scope.insert(param.id, param.insert());
+            self.scope.insert(param.id, symbol);
         }
         self.current_function = Some(FunctionData {
             return_type: *ftype.return_type,
@@ -1739,13 +1741,21 @@ impl Declarator {
                         });
                         Type::Function(FunctionType {
                             return_type: Box::new(Type::Error),
-                            params: func_decl.params.into_iter().map(|x| x.data).collect(),
+                            params: func_decl
+                                .params
+                                .into_iter()
+                                .map(|x| x.data.insert())
+                                .collect(),
                             varargs: func_decl.varargs,
                         })
                     }
                     _ => Type::Function(FunctionType {
                         return_type: Box::new(current),
-                        params: func_decl.params.into_iter().map(|x| x.data).collect(),
+                        params: func_decl
+                            .params
+                            .into_iter()
+                            .map(|x| x.data.insert())
+                            .collect(),
                         varargs: func_decl.varargs,
                     }),
                 },
@@ -2009,14 +2019,16 @@ mod tests {
                         qualifiers: Default::default(),
                         init: true,
                         storage_class: Default::default()
-                    },
+                    }
+                    .insert(),
                     Metadata {
                         id: Default::default(),
                         ctype: Char(true),
                         qualifiers: Default::default(),
                         init: true,
                         storage_class: Default::default()
-                    },
+                    }
+                    .insert(),
                     Metadata {
                         id: Default::default(),
                         ctype: Float,
@@ -2024,6 +2036,7 @@ mod tests {
                         init: true,
                         storage_class: Default::default()
                     }
+                    .insert()
                 ],
                 varargs: false,
             })),)
@@ -2043,7 +2056,8 @@ mod tests {
                     qualifiers: Default::default(),
                     storage_class: Default::default(),
                     init: true,
-                }],
+                }
+                .insert()],
                 varargs: false,
             }),),)
         ));
@@ -2057,7 +2071,8 @@ mod tests {
                     qualifiers: Default::default(),
                     init: true,
                     storage_class: Default::default()
-                }],
+                }
+                .insert()],
                 varargs: true,
             })
         ));
@@ -2074,7 +2089,8 @@ mod tests {
                     qualifiers: Default::default(),
                     storage_class: Default::default(),
                     init: true,
-                }],
+                }
+                .insert()],
                 varargs: false
             })
         ));
@@ -2118,7 +2134,8 @@ mod tests {
                         id: Default::default(),
                         qualifiers: Qualifiers::NONE,
                         init: true,
-                    }],
+                    }
+                    .insert()],
                     varargs: false,
                 })),)),
                 ArrayType::Unbounded,
@@ -2138,7 +2155,8 @@ mod tests {
                     id: Default::default(),
                     qualifiers: Default::default(),
                     init: true,
-                }],
+                }
+                .insert()],
                 varargs: false,
             })),)
         ));

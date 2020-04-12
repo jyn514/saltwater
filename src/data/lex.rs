@@ -320,9 +320,11 @@ impl AssignmentToken {
 #[cfg(test)]
 impl Default for DefaultLocation {
     fn default() -> Self {
+        let mut files = crate::Files::default();
+        let id = files.add("<test suite>", String::new().into());
         Self {
             span: (0..1).into(),
-            file: (),
+            file: id,
         }
     }
 }
@@ -444,5 +446,34 @@ impl From<AssignmentToken> for Token {
 impl From<ComparisonToken> for Token {
     fn from(a: ComparisonToken) -> Self {
         Token::Comparison(a)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test {
+    use crate::*;
+
+    /// Create a new preprocessor with `s` as the input
+    pub(crate) fn cpp(s: &str) -> PreProcessor {
+        let newline = format!("{}\n", s).into_boxed_str();
+        cpp_no_newline(Box::leak(newline))
+    }
+    /// Create a new preprocessor with `s` as the input, but without a trailing newline
+    pub(crate) fn cpp_no_newline(s: &str) -> PreProcessor {
+        let mut files: Files = Default::default();
+        let id = files.add("<test suite>", String::new().into());
+        PreProcessor::new(id, s, false, vec![], Box::leak(Box::new(files)))
+    }
+
+    #[test]
+    fn assignment_display() {
+        let tokens = [
+            "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", ">>=", "<<=", "^=",
+        ];
+        for token in &tokens {
+            let mut lexer = cpp(token);
+            let first = lexer.next().unwrap().unwrap().data;
+            assert_eq!(&first.to_string(), *token);
+        }
     }
 }

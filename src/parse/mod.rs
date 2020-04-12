@@ -396,8 +396,9 @@ impl Token {
 pub(crate) mod test {
     use super::Parser;
     use crate::data::ast::ExternalDeclaration;
+    use crate::data::lex::test::cpp;
     use crate::data::*;
-    use crate::lex::Lexer;
+    use crate::lex::{Lexer, PreProcessor};
 
     pub(crate) type ParseType = CompileResult<Locatable<ExternalDeclaration>>;
     pub(crate) fn parse(input: &str) -> Option<ParseType> {
@@ -418,8 +419,9 @@ pub(crate) mod test {
     pub(crate) fn parse_all(input: &str) -> Vec<ParseType> {
         parser(input).collect()
     }
-    pub(crate) fn parser(input: &str) -> Parser<Lexer> {
-        let mut lexer = Lexer::new((), format!("{}\n", input), false);
+    pub(crate) fn parser(input: &str) -> Parser<PreProcessor> {
+        //let mut lexer = Lexer::new((), format!("{}\n", input), false);
+        let mut lexer = cpp(input);
         let first: Locatable<Token, Location> = lexer.next().unwrap().unwrap();
         Parser::new(first, lexer, false)
     }

@@ -17,23 +17,24 @@ const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
 impl<B: Backend> Compiler<B> {
     pub(super) fn store_static(
         &mut self,
-        mut symbol: Metadata,
+        symbol: MetadataRef,
         init: Option<Initializer>,
         location: Location,
     ) -> CompileResult<()> {
         use crate::get_str;
+        let metadata = symbol.get();
         let err_closure = |err| Locatable {
             data: err,
             location,
         };
-        let linkage = symbol.storage_class.try_into().map_err(err_closure)?;
-        let align = symbol
+        let linkage = metadata.storage_class.try_into().map_err(err_closure)?;
+        let align = metadata
             .ctype
             .alignof()
             .map_err(|err| err.to_string())
             .and_then(|size| {
                 size.try_into()
-                    .map_err(|_| format!("align of {} is greater than 256 bytes", symbol.id))
+                    .map_err(|_| format!("align of {} is greater than 256 bytes", metadata.id))
             })
             .map_err(err_closure)?;
         if align == 0 {
@@ -43,9 +44,9 @@ impl<B: Backend> Compiler<B> {
         let id = self
             .module
             .declare_data(
-                get_str!(symbol.id),
+                get_str!(metadata.id),
                 linkage,
-                !symbol.qualifiers.c_const,
+                !metadata.qualifiers.c_const,
                 Some(align),
             )
             .map_err(|err| Locatable {
@@ -53,7 +54,7 @@ impl<B: Backend> Compiler<B> {
                 location,
             })?;
 
-        self.scope.insert(symbol.id, Id::Global(id));
+        self.declarations.insert(symbol, Id::Global(id));
 
         if linkage == Linkage::Import {
             debug_assert!(init.is_none());
@@ -62,7 +63,8 @@ impl<B: Backend> Compiler<B> {
 
         let mut ctx = DataContext::new();
         if let Some(init) = init {
-            if let Type::Array(_, size @ ArrayType::Unbounded) = &mut symbol.ctype {
+            let mut ctype = metadata.ctype.clone();
+            if let Type::Array(_, size @ ArrayType::Unbounded) = &mut ctype {
                 if let Some(len) = match &init {
                     Initializer::InitializerList(list) => Some(list.len()),
                     Initializer::Scalar(expr) => match &expr.expr {
@@ -74,7 +76,7 @@ impl<B: Backend> Compiler<B> {
                     *size = ArrayType::Fixed(len.try_into().unwrap());
                 };
             }
-            let size_t = symbol.ctype.sizeof().map_err(|err| Locatable {
+            let size_t = metadata.ctype.sizeof().map_err(|err| Locatable {
                 data: err.to_string(),
                 location,
             })?;
@@ -83,11 +85,11 @@ impl<B: Backend> Compiler<B> {
                 .expect("initializer is larger than SIZE_T on host platform");
             let mut buf = vec![0; size];
             let offset = 0;
-            self.init_symbol(&mut ctx, &mut buf, offset, init, &symbol.ctype, &location)?;
+            self.init_symbol(&mut ctx, &mut buf, offset, init, &metadata.ctype, &location)?;
             ctx.define(buf.into_boxed_slice());
         } else {
             ctx.define_zeroinit(
-                symbol
+                metadata
                     .ctype
                     .sizeof()
                     .map_err(|err| err_closure(err.to_string()))? as usize,
@@ -180,8 +182,14 @@ impl<B: Backend> Compiler<B> {
         }
         Ok(())
     }
-    fn static_ref(&self, symbol: Metadata, member_offset: i64, offset: u32, ctx: &mut DataContext) {
-        match self.scope.get(&symbol.id) {
+    fn static_ref(
+        &self,
+        symbol: MetadataRef,
+        member_offset: i64,
+        offset: u32,
+        ctx: &mut DataContext,
+    ) {
+        match self.declarations.get(&symbol) {
             Some(Id::Function(func_id)) => {
                 let func_ref = self.module.declare_func_in_data(*func_id, ctx);
                 debug_assert!(member_offset == 0);

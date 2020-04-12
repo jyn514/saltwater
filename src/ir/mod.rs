@@ -7,7 +7,7 @@ use std::convert::TryFrom;
 
 use crate::arch::{CHAR_BIT, PTR_SIZE, SIZE_T, TARGET};
 use crate::data::{
-    lex::ComparisonToken, prelude::*, types::FunctionType, Initializer, Scope, StorageClass,
+    lex::ComparisonToken, prelude::*, types::FunctionType, Initializer, StorageClass,
 };
 use cranelift::codegen::{
     self,
@@ -79,11 +79,11 @@ enum Id {
 
 struct Compiler<T: Backend> {
     module: Module<T>,
-    scope: Scope<InternedStr, Id>,
     debug: bool,
     // if false, we last saw a switch
     last_saw_loop: bool,
     strings: HashMap<Vec<u8>, DataId>,
+    declarations: HashMap<MetadataRef, Id>,
     loops: Vec<(Block, Block)>,
     // switch, default, end
     // if default is empty once we get to the end of a switch body,
@@ -103,28 +103,22 @@ pub(crate) fn compile<B: Backend>(
     let mut err = None;
     let mut compiler = Compiler::new(module, debug);
     for decl in program {
-        let current = match (decl.data.symbol.ctype.clone(), decl.data.init) {
-            (Type::Function(func_type), None) => compiler
-                .declare_func(
-                    decl.data.symbol.id,
-                    &func_type.signature(compiler.module.isa()),
-                    decl.data.symbol.storage_class,
-                    false,
-                )
-                .map(|_| ()),
-            (Type::Void, _) => unreachable!("parser let an incomplete type through"),
-            (Type::Function(func_type), Some(Initializer::FunctionBody(stmts))) => compiler
-                .compile_func(
-                    decl.data.symbol.id,
-                    func_type,
-                    decl.data.symbol.storage_class,
-                    stmts,
-                    decl.location,
-                ),
-            (_, Some(Initializer::FunctionBody(_))) => {
-                unreachable!("only functions should have a function body")
+        let meta = decl.data.symbol.get();
+        let current = match &meta.ctype {
+            Type::Function(func_type) => match decl.data.init {
+                Some(Initializer::FunctionBody(stmts)) => {
+                    compiler.compile_func(decl.data.symbol, &func_type, stmts, decl.location)
+                }
+                None => compiler.declare_func(decl.data.symbol, false).map(|_| ()),
+                _ => unreachable!("functions can only be initialized by a FunctionBody"),
+            },
+            Type::Void | Type::Error => unreachable!("parser let an incomplete type through"),
+            _ => {
+                if let Some(Initializer::FunctionBody(_)) = &decl.data.init {
+                    unreachable!("only functions should have a function body")
+                }
+                compiler.store_static(decl.data.symbol, decl.data.init, decl.location)
             }
-            (_, init) => compiler.store_static(decl.data.symbol, init, decl.location),
         };
         if let Err(e) = current {
             err = Some(e);
@@ -143,7 +137,7 @@ impl<B: Backend> Compiler<B> {
     fn new(module: Module<B>, debug: bool) -> Compiler<B> {
         Compiler {
             module,
-            scope: Scope::new(),
+            declarations: HashMap::new(),
             loops: Vec::new(),
             switches: Vec::new(),
             labels: HashMap::new(),
@@ -163,21 +157,21 @@ impl<B: Backend> Compiler<B> {
     // 1. should declare `id` a import unless specified as `static`.
     // 3. should always declare `id` as export or local.
     // 2. and 4. should be a no-op.
-    fn declare_func(
-        &mut self,
-        id: InternedStr,
-        signature: &Signature,
-        sc: StorageClass,
-        is_definition: bool,
-    ) -> CompileResult<FuncId> {
+    fn declare_func(&mut self, symbol: MetadataRef, is_definition: bool) -> CompileResult<FuncId> {
         use crate::get_str;
         if !is_definition {
             // case 2 and 4
-            if let Some(Id::Function(func_id)) = self.scope.get(&id) {
+            if let Some(Id::Function(func_id)) = self.declarations.get(&symbol) {
                 return Ok(*func_id);
             }
         }
-        let linkage = match sc {
+        let metadata = symbol.get();
+        let func_type = match &metadata.ctype {
+            Type::Function(func_type) => func_type,
+            _ => unreachable!("bug in backend: only functions should be passed to `declare_func`"),
+        };
+        let signature = func_type.signature(self.module.isa());
+        let linkage = match metadata.storage_class {
             StorageClass::Auto | StorageClass::Extern if is_definition => Linkage::Export,
             StorageClass::Auto | StorageClass::Extern => Linkage::Import,
             StorageClass::Static => Linkage::Local,
@@ -185,9 +179,9 @@ impl<B: Backend> Compiler<B> {
         };
         let func_id = self
             .module
-            .declare_function(get_str!(id), linkage, &signature)
+            .declare_function(get_str!(metadata.id), linkage, &signature)
             .unwrap_or_else(|err| panic!("{}", err));
-        self.scope.insert(id, Id::Function(func_id));
+        self.declarations.insert(symbol, Id::Function(func_id));
         Ok(func_id)
     }
     /// declare an object on the stack
@@ -197,16 +191,12 @@ impl<B: Backend> Compiler<B> {
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
-        if let Type::Function(ftype) = decl.symbol.ctype {
-            self.declare_func(
-                decl.symbol.id,
-                &ftype.signature(self.module.isa()),
-                decl.symbol.storage_class,
-                false,
-            )?;
+        let meta = decl.symbol.get();
+        if let Type::Function(_) = &meta.ctype {
+            self.declare_func(decl.symbol, false)?;
             return Ok(());
         }
-        let u64_size = match decl.symbol.ctype.sizeof() {
+        let u64_size = match meta.ctype.sizeof() {
             Ok(size) => size,
             Err(err) => {
                 return Err(CompileError::semantic(Locatable {
@@ -229,7 +219,7 @@ impl<B: Backend> Compiler<B> {
             offset: None,
         };
         let stack_slot = builder.create_stack_slot(data);
-        self.scope.insert(decl.symbol.id, Id::Local(stack_slot));
+        self.declarations.insert(decl.symbol, Id::Local(stack_slot));
         if let Some(init) = decl.init {
             self.store_stack(init, stack_slot, builder)?;
         }
@@ -298,21 +288,21 @@ impl<B: Backend> Compiler<B> {
             // See https://github.com/CraneStation/cranelift/issues/433
             let addr = builder.ins().stack_addr(Type::ptr_type(), slot, 0);
             builder.ins().store(MemFlags::new(), ir_val, addr, 0);
-            self.scope.insert(param.id, Id::Local(slot));
+            self.declarations.insert(param.insert(), Id::Local(slot));
         }
         Ok(())
     }
     fn compile_func(
         &mut self,
-        id: InternedStr,
-        func_type: FunctionType,
-        sc: StorageClass,
+        symbol: MetadataRef,
+        func_type: &FunctionType,
         stmts: Vec<Stmt>,
         location: Location,
     ) -> CompileResult<()> {
+        let func_id = self.declare_func(symbol, true)?;
+        // TODO: make declare_func should take a `signature` after all?
+        // This just calculates it twice, it's probably fine
         let signature = func_type.signature(self.module.isa());
-        let func_id = self.declare_func(id.clone(), &signature, sc, true)?;
-        self.scope.enter();
 
         // external name is meant to be a lookup in a symbol table,
         // but we just give it garbage values
@@ -327,10 +317,17 @@ impl<B: Backend> Compiler<B> {
 
         let should_ret = func_type.should_return();
         if func_type.has_params() {
-            self.store_stack_params(func_type.params, func_start, &location, &mut builder)?;
+            self.store_stack_params(
+                // TODO: get rid of this clone
+                func_type.params.clone(),
+                func_start,
+                &location,
+                &mut builder,
+            )?;
         }
         self.compile_all(stmts, &mut builder)?;
         if !builder.is_filled() {
+            let id = symbol.get().id;
             if id == InternedStr::get_or_intern("main") {
                 let ir_int = func_type.return_type.as_ir_type();
                 let zero = [builder.ins().iconst(ir_int, 0)];
@@ -348,7 +345,6 @@ impl<B: Backend> Compiler<B> {
                 builder.ins().return_(&[]);
             }
         }
-        self.scope.exit();
         builder.seal_all_blocks();
         builder.finalize();
 

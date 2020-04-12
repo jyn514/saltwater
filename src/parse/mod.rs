@@ -35,7 +35,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// - ordinary identifiers
     ///
     /// This holds the scope for ordinary identifiers: variables and typedefs
-    scope: Scope<InternedStr, Metadata>,
+    scope: Scope<InternedStr, MetadataRef>,
     /// the compound types that have been declared (struct/union/enum)
     tag_scope: TagScope,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
@@ -208,6 +208,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     fn leave_scope(&mut self, location: Location) {
         use crate::data::StorageClass;
         for object in self.scope.get_all_immediate().values() {
+            let object = object.get();
             match &object.ctype {
                 Type::Struct(StructType::Named(name, members))
                 | Type::Union(StructType::Named(name, members)) => {

@@ -96,7 +96,10 @@ impl<T: Lexer> Analyzer<T> {
                     // int a[][3] = {{1,2,3}}
                     } else {
                         let expr = match list.next() {
-                            Some(Scalar(expr)) => self.parse_expr(*expr),
+                            Some(Scalar(expr)) => self
+                                .parse_expr(*expr)
+                                .rval()
+                                .implicit_cast(&inner, &mut self.error_handler),
                             _ => unreachable!(),
                         };
                         // scalar
@@ -227,8 +230,12 @@ mod test {
         assert_same("int a[][3] = {1,2,3};", "int a[][3] = {{ 1, 2, 3 }};");
         assert_same(
             "int a[][3] = {1,2,3,4};",
-            "extern int a[][3] = {{ 1, 2, 3 }, { 4 } };",
+            "int a[][3] = {{ 1, 2, 3 }, { 4 } };",
         );
-        //assert_same("struct { int i; float f; } s = {1, 1.2};", "struct { int i; float f; } s = {(int)1, (float)1.2};");
+        assert_same(
+            "struct { int i; float f; } s = {1, 1.2};",
+            "struct { int i; float f; } s = {(int)1, (float)1.2};",
+        );
+        assert_errs_decls("struct s { int *p; } s = { 1.0 }", 1, 0, 1);
     }
 }

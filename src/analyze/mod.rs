@@ -129,18 +129,13 @@ impl<I: Lexer> Analyzer<I> {
         &mut self, declaration: ast::Declaration, location: Location,
     ) -> Vec<Locatable<Declaration>> {
         let original = self.parse_specifiers(declaration.specifiers, location);
-        // `int i;` desugars to `extern int i;` at global scope,
-        // but to `auto int i;` at function scope
-        let sc = original.storage_class.unwrap_or_else(|| {
-            if self.scope.is_global() {
-                StorageClass::Extern
-            } else {
-                StorageClass::Auto
-            }
-        });
-        if sc == StorageClass::Auto && self.scope.is_global() {
+
+        if original.storage_class == Some(StorageClass::Auto) && self.scope.is_global() {
             self.err(SemanticError::AutoAtGlobalScope, location);
         }
+
+        // TODO: this is such a hack: https://github.com/jyn514/rcc/issues/371
+        let sc = original.storage_class.unwrap_or(StorageClass::Auto);
         let mut decls = Vec::new();
         for d in declaration.declarators {
             let ctype =
@@ -1160,7 +1155,8 @@ pub(crate) mod test {
         assert_eq!(decl(left).unwrap().to_string(), right);
     }
     fn assert_extern_decl_display(s: &str) {
-        assert_decl_display(s, &format!("extern {}", s));
+        // TODO: this `auto` is such a hack
+        assert_decl_display(s, &format!("auto {}", s));
     }
 
     pub(super) fn assert_same(left: &str, right: &str) {
@@ -1218,7 +1214,15 @@ pub(crate) mod test {
 
     #[test]
     fn storage_class() {
-        assert_decl_display("int i;", "extern int i;");
+        assert_extern_decl_display("int i;");
+        assert_eq!(
+            decl("extern int i;").unwrap().symbol.get().storage_class,
+            StorageClass::Extern
+        );
+        assert_eq!(
+            decl("static int i;").unwrap().symbol.get().storage_class,
+            StorageClass::Static
+        );
         match decl("auto int i;").unwrap_err().data {
             Error::Semantic(SemanticError::AutoAtGlobalScope) => {}
             _ => panic!("wrong error"),
@@ -1227,12 +1231,12 @@ pub(crate) mod test {
 
     #[test]
     fn function() {
-        assert_decl_display("int f();", "extern int f();");
-        assert_decl_display("int f(int i);", "extern int f(int i);");
-        assert_decl_display("int f(int i, int j);", "extern int f(int i, int j);");
+        assert_extern_decl_display("int f();");
+        assert_extern_decl_display("int f(int i);");
+        assert_extern_decl_display("int f(int i, int j);");
         // functions decay to pointers when used as parameters
-        assert_decl_display("int f(int g());", "extern int f(int (*g)());");
-        assert_decl_display("int f(int g(), ...);", "extern int f(int (*g)(), ...);");
+        assert_same("int f(int g());", "int f(int (*g)());");
+        assert_same("int f(int g(), ...);", "int f(int (*g)(), ...);");
     }
 
     #[test]
@@ -1304,8 +1308,8 @@ pub(crate) mod test {
                 ArrayType::Unbounded
             )
         ));
-        assert_decl_display("int a[1];", "extern int a[1];");
-        assert_decl_display("int a[(int)1];", "extern int a[1];");
+        assert_extern_decl_display("int a[1];");
+        assert_same("int a[(int)1];", "int a[1];");
     }
     #[test]
     fn test_pointers() {
@@ -1316,7 +1320,7 @@ pub(crate) mod test {
             "double *volatile *const a;",
             "_Bool *const volatile a;",
         ] {
-            assert_decl_display(pointer, &format!("extern {}", pointer));
+            assert_extern_decl_display(pointer);
         }
     }
     #[test]
@@ -1642,10 +1646,7 @@ pub(crate) mod test {
             ds.next().unwrap().unwrap().to_string(),
             "typedef unsigned int uint;"
         );
-        assert_eq!(
-            ds.next().unwrap().unwrap().to_string(),
-            "extern unsigned int i;"
-        );
+        assert_decl_display("unsigned int i;", &ds.next().unwrap().unwrap().to_string());
     }
     #[test]
     fn bitfields() {

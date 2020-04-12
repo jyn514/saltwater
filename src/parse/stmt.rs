@@ -351,7 +351,7 @@ impl ExternalDeclaration {
 mod tests {
     use crate::data::ast::*;
     use crate::data::*;
-    use crate::test::*;
+    use crate::parse::test::*;
 
     fn stmt(stmt: &str) -> CompileResult<Stmt> {
         let mut p = parser(stmt);

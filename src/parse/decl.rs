@@ -742,7 +742,7 @@ impl Keyword {
 mod test {
     use crate::data::ast::*;
     use crate::data::*;
-    use crate::test::*;
+    use crate::parse::test::*;
 
     fn decl(decl: &str) -> CompileResult<Locatable<ExternalDeclaration>> {
         let mut p = parser(decl);

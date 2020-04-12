@@ -403,10 +403,10 @@ impl<I: Lexer> Parser<I> {
 
 #[cfg(test)]
 mod test {
+    use super::SyntaxResult;
     use crate::data::ast::{Expr, ExprType};
-    use crate::test::*;
-    use crate::SyntaxResult;
-    use crate::*;
+    use crate::parse::test::*;
+    use crate::parse::*;
 
     fn assert_expr_display(left: &str, right: &str) {
         assert_eq!(expr(left).unwrap().to_string(), right);

@@ -350,7 +350,8 @@ fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
 mod test {
     use super::{Files, Location};
     use ansi_term::Style;
-    use codespan::Span;
+    //use codespan::Span;
+    use rcc::data::lex::Span;
 
     fn pp<S: Into<Span>>(span: S, source: &str) -> String {
         let mut file_db = Files::new();

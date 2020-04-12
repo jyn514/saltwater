@@ -190,6 +190,9 @@ impl<B: Backend> Compiler<B> {
         &mut self, decl: Declaration, location: Location, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         let meta = decl.symbol.get();
+        if let StorageClass::Typedef = meta.storage_class {
+            return Ok(());
+        }
         if let Type::Function(_) = &meta.ctype {
             self.declare_func(decl.symbol, false)?;
             return Ok(());

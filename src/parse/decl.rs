@@ -222,7 +222,16 @@ impl<I: Lexer> Parser<I> {
             let decl = if self.peek_token() != Some(&Token::Colon) {
                 self.declarator(true)?.map(|d| {
                     spec_location = Some(d.location.maybe_merge(spec_location));
-                    d.data.parse_declarator()
+                    let mut decl = d.data.parse_declarator();
+                    if decl.id.is_none() {
+                        let err = Locatable::new(
+                            SyntaxError::Generic("struct members must have an id".into()),
+                            d.location,
+                        );
+                        self.error_handler.push_back(err);
+                        decl.id = Some("<unnamed member>".into());
+                    }
+                    decl
                 })
             } else {
                 None
@@ -793,6 +802,10 @@ mod test {
         assert!(display("enum E { A, B = 2, C };").contains("enum E "));
         // invalid semantically, but valid syntax
         assert!(decl("enum;").is_ok());
+    }
+    #[test]
+    fn test_struct() {
+        assert!(decl("struct s { int *; };").is_err());
     }
     #[test]
     fn test_cursed_function_declarator() {

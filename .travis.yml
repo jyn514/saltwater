@@ -9,7 +9,10 @@ jobs:
             - rustup component add clippy
 
           script:
-          - tests/pre-commit.sh
+            - tests/pre-commit.sh
+            # this also tests the header files
+            - cargo test --all-features
+            - cargo test --no-default-features
           # upload coverage statistics to codecov.io
           env: RUSTFLAGS="-C link-dead-code"
           addons:
@@ -38,10 +41,12 @@ jobs:
           script: cargo check
 
         - rust: beta
-          # sometimes rustfmt changes its mind about formatting between releases
-          script: cargo test
+          script: cargo check
 
         - rust: nightly
+          branches:
+              include:
+                  - master
           # afl needs nightly
           script:
             - cargo test

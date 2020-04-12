@@ -63,3 +63,17 @@ impl From<String> for InternedStr {
         Self::get_or_intern(s)
     }
 }
+
+#[cfg(test)]
+mod proptest_impl {
+    use super::InternedStr;
+    use proptest::prelude::*;
+    impl Arbitrary for InternedStr {
+        type Parameters = String;
+        type Strategy = Just<InternedStr>;
+
+        fn arbitrary_with(s: Self::Parameters) -> Self::Strategy {
+            Just(s.into())
+        }
+    }
+}

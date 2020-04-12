@@ -1,4 +1,6 @@
 #![allow(clippy::cognitive_complexity)]
+// mem::take was stabilized in 1.40, but we support back to 1.37
+#![allow(clippy::mem_replace_with_default)]
 #![warn(absolute_paths_not_starting_with_crate)]
 #![warn(explicit_outlives_requirements)]
 #![warn(unreachable_pub)]
@@ -7,15 +9,18 @@
 #![deny(unused_extern_crates)]
 
 use std::collections::VecDeque;
-use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
 
+pub use codespan;
 use codespan::FileId;
-use cranelift_module::Backend;
-use cranelift_object::ObjectBackend;
+#[cfg(feature = "codegen")]
+use cranelift_module::{Backend, Module};
+
+#[cfg(feature = "codegen")]
+pub use ir::initialize_aot_module;
 
 /// The `Source` type for `codespan::Files`.
 ///
@@ -37,11 +42,21 @@ impl AsRef<str> for Source {
 }
 
 pub type Files = codespan::Files<Source>;
-pub type Product = <ObjectBackend as Backend>::Product;
+#[cfg(feature = "codegen")]
+pub type Product = <cranelift_object::ObjectBackend as Backend>::Product;
+/// A result which includes all warnings, even for `Err` variants.
+///
+/// If successful, this returns an `Ok(T)`.
+/// If unsuccessful, this returns an `Err(VecDeque<Error>)`,
+/// so you can iterate the tokens in order without consuming them.
+/// Regardless, this always returns all warnings found.
+pub type WarningResult<T> = (Result<T, VecDeque<CompileError>>, VecDeque<CompileWarning>);
 
 pub use analyze::Analyzer;
 pub use data::*;
-pub use lex::{Lexer, PreProcessor};
+// https://github.com/rust-lang/rust/issues/64762
+pub use lex::PreProcessor;
+pub use lex::PreProcessorBuilder;
 pub use parse::Parser;
 
 #[macro_use]
@@ -51,6 +66,7 @@ mod arch;
 pub mod data;
 mod fold;
 pub mod intern;
+#[cfg(feature = "codegen")]
 mod ir;
 mod lex;
 mod parse;
@@ -91,6 +107,10 @@ pub struct Opt {
     /// If set, compile and assemble but do not link. Object file is machine-dependent.
     pub no_link: bool,
 
+    #[cfg(feature = "jit")]
+    /// If set, compile and emit JIT code, and do not emit object files and binaries.
+    pub jit: bool,
+
     /// The maximum number of errors to allow before giving up.
     /// If None, allows an unlimited number of errors.
     pub max_errors: Option<std::num::NonZeroUsize>,
@@ -100,20 +120,9 @@ pub struct Opt {
 }
 
 /// Preprocess the source and return the tokens.
-///
-/// Note on the return type:
-/// If successful, this returns an `Ok(VecDeque<Token>)`.
-/// The `VecDeque` is so you can iterate the tokens in order without consuming them.
-/// If unsuccessful, this returns an `Err(VecDeque<Error>)`,
-/// again so you can iterate the tokens in order.
-/// Regardless, this always returns all warnings found.
-#[allow(clippy::type_complexity)]
 pub fn preprocess(
     buf: &str, opt: &Opt, file: FileId, files: &mut Files,
-) -> (
-    Result<VecDeque<Locatable<Token>>, VecDeque<CompileError>>,
-    VecDeque<CompileWarning>,
-) {
+) -> WarningResult<VecDeque<Locatable<Token>>> {
     let path = opt.search_path.iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
 
@@ -133,13 +142,12 @@ pub fn preprocess(
     (res, cpp.warnings())
 }
 
-/// Compile and return the declarations and warnings.
-pub fn compile(
+/// Perform semantic analysis, including type checking and constant folding.
+pub fn check_semantics(
     buf: &str, opt: &Opt, file: FileId, files: &mut Files,
-) -> (Result<Product, Error>, VecDeque<CompileWarning>) {
+) -> WarningResult<Vec<Locatable<hir::Declaration>>> {
     let path = opt.search_path.iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
-
     let mut errs = VecDeque::new();
 
     macro_rules! handle_err {
@@ -147,7 +155,7 @@ pub fn compile(
             errs.push_back($err);
             if let Some(max) = opt.max_errors {
                 if errs.len() >= max.into() {
-                    return (Err(Error::Source(errs)), cpp.warnings());
+                    return (Err(errs), cpp.warnings());
                 }
             }
         }};
@@ -170,7 +178,7 @@ pub fn compile(
             if errs.is_empty() {
                 errs.push_back(eof().error(SemanticError::EmptyProgram));
             }
-            return (Err(Error::Source(errs)), cpp.warnings());
+            return (Err(errs), cpp.warnings());
         }
     };
 
@@ -188,16 +196,29 @@ pub fn compile(
 
     let mut warnings = parser.warnings();
     warnings.extend(cpp.warnings());
-    if !errs.is_empty() {
-        return (Err(Error::Source(errs)), warnings);
-    }
-    let name = files.name(file).to_string_lossy();
-    let (result, ir_warnings) = ir::compile(hir, name.into_owned(), opt.debug_asm);
+    let res = if !errs.is_empty() { Err(errs) } else { Ok(hir) };
+    (res, warnings)
+}
+
+#[cfg(feature = "codegen")]
+/// Compile and return the declarations and warnings.
+pub fn compile<B: Backend>(
+    module: Module<B>, buf: &str, opt: &Opt, file: FileId, files: &mut Files,
+) -> (Result<Module<B>, Error>, VecDeque<CompileWarning>) {
+    let (hir, mut warnings) = match check_semantics(buf, opt, file, files) {
+        (Err(errs), warnings) => return (Err(Error::Source(errs)), warnings),
+        (Ok(hir), warnings) => (hir, warnings),
+    };
+    let (result, ir_warnings) = ir::compile(module, hir, opt.debug_asm);
     warnings.extend(ir_warnings);
     (result.map_err(Error::from), warnings)
 }
 
+#[cfg(feature = "codegen")]
 pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {
+    use io::Write;
+    use std::fs::File;
+
     let bytes = product.emit().map_err(Error::Platform)?;
     File::create(output)?
         .write_all(&bytes)
@@ -227,6 +248,129 @@ pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
     }
 }
 
+#[cfg(feature = "jit")]
+pub use jit::*;
+
+#[cfg(feature = "jit")]
+mod jit {
+    use super::*;
+    use crate::ir::get_isa;
+    use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
+    use std::convert::TryFrom;
+
+    pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
+        let libcall_names = cranelift_module::default_libcall_names();
+        Module::new(SimpleJITBuilder::with_isa(get_isa(true), libcall_names))
+    }
+
+    /// Structure used to handle compiling C code to memory instead of to disk.
+    ///
+    /// You can use [`from_string`] to create a JIT instance.
+    /// Alternatively, if you don't care about compile warnings, you can use `JIT::try_from` instead.
+    /// If you already have a `Module`, you can use `JIT::from` to avoid having to `unwrap()`.
+    ///
+    /// JIT stands for 'Just In Time' compiled, the way that Java and JavaScript work.
+    ///
+    /// [`from_string`]: #method.from_string
+    pub struct JIT {
+        module: Module<SimpleJITBackend>,
+    }
+
+    impl From<Module<SimpleJITBackend>> for JIT {
+        fn from(module: Module<SimpleJITBackend>) -> Self {
+            Self { module }
+        }
+    }
+
+    impl TryFrom<Rc<str>> for JIT {
+        type Error = Error;
+        fn try_from(program: Rc<str>) -> Result<JIT, Self::Error> {
+            JIT::from_string(program, &Opt::default()).0
+        }
+    }
+
+    impl JIT {
+        /// Compile string and return JITed code.
+        pub fn from_string<R: Into<Rc<str>>>(
+            program: R, opt: &Opt,
+        ) -> (Result<Self, Error>, VecDeque<CompileWarning>) {
+            let program = program.into();
+            let module = initialize_jit_module();
+            let mut files = Files::new();
+            let source = Source {
+                path: PathBuf::new(),
+                code: Rc::clone(&program),
+            };
+            let file = files.add("<jit>", source);
+            let (result, warnings) = compile(module, &program, opt, file, &mut files);
+            let result = result.map(JIT::from);
+            (result, warnings)
+        }
+
+        /// Invoke this function before trying to get access to "new" compiled functions.
+        pub fn finalize(&mut self) {
+            self.module.finalize_definitions();
+        }
+        /// Get a compiled function. If this function doesn't exist then `None` is returned, otherwise its address returned.
+        ///
+        /// # Panics
+        /// Panics if function is not compiled (finalized). Try to invoke `finalize` before using `get_compiled_function`.
+        pub fn get_compiled_function(&mut self, name: &str) -> Option<*const u8> {
+            use cranelift_module::FuncOrDataId;
+
+            let name = self.module.get_name(name);
+            if let Some(FuncOrDataId::Func(id)) = name {
+                Some(self.module.get_finalized_function(id))
+            } else {
+                None
+            }
+        }
+        /// Get compiled static data. If this data doesn't exist then `None` is returned, otherwise its address and size are returned.
+        pub fn get_compiled_data(&mut self, name: &str) -> Option<(*mut u8, usize)> {
+            use cranelift_module::FuncOrDataId;
+
+            let name = self.module.get_name(name);
+            if let Some(FuncOrDataId::Data(id)) = name {
+                Some(self.module.get_finalized_data(id))
+            } else {
+                None
+            }
+        }
+        /// Given a module, run the `main` function.
+        ///
+        /// This automatically calls `self.finalize()`.
+        /// If `main()` does not exist in the module, returns `None`; otherwise returns the exit code.
+        ///
+        /// # Safety
+        /// This function runs arbitrary C code.
+        /// It can segfault, access out-of-bounds memory, cause data races, or do anything else C can do.
+        #[allow(unsafe_code)]
+        pub unsafe fn run_main(&mut self) -> Option<i32> {
+            self.finalize();
+            let main = self.get_compiled_function("main")?;
+            let args = std::env::args().skip(1);
+            let argc = args.len() as i32;
+            // CString should be alive if we want to pass its pointer to another function,
+            // otherwise this may lead to UB.
+            let vec_args = args
+                .map(|string| std::ffi::CString::new(string).unwrap())
+                .collect::<Vec<_>>();
+            // This vec needs to be stored so we aren't passing a pointer to a freed temporary.
+            let argv = vec_args
+                .iter()
+                .map(|cstr| cstr.as_ptr() as *const u8)
+                .collect::<Vec<_>>();
+            assert_ne!(main, std::ptr::null());
+            // this transmute is safe: this function is finalized (`self.finalize()`)
+            // and **guaranteed** to be non-null
+            let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 =
+                std::mem::transmute(main);
+            // though transmute is safe, invoking this function is unsafe because we invoke C code.
+            Some(main(argc, argv.as_ptr() as *const *const u8))
+        }
+    }
+}
+
 impl<T: Into<Rc<str>>> From<T> for Source {
     fn from(src: T) -> Self {
         Self {
@@ -239,11 +383,15 @@ impl<T: Into<Rc<str>>> From<T> for Source {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn compile(src: &str) -> Result<Product, Error> {
+    fn compile(src: &str) -> Result<Vec<hir::Declaration>, Error> {
         let options = Opt::default();
         let mut files: Files = Default::default();
         let id = files.add("<test suite>", src.into());
-        super::compile(src, &options, id, &mut files).0
+        let res = super::check_semantics(src, &options, id, &mut files).0;
+        match res {
+            Ok(decls) => Ok(decls.into_iter().map(|l| l.data).collect()),
+            Err(errs) => Err(Error::Source(errs)),
+        }
     }
     fn compile_err(src: &str) -> VecDeque<CompileError> {
         match compile(src).err().unwrap() {

@@ -1,6 +1,6 @@
 use cranelift::codegen::ir::{condcodes, types, MemFlags};
 use cranelift::prelude::{FunctionBuilder, InstBuilder, Type as IrType, Value as IrValue};
-use log::debug;
+use cranelift_module::Backend;
 
 use super::{Compiler, Id};
 use crate::data::*;
@@ -23,7 +23,7 @@ enum FuncCall {
     Indirect(Value),
 }
 
-impl Compiler {
+impl<B: Backend> Compiler<B> {
     // clippy doesn't like big match statements, but this is kind of essential complexity,
     // it can't be any smaller without supporting fewer features
     #[allow(clippy::cognitive_complexity)]
@@ -491,7 +491,6 @@ impl Compiler {
                 if arg.ctype.is_floating() {
                     float_variadic += 1;
                 }
-                debug!("adding variadic arg with type {}", arg.ctype);
                 ftype.params.push(Metadata {
                     ctype: arg.ctype.clone(),
                     id: Default::default(),
@@ -505,7 +504,6 @@ impl Compiler {
             .map(|arg| self.compile_expr(arg, builder).map(|val| val.ir_val))
             .collect::<CompileResult<_>>()?;
         if ftype.varargs {
-            debug!("adding number of float args");
             let float_ir = builder.ins().iconst(types::I8, float_variadic);
             compiled_args.push(float_ir);
         }

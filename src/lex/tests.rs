@@ -155,6 +155,7 @@ fn test_float_literals() {
     assert_float("0x.ep-0l", 0.875);
     assert_float("0xe.p-4f", 0.875);
     assert_float("0xep-4f", 0.875);
+    assert_float("0x.000000000000000000102p0", 1.333_828_737_741_757E-23);
     // DBL_MAX is actually 1.79769313486231570814527423731704357e+308L
     // TODO: change this whenever https://github.com/rust-lang/rust/issues/31407 is closed
     assert_float(
@@ -171,8 +172,6 @@ fn test_float_literals() {
 fn test_num_errors() {
     assert_err("1e");
     assert_err("1e.");
-    assert_err("1e100000");
-    assert_err("1e-100000");
     assert_eq!(lex_all("1e1.0").len(), 2);
 }
 
@@ -258,12 +257,22 @@ fn test_characters() {
     assert!(lex("'\\777'").unwrap().unwrap_err().is_lex_err());
     // extra digits are not allowed for octal escapes
     assert!(lex("'\\0001'").unwrap().unwrap_err().is_lex_err());
-    // should catch overflow in hex escapes
-    assert!(lex("'\\xfff'").unwrap().unwrap_err().is_lex_err());
-    assert!(lex("'\\xfffffffffffffffffffffffffff'")
-        .unwrap()
-        .unwrap_err()
-        .is_lex_err());
+    // chars past `f` aren't hex digits
+    let invalid = r"'\xffuuuuuuuuuuuuuuuX'";
+    assert!(lex(invalid).unwrap().unwrap_err().is_lex_err());
+
+    // catch overflow in hex escapes
+    use crate::data::{
+        error::{Error, LexError},
+        Radix,
+    };
+    let assert_overflow = |c| match lex(c).unwrap().unwrap_err().data {
+        Error::Lex(LexError::CharEscapeOutOfRange(Radix::Hexadecimal)) => {}
+        _ => panic!("expected overflow error for {}", c),
+    };
+    assert_overflow("'\\xfff'");
+    assert_overflow("'\\xfffffffffffffffffffffffffff'");
+    assert_overflow(r"'\xff00000000000000ff'");
 }
 #[test]
 fn test_strings() {
@@ -278,6 +287,9 @@ fn test_strings() {
     assert!(match_str(lex("\"string with \\0\""), "string with \0"));
     // 2 for newline
     assert_eq!(lex("\"").unwrap().unwrap_err().location.span, (0..2).into());
+    // regression test for https://github.com/jyn514/rcc/issues/350
+    let newlines = " \"a\" \n \"b\" ";
+    assert!(match_str(lex(newlines), "ab"));
 }
 
 #[test]
@@ -286,6 +298,11 @@ fn test_no_newline() {
     let mut tokens: Vec<_> = cpp_no_newline(" ").collect();
     assert_eq!(tokens.len(), 1);
     assert!(tokens.remove(0).unwrap_err().is_lex_err());
+
+    // regression test for https://github.com/jyn514/rcc/issues/323
+    let tokens: Vec<_> = cpp_no_newline("//").collect();
+    assert_eq!(tokens.len(), 1);
+    assert!(tokens[0].as_ref().unwrap_err().is_lex_err());
 }
 
 // Integration tests

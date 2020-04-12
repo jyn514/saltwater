@@ -1,20 +1,11 @@
 #![warn(missing_docs)]
 
 use std::cmp::max;
-use std::convert::TryInto;
 
-use cranelift::codegen::{
-    ir::{
-        types::{self, Type as IrType},
-        AbiParam, ArgumentPurpose, Signature,
-    },
-    isa::{CallConv, TargetIsa},
-};
-use lazy_static::lazy_static;
 use target_lexicon::Triple;
 
 use crate::data::{
-    types::{ArrayType, FunctionType, StructType},
+    types::{ArrayType, StructType},
     *,
 };
 use Type::*;
@@ -33,13 +24,6 @@ const CHAR_SIZE: u16 = 1;
 /// The target triple is represented as a struct and contains additional
 /// information like ABI and endianness.
 pub(crate) const TARGET: Triple = Triple::host();
-
-// TODO: make this const when const_if_match is stabilized
-// TODO: see https://github.com/rust-lang/rust/issues/49146
-lazy_static! {
-    /// The calling convention for the current target.
-    pub(crate) static ref CALLING_CONVENTION: CallConv = CallConv::triple_default(&TARGET);
-}
 
 mod x64;
 pub(crate) use x64::*;
@@ -127,7 +111,9 @@ impl Type {
             Double => Ok(DOUBLE_SIZE.into()),
             Pointer(_, _) => Ok(PTR_SIZE.into()),
             // now for the hard ones
-            Array(t, ArrayType::Fixed(l)) => t.sizeof().and_then(|n| Ok(n * l)),
+            Array(t, ArrayType::Fixed(l)) => t
+                .sizeof()
+                .and_then(|n| n.checked_mul(*l).ok_or("overflow in array size")),
             Array(_, ArrayType::Unbounded) => Err("cannot take sizeof variable length array"),
             Enum(_, symbols) => {
                 let uchar = CHAR_BIT as usize;
@@ -173,89 +159,20 @@ impl Type {
             Error => Err("cannot take `alignof` <type error>"),
         }
     }
-    /// Return an IR integer type large enough to contain a pointer.
-    pub fn ptr_type() -> IrType {
-        IrType::int(CHAR_BIT * PTR_SIZE).expect("pointer size should be valid")
-    }
-    /// Return an IR type which can represent this C type
-    pub fn as_ir_type(&self) -> IrType {
-        match self {
-            // Integers
-            Bool => types::B1,
-            Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_, _) => {
-                let int_size = SIZE_T::from(CHAR_BIT)
-                    * self
-                        .sizeof()
-                        .expect("integers should always have a valid size");
-                IrType::int(int_size.try_into().unwrap_or_else(|_| {
-                    panic!(
-                        "integers should never have a size larger than {}",
-                        i16::max_value()
-                    )
-                }))
-                .unwrap_or_else(|| panic!("unsupported size for IR: {}", int_size))
-            }
-
-            // Floats
-            // TODO: this is hard-coded for x64
-            Float => types::F32,
-            Double => types::F64,
-
-            // Aggregates
-            // arrays and functions decay to pointers
-            Function(_) | Array(_, _) => IrType::int(PTR_SIZE * CHAR_BIT)
-                .unwrap_or_else(|| panic!("unsupported size of IR: {}", PTR_SIZE)),
-            // void cannot be loaded or stored
-            _ => types::INVALID,
-        }
-    }
-}
-
-impl FunctionType {
-    /// Generate the IR function signature for `self`
-    pub fn signature(&self, isa: &dyn TargetIsa) -> Signature {
-        let mut params = if self.params.len() == 1 && self.params[0].ctype == Type::Void {
-            // no arguments
-            Vec::new()
-        } else {
-            self.params
-                .iter()
-                .map(|param| AbiParam::new(param.ctype.as_ir_type()))
-                .collect()
-        };
-        if self.varargs {
-            let al = isa
-                .register_info()
-                .parse_regunit("rax")
-                .expect("x86 should have an rax register");
-            params.push(AbiParam::special_reg(
-                types::I8,
-                ArgumentPurpose::Normal,
-                al,
-            ));
-        }
-        let return_type = if !self.should_return() {
-            vec![]
-        } else {
-            vec![AbiParam::new(self.return_type.as_ir_type())]
-        };
-        Signature {
-            call_conv: *CALLING_CONVENTION,
-            params,
-            returns: return_type,
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use proptest::prelude::*;
+
     use crate::data::{
         hir::Metadata as Symbol,
         hir::Qualifiers,
-        types::{StructType, Type},
+        types::{tests::arb_type, StructType, Type},
         StorageClass,
     };
+
+    use super::*;
 
     fn type_for_size(size: u16) -> Type {
         match size {
@@ -346,5 +263,24 @@ mod tests {
             Int(true),
         ]);
         assert_eq!(ty.alignof(), Ok(8));
+    }
+
+    proptest! {
+        // https://github.com/jyn514/rcc/pull/325#issuecomment-596297785
+        // prop_assert_eq!(discriminant(&t.sizeof()), discriminant(&t.alignof()));
+
+        #[test]
+        fn proptest_align_power_of_two(t in arb_type()) {
+            if let Ok(align) = t.alignof() {
+                prop_assert!(align.is_power_of_two());
+            }
+        }
+
+        #[test]
+        fn proptest_sizeof_multiple_of_alignof(t in arb_type()) {
+            if let Ok(sizeof) = t.sizeof() {
+                prop_assert_eq!(sizeof % t.alignof().unwrap(), 0);
+            }
+        }
     }
 }

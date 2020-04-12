@@ -16,6 +16,65 @@ use crate::data::*;
 use crate::get_str;
 use crate::Files;
 
+/// An easier interface for constructing a preprocessor.
+///
+/// Here is the example for `PreProcessor::new()` using the builder:
+/// ```
+/// use rcc::{Files, PreProcessorBuilder, Source};
+///
+/// let mut files = Files::new();
+/// let code = String::from("int main(void) { char *hello = \"hi\"; }\n").into();
+/// let src = Source { path: "example.c".into(), code: std::rc::Rc::clone(&code) };
+/// let file = files.add("example.c", src);
+/// let cpp = PreProcessorBuilder::new(code, file, &mut files).build();
+/// for token in cpp {
+///     assert!(token.is_ok());
+/// }
+/// ```
+pub struct PreProcessorBuilder<'a> {
+    /// The buffer for the starting file
+    buf: Rc<str>,
+    /// The starting file
+    file: FileId,
+    /// All known files, including files which have already been read.
+    files: &'a mut Files,
+    /// Whether to print each token before replacement
+    debug: bool,
+    /// The paths to search for `#include`d files
+    search_path: Vec<Cow<'a, Path>>,
+}
+
+impl<'a> PreProcessorBuilder<'a> {
+    pub fn new<S: Into<Rc<str>>>(
+        buf: S, file: FileId, files: &'a mut Files,
+    ) -> PreProcessorBuilder<'a> {
+        PreProcessorBuilder {
+            debug: false,
+            files,
+            file,
+            buf: buf.into(),
+            search_path: Vec::new(),
+        }
+    }
+    pub fn debug(mut self, yes: bool) -> Self {
+        self.debug = yes;
+        self
+    }
+    pub fn search_path<C: Into<Cow<'a, Path>>>(mut self, path: C) -> Self {
+        self.search_path.push(path.into());
+        self
+    }
+    pub fn build(self) -> PreProcessor<'a> {
+        PreProcessor::new(
+            self.file,
+            self.buf,
+            self.debug,
+            self.search_path,
+            self.files,
+        )
+    }
+}
+
 /// A preprocessor does textual substitution and deletion on a C source file.
 ///
 /// The C preprocessor, or `cpp`, is tightly tied to C tokenization.
@@ -183,7 +242,7 @@ impl<'a> PreProcessor<'a> {
             return Some(Ok(replacement));
         }
         match self.lexer_mut().next()? {
-            Err(err) => Some(Err(err)),
+            Err(err) => Some(Err(err.map(Into::into))),
             Ok(token) => Some(Ok(token.map(PendingToken::Replacement))),
         }
     }
@@ -210,7 +269,7 @@ impl<'a> PreProcessor<'a> {
     }
     #[inline]
     fn next_token(&mut self) -> Option<CppResult<Token>> {
-        self.lexer_mut().next()
+        Some(self.lexer_mut().next()?.map_err(CompileError::from))
     }
     #[inline]
     fn span(&self, start: u32) -> Location {
@@ -404,7 +463,7 @@ impl<'a> PreProcessor<'a> {
                 other => other.map(Locatable::from),
             }
         } else {
-            next_token.map(Locatable::from)
+            next_token.map(Locatable::from).map_err(|err| err.into())
         })
     }
     // this function does _not_ perform macro substitution
@@ -604,6 +663,7 @@ impl<'a> PreProcessor<'a> {
         let location = self.span(start);
         let mut args = Vec::new();
         let mut current_arg = Vec::new();
+        let mut nested_parens = 1;
         // now, expand all arguments
         loop {
             let next = match self.next_replacement_token() {
@@ -611,15 +671,24 @@ impl<'a> PreProcessor<'a> {
                 Some(Err(err)) => return Some(Err(err)),
                 Some(Ok(token)) => token,
             };
-            if next.data.token() == &Token::Comma {
-                args.push(mem::replace(&mut current_arg, Vec::new()));
-                continue;
-            } else if next.data.token() == &Token::RightParen {
-                args.push(mem::replace(&mut current_arg, Vec::new()));
-                break;
-            } else {
-                current_arg.push(next);
+            match next.data.token() {
+                Token::Comma if nested_parens == 1 => {
+                    args.push(mem::replace(&mut current_arg, Vec::new()));
+                    continue;
+                }
+                Token::RightParen => {
+                    nested_parens -= 1;
+                    if nested_parens == 0 {
+                        args.push(mem::replace(&mut current_arg, Vec::new()));
+                        break;
+                    }
+                }
+                Token::LeftParen => {
+                    nested_parens += 1;
+                }
+                _ => {}
             }
+            current_arg.push(next);
         }
         let (params, body) = match self.definitions.get(&name) {
             Some(Definition::Function { params, body }) => (params, body),
@@ -638,8 +707,13 @@ impl<'a> PreProcessor<'a> {
                     let replacement = args[index].clone();
                     self.pending.extend(replacement);
                 } else {
-                    self.pending
-                        .push_back(location.with(PendingToken::Replacement(token.clone())));
+                    // #define f(a) f(a + 1)
+                    let pending = if id == name {
+                        PendingToken::Cyclic(Token::Id(id))
+                    } else {
+                        PendingToken::Replacement(Token::Id(id))
+                    };
+                    self.pending.push_back(location.with(pending));
                 }
             } else {
                 self.pending
@@ -1032,8 +1106,6 @@ impl<'a> PreProcessor<'a> {
     fn find_include_path(
         &mut self, filename: String, local: bool, start: u32,
     ) -> Result<PathBuf, Locatable<Error>> {
-        log::debug!("in search path");
-
         if filename.is_empty() {
             return Err(CompileError::new(
                 CppError::EmptyInclude.into(),
@@ -1109,7 +1181,6 @@ impl<'a> PreProcessor<'a> {
     // Returns every byte between the current position and the next `byte`.
     // Consumes and does not return the final `byte`.
     fn bytes_until(&mut self, byte: u8) -> Vec<u8> {
-        log::debug!("in bytes_until");
         let mut bytes = Vec::new();
         loop {
             match self.lexer_mut().next_char() {
@@ -1145,7 +1216,7 @@ enum CppToken {
 
 impl From<Locatable<Token>> for Locatable<CppToken> {
     fn from(token: Locatable<Token>) -> Locatable<CppToken> {
-        Locatable::new(CppToken::Token(token.data), token.location)
+        token.map(CppToken::Token)
     }
 }
 
@@ -1530,5 +1601,25 @@ int main(){}
         #define sa_handler   __sa_handler.sa_handler
         s.sa_handler";
         assert_same(src, "s.__sa_handler.sa_handler");
+    }
+    #[test]
+    fn parens() {
+        let original = "#define f(a, b) a\nf((1, 2, 3), 2)";
+        let expected = "(1, 2, 3)";
+        assert_same(original, expected);
+
+        let original = "#define foo(x, y) { x, y }\nfoo(5 (6), 7)";
+        let expected = "{ 5 (6), 7 }";
+        assert_same(original, expected);
+
+        let original = "#define f(a, b, c) a + b + c\nf((((1))), ((2)), (3))";
+        let expected = "(((1))) + ((2)) + (3)";
+        assert_same(original, expected);
+    }
+    #[test]
+    fn recursive_function() {
+        let original = "#define f(a) f(a + 1)\nf(1)";
+        let expected = "f(1 + 1)";
+        assert_same(original, expected);
     }
 }

@@ -49,8 +49,9 @@ pub fn compile(program: &str, path: PathBuf, no_link: bool) -> Result<tempfile::
         path,
     };
     let id = files.add("<test-suite>", source);
-    let (result, _warnings) = rcc::compile(program, &opts, id, &mut files);
-    let module = result?;
+    let module = rcc::initialize_aot_module(program.to_owned());
+    let (result, _warnings) = rcc::compile(module, program, &opts, id, &mut files);
+    let module = result?.finish();
     let output = tempfile::NamedTempFile::new()
         .expect("cannot create tempfile")
         .into_temp_path();

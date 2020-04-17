@@ -133,6 +133,7 @@ impl<I: Lexer> Parser<I> {
     fn specifiers(&mut self) -> SyntaxResult<(Vec<DeclarationSpecifier>, Option<Location>)> {
         let mut specifiers = Vec::new();
         let mut all_locs = None;
+        let mut seen_typedef = false;
         while let Some(&Token::Keyword(keyword)) = self.peek_token() {
             let location = self.next_token().unwrap().location;
             let spec = match keyword {
@@ -140,7 +141,14 @@ impl<I: Lexer> Parser<I> {
                 Keyword::Union => self.struct_specifier(false, location)?,
                 Keyword::Enum => self.enum_specifier(location)?,
                 Keyword::UserTypedef(name) => {
-                    Locatable::new(DeclarationSpecifier::Typedef(name), location)
+                    // absolute hack: allow awful code like `typedef int I; { I I; }`
+                    if !seen_typedef {
+                        seen_typedef = true;
+                        Locatable::new(DeclarationSpecifier::Typedef(name), location)
+                    } else {
+                        self.unput(Some(Locatable::new(Token::Id(name), location)));
+                        break;
+                    }
                 }
                 other if !other.is_decl_specifier() => {
                     let err = SyntaxError::ExpectedDeclSpecifier(keyword);

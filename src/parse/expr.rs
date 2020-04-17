@@ -311,7 +311,7 @@ impl<I: Lexer> Parser<I> {
             let location = start.merge(&location);
             Ok((Box::new(move |expr| constructor(expr, id)) as _, location))
         };
-        // prefix operator
+        // postfix operator
         let (func, location): (Box<dyn FnOnce(_) -> _>, _) = match self.peek_token() {
             Some(Token::Dot) => needs_id(self, ExprType::Member)?,
             Some(Token::StructDeref) => needs_id(self, ExprType::DerefMember)?,
@@ -341,7 +341,7 @@ impl<I: Lexer> Parser<I> {
                 } else {
                     loop {
                         // TODO: maybe we could do some error handling here and consume the end right paren
-                        let arg = self.expr()?;
+                        let arg = self.ternary_expr()?;
                         start.merge(&arg.location);
                         args.push(arg);
                         if let Some(token) = self.match_next(&Token::Comma) {

@@ -5,6 +5,7 @@ mod init;
 mod stmt;
 
 use std::collections::{HashSet, VecDeque};
+use std::convert::TryInto;
 
 use counter::Counter;
 
@@ -479,7 +480,7 @@ impl<I: Lexer> Analyzer<I> {
                 id: decl.id.expect("struct members should have an id"),
             };
             if let Some(bitfield) = bitfield {
-                let bit_size = match Self::const_int(self.parse_expr(bitfield), false) {
+                let bit_size = match Self::const_uint(self.parse_expr(bitfield)) {
                     Ok(e) => e,
                     Err(err) => {
                         self.error_handler.push_back(err);
@@ -573,13 +574,10 @@ impl<I: Lexer> Analyzer<I> {
         for (name, maybe_value) in ast_members {
             if let Some(value) = maybe_value {
                 let location = value.location;
-                discriminant = Self::const_int(self.parse_expr(value), true).map_or_else(
-                    |err| {
-                        self.error_handler.push_back(err);
-                        std::i64::MIN
-                    },
-                    |unsigned| unsigned as i64,
-                );
+                discriminant = Self::const_sint(self.parse_expr(value)).unwrap_or_else(|err| {
+                    self.error_handler.push_back(err);
+                    std::i64::MIN
+                });
             }
             members.push((name, discriminant));
             // TODO: this is such a hack
@@ -693,11 +691,10 @@ impl<I: Lexer> Analyzer<I> {
             }
             Array { of, size } => {
                 let size = if let Some(expr) = size {
-                    let size =
-                        Self::const_int(self.parse_expr(*expr), false).unwrap_or_else(|err| {
-                            self.error_handler.push_back(err);
-                            1
-                        });
+                    let size = Self::const_uint(self.parse_expr(*expr)).unwrap_or_else(|err| {
+                        self.error_handler.push_back(err);
+                        1
+                    });
                     ArrayType::Fixed(size)
                 } else {
                     ArrayType::Unbounded
@@ -788,20 +785,23 @@ impl<I: Lexer> Analyzer<I> {
         }
     }
     // used for arrays like `int a[BUF_SIZE - 1];` and enums like `enum { A = 1 }`
-    fn const_int(expr: Expr, allow_negative: bool) -> CompileResult<crate::arch::SIZE_T> {
+    fn const_literal(expr: Expr) -> CompileResult<Literal> {
+        let location = expr.location;
+        expr.const_fold()?.into_literal().or_else(|runtime_expr| {
+            Err(Locatable::new(
+                SemanticError::NotConstant(runtime_expr).into(),
+                location,
+            ))
+        })
+    }
+    fn const_uint(expr: Expr) -> CompileResult<crate::arch::SIZE_T> {
         use Literal::*;
 
         let location = expr.location;
-        let lit = expr.const_fold()?.into_literal().or_else(|runtime_expr| {
-            Err(Locatable::new(
-                SemanticError::NotConstant(runtime_expr),
-                location,
-            ))
-        })?;
-        match lit {
+        match Self::const_literal(expr)? {
             UnsignedInt(i) => Ok(i),
             Int(i) => {
-                if !allow_negative && i < 0 {
+                if i < 0 {
                     Err(Locatable::new(
                         SemanticError::NegativeLength.into(),
                         location,
@@ -810,6 +810,26 @@ impl<I: Lexer> Analyzer<I> {
                     Ok(i as u64)
                 }
             }
+            Char(c) => Ok(c.into()),
+            Str(_) | Float(_) => Err(Locatable::new(
+                SemanticError::NonIntegralLength.into(),
+                location,
+            )),
+        }
+    }
+    fn const_sint(expr: Expr) -> CompileResult<i64> {
+        use Literal::*;
+
+        let location = expr.location;
+        match Self::const_literal(expr)? {
+            UnsignedInt(u) => match u.try_into() {
+                Ok(i) => Ok(i),
+                Err(_) => Err(Locatable::new(
+                    SemanticError::ConstOverflow { is_positive: true }.into(),
+                    location,
+                )),
+            },
+            Int(i) => Ok(i),
             Char(c) => Ok(c.into()),
             Str(_) | Float(_) => Err(Locatable::new(
                 SemanticError::NonIntegralLength.into(),

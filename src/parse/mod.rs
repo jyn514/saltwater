@@ -196,11 +196,12 @@ impl<I: Lexer> Parser<I> {
         }
     }
     fn match_id(&mut self) -> Option<Locatable<InternedStr>> {
-        if let Some(&Token::Id(id)) = self.peek_token() {
-            let location = self.next_token().unwrap().location;
-            Some(Locatable::new(id, location))
-        } else {
-            None
+        match self.peek_token() {
+            Some(&Token::Id(name)) | Some(&Token::Keyword(Keyword::UserTypedef(name))) => {
+                let location = self.next_token().unwrap().location;
+                Some(Locatable::new(name, location))
+            }
+            _ => None,
         }
     }
     fn match_keywords(&mut self, keywords: &[Keyword]) -> Option<Locatable<Keyword>> {

@@ -592,7 +592,7 @@ impl<I: Lexer> Analyzer<I> {
                 storage_class: StorageClass::Register,
                 ctype: Type::Enum(None, vec![(name, discriminant)]),
             };
-            self.scope.insert(name, tmp_symbol.insert());
+            self.declare(tmp_symbol.insert(), location);
             discriminant = discriminant.checked_add(1).unwrap_or_else(|| {
                 self.error_handler
                     .push_back(location.error(SemanticError::EnumOverflow));

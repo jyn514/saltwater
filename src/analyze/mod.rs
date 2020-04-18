@@ -985,8 +985,8 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
             id: func.id,
             qualifiers: parsed_func.qualifiers,
             storage_class: sc,
-        }
-        .insert();
+        };
+        let metadata = analyzer.declare(metadata, true, location);
         let func_type = match parsed_func.ctype {
             Type::Function(ftype) => ftype,
             _ => unreachable!(),
@@ -1012,6 +1012,8 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
                     location,
                 );
             }
+            // TODO: I think this should go through `declare` instead,
+            // but that requires having a mutable `Metadata`
             func_analyzer.analyzer.scope.insert(meta.id, param);
         }
         let stmts = func

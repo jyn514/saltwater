@@ -1095,8 +1095,22 @@ impl Expr {
             self
         } else if self.ctype == Type::Error {
             self
-        // TODO: allow implicit casts of const pointers
         } else {
+            // allow implicit casts of const pointers
+            // Standard (in the context `left = right`, i.e. casting `right` to `left`)
+            // > the left operand has atomic, qualified, or unqualified pointer type,
+            // > and (considering the type the left operand would have after lvalue conversion)
+            // > both operands are pointers to qualified or unqualified versions of compatible types,
+            // > and the type pointed to by the left has all the qualifiers of the type pointed to by the right;
+            match (&self.ctype, ctype) {
+                (Type::Pointer(a, from), Type::Pointer(b, to)) => {
+                    if *a == *b && from.contains_all(&to) {
+                        self.ctype = ctype.clone();
+                        return self;
+                    }
+                }
+                _ => {}
+            }
             error_handler.error(
                 SemanticError::InvalidCast(
                     //"cannot implicitly convert '{}' to '{}'{}",
@@ -1148,6 +1162,14 @@ impl Expr {
             }
             _ => Ok(()),
         }
+    }
+}
+
+impl Qualifiers {
+    // return whether `self` has all the qualifiers of `right`
+    // WARNING: this _must_ be updated if you add more fields to `Qualifiers`
+    fn contains_all(&self, other: &Self) -> bool {
+        (self.c_const || !other.c_const) && (self.volatile || !other.volatile)
     }
 }
 

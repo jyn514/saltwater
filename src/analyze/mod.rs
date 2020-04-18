@@ -168,12 +168,11 @@ impl<I: Lexer> Analyzer<I> {
                 id,
                 qualifiers: original.qualifiers,
                 storage_class: sc,
-            }
-            .insert();
+            };
+            let symbol = self.declare(symbol, init.is_some(), d.location);
             if init.is_some() {
                 self.initialized.insert(symbol);
             }
-            self.declare(symbol, d.location);
             decls.push(Locatable::new(Declaration { symbol, init }, d.location));
         }
         decls
@@ -602,7 +601,7 @@ impl<I: Lexer> Analyzer<I> {
                 storage_class: StorageClass::Register,
                 ctype: Type::Enum(None, vec![(name, discriminant)]),
             };
-            self.declare(tmp_symbol.insert(), location);
+            self.declare(tmp_symbol, false, location);
             discriminant = discriminant.checked_add(1).unwrap_or_else(|| {
                 self.error_handler
                     .push_back(location.error(SemanticError::EnumOverflow));
@@ -849,8 +848,7 @@ impl<I: Lexer> Analyzer<I> {
             )),
         }
     }
-    fn declare(&mut self, symbol: MetadataRef, location: Location) {
-        let decl = symbol.get();
+    fn declare(&mut self, mut decl: Metadata, init: bool, location: Location) -> MetadataRef {
         if decl.id == "main".into() {
             if let Type::Function(ftype) = &decl.ctype {
                 if !ftype.is_main_func_signature() {
@@ -858,13 +856,16 @@ impl<I: Lexer> Analyzer<I> {
                 }
             }
         }
-        let decl_init = self.initialized.contains(&symbol);
+        //let decl_init = self.initialized.contains(&symbol);
         // e.g. extern int i = 1;
         // this is a silly thing to do, but valid: https://stackoverflow.com/a/57900212/7669110
-        if decl.storage_class == StorageClass::Extern && !decl.ctype.is_function() && decl_init {
+        if decl.storage_class == StorageClass::Extern && !decl.ctype.is_function() && init {
             self.warn(Warning::ExtraneousExtern, location);
+            decl.storage_class = StorageClass::Auto;
         }
-        if let Some(existing_ref) = self.scope.insert(decl.id, symbol) {
+        let id = decl.id;
+        let symbol = decl.insert();
+        if let Some(existing_ref) = self.scope.insert(id, symbol) {
             let existing = existing_ref.get();
             let meta = symbol.get();
             // 6.2.2p4
@@ -876,17 +877,20 @@ impl<I: Lexer> Analyzer<I> {
             // i.e. `static int f(); int f();` is the same as `static int f(); static int f();`
             // special case redefining the same type
             if existing == meta
-                || (existing.storage_class == StorageClass::Static
+                || ((existing.storage_class == StorageClass::Static
+                    || existing.storage_class == StorageClass::Auto)
                     && meta.storage_class == StorageClass::Extern)
+                || existing.storage_class == StorageClass::Extern
             {
-                if decl_init && self.initialized.contains(&existing_ref) {
-                    self.err(SemanticError::Redefinition(decl.id), location);
+                if init && self.initialized.contains(&existing_ref) {
+                    self.err(SemanticError::Redefinition(id), location);
                 }
             } else {
-                let err = SemanticError::IncompatibleRedeclaration(decl.id, existing_ref, symbol);
+                let err = SemanticError::IncompatibleRedeclaration(id, existing_ref, symbol);
                 self.err(err, location);
             }
         }
+        symbol
     }
 }
 

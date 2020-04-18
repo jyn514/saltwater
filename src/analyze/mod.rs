@@ -139,7 +139,7 @@ impl<I: Lexer> Analyzer<I> {
         let sc = original.storage_class.unwrap_or(StorageClass::Auto);
         let mut decls = Vec::new();
         for d in declaration.declarators {
-            let ctype =
+            let mut ctype =
                 self.parse_declarator(original.ctype.clone(), d.data.declarator.decl, d.location);
 
             if !ctype.is_function() && original.qualifiers.func != FunctionQualifiers::default() {
@@ -151,14 +151,18 @@ impl<I: Lexer> Analyzer<I> {
 
             let id = d.data.declarator.id;
             let id = id.expect("declarations should never be abstract");
+            if sc == StorageClass::Typedef {
+                self.declarations.typedefs.insert(id, ());
+            } else if ctype == Type::Void {
+                // TODO: catch this error for types besides void?
+                self.err(SemanticError::VoidType, location);
+                ctype = Type::Error;
+            }
             let init = if let Some(init) = d.data.init {
                 Some(self.parse_initializer(init, &ctype, d.location))
             } else {
                 None
             };
-            if sc == StorageClass::Typedef {
-                self.declarations.typedefs.insert(id, ());
-            }
             let symbol = Metadata {
                 ctype,
                 id,
@@ -472,7 +476,15 @@ impl<I: Lexer> Analyzer<I> {
                 None => continue,
                 Some(d) => d,
             };
-            let ctype = self.parse_declarator(parsed_type.ctype.clone(), decl.decl, location);
+            let ctype = match self.parse_declarator(parsed_type.ctype.clone(), decl.decl, location)
+            {
+                Type::Void => {
+                    // TODO: catch this error for types besides void?
+                    self.err(SemanticError::VoidType, location);
+                    Type::Error
+                }
+                other => other,
+            };
             let mut symbol = Metadata {
                 storage_class: StorageClass::Auto,
                 qualifiers: parsed_type.qualifiers,

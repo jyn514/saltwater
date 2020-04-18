@@ -132,7 +132,7 @@ impl Type {
             Type::Array(_, ArrayType::Fixed(size)) => *size as usize,
             Type::Array(_, ArrayType::Unbounded) => 0,
             Type::Struct(st) | Type::Union(st) => st.members().len(),
-            Type::Error => 1,
+            Type::Function { .. } | Type::Error => 1,
             _ => unimplemented!("type checking for {}", self),
         }
     }
@@ -171,7 +171,7 @@ impl Type {
                     .map(|m| m.ctype.clone())
                     .unwrap_or(Type::Error))
             }
-            Type::Error => Ok(Type::Error),
+            Type::Function { .. } | Type::Error => Ok(Type::Error),
             _ => unimplemented!("type checking for aggregate initializers of type {}", self),
         }
     }

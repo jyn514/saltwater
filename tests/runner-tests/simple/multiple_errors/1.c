@@ -1,2 +1,2 @@
-// errors: 2
+// errors: 3
 int int enum e;

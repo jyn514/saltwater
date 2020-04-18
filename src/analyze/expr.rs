@@ -1104,7 +1104,7 @@ impl Expr {
             // > and the type pointed to by the left has all the qualifiers of the type pointed to by the right;
             match (&self.ctype, ctype) {
                 (Type::Pointer(a, from), Type::Pointer(b, to)) => {
-                    if *a == *b && from.contains_all(&to) {
+                    if *a == *b && from.contains_all(*to) {
                         self.ctype = ctype.clone();
                         return self;
                     }
@@ -1168,7 +1168,7 @@ impl Expr {
 impl Qualifiers {
     // return whether `self` has all the qualifiers of `right`
     // WARNING: this _must_ be updated if you add more fields to `Qualifiers`
-    fn contains_all(&self, other: &Self) -> bool {
+    fn contains_all(self, other: Self) -> bool {
         (self.c_const || !other.c_const) && (self.volatile || !other.volatile)
     }
 }

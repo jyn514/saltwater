@@ -165,6 +165,9 @@ pub enum SemanticError {
     #[error("overflow in enumeration constant")]
     EnumOverflow,
 
+    #[error("variable has incomplete type 'void'")]
+    VoidType,
+
     // expression errors
     #[error("use of undeclared identifier '{0}'")]
     UndeclaredVar(InternedStr),

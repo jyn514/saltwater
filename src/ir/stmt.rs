@@ -43,11 +43,13 @@ impl<B: Backend> Compiler<B> {
             }
             StmtType::Return(expr) => {
                 let mut ret = vec![];
+                let pretty = expr.as_ref().map_or("void".into(), |e| e.to_string());
                 if let Some(e) = expr {
                     let val = self.compile_expr(e, builder)?;
                     ret.push(val.ir_val);
                 }
-                builder.ins().return_(&ret);
+                let inst = builder.ins().return_(&ret);
+                self.add_comment(inst, format!("return {}", pretty));
                 Ok(())
             }
             StmtType::If(condition, body, otherwise) => {

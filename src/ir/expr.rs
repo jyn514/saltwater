@@ -464,6 +464,7 @@ impl<B: Backend> Compiler<B> {
         })
     }
     fn assignment(&mut self, lval: Expr, rval: Expr, builder: &mut FunctionBuilder) -> IrResult {
+        let pretty = format!("{} = {}", lval, rval);
         let ctype = lval.ctype.clone();
         let location = lval.location;
         let (target, value) = (
@@ -492,9 +493,11 @@ impl<B: Backend> Compiler<B> {
         }
         // scalar assignment
         let target_val = target.ir_val;
-        builder
+        let value = value;
+        let inst = builder
             .ins()
             .store(MemFlags::new(), value.ir_val, target_val, 0);
+        self.add_comment(inst, pretty);
         Ok(value)
     }
     fn call(

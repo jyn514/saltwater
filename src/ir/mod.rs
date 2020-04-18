@@ -1,6 +1,9 @@
 mod expr;
+mod pretty;
 mod static_init;
 mod stmt;
+
+use pretty::CommentWriter;
 
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
@@ -93,6 +96,7 @@ struct Compiler<T: Backend> {
     switches: Vec<(Switch, Option<Block>, Block)>,
     labels: HashMap<InternedStr, Block>,
     error_handler: ErrorHandler,
+    comments: CommentWriter,
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
@@ -148,6 +152,7 @@ impl<B: Backend> Compiler<B> {
             strings: Default::default(),
             error_handler: Default::default(),
             debug,
+            comments: CommentWriter::new(),
         }
     }
     // we have to consider the following cases:
@@ -183,6 +188,8 @@ impl<B: Backend> Compiler<B> {
             .module
             .declare_function(get_str!(metadata.id), linkage, &signature)
             .unwrap_or_else(|err| panic!("{}", err));
+
+        self.add_global_comment(format!("function {}: {}", func_id.as_u32(), metadata.id));
         self.declarations.insert(symbol, Id::Function(func_id));
         Ok(func_id)
     }
@@ -224,6 +231,7 @@ impl<B: Backend> Compiler<B> {
             offset: None,
         };
         let stack_slot = builder.create_stack_slot(data);
+        self.add_comment(stack_slot, format!("{}", decl));
         self.declarations.insert(decl.symbol, Id::Local(stack_slot));
         if let Some(init) = decl.init {
             self.store_stack(init, stack_slot, builder)?;
@@ -238,11 +246,13 @@ impl<B: Backend> Compiler<B> {
     ) -> CompileResult<()> {
         match init {
             Initializer::Scalar(expr) => {
+                let pretty_expr = expr.to_string();
                 let val = self.compile_expr(*expr, builder)?;
                 // TODO: replace with `builder.ins().stack_store(val.ir_val, stack_slot, 0);`
                 // when Cranelift implements stack_store for i8 and i16
                 let addr = builder.ins().stack_addr(Type::ptr_type(), stack_slot, 0);
-                builder.ins().store(MemFlags::new(), val.ir_val, addr, 0);
+                let store = builder.ins().store(MemFlags::new(), val.ir_val, addr, 0);
+                self.add_comment(store, format!("{} = {}", stack_slot, pretty_expr));
             }
             Initializer::InitializerList(_) => unimplemented!("aggregate dynamic initialization"),
             Initializer::FunctionBody(_) => unreachable!("functions can't be stored on the stack"),
@@ -356,7 +366,15 @@ impl<B: Backend> Compiler<B> {
         let flags = settings::Flags::new(settings::builder());
 
         if self.debug {
-            println!("{}", func);
+            let mut buf = String::new();
+            cranelift::codegen::write::decorate_function(
+                &mut self.comments,
+                &mut buf,
+                &func,
+                &Default::default(),
+            )
+            .expect("failed to print function");
+            println!("{}", buf);
         }
 
         if let Err(err) = codegen::verify_function(&func, &flags) {

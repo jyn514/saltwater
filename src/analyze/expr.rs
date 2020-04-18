@@ -689,62 +689,71 @@ impl<T: Lexer> Analyzer<T> {
                 ctype: lval.ctype.clone(),
                 lval: false, // `(i = j) = 4`; is invalid
                 location,
-                expr: ExprType::Binary(BinaryOp::Assign, Box::new(lval), Box::new(rval)),
+                expr: ExprType::Binary(BinaryOp::Assign, Box::new(lval), Box::new(rval.rval())),
             };
         }
         // Complex assignment is tricky because the left side needs to be evaluated only once
         // Consider e.g. `*f() += 1`: `f()` should only be called once.
         // The hack implemented here is to treat `*f()` as a variable then load and store it to memory:
-        // `tmp = *f(); tmp = tmp + 1;`
+        // `tmp = f(); *tmp = *tmp + 1;`
 
         // declare tmp in a new hidden scope
         // We really should only be modifying the scope in `FunctionAnalyzer`,
         // but assignment expressions can never appear in an initializer anyway.
         self.scope.enter();
-        let tmp_name = InternedStr::get_or_intern("tmp");
+        let tmp_name = "tmp".into();
+        let ctype = lval.ctype.clone();
+        // TODO: we could probably make these qualifiers stronger
+        let ptr_type = Type::Pointer(Box::new(ctype.clone()), Qualifiers::default());
         let meta = Metadata {
             id: tmp_name,
-            ctype: lval.ctype.clone(),
+            ctype: ptr_type.clone(),
             qualifiers: Qualifiers::NONE,
             storage_class: StorageClass::Register,
         };
-        let ctype = meta.ctype.clone();
-        let meta_ref = meta.insert();
-        self.scope.insert(tmp_name, meta_ref);
+        let tmp_var = self.declare(meta, true, location);
+
+        // NOTE: this does _not_ call rval() on `lval`
+        // there's no way to do this in C natively - the closest is `&var`, but that doesn't work on expressions
+        // `T tmp = &*f()` or `T tmp = &sum`
+        let init = Some(Initializer::Scalar(Box::new(lval)));
+        let decl = Declaration {
+            symbol: tmp_var,
+            init,
+        };
+        self.decl_side_channel.push(Locatable::new(decl, location));
         self.scope.exit();
-        // NOTE: this does _not_ call rval() on x
-        // tmp = *f()
-        let assign = ExprType::Binary(
-            BinaryOp::Assign,
-            Box::new(Expr {
-                ctype: ctype.clone(),
-                lval: false,
-                location: lval.location,
-                expr: ExprType::Id(meta_ref),
-            }),
-            Box::new(lval),
-        );
-        // (tmp = *f()), i.e. the expression
-        let tmp_assign_expr = Expr {
-            expr: assign,
-            ctype: ctype.clone(),
+        // load `tmp`, i.e. `&*f()`, only evaluated once
+        let tmp = Expr {
+            expr: ExprType::Id(tmp_var),
+            ctype: ptr_type,
             lval: true,
             location,
+        }
+        // this `rval` is because we have the (pointless) address of `tmp`
+        // instead we want the address of the lval
+        .rval();
+
+        // before we had `&sum`, now we have `sum`
+        // `*tmp`, i.e. `*f()`
+        let lval_as_rval = Expr {
+            ctype: ctype.clone(),
+            lval: false,
+            location,
+            // this clone is pretty cheap since `tmp_assign_expr` is just an id
+            expr: ExprType::Deref(Box::new(tmp.clone())),
         };
+        // `*tmp + 1`
+        let new_val = self.desugar_op(lval_as_rval, rval.rval(), token);
+        // `*tmp` in an lval context
+        let target = tmp.indirection(true, ctype.clone());
 
-        // *f() + 1
-        let new_val = self.desugar_op(tmp_assign_expr.clone(), rval, token);
-
-        // tmp = *f() + 1
+        // *tmp = *f() + 1
         Expr {
             ctype,
             lval: false,
             location,
-            expr: ExprType::Binary(
-                BinaryOp::Assign,
-                Box::new(tmp_assign_expr),
-                Box::new(new_val),
-            ),
+            expr: ExprType::Binary(BinaryOp::Assign, Box::new(target), Box::new(new_val)),
         }
     }
     fn desugar_op(&mut self, left: Expr, right: Expr, token: lex::AssignmentToken) -> Expr {

@@ -43,6 +43,17 @@ pub struct Analyzer<T: Lexer> {
     initialized: HashSet<MetadataRef>,
     /// Internal API which makes it easier to return errors lazily
     error_handler: ErrorHandler,
+    /// Hack to make compound assignment work
+    ///
+    /// For `a += b`, `a` must only be evaluated once.
+    /// The way `assignment_expr` handles this is by desugaring to
+    /// `tmp = &a; *tmp = *tmp + b;`
+    /// However, the backend still has to see the declaration.
+    /// There's no way to return a statement from an expression,
+    /// so instead we store it in a side channel.
+    ///
+    /// TODO: this should be a field on `FunctionAnalyzer`, not `Analyzer`
+    decl_side_channel: Vec<Locatable<Declaration>>,
 }
 
 impl<T: Lexer> Iterator for Analyzer<T> {
@@ -87,6 +98,7 @@ impl<I: Lexer> Analyzer<I> {
             tag_scope: Scope::new(),
             pending: VecDeque::new(),
             initialized: HashSet::new(),
+            decl_side_channel: Vec::new(),
         }
     }
     /// Return all warnings seen so far.

@@ -1102,14 +1102,11 @@ impl Expr {
             // > and (considering the type the left operand would have after lvalue conversion)
             // > both operands are pointers to qualified or unqualified versions of compatible types,
             // > and the type pointed to by the left has all the qualifiers of the type pointed to by the right;
-            match (&self.ctype, ctype) {
-                (Type::Pointer(a, from), Type::Pointer(b, to)) => {
-                    if *a == *b && from.contains_all(*to) {
-                        self.ctype = ctype.clone();
-                        return self;
-                    }
+            if let (Type::Pointer(a, from), Type::Pointer(b, to)) = (&self.ctype, ctype) {
+                if *a == *b && from.contains_all(*to) {
+                    self.ctype = ctype.clone();
+                    return self;
                 }
-                _ => {}
             }
             error_handler.error(
                 SemanticError::InvalidCast(

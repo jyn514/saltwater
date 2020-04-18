@@ -95,7 +95,7 @@ mod struct_ref {
     }
 
     /// Structs can be either named or anonymous.
-    #[derive(Clone, Debug, PartialEq, Eq)]
+    #[derive(Clone, Debug, PartialEq)]
     pub enum StructType {
         /// Named structs can have forward declarations and be defined at any point
         /// in the program. In order to support self referential structs, named structs
@@ -133,7 +133,7 @@ mod struct_ref {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Void,
     Bool,
@@ -165,10 +165,7 @@ pub enum ArrayType {
 }
 
 // NOTE: K&R declarations are not supported at this time
-// NOTE: previously, `PartialEq` for FunctionType returned whether the two functions had compatible prototypes,
-// which is _not_ the same as having the _same_ prototypes.
-// This #[derive(PartialEq)] returns whether the functions have the _same_ prototype.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct FunctionType {
     // TODO: allow FunctionQualifiers as well
     pub return_type: Box<Type>,
@@ -253,7 +250,6 @@ impl Type {
     }
 }
 
-/*
 impl PartialEq for FunctionType {
     fn eq(&self, other: &Self) -> bool {
         // no prototype: any parameters are allowed
@@ -267,13 +263,13 @@ impl PartialEq for FunctionType {
             && self.params
                 .iter()
                 .zip(other.params.iter())
-                .all(|(this_param, other_param)| {
+                .all(|(a, b)| {
+                    let (this_param, other_param) = (a.get(), b.get());
                     this_param.ctype == other_param.ctype
                         && this_param.qualifiers == other_param.qualifiers
                 })
     }
 }
-*/
 
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {

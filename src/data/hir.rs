@@ -209,7 +209,7 @@ impl Expr {
 ///
 /// For abstract function parameters, e.g. `int f(int)`, the `id` will resolve to the empty string.
 /// Furthermore, it is guaranteed to be equal to `InternedStr::default()`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Metadata {
     pub ctype: Type,
     pub storage_class: StorageClass,

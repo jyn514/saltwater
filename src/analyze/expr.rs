@@ -1109,11 +1109,7 @@ impl Expr {
                 }
             }
             error_handler.error(
-                SemanticError::InvalidCast(
-                    //"cannot implicitly convert '{}' to '{}'{}",
-                    self.ctype.clone(),
-                    ctype.clone(),
-                ),
+                SemanticError::InvalidCast(self.ctype.clone(), ctype.clone()),
                 self.location,
             );
             self

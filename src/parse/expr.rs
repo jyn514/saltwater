@@ -270,12 +270,6 @@ impl<I: Lexer> Parser<I> {
                 };
                 Ok(Locatable::new(constructor(Box::new(inner)), location))
             }
-        // these expressions do not allow a following cast expression
-        } else if let Some(token) = self.match_any(&[&Token::PlusPlus, &Token::MinusMinus]) {
-            let inner = self.prefix_expr()?;
-            let location = token.location.merge(&inner.location);
-            let expr = ExprType::PreIncrement(Box::new(inner), token.data == Token::PlusPlus);
-            Ok(location.with(expr))
         // primary expressions
         } else if let Some(loc) = self.match_id() {
             Ok(loc.map(ExprType::Id))
@@ -295,6 +289,8 @@ impl<I: Lexer> Parser<I> {
             Token::Plus => ExprType::UnaryPlus,
             Token::Minus => ExprType::Negate,
             Token::Ampersand => ExprType::AddressOf,
+            Token::PlusPlus => |e| ExprType::PreIncrement(e, true),
+            Token::MinusMinus => |e| ExprType::PreIncrement(e, false),
             _ => return None,
         };
         let loc = self.next_token().unwrap().location;
@@ -371,6 +367,12 @@ mod test {
     use crate::parse::test::*;
     use crate::parse::*;
 
+    fn assert_same(left: &str, right: &str) {
+        assert_eq!(
+            expr(left).unwrap().to_string(),
+            expr(right).unwrap().to_string()
+        );
+    }
     fn assert_expr_display(left: &str, right: &str) {
         assert_eq!(expr(left).unwrap().to_string(), right);
     }
@@ -407,6 +409,9 @@ mod test {
         assert_eq!(expr_data("~x"), ExprType::BitwiseNot(x()));
         assert_eq!(expr_data("!x"), ExprType::LogicalNot(x()));
         assert_eq!(expr_data("&x"), ExprType::AddressOf(x()));
+
+        assert_same("++A[1]", "++(A[1])");
+        assert_same("A[1] += 1", "(A[1]) += 1");
     }
     #[test]
     fn parse_postfix() {

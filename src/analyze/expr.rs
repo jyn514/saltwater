@@ -625,7 +625,7 @@ impl<T: Lexer> Analyzer<T> {
     fn logical_not(&mut self, expr: ast::Expr, location: Location) -> Expr {
         let expr = self.parse_expr(expr);
         let boolean = expr.truthy(&mut self.error_handler);
-        debug_assert!(boolean.ctype == Type::Bool);
+        debug_assert_eq!(boolean.ctype, Type::Bool);
         let zero = Expr::zero(boolean.location).implicit_cast(&Type::Bool, &mut self.error_handler);
         Expr {
             lval: false,
@@ -1002,19 +1002,18 @@ impl Expr {
                 )),
                 self.location,
             );
-            literal(Literal::Int(0), self.location)
-        } else {
-            let zero = Expr::zero(self.location).implicit_cast(&self.ctype, error_handler);
-            Expr {
-                lval: false,
-                location: self.location,
-                ctype: Type::Bool,
-                expr: ExprType::Binary(
-                    BinaryOp::Compare(ComparisonToken::NotEqual),
-                    Box::new(self),
-                    Box::new(zero),
-                ),
-            }
+            self.ctype = Type::Error;
+        }
+        let zero = Expr::zero(self.location).implicit_cast(&self.ctype, error_handler);
+        Expr {
+            lval: false,
+            location: self.location,
+            ctype: Type::Bool,
+            expr: ExprType::Binary(
+                BinaryOp::Compare(ComparisonToken::NotEqual),
+                Box::new(self),
+                Box::new(zero),
+            ),
         }
     }
 

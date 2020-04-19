@@ -895,11 +895,12 @@ impl<I: Lexer> Analyzer<I> {
             //
             // i.e. `static int f(); int f();` is the same as `static int f(); static int f();`
             // special case redefining the same type
-            if existing == meta
-                || ((existing.storage_class == StorageClass::Static
-                    || existing.storage_class == StorageClass::Auto)
-                    && meta.storage_class == StorageClass::Extern)
-                || existing.storage_class == StorageClass::Extern
+            if self.scope.is_global()
+                && (existing == meta
+                    || ((existing.storage_class == StorageClass::Static
+                        || existing.storage_class == StorageClass::Auto)
+                        && meta.storage_class == StorageClass::Extern)
+                    || existing.storage_class == StorageClass::Extern)
             {
                 if init && self.initialized.contains(&existing_ref) {
                     self.err(SemanticError::Redefinition(id), location);

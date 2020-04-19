@@ -52,12 +52,14 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
             } => {
                 // TODO: maybe a sanity check here that the init statement is only an expression or declaration?
                 // Or encode that in the type somehow?
+                self.enter_scope();
                 let initializer = self.parse_stmt(*initializer);
                 let condition = condition.map(|e| {
                     Box::new(self.parse_expr(*e).truthy(&mut self.analyzer.error_handler))
                 });
                 let post_loop = post_loop.map(|e| Box::new(self.parse_expr(*e)));
                 let body = self.parse_stmt(*body);
+                self.leave_scope(stmt.location);
                 S::For(Box::new(initializer), condition, post_loop, Box::new(body))
             }
             Switch(value, body) => {

@@ -20,6 +20,18 @@ pub struct FunctionDefinition {
     pub body: CompoundStatement,
 }
 
+impl FunctionDefinition {
+    pub(crate) fn as_type(&self) -> TypeName {
+        TypeName {
+            specifiers: self.specifiers.clone(),
+            declarator: Declarator {
+                decl: DeclaratorType::Function(self.declarator.clone()),
+                id: Some(self.id),
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypeName {
     pub specifiers: Vec<DeclarationSpecifier>,

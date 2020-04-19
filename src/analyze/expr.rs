@@ -840,18 +840,15 @@ impl Type {
     /// Return whether self is a signed type.
     ///
     /// Should only be called on integral types.
-    /// Calling sign() on a floating or derived type will panic.
-    fn sign(&self) -> bool {
+    /// Calling sign() on a floating or derived type will return Err(()).
+    fn sign(&self) -> Result<bool, ()> {
         use Type::*;
         match self {
-            Char(sign) | Short(sign) | Int(sign) | Long(sign) => *sign,
-            Bool => false,
+            Char(sign) | Short(sign) | Int(sign) | Long(sign) => Ok(*sign),
+            Bool => Ok(false),
             // TODO: allow enums with values of UINT_MAX
-            Enum(_, _) => true,
-            x => panic!(
-                "Type::sign can only be called on integral types (got {})",
-                x
-            ),
+            Enum(_, _) => Ok(true),
+            x => Err(()),
         }
     }
 
@@ -892,23 +889,28 @@ impl Type {
             self
         }
     }
-    fn binary_promote(mut left: Type, mut right: Type) -> Type {
+    fn binary_promote(mut left: Type, mut right: Type) -> Result<Type, Type> {
         use Type::*;
         if left == Double || right == Double {
-            return Double; // toil and trouble
+            return Ok(Double); // toil and trouble
         } else if left == Float || right == Float {
-            return Float;
+            return Ok(Float);
         }
         left = left.integer_promote();
         right = right.integer_promote();
-        let signs = (left.sign(), right.sign());
+        // TODO: we know that `left` can't be used after a move,
+        // but rustc isn't smart enough to figure it out and let us remove the clone
+        let signs = (
+            left.sign().map_err(|_| left.clone())?,
+            right.sign().map_err(|_| right.clone())?,
+        );
         // same sign
         if signs.0 == signs.1 {
-            return if left.rank() >= right.rank() {
+            return Ok(if left.rank() >= right.rank() {
                 left
             } else {
                 right
-            };
+            });
         };
         let (signed, unsigned) = if signs.0 {
             (left, right)
@@ -916,9 +918,9 @@ impl Type {
             (right, left)
         };
         if signed.can_represent(&unsigned) {
-            signed
+            Ok(signed)
         } else {
-            unsigned
+            Ok(unsigned)
         }
     }
     /// 6.5.2.2p6:
@@ -1028,10 +1030,17 @@ impl Expr {
     fn binary_promote(left: Expr, right: Expr, error_handler: &mut ErrorHandler) -> (Expr, Expr) {
         let (left, right) = (left.rval(), right.rval());
         let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
-        (
-            left.implicit_cast(&ctype, error_handler),
-            right.implicit_cast(&ctype, error_handler),
-        )
+        match ctype {
+            Ok(promoted) => (
+                left.implicit_cast(&promoted, error_handler),
+                right.implicit_cast(&promoted, error_handler),
+            ),
+            Err(non_int) => {
+                // TODO: this location is wrong
+                error_handler.error(SemanticError::NonIntegralExpr(non_int), right.location);
+                (left, right)
+            }
+        }
     }
     // ensure an expression has a value. convert
     // - arrays -> pointers

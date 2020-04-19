@@ -196,10 +196,11 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     fn parse_id(&mut self, name: InternedStr, location: Location) -> Expr {
-        let pretend_zero = Expr::zero(location);
+        let mut pretend_zero = Expr::zero(location);
         match self.scope.get(&name) {
             None => {
                 self.err(SemanticError::UndeclaredVar(name), location);
+                pretend_zero.ctype = Type::Error;
                 pretend_zero
             }
             Some(&symbol) => {

@@ -385,7 +385,7 @@ pub enum SyntaxError {
     #[error("functions cannot be initialized (got {0})")]
     FunctionInitializer(ast::Initializer),
 
-    #[error("function not allowed in this context (got {0})")]
+    #[error("function not allowed in this context (got {})", .0.as_type())]
     FunctionNotAllowed(ast::FunctionDefinition),
 
     #[error("function definitions must have a name")]

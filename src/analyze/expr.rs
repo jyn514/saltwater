@@ -1082,28 +1082,29 @@ impl Expr {
         }
     }
 
-    pub(super) fn implicit_cast(mut self, ctype: &Type, error_handler: &mut ErrorHandler) -> Expr {
-        if &self.ctype == ctype {
-            self
-        } else if self.ctype.is_arithmetic() && ctype.is_arithmetic()
-            || self.is_null() && ctype.is_pointer()
-            || self.ctype.is_pointer() && ctype.is_bool()
-            || self.ctype.is_pointer() && ctype.is_void_pointer()
-            || self.ctype.is_pointer() && ctype.is_char_pointer()
+    pub(super) fn implicit_cast(self, ctype: &Type, error_handler: &mut ErrorHandler) -> Expr {
+        let mut expr = self.rval();
+        if &expr.ctype == ctype {
+            expr
+        } else if expr.ctype.is_arithmetic() && ctype.is_arithmetic()
+            || expr.is_null() && ctype.is_pointer()
+            || expr.ctype.is_pointer() && ctype.is_bool()
+            || expr.ctype.is_pointer() && ctype.is_void_pointer()
+            || expr.ctype.is_pointer() && ctype.is_char_pointer()
         {
             Expr {
-                location: self.location,
-                expr: ExprType::Cast(Box::new(self)),
+                location: expr.location,
+                expr: ExprType::Cast(Box::new(expr)),
                 lval: false,
                 ctype: ctype.clone(),
             }
         } else if ctype.is_pointer()
-            && (self.is_null() || self.ctype.is_void_pointer() || self.ctype.is_char_pointer())
+            && (expr.is_null() || expr.ctype.is_void_pointer() || expr.ctype.is_char_pointer())
         {
-            self.ctype = ctype.clone();
-            self
-        } else if self.ctype == Type::Error {
-            self
+            expr.ctype = ctype.clone();
+            expr
+        } else if expr.ctype == Type::Error {
+            expr
         } else {
             // allow implicit casts of const pointers
             // Standard (in the context `left = right`, i.e. casting `right` to `left`)
@@ -1111,17 +1112,17 @@ impl Expr {
             // > and (considering the type the left operand would have after lvalue conversion)
             // > both operands are pointers to qualified or unqualified versions of compatible types,
             // > and the type pointed to by the left has all the qualifiers of the type pointed to by the right;
-            if let (Type::Pointer(a, from), Type::Pointer(b, to)) = (&self.ctype, ctype) {
+            if let (Type::Pointer(a, from), Type::Pointer(b, to)) = (&expr.ctype, ctype) {
                 if *a == *b && from.contains_all(*to) {
-                    self.ctype = ctype.clone();
-                    return self;
+                    expr.ctype = ctype.clone();
+                    return expr;
                 }
             }
             error_handler.error(
-                SemanticError::InvalidCast(self.ctype.clone(), ctype.clone()),
-                self.location,
+                SemanticError::InvalidCast(expr.ctype.clone(), ctype.clone()),
+                expr.location,
             );
-            self
+            expr
         }
     }
     /// See section 6.3.2.1 of the C Standard. In particular:

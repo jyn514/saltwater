@@ -393,7 +393,9 @@ pub(crate) mod test {
     }
 
     pub(crate) fn assert_same(left: &str, right: &str) {
-        assert_eq!(parse_all(left), parse_all(right))
+        let left: Vec<_> = parse_all(left).into_iter().map(Result::unwrap).collect();
+        let right: Vec<_> = parse_all(right).into_iter().map(Result::unwrap).collect();
+        assert_eq!(left, right);
     }
 
     prop_compose! {

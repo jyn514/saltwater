@@ -71,19 +71,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 let body = self.parse_stmt(*body);
                 S::Switch(value, Box::new(body))
             }
-            Expr(expr) => {
-                let expr = self.parse_expr(expr);
-                if !self.analyzer.decl_side_channel.is_empty() {
-                    let decls = std::mem::replace(&mut self.analyzer.decl_side_channel, Vec::new());
-                    // this location is wrong for the declarations, but it's _probably_ fine
-                    let location = expr.location;
-                    let decl_stmt = Locatable::new(S::Decl(decls), location);
-                    let expr_stmt = Locatable::new(S::Expr(expr), location);
-                    S::Compound(vec![decl_stmt, expr_stmt])
-                } else {
-                    S::Expr(expr)
-                }
-            }
+            Expr(expr) => S::Expr(self.parse_expr(expr)),
             Return(value) => self.return_statement(value, stmt.location),
             // TODO: all of these should have semantic checking here, not in the backend
             Label(name, inner) => {
@@ -96,6 +84,14 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
             Continue => S::Continue,
             Break => S::Break,
             Decl(decls) => S::Decl(self.analyzer.parse_declaration(decls, stmt.location)),
+        };
+        let data = if !self.analyzer.decl_side_channel.is_empty() {
+            let decls = std::mem::replace(&mut self.analyzer.decl_side_channel, Vec::new());
+            // this location is wrong for the declarations, but it's _probably_ fine
+            let decl_stmt = Stmt::new(S::Decl(decls), stmt.location);
+            S::Compound(vec![decl_stmt, Stmt::new(data, stmt.location)])
+        } else {
+            data
         };
         Locatable::new(data, stmt.location)
     }

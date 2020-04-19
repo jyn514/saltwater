@@ -676,12 +676,13 @@ impl<T: Lexer> Analyzer<T> {
     }
 
     fn assignment_expr(
-        &mut self, lval: Expr, mut rval: Expr, token: lex::AssignmentToken, location: Location,
+        &mut self, lval: Expr, rval: Expr, token: lex::AssignmentToken, location: Location,
     ) -> Expr {
         if let Err(err) = lval.modifiable_lval() {
             self.err(err, location);
         }
         if let lex::AssignmentToken::Equal = token {
+            let mut rval = rval.rval();
             if rval.ctype != lval.ctype {
                 rval = rval.implicit_cast(&lval.ctype, &mut self.error_handler);
             }
@@ -689,7 +690,7 @@ impl<T: Lexer> Analyzer<T> {
                 ctype: lval.ctype.clone(),
                 lval: false, // `(i = j) = 4`; is invalid
                 location,
-                expr: ExprType::Binary(BinaryOp::Assign, Box::new(lval), Box::new(rval.rval())),
+                expr: ExprType::Binary(BinaryOp::Assign, Box::new(lval), Box::new(rval)),
             };
         }
         // Complex assignment is tricky because the left side needs to be evaluated only once
@@ -743,10 +744,12 @@ impl<T: Lexer> Analyzer<T> {
             // this clone is pretty cheap since `tmp_assign_expr` is just an id
             expr: ExprType::Deref(Box::new(tmp.clone())),
         };
-        // `*tmp + 1`
-        let new_val = self.desugar_op(lval_as_rval, rval.rval(), token);
         // `*tmp` in an lval context
         let target = tmp.indirection(true, ctype.clone());
+        // `*tmp + 1`
+        let new_val = self
+            .desugar_op(lval_as_rval, rval.rval(), token)
+            .implicit_cast(&target.ctype, &mut self.error_handler);
 
         // *tmp = *f() + 1
         Expr {

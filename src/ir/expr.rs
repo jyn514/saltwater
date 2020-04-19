@@ -390,7 +390,11 @@ impl<B: Backend> Compiler<B> {
     fn load_addr(&self, var: MetadataRef, builder: &mut FunctionBuilder) -> IrResult {
         let metadata = var.get();
         let ptr_type = Type::ptr_type();
-        let ir_val = match self.declarations.get(&var).unwrap() {
+        let ir_val = match self
+            .declarations
+            .get(&var)
+            .expect("bug in parser: loaded a variable that was not declared")
+        {
             Id::Function(func_id) => {
                 let func_ref = self.module.declare_func_in_func(*func_id, builder.func);
                 builder.ins().func_addr(ptr_type, func_ref)

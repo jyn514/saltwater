@@ -383,40 +383,47 @@ impl<I: Lexer> Analyzer<I> {
         location: Location,
     ) -> Type {
         let ast_members = match struct_spec.members {
+            // struct { int i; }
             Some(members) => members,
+            // struct s
             None => {
                 let name = if let Some(name) = struct_spec.name {
                     name
                 } else {
-                    let err = SemanticError::from("bare 'enum' as type specifier is not allowed");
-                    self.error_handler.error(err, location);
+                    // struct;
+                    let err = format!(
+                        "bare '{}' as type specifier is not allowed",
+                        if is_struct { "struct" } else { "union " }
+                    );
+                    self.error_handler.error(SemanticError::from(err), location);
                     return Type::Error;
                 };
-                match (is_struct, self.tag_scope.get(&name)) {
-                    (true, Some(TagEntry::Struct(s))) => {
-                        return Type::Struct(StructType::Named(name, *s));
-                    }
-                    (false, Some(TagEntry::Union(s))) => {
-                        return Type::Union(StructType::Named(name, *s));
-                    }
+                let keyword = if is_struct {
+                    Keyword::Struct
+                } else {
+                    Keyword::Union
+                };
+
+                return match (is_struct, self.tag_scope.get(&name)) {
+                    // `struct s *p;`
+                    (_, None) => self.forward_declaration(keyword, name, location),
+                    // `struct s; struct s;` or `struct s { int i; }; struct s`
+                    (true, Some(TagEntry::Struct(s))) => Type::Struct(StructType::Named(name, *s)),
+                    // `union s; union s;` or `union s { int i; }; union s`
+                    (false, Some(TagEntry::Union(s))) => Type::Union(StructType::Named(name, *s)),
                     (_, Some(other)) => {
-                        let kind = if is_struct { "struct" } else { "union " };
-                        let err = SemanticError::from(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", name, kind));
-                        self.error_handler.push_back(Locatable::new(err, location));
-                        return Type::Error;
+                        // `union s; struct s;`
+                        if self.tag_scope.get_immediate(&name).is_some() {
+                            let kind = if is_struct { "struct" } else { "union " };
+                            let err = SemanticError::from(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", name, kind));
+                            self.error_handler.push_back(Locatable::new(err, location));
+                            Type::Error
+                        } else {
+                            // `union s; { struct s; }`
+                            self.forward_declaration(keyword, name, location)
+                        }
                     }
-                    (_, None) => {
-                        return self.forward_declaration(
-                            if is_struct {
-                                Keyword::Struct
-                            } else {
-                                Keyword::Union
-                            },
-                            name,
-                            location,
-                        )
-                    }
-                }
+                };
             }
         };
         let members: Vec<_> = ast_members

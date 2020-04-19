@@ -346,7 +346,7 @@ impl<T: Lexer> Analyzer<T> {
     }
     fn explicit_cast(&mut self, expr: ast::Expr, ctype: Type) -> Expr {
         let location = expr.location;
-        let expr = self.parse_expr(expr);
+        let expr = self.parse_expr(expr).rval();
         if ctype == Type::Void {
             // casting anything to void is allowed
             return Expr {

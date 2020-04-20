@@ -11,28 +11,9 @@ pub struct Span {
     pub start: u32,
     pub end: u32,
 }
-pub trait LocationTrait: Copy + std::fmt::Debug + PartialEq + Sized {
-    fn merge<O: Borrow<Self>>(&self, other: O) -> Self;
-
-    /// WARNING: the location for `original` will be on the _left_, not on the right
-    fn maybe_merge<O: Borrow<Self>>(&self, original: Option<O>) -> Self {
-        original.map_or(*self, |l| l.borrow().merge(self))
-    }
-
-    fn with<T>(self, data: T) -> Locatable<T, Self> {
-        Locatable {
-            data,
-            location: self,
-        }
-    }
-
-    fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError<Self> {
-        self.with(error.into())
-    }
-}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct DefaultLocation {
+pub struct Location {
     pub span: Span,
     pub file: codespan::FileId,
 }
@@ -48,9 +29,9 @@ impl From<Range<u32>> for Span {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Locatable<T, L: LocationTrait = DefaultLocation> {
+pub struct Locatable<T> {
     pub data: T,
-    pub location: L,
+    pub location: Location,
 }
 
 impl<T> Locatable<T> {
@@ -213,19 +194,19 @@ pub enum Token {
 }
 
 /* impls */
-impl PartialOrd for DefaultLocation {
+impl PartialOrd for Location {
     /// NOTE: this only compares the start of the spans, it ignores the end
-    fn partial_cmp(&self, other: &DefaultLocation) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
         Some(self.span.cmp(&other.span))
     }
 }
 
-impl LocationTrait for DefaultLocation {
-    fn merge<O: Borrow<Self>>(&self, other: O) -> Self {
+impl Location {
+    pub fn merge<O: Borrow<Self>>(&self, other: O) -> Self {
         use std::cmp::{max, min};
 
         let other = other.borrow();
-        DefaultLocation {
+        Location {
             span: Span {
                 start: min(self.span.start, other.span.start),
                 end: max(self.span.end, other.span.end),
@@ -233,6 +214,21 @@ impl LocationTrait for DefaultLocation {
             // TODO: what should happen if these come from different files?
             file: self.file,
         }
+    }
+    /// WARNING: the location for `original` will be on the _left_, not on the right
+    pub fn maybe_merge<O: Borrow<Self>>(&self, original: Option<O>) -> Self {
+        original.map_or(*self, |l| l.borrow().merge(self))
+    }
+
+    pub fn with<T>(self, data: T) -> Locatable<T> {
+        Locatable {
+            data,
+            location: self,
+        }
+    }
+
+    pub fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError {
+        self.with(error.into())
     }
 }
 
@@ -244,8 +240,8 @@ impl<T: PartialEq> PartialEq for Locatable<T> {
 
 impl<T: Eq> Eq for Locatable<T> {}
 
-impl<T, L: LocationTrait> Locatable<T, L> {
-    pub fn new(data: T, location: L) -> Locatable<T, L> {
+impl<T> Locatable<T> {
+    pub fn new(data: T, location: Location) -> Locatable<T> {
         location.with(data)
     }
 }
@@ -285,7 +281,7 @@ impl AssignmentToken {
 }
 
 #[cfg(test)]
-impl Default for DefaultLocation {
+impl Default for Location {
     fn default() -> Self {
         let mut files = crate::Files::default();
         let id = files.add("<test suite>", String::new().into());

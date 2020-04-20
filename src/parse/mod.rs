@@ -16,7 +16,7 @@ pub(crate) use crate::analyze::Analyzer;
 use crate::data::*;
 use crate::data::{ast::ExternalDeclaration, hir::Scope, lex::Keyword};
 
-type Lexeme<L = Location> = CompileResult<Locatable<Token, L>, L>;
+type Lexeme = CompileResult<Locatable<Token>>;
 type SyntaxResult<T> = Result<T, Locatable<SyntaxError>>;
 
 pub trait Lexer: Iterator<Item = Lexeme> {}
@@ -426,7 +426,7 @@ pub(crate) mod test {
     pub(crate) fn parser(input: &str) -> Parser<PreProcessor> {
         //let mut lexer = Lexer::new((), format!("{}\n", input), false);
         let mut lexer = cpp(input);
-        let first: Locatable<Token, Location> = lexer.next().unwrap().unwrap();
+        let first: Locatable<Token> = lexer.next().unwrap().unwrap();
         Parser::new(first, lexer, false)
     }
 

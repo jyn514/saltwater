@@ -1,5 +1,3 @@
-use derive_more::Display;
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -156,37 +154,47 @@ pub enum ExprType {
     Noop(Box<Expr>),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BinaryOp {
     // binary expressions
-    #[display(fmt = "||")]
     LogicalOr,
-    #[display(fmt = "|")]
     BitwiseOr,
-    #[display(fmt = "&&")]
     LogicalAnd,
-    #[display(fmt = "&")]
     BitwiseAnd,
-    #[display(fmt = "^")]
     Xor,
-    #[display(fmt = "*")]
     Mul,
-    #[display(fmt = "/")]
     Div,
-    #[display(fmt = "%")]
     Mod,
-    #[display(fmt = "+")]
     Add,
-    #[display(fmt = "-")]
     Sub,
-    #[display(fmt = "<<")]
     Shl,
-    #[display(fmt = "<<")]
     Shr,
     // Token: make >, <, <=, ... part of the same variant
     Compare(ComparisonToken),
-    #[display(fmt = "=")]
     Assign,
+}
+
+impl Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use BinaryOp::*;
+        let s = match self {
+            LogicalOr => "||",
+            BitwiseOr => "|",
+            LogicalAnd => "&&",
+            BitwiseAnd => "&",
+            Xor => "^",
+            Mul => "*",
+            Div => "/",
+            Mod => "%",
+            Add => "+",
+            Sub => "-",
+            Shl => "<<",
+            Shr => ">>",
+            Compare(compare) => return write!(f, "{}", compare),
+            Assign => "=",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 impl Expr {

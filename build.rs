@@ -6,7 +6,8 @@ fn write_git_version() {
     let version = tag.unwrap_or_else(|| {
         let commit = git(&["rev-parse", "--short=7", "HEAD"])
             .expect("`git` was not successful, are you in the right directory?");
-        let most_recent_tag = git(&["describe", "--tags", "--abbrev=0", "HEAD"]).unwrap();
+        let most_recent_tag =
+            git(&["describe", "--tags", "--abbrev=0", "HEAD"]).expect("`git describe` failed");
         format!("{}-dev ({})", most_recent_tag, commit)
     });
     println!("cargo:rustc-env=RCC_GIT_REV={}", version);
@@ -20,7 +21,12 @@ fn git(args: &[&str]) -> Option<String> {
         .output()
         .expect("failed to run `git`, is it installed?");
     if output.status.success() {
-        Some(String::from_utf8(output.stdout).unwrap().trim().to_string())
+        Some(
+            String::from_utf8(output.stdout)
+                .expect("stdout was not valid utf8")
+                .trim()
+                .to_string(),
+        )
     } else {
         None
     }

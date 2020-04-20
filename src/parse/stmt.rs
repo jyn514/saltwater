@@ -71,6 +71,9 @@ impl<I: Lexer> Parser<I> {
     /// Result: whether there was an error in the program source
     /// Option: empty semicolons still count as a statement (so case labels can work)
     pub fn statement(&mut self) -> SyntaxResult<Stmt> {
+        let _guard = self.recursion_check();
+        // take out 2 guards since this goes through `compound_statement` before calling itself again
+        let _guard2 = self.recursion_check();
         match self.peek_token() {
             Some(Token::LeftBrace) => Ok(self.compound_statement()?.map(StmtType::Compound)),
             Some(Token::Keyword(k)) => match k {

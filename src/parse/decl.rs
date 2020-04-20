@@ -439,6 +439,7 @@ impl<I: Lexer> Parser<I> {
     fn direct_declarator(
         &mut self, allow_abstract: bool,
     ) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
+        let _guard = self.recursion_check();
         // we'll pass this to postfix_type in just a second
         // if None, we didn't find an ID
         // should only happen if allow_abstract is true
@@ -629,6 +630,7 @@ impl<I: Lexer> Parser<I> {
     // handle char[][3] = {{1,2,3}}, but also = {1,2,3} and {{1}, 2, 3}
     // NOTE: this does NOT consume {} except for sub-elements
     fn aggregate_initializer(&mut self) -> SyntaxResult<Initializer> {
+        let _guard = self.recursion_check();
         let mut elems = vec![];
         while self.match_next(&Token::RightBrace).is_none() {
             let next = if self.match_next(&Token::LeftBrace).is_some() {

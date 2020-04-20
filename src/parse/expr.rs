@@ -133,6 +133,7 @@ impl<I: Lexer> Parser<I> {
     }
     // see `BinaryPrecedence` for all possible binary expressions
     fn binary_expr(&mut self, mut left: Expr, max_precedence: usize) -> SyntaxResult<Expr> {
+        let _guard = self.recursion_check();
         while let Some(binop) = self
             .peek_token()
             .and_then(|tok| BinaryPrecedence::try_from(tok).ok())
@@ -215,6 +216,9 @@ impl<I: Lexer> Parser<I> {
         // primary expression
         // this must be an expression since we already consumed all the prefix expressions
         let primary = if let Some(paren) = self.match_next(&Token::LeftParen) {
+            // take out lots of guards since there's a lot of indirection
+            let _guard = self.recursion_check();
+            let _guard2 = self.recursion_check();
             let mut inner = self.expr()?;
             let end_loc = self.expect(Token::RightParen)?.location;
             inner.location = paren.location.merge(&end_loc);

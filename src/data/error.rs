@@ -43,6 +43,11 @@ impl<T> ErrorHandler<T> {
         Default::default()
     }
 
+    /// Whether any errors have been seen and not handled
+    pub(crate) fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
     /// Add an error to the error handler.
     pub(crate) fn push_back<E: Into<Locatable<T>>>(&mut self, error: E) {
         self.errors.push_back(error.into());

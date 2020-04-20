@@ -7,18 +7,12 @@ use std::process;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-extern crate ansi_term;
-extern crate codespan;
-#[cfg(debug_assertions)]
-extern crate color_backtrace;
-extern crate pico_args;
-extern crate rcc;
-
 #[cfg(debug_assertions)]
 use color_backtrace::termcolor;
 
 use ansi_term::{ANSIString, Colour};
 use codespan::FileId;
+use git_testament::git_testament_macros;
 use pico_args::Arguments;
 use rcc::{
     assemble, compile,
@@ -31,8 +25,10 @@ use tempfile::NamedTempFile;
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 
+git_testament_macros!(version);
+
 const HELP: &str = concat!(
-    env!("CARGO_PKG_NAME"), " ", env!("RCC_GIT_REV"), "\n",
+    env!("CARGO_PKG_NAME"), " ", version_testament!(), "\n",
     "Joshua Nelson <jyn514@gmail.com>\n",
     env!("CARGO_PKG_DESCRIPTION"), "\n",
     "Homepage: ", env!("CARGO_PKG_REPOSITORY"), "\n",
@@ -280,7 +276,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         std::process::exit(1);
     }
     if input.contains(["-V", "--version"]) {
-        println!("{} {}", env!("CARGO_PKG_NAME"), env!("RCC_GIT_REV"));
+        println!("{} {}", env!("CARGO_PKG_NAME"), version_testament!());
         std::process::exit(0);
     }
     if input.contains("--print-type-sizes") {

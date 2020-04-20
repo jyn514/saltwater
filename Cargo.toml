@@ -36,6 +36,7 @@ codespan = "0.9"
 color-backtrace = { version = "0.4", default-features = false, optional = true }
 counter = "0.4"
 atty = { version = "0.2", default-features = false, optional = true } 
+git-testament = { version = "0.1", optional = true }
 
 [dev-dependencies]
 env_logger = { version = "0.7", default-features = false }
@@ -48,7 +49,7 @@ proptest-derive = "0.1"
 [features]
 default = ["cc", "codegen"]
 # The `rcc` binary
-cc = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "codegen", "atty"]
+cc = ["ansi_term", "git-testament", "tempfile", "pico-args", "color-backtrace", "codegen", "atty"]
 codegen = ["cranelift", "cranelift-module", "cranelift-object"]
 jit = ["codegen", "cranelift-simplejit"]
 # for internal use

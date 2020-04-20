@@ -79,12 +79,8 @@ impl<T: Lexer> Iterator for Analyzer<T> {
             // Note that we need to store `next` so that we have the location in case it was empty.
             let location = next.location;
             let decls = self.parse_external_declaration(next);
-            if decls.is_empty() {
-                self.warn(Warning::EmptyDeclaration, location);
-            } else {
-                // TODO: if an error occurs, should we still add the declaration to `pending`?
-                self.pending.extend(decls);
-            }
+            // TODO: if an error occurs, should we still add the declaration to `pending`?
+            self.pending.extend(decls);
         }
     }
 }
@@ -186,6 +182,9 @@ impl<I: Lexer> Analyzer<I> {
                 self.initialized.insert(symbol);
             }
             decls.push(Locatable::new(Declaration { symbol, init }, d.location));
+        }
+        if decls.is_empty() && !original.declared_compound_type {
+            self.warn(Warning::EmptyDeclaration, location);
         }
         decls
     }

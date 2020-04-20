@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use rcc::{Lexer, Locatable, Location, Parser, Token};
+use rcc::codespan::Files;
+use rcc::{Lexer, Locatable, Parser, Token};
 use std::rc::Rc;
 
 fn parens(c: &mut Criterion) {
@@ -7,8 +8,10 @@ fn parens(c: &mut Criterion) {
     let n = 3000;
     let the_biggun = Rc::from(format!("{}1 + 2{}", "(".repeat(n), ")".repeat(n)));
     let parse = |s| {
-        let mut lexer = Lexer::new((), Rc::clone(s), false);
-        let first: Locatable<Token, Location> = lexer.next().unwrap().unwrap();
+        let mut files = Files::new();
+        let file_id = files.add("<bench>", Rc::clone(s));
+        let mut lexer = Lexer::new(file_id, Rc::clone(s), false);
+        let first: Locatable<Token> = lexer.next().unwrap().unwrap();
         let mut p: Parser<Lexer> = Parser::new(first, lexer, false);
         p.expr()
     };

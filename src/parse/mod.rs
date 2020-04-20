@@ -19,8 +19,15 @@ use crate::data::{ast::ExternalDeclaration, hir::Scope, lex::Keyword};
 type Lexeme = CompileResult<Locatable<Token>>;
 type SyntaxResult<T> = Result<T, Locatable<SyntaxError>>;
 
-pub trait Lexer: Iterator<Item = Lexeme> {}
-impl<L: Iterator<Item = Lexeme>> Lexer for L {}
+/// An iterator over `Lexeme`, but with a little more flexibility
+pub trait Lexer {
+    fn next(&mut self) -> Option<Lexeme>;
+}
+impl<I: Iterator<Item = Result<Locatable<Token>, E>>, E: Into<CompileError>> Lexer for I {
+    fn next(&mut self) -> Option<Lexeme> {
+        Iterator::next(self).map(|res| res.map_err(Into::into))
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) enum TagEntry {

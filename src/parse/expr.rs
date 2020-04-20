@@ -5,6 +5,9 @@ use crate::data::ast::{Expr, ExprType, TypeName};
 use crate::data::lex::{AssignmentToken, Keyword};
 use crate::data::*;
 
+trait UnaryExprFn: FnOnce(Expr) -> ExprType {}
+impl<T: FnOnce(Expr) -> ExprType> UnaryExprFn for T {}
+
 #[derive(Copy, Clone, Debug)]
 #[rustfmt::skip]
 enum BinaryPrecedence {
@@ -265,7 +268,7 @@ impl<I: Lexer> Parser<I> {
     }
 
     // '(' TYPE_NAME ')' | '*' | '~' | '!' | '+' | '-' | '&' | '++' | '--'
-    fn match_prefix_operator(&mut self) -> Option<Locatable<Box<dyn FnOnce(Expr) -> ExprType>>> {
+    fn match_prefix_operator(&mut self) -> Option<Locatable<Box<dyn UnaryExprFn>>> {
         let maybe_type = self.parenthesized_type().unwrap_or_else(|err| {
             self.error_handler.push_back(err);
             None
@@ -293,9 +296,7 @@ impl<I: Lexer> Parser<I> {
         Some(Locatable::new(Box::new(move |e| func(Box::new(e))), loc))
     }
     // '[' expr ']' | '(' argument* ')' | '.' ID | '->' ID | '++' | '--'
-    fn match_postfix_op(
-        &mut self,
-    ) -> SyntaxResult<Option<Locatable<impl FnOnce(Expr) -> ExprType>>> {
+    fn match_postfix_op(&mut self) -> SyntaxResult<Option<Locatable<impl UnaryExprFn>>> {
         let next_location = |this: &mut Parser<_>| this.next_token().unwrap().location;
         let needs_id = |this: &mut Self, constructor: fn(Box<Expr>, InternedStr) -> ExprType| {
             let start = next_location(this);

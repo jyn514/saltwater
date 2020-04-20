@@ -187,32 +187,67 @@ impl<I: Lexer> Parser<I> {
         }
         Ok(None)
     }
-    // this serves the role of `cast_expr` in the yacc grammar (http://www.quut.com/c/ANSI-C-grammar-y.html)
+    // prefix_operator* postfix_expr
+    //
+    // this takes the place of `unary_expr` in the yacc grammar
     fn unary_expr(&mut self) -> SyntaxResult<Expr> {
-        let mut casts = Vec::new();
-        // slight ambiguity here between '(' expr ')' and '(' type_name ')'
-        while let Some(ctype) = self.parenthesized_type()? {
-            casts.push(ctype);
+        // prefix expressions
+        let mut prefixes = Vec::new();
+        while let Some(Locatable {
+            data: constructor,
+            location,
+        }) = self.match_prefix_operator()
+        {
+            prefixes.push((constructor, location));
         }
-        let mut prefix = self.prefix_expr()?;
-        for cast in casts.into_iter().rev() {
-            let location = prefix.location.merge(cast.location);
-            prefix = Locatable::new(ExprType::Cast(cast.data, Box::new(prefix)), location);
+        let mut inner = self.postfix_expr()?;
+        while let Some((constructor, location)) = prefixes.pop() {
+            inner = Locatable::new(constructor(inner), location);
         }
-        self.postfix_expr(prefix)
+        Ok(inner)
     }
-
-    // postfix_expression
-    // : primary_expression
-    // | postfix_expression '[' expression ']'
-    // | postfix_expression '(' ')'
-    // | postfix_expression '(' argument_expression_list ')'
-    // | postfix_expression '.' IDENTIFIER
-    // | postfix_expression PTR_OP IDENTIFIER
-    // | postfix_expression INC_OP
-    // | postfix_expression DEC_OP
-    // ;
-    fn postfix_expr(&mut self, mut expr: Expr) -> SyntaxResult<Expr> {
+    // postfix_expression: primary_expression postfix_op*
+    // primary_expression: '(' expr ')' | 'sizeof' unary_expression | 'alignof' unary_expression | ID | LITERAL
+    //
+    // TODO: `sizeof` and `alignof` should be unary expressions, not primary expressions
+    #[inline]
+    fn postfix_expr(&mut self) -> SyntaxResult<Expr> {
+        // primary expression
+        // this must be an expression since we already consumed all the prefix expressions
+        let primary = if let Some(paren) = self.match_next(&Token::LeftParen) {
+            let mut inner = self.expr()?;
+            let end_loc = self.expect(Token::RightParen)?.location;
+            inner.location = paren.location.merge(&end_loc);
+            inner
+        // these keywords can be followed by either a type name or an expression
+        } else if let Some(keyword) = self.match_keywords(&[Keyword::Sizeof, Keyword::Alignof]) {
+            if let Some(mut ctype) = self.parenthesized_type()? {
+                ctype.location = keyword.location.merge(ctype.location);
+                let constructor = if keyword.data == Keyword::Sizeof {
+                    ExprType::SizeofType
+                } else {
+                    ExprType::AlignofType
+                };
+                ctype.map(constructor)
+            } else {
+                let inner = self.unary_expr()?;
+                let location = keyword.location.merge(inner.location);
+                let constructor = if keyword.data == Keyword::Sizeof {
+                    ExprType::SizeofExpr
+                } else {
+                    ExprType::AlignofExpr
+                };
+                Locatable::new(constructor(Box::new(inner)), location)
+            }
+        } else if let Some(loc) = self.match_id() {
+            loc.map(ExprType::Id)
+        } else if let Some(literal) = self.match_literal() {
+            literal.map(ExprType::Literal)
+        } else {
+            return Err(self.next_location().with(SyntaxError::MissingPrimary));
+        };
+        let mut expr = primary;
+        // postfix expressions
         // fortunately, they're all the same precedence
         while let Some(Locatable {
             data: postfix_op,
@@ -225,62 +260,19 @@ impl<I: Lexer> Parser<I> {
         Ok(expr)
     }
 
-    // | '(' expr ')'
-    // | unary_operator cast_expr
-    // | "sizeof" '(' type_name ')'
-    // | "sizeof" unary_expr
-    // | "++" unary_expr
-    // | "--" unary_expr
-    // | ID
-    // | LITERAL
-    //
-    // this takes the place of `unary_expr` in the yacc grammar
-    fn prefix_expr(&mut self) -> SyntaxResult<Expr> {
-        // this must be an expression since we already consumed all the type casts
-        if let Some(paren) = self.match_next(&Token::LeftParen) {
-            let mut inner = self.expr()?;
-            let end_loc = self.expect(Token::RightParen)?.location;
-            inner.location = paren.location.merge(&end_loc);
-            Ok(inner)
-        } else if let Some(Locatable {
-            data: constructor,
-            location,
-        }) = self.match_prefix_operator()
-        {
-            let inner = self.unary_expr()?;
-            let location = location.merge(&inner.location);
-            Ok(location.with(constructor(inner)))
-        // these keywords can be followed by either a type name or an expression
-        } else if let Some(keyword) = self.match_keywords(&[Keyword::Sizeof, Keyword::Alignof]) {
-            if let Some(mut ctype) = self.parenthesized_type()? {
-                ctype.location = keyword.location.merge(ctype.location);
-                let constructor = if keyword.data == Keyword::Sizeof {
-                    ExprType::SizeofType
-                } else {
-                    ExprType::AlignofType
-                };
-                Ok(ctype.map(constructor))
-            } else {
-                let inner = self.prefix_expr()?;
-                let location = keyword.location.merge(inner.location);
-                let constructor = if keyword.data == Keyword::Sizeof {
-                    ExprType::SizeofExpr
-                } else {
-                    ExprType::AlignofExpr
-                };
-                Ok(Locatable::new(constructor(Box::new(inner)), location))
-            }
-        // primary expressions
-        } else if let Some(loc) = self.match_id() {
-            Ok(loc.map(ExprType::Id))
-        } else if let Some(literal) = self.match_literal() {
-            Ok(literal.map(ExprType::Literal))
-        } else {
-            Err(self.next_location().with(SyntaxError::MissingPrimary))
+    // '(' TYPE_NAME ')' | '*' | '~' | '!' | '+' | '-' | '&' | '++' | '--'
+    fn match_prefix_operator(&mut self) -> Option<Locatable<Box<dyn FnOnce(Expr) -> ExprType>>> {
+        let maybe_type = self.parenthesized_type().unwrap_or_else(|err| {
+            self.error_handler.push_back(err);
+            None
+        });
+        if let Some(cast) = maybe_type {
+            let loc = cast.location;
+            return Some(Locatable::new(
+                Box::new(move |expr| ExprType::Cast(cast.data, Box::new(expr))),
+                loc,
+            ));
         }
-    }
-    // '*' | '~' | '!' | '+' | '-' | '&'
-    fn match_prefix_operator(&mut self) -> Option<Locatable<impl Fn(Expr) -> ExprType>> {
         // prefix operator
         let func = match self.peek_token()? {
             Token::Star => ExprType::Deref,
@@ -294,7 +286,7 @@ impl<I: Lexer> Parser<I> {
             _ => return None,
         };
         let loc = self.next_token().unwrap().location;
-        Some(Locatable::new(move |e| func(Box::new(e)), loc))
+        Some(Locatable::new(Box::new(move |e| func(Box::new(e))), loc))
     }
     // '[' expr ']' | '(' argument* ')' | '.' ID | '->' ID | '++' | '--'
     fn match_postfix_op(

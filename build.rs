@@ -28,6 +28,15 @@ fn git(args: &[&str]) -> Option<String> {
                 .to_string(),
         )
     } else {
+        use std::io::Write;
+
+        let stdout = std::io::stdout();
+        let mut stdout = stdout.lock();
+        println!("failed to run `git {}`", args.join(" "));
+        write!(stdout, "stdout: ").unwrap();
+        stdout.write_all(&output.stdout).unwrap();
+        write!(stdout, "stderr: ").unwrap();
+        stdout.write_all(&output.stderr).unwrap();
         None
     }
 }

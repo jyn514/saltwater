@@ -4,10 +4,11 @@ fn main() {
 fn write_git_version() {
     let tag = git(&["describe", "--exact-match", "--tags", "HEAD"]);
     let version = tag.unwrap_or_else(|| {
-        let commit = git(&["rev-parse", "--short=7", "HEAD"])
-            .expect("`git` was not successful, are you in the right directory?");
-        let most_recent_tag =
-            git(&["describe", "--tags", "--abbrev=0", "HEAD"]).expect("`git describe` failed");
+        let commit = git(&["rev-parse", "--short=7", "HEAD"]).unwrap_or_else(|| "????".into());
+        let most_recent_tag = match git(&["describe", "--tags", "--abbrev=0", "HEAD"]) {
+            Some(c) => c,
+            None => return "????".into(),
+        };
         format!("{}-dev ({})", most_recent_tag, commit)
     });
     println!("cargo:rustc-env=RCC_GIT_REV={}", version);

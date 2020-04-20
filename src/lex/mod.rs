@@ -661,7 +661,7 @@ impl Iterator for Lexer {
         }
 
         self.consume_whitespace();
-        let mut c = self.next_char().and_then(|c| {
+        let c = self.next_char().and_then(|c| {
             let span_start = self.location.offset - 1;
             // this giant switch is most of the logic
             let data = match c {

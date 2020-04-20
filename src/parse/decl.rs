@@ -6,7 +6,6 @@ use crate::data::ast::{
     TypeName,
 };
 use crate::data::error::Warning;
-use crate::data::lex::LocationTrait;
 use crate::data::*;
 use std::convert::{TryFrom, TryInto};
 

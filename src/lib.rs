@@ -122,7 +122,10 @@ pub struct Opt {
 
 /// Preprocess the source and return the tokens.
 pub fn preprocess(
-    buf: &str, opt: &Opt, file: FileId, files: &mut Files,
+    buf: &str,
+    opt: &Opt,
+    file: FileId,
+    files: &mut Files,
 ) -> WarningResult<VecDeque<Locatable<Token>>> {
     let path = opt.search_path.iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
@@ -145,7 +148,10 @@ pub fn preprocess(
 
 /// Perform semantic analysis, including type checking and constant folding.
 pub fn check_semantics(
-    buf: &str, opt: &Opt, file: FileId, files: &mut Files,
+    buf: &str,
+    opt: &Opt,
+    file: FileId,
+    files: &mut Files,
 ) -> WarningResult<Vec<Locatable<hir::Declaration>>> {
     let path = opt.search_path.iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
@@ -204,7 +210,11 @@ pub fn check_semantics(
 #[cfg(feature = "codegen")]
 /// Compile and return the declarations and warnings.
 pub fn compile<B: Backend>(
-    module: Module<B>, buf: &str, opt: &Opt, file: FileId, files: &mut Files,
+    module: Module<B>,
+    buf: &str,
+    opt: &Opt,
+    file: FileId,
+    files: &mut Files,
 ) -> (Result<Module<B>, Error>, VecDeque<CompileWarning>) {
     let (hir, mut warnings) = match check_semantics(buf, opt, file, files) {
         (Err(errs), warnings) => return (Err(Error::Source(errs)), warnings),
@@ -293,7 +303,8 @@ mod jit {
     impl JIT {
         /// Compile string and return JITed code.
         pub fn from_string<R: Into<Rc<str>>>(
-            program: R, opt: &Opt,
+            program: R,
+            opt: &Opt,
         ) -> (Result<Self, Error>, VecDeque<CompileWarning>) {
             let program = program.into();
             let module = initialize_jit_module();

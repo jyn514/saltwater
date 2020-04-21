@@ -98,7 +98,10 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
         Locatable::new(data, stmt.location)
     }
     fn case_statement(
-        &mut self, expr: ast::Expr, inner: ast::Stmt, location: Location,
+        &mut self,
+        expr: ast::Expr,
+        inner: ast::Stmt,
+        location: Location,
     ) -> StmtType {
         use super::expr::literal;
         use crate::data::lex::Literal;

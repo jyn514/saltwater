@@ -158,7 +158,11 @@ impl<T: Lexer> Analyzer<T> {
     // TODO: change ast::Expr to use `ExprType::Binary` as well
     #[allow(clippy::boxed_local)]
     fn binary_helper<F>(
-        &mut self, left: Box<ast::Expr>, right: Box<ast::Expr>, op: BinaryOp, expr_checker: F,
+        &mut self,
+        left: Box<ast::Expr>,
+        right: Box<ast::Expr>,
+        op: BinaryOp,
+        expr_checker: F,
     ) -> Expr
     where
         F: FnOnce(&mut Self, Expr, Expr, BinaryOp) -> Expr,
@@ -232,7 +236,10 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     fn relational_expr(
-        &mut self, left: ast::Expr, right: ast::Expr, token: ComparisonToken,
+        &mut self,
+        left: ast::Expr,
+        right: ast::Expr,
+        token: ComparisonToken,
     ) -> Expr {
         let location = left.location.merge(right.location);
         let mut left = self.parse_expr(left);
@@ -378,7 +385,11 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     fn pointer_arithmetic(
-        &mut self, base: Expr, index: Expr, pointee: &Type, location: Location,
+        &mut self,
+        base: Expr,
+        index: Expr,
+        pointee: &Type,
+        location: Location,
     ) -> Expr {
         let offset = Expr {
             lval: false,
@@ -509,7 +520,11 @@ impl<T: Lexer> Analyzer<T> {
     }
     // ++i, i--
     fn increment_op(
-        &mut self, prefix: bool, increment: bool, expr: ast::Expr, location: Location,
+        &mut self,
+        prefix: bool,
+        increment: bool,
+        expr: ast::Expr,
+        location: Location,
     ) -> Expr {
         use crate::data::lex::AssignmentToken;
 
@@ -652,7 +667,11 @@ impl<T: Lexer> Analyzer<T> {
     }
     // condition ? then : otherwise
     fn ternary(
-        &mut self, condition: ast::Expr, then: ast::Expr, otherwise: ast::Expr, location: Location,
+        &mut self,
+        condition: ast::Expr,
+        then: ast::Expr,
+        otherwise: ast::Expr,
+        location: Location,
     ) -> Expr {
         let condition = self.parse_expr(condition).truthy(&mut self.error_handler);
         let mut then = self.parse_expr(then).rval();
@@ -677,7 +696,11 @@ impl<T: Lexer> Analyzer<T> {
     }
 
     fn assignment_expr(
-        &mut self, lval: Expr, rval: Expr, token: lex::AssignmentToken, location: Location,
+        &mut self,
+        lval: Expr,
+        rval: Expr,
+        token: lex::AssignmentToken,
+        location: Location,
     ) -> Expr {
         if let Err(err) = lval.modifiable_lval() {
             self.err(err, location);

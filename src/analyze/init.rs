@@ -4,7 +4,10 @@ use crate::parse::Lexer;
 
 impl<T: Lexer> Analyzer<T> {
     pub(super) fn parse_initializer(
-        &mut self, init: ast::Initializer, ctype: &Type, location: Location,
+        &mut self,
+        init: ast::Initializer,
+        ctype: &Type,
+        location: Location,
     ) -> Initializer {
         use ast::Initializer::{Aggregate, Scalar};
         // initializer_list
@@ -39,7 +42,10 @@ impl<T: Lexer> Analyzer<T> {
     }
 
     fn check_aggregate_overflow(
-        &mut self, list: Vec<ast::Initializer>, ctype: &Type, location: Location,
+        &mut self,
+        list: Vec<ast::Initializer>,
+        ctype: &Type,
+        location: Location,
     ) -> Initializer {
         let len = list.len();
         let mut iter = list.into_iter().peekable();
@@ -54,8 +60,10 @@ impl<T: Lexer> Analyzer<T> {
     // handle char[][3] = {{1,2,3}}, but also = {1,2,3} and {{1}, 2, 3}
     // NOTE: this does NOT consume {} except for sub-elements
     fn aggregate_initializer(
-        &mut self, list: &mut std::iter::Peekable<impl Iterator<Item = ast::Initializer>>,
-        elem_type: &Type, location: Location,
+        &mut self,
+        list: &mut std::iter::Peekable<impl Iterator<Item = ast::Initializer>>,
+        elem_type: &Type,
+        location: Location,
     ) -> Initializer {
         use ast::Initializer::{Aggregate, Scalar};
 

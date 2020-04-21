@@ -168,7 +168,9 @@ impl<I: Lexer> Parser<I> {
     /// | (struct | union) identifier
     /// ;
     fn struct_specifier(
-        &mut self, is_struct: bool, mut start: Location,
+        &mut self,
+        is_struct: bool,
+        mut start: Location,
     ) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
         use crate::data::ast::StructSpecifier;
         use crate::data::error::Warning;
@@ -286,7 +288,8 @@ impl<I: Lexer> Parser<I> {
 
     // we've already seen an `enum` token,, `location` is where we saw it
     fn enum_specifier(
-        &mut self, mut location: Location,
+        &mut self,
+        mut location: Location,
     ) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
         let name = self.match_id().map(|id| {
             location = location.merge(id.location);
@@ -341,7 +344,8 @@ impl<I: Lexer> Parser<I> {
     }
 
     fn merge_decls(
-        current: Locatable<InternalDeclaratorType>, next: Option<Locatable<InternalDeclarator>>,
+        current: Locatable<InternalDeclaratorType>,
+        next: Option<Locatable<InternalDeclarator>>,
     ) -> Locatable<InternalDeclarator> {
         if let Some(next) = next {
             let location = current.location.merge(next.location);
@@ -358,7 +362,8 @@ impl<I: Lexer> Parser<I> {
         }
     }
     fn declarator(
-        &mut self, allow_abstract: bool,
+        &mut self,
+        allow_abstract: bool,
     ) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
         let mut pointer_decls = Vec::new();
         // NOTE: outdated comment
@@ -436,7 +441,8 @@ impl<I: Lexer> Parser<I> {
      *   https://stackoverflow.com/questions/56410673/how-should-int-fint-be-parsed
      */
     fn direct_declarator(
-        &mut self, allow_abstract: bool,
+        &mut self,
+        allow_abstract: bool,
     ) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
         let _guard = self.recursion_check();
         // we'll pass this to postfix_type in just a second
@@ -523,7 +529,9 @@ impl<I: Lexer> Parser<I> {
      */
     #[inline]
     fn postfix_type(
-        &mut self, mut prefix: Option<Locatable<InternalDeclarator>>, allow_abstract: bool,
+        &mut self,
+        mut prefix: Option<Locatable<InternalDeclarator>>,
+        allow_abstract: bool,
     ) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
         while let Some(data) = self.peek_token() {
             let current = match data {

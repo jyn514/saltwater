@@ -114,7 +114,8 @@ impl<I: Lexer> Analyzer<I> {
         self.error_handler.warn(w, l);
     }
     fn parse_external_declaration(
-        &mut self, next: Locatable<ast::ExternalDeclaration>,
+        &mut self,
+        next: Locatable<ast::ExternalDeclaration>,
     ) -> Vec<Locatable<Declaration>> {
         use ast::ExternalDeclaration;
 
@@ -135,7 +136,9 @@ impl<I: Lexer> Analyzer<I> {
         }
     }
     fn parse_declaration(
-        &mut self, declaration: ast::Declaration, location: Location,
+        &mut self,
+        declaration: ast::Declaration,
+        location: Location,
     ) -> Vec<Locatable<Declaration>> {
         let original = self.parse_specifiers(declaration.specifiers, location);
 
@@ -209,7 +212,9 @@ impl<I: Lexer> Analyzer<I> {
         parsed.ctype
     }
     fn parse_type(
-        &mut self, specifiers: Vec<ast::DeclarationSpecifier>, declarator: ast::DeclaratorType,
+        &mut self,
+        specifiers: Vec<ast::DeclarationSpecifier>,
+        declarator: ast::DeclaratorType,
         location: Location,
     ) -> ParsedType {
         let mut specs = self.parse_specifiers(specifiers, location);
@@ -225,7 +230,9 @@ impl<I: Lexer> Analyzer<I> {
         specs
     }
     fn parse_specifiers(
-        &mut self, specifiers: Vec<ast::DeclarationSpecifier>, location: Location,
+        &mut self,
+        specifiers: Vec<ast::DeclarationSpecifier>,
+        location: Location,
     ) -> ParsedType {
         use ast::{DeclarationSpecifier::*, UnitSpecifier::*};
 
@@ -378,7 +385,10 @@ impl<I: Lexer> Analyzer<I> {
         }
     }
     fn struct_specifier(
-        &mut self, struct_spec: ast::StructSpecifier, is_struct: bool, declared_struct: &mut bool,
+        &mut self,
+        struct_spec: ast::StructSpecifier,
+        is_struct: bool,
+        declared_struct: &mut bool,
         location: Location,
     ) -> Type {
         let ast_members = match struct_spec.members {
@@ -477,7 +487,9 @@ impl<I: Lexer> Analyzer<I> {
         ;
     */
     fn struct_declarator_list(
-        &mut self, members: ast::StructDeclarationList, location: Location,
+        &mut self,
+        members: ast::StructDeclarationList,
+        location: Location,
     ) -> Vec<Metadata> {
         let parsed_type = self.parse_specifiers(members.specifiers, location);
         if parsed_type.qualifiers.has_func_qualifiers() {
@@ -570,8 +582,10 @@ impl<I: Lexer> Analyzer<I> {
         parsed_members
     }
     fn enum_specifier(
-        &mut self, enum_name: Option<InternedStr>,
-        ast_members: Option<Vec<(InternedStr, Option<ast::Expr>)>>, saw_enum: &mut bool,
+        &mut self,
+        enum_name: Option<InternedStr>,
+        ast_members: Option<Vec<(InternedStr, Option<ast::Expr>)>>,
+        saw_enum: &mut bool,
         location: Location,
     ) -> Type {
         let ast_members = match ast_members {
@@ -662,7 +676,10 @@ impl<I: Lexer> Analyzer<I> {
         ctype
     }
     fn forward_declaration(
-        &mut self, kind: Keyword, ident: InternedStr, location: Location,
+        &mut self,
+        kind: Keyword,
+        ident: InternedStr,
+        location: Location,
     ) -> Type {
         if kind == Keyword::Enum {
             // see section 6.7.2.3 of the C11 standard
@@ -688,7 +705,10 @@ impl<I: Lexer> Analyzer<I> {
     /// Parse the declarator for a variable, given a starting type.
     /// e.g. for `int *p`, takes `start: Type::Int(true)` and returns `Type::Pointer(Type::Int(true))`
     fn parse_declarator(
-        &mut self, current: Type, decl: ast::DeclaratorType, location: Location,
+        &mut self,
+        current: Type,
+        decl: ast::DeclaratorType,
+        location: Location,
     ) -> Type {
         use crate::data::ast::DeclaratorType::*;
         use crate::data::types::{ArrayType, FunctionType};
@@ -979,7 +999,9 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
     /// Performs semantic analysis on the function and adds it to `METADATA_STORE`.
     /// Returns the analyzed statements.
     fn analyze(
-        func: ast::FunctionDefinition, analyzer: &mut Analyzer<T>, location: Location,
+        func: ast::FunctionDefinition,
+        analyzer: &mut Analyzer<T>,
+        location: Location,
     ) -> (MetadataRef, Vec<Stmt>) {
         let parsed_func = analyzer.parse_type(func.specifiers, func.declarator.into(), location);
         if parsed_func.qualifiers != Qualifiers::default() {
@@ -1092,7 +1114,9 @@ struct ParsedType {
 use ast::{DeclarationSpecifier, UnitSpecifier};
 
 fn count_specifiers(
-    specifiers: Vec<DeclarationSpecifier>, error_handler: &mut ErrorHandler, location: Location,
+    specifiers: Vec<DeclarationSpecifier>,
+    error_handler: &mut ErrorHandler,
+    location: Location,
 ) -> (Counter<UnitSpecifier, usize>, Vec<DeclarationSpecifier>) {
     use DeclarationSpecifier::*;
     use UnitSpecifier::*;
@@ -1149,7 +1173,9 @@ pub(crate) mod test {
     use crate::parse::test::*;
 
     pub(crate) fn analyze<'c, 'input: 'c, P, A, R, S, E>(
-        input: &'input str, parse_func: P, analyze_func: A,
+        input: &'input str,
+        parse_func: P,
+        analyze_func: A,
     ) -> CompileResult<R>
     where
         P: Fn(&mut Parser<PreProcessor<'c>>) -> Result<S, E>,

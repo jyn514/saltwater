@@ -35,7 +35,8 @@ fn joined<I: IntoIterator<Item = T>, T: ToString>(it: I, delim: &str) -> String 
 }
 
 fn joined_locatable<'a, I: IntoIterator<Item = &'a Locatable<T>>, T: ToString + 'a>(
-    it: I, delim: &str,
+    it: I,
+    delim: &str,
 ) -> String {
     joined(it.into_iter().map(|s| s.data.to_string()), delim)
 }

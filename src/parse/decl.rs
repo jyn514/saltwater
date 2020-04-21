@@ -1314,7 +1314,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         if !expr.lval && self.scope.is_global() && ctype.is_pointer() {
             expr = Expr {
                 lval: false,
-                constexpr: false,
                 location: expr.location,
                 ctype: expr.ctype.clone(),
                 expr: ExprType::StaticRef(Box::new(expr)),

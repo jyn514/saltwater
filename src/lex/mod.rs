@@ -672,7 +672,7 @@ impl Iterator for Lexer {
                 b'+' => match self.peek() {
                     Some(b'=') => {
                         self.next_char();
-                        AssignmentToken::PlusEqual.into()
+                        AssignmentToken::AddEqual.into()
                     }
                     Some(b'+') => {
                         self.next_char();
@@ -683,7 +683,7 @@ impl Iterator for Lexer {
                 b'-' => match self.peek() {
                     Some(b'=') => {
                         self.next_char();
-                        AssignmentToken::MinusEqual.into()
+                        AssignmentToken::SubEqual.into()
                     }
                     Some(b'-') => {
                         self.next_char();
@@ -698,13 +698,13 @@ impl Iterator for Lexer {
                 b'*' => match self.peek() {
                     Some(b'=') => {
                         self.next_char();
-                        AssignmentToken::StarEqual.into()
+                        AssignmentToken::MulEqual.into()
                     }
                     _ => Token::Star,
                 },
                 b'/' => {
                     if self.match_next(b'=') {
-                        AssignmentToken::DivideEqual.into()
+                        AssignmentToken::DivEqual.into()
                     } else {
                         Token::Divide
                     }
@@ -745,7 +745,7 @@ impl Iterator for Lexer {
                     Some(b'>') => {
                         self.next_char();
                         if self.match_next(b'=') {
-                            AssignmentToken::RightEqual.into()
+                            AssignmentToken::ShrEqual.into()
                         } else {
                             Token::ShiftRight
                         }
@@ -760,7 +760,7 @@ impl Iterator for Lexer {
                     Some(b'<') => {
                         self.next_char();
                         if self.match_next(b'=') {
-                            AssignmentToken::LeftEqual.into()
+                            AssignmentToken::ShlEqual.into()
                         } else {
                             Token::ShiftLeft
                         }

@@ -1408,9 +1408,9 @@ impl Expr {
                     Box::new(expr),
                     Box::new(rval),
                     if increment {
-                        AssignmentToken::PlusEqual
+                        AssignmentToken::AddEqual
                     } else {
-                        AssignmentToken::MinusEqual
+                        AssignmentToken::SubEqual
                     },
                 ),
                 location,

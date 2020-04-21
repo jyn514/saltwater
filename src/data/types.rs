@@ -155,8 +155,6 @@ pub enum Type {
     Struct(StructType),
     /// Enums should always have members, since tentative definitions are not allowed
     Enum(Option<InternedStr>, Vec<(InternedStr, i64)>),
-    /// This should probably be merged into Structs at some point
-    Bitfield(Vec<BitfieldType>),
     /// This is the type used for variadic arguments.
     VaList,
     /// A semantic error occured while parsing this type.
@@ -183,14 +181,6 @@ pub struct FunctionType {
     pub return_type: Box<Type>,
     pub params: Vec<Symbol>,
     pub varargs: bool,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BitfieldType {
-    pub offset: i32,
-    pub name: Option<InternedStr>,
-    pub ctype: Type,
 }
 
 impl Type {
@@ -326,7 +316,6 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         Union(_) => write!(f, "<anonymous union>"),
         Struct(StructType::Named(ident, _)) => write!(f, "struct {}", ident),
         Struct(_) => write!(f, "<anonymous struct>"),
-        Bitfield(_) => unimplemented!("printing bitfield type"),
         VaList => write!(f, "va_list"),
         Error => write!(f, "<type error>"),
     }
@@ -423,7 +412,6 @@ pub(crate) mod tests {
                 //Type::Function(FunctionType),
                 //Type::Union(StructType),
                 //Type::Struct(StructType),
-                //Type::Bitfield(Vec<BitfieldType>),
             ]
         })
     }

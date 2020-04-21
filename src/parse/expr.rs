@@ -50,12 +50,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 let right = right.rval();
                 Ok(Expr {
                     ctype: right.ctype.clone(),
-                    // TODO: this is technically right but will almost certainly be buggy
-                    // If we use constexpr to check if we can optimize things out,
-                    // then we'll discard all side effects from `left`.
-                    // That's not really `expr()`'s problem, but it is something the constant
-                    // folding has to worry about
-                    constexpr: right.constexpr,
                     lval: false,
                     expr: ExprType::Comma(Box::new(*left), Box::new(right)),
                     location: token.location,
@@ -68,12 +62,23 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     // constant_expr: conditional_expr;
     pub(super) fn constant_expr(&mut self) -> SyntaxResult {
         let expr = self.conditional_expr()?;
-        if !expr.constexpr {
-            self.error_handler.push_back(
-                expr.location
-                    .error(SemanticError::NotConstant(expr.clone())),
-            );
-        }
+        let location = expr.location;
+        let expr = match expr.const_fold() {
+            Ok(folded) => {
+                if !folded.is_constexpr() {
+                    self.error_handler.push_back(
+                        folded
+                            .location
+                            .error(SemanticError::NotConstant(folded.clone())),
+                    );
+                }
+                folded
+            }
+            Err(err) => {
+                self.error_handler.push_back(err);
+                Expr::zero(location)
+            }
+        };
         Ok(expr)
     }
 
@@ -118,7 +123,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Ok(Expr {
                 ctype: lval.ctype.clone(),
-                constexpr: rval.constexpr,
                 lval: false, // `(i = j) = 4`; is invalid
                 location: assign_op.location,
                 expr: ExprType::Assign(Box::new(lval), Box::new(rval), assign_op.data),
@@ -167,9 +171,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Ok(Expr {
                 ctype: then.ctype.clone(),
-                // TODO: evaluate condition and only require the corresponding
-                // expression to be constexpr
-                constexpr: condition.constexpr && then.constexpr && otherwise.constexpr,
                 lval: false,
                 location,
                 expr: ExprType::Ternary(Box::new(condition), Box::new(then), Box::new(otherwise)),
@@ -320,7 +321,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     ctype: left.ctype.clone(),
                     location: token.location,
                     lval: false,
-                    constexpr: left.constexpr && right.constexpr,
                     expr: ExprType::Shift(
                         Box::new(left),
                         Box::new(right),
@@ -380,7 +380,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     ctype,
                     lval,
                     location: token.location,
-                    constexpr: left.constexpr && right.constexpr,
                     expr: (if token.data == Token::Plus {
                         ExprType::Add
                     } else {
@@ -421,7 +420,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 Ok(Expr {
                     ctype: p_left.ctype.clone(),
                     location: token.location,
-                    constexpr: p_left.constexpr && right.constexpr,
                     lval: false,
                     expr: match token.data {
                         Token::Star => ExprType::Mul(Box::new(p_left), Box::new(right)),
@@ -467,7 +465,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // casting anything to void is allowed
                 return Ok(Expr {
                     lval: false,
-                    constexpr: expr.constexpr,
                     ctype,
                     // this just signals to the backend to ignore this outer expr
                     expr: ExprType::Cast(Box::new(expr)),
@@ -495,7 +492,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Ok(Expr {
                 lval: false,
-                constexpr: expr.constexpr,
                 expr: ExprType::Cast(Box::new(expr)),
                 ctype,
                 location,
@@ -568,7 +564,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     //   return sizeof b;
                     // }
                     // We do not currently handle this case.
-                    constexpr: true,
                     expr: ExprType::Sizeof(ctype),
                     lval: false,
                     location,
@@ -593,7 +588,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             Ok(expr)
                         }
                         _ if expr.lval => Ok(Expr {
-                            constexpr: false,
                             lval: false,
                             location,
                             ctype: Type::Pointer(Box::new(expr.ctype.clone())),
@@ -651,7 +645,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             Ok(Expr {
                                 lval: false,
                                 ctype: expr.ctype.clone(),
-                                constexpr: expr.constexpr,
                                 location,
                                 expr: ExprType::Negate(Box::new(expr)),
                             })
@@ -669,7 +662,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             Ok(Expr {
                                 lval: false,
                                 ctype: expr.ctype.clone(),
-                                constexpr: expr.constexpr,
                                 location,
                                 expr: ExprType::BitwiseNot(Box::new(expr)),
                             })
@@ -733,7 +725,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             expr = Expr {
                                 lval: false,
                                 location: expr.location,
-                                constexpr: expr.constexpr,
                                 ctype: (**pointee).clone(),
                                 expr: ExprType::Deref(Box::new(expr)),
                             }
@@ -779,7 +770,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     }
                     Expr {
                         location,
-                        constexpr: false,
                         lval: false, // no move semantics here!
                         ctype: *functype.return_type.clone(),
                         expr: ExprType::FuncCall(Box::new(expr), promoted_args),
@@ -893,7 +883,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                             });
                             if let Some(e) = enumerator {
                                 return Ok(Expr {
-                                    constexpr: true,
                                     ctype: Type::Enum(*ident, members.clone()),
                                     location,
                                     lval: false,
@@ -945,7 +934,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 } else if let Some(member) = members.iter().find(|member| member.id == id) {
                     Ok(Expr {
                         ctype: member.ctype.clone(),
-                        constexpr: expr.constexpr,
                         lval: true,
                         location,
                         expr: ExprType::Member(Box::new(expr), id),
@@ -1008,7 +996,6 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             Ok(Expr {
                 lval: false,
-                constexpr: left.constexpr && right.constexpr,
                 location: token.location,
                 ctype: ctype.clone(),
                 expr: expr_func(Box::new(left.rval()), Box::new(right.rval()))?,
@@ -1118,7 +1105,6 @@ impl Expr {
     fn zero(location: Location) -> Expr {
         Expr {
             ctype: Type::Int(true),
-            constexpr: true,
             expr: ExprType::Literal(Literal::Int(0)),
             lval: false,
             location,
@@ -1127,7 +1113,6 @@ impl Expr {
 
     fn indirection(self, lval: bool, ctype: Type, location: Location) -> Self {
         Expr {
-            constexpr: self.constexpr,
             location,
             ctype,
             lval,
@@ -1195,13 +1180,11 @@ impl Expr {
             Type::Array(to, _) => Expr {
                 lval: false,
                 ctype: Type::Pointer(to),
-                constexpr: false,
                 ..self
             },
             Type::Function(_) => Expr {
                 lval: false,
                 ctype: Type::Pointer(Box::new(self.ctype)),
-                constexpr: false, // TODO: is this right?
                 ..self
             },
             // HACK: structs can't be dereferenced since they're not scalar, so we just fake it
@@ -1212,7 +1195,6 @@ impl Expr {
             _ if self.lval => Expr {
                 ctype: self.ctype.clone(),
                 lval: false,
-                constexpr: false,
                 location: self.location,
                 expr: ExprType::Deref(Box::new(self)),
             },
@@ -1270,7 +1252,6 @@ impl Expr {
             let zero = Expr::zero(self.location).cast(&self.ctype).unwrap();
             debug_assert!(zero.ctype == self.ctype);
             Ok(Expr {
-                constexpr: self.constexpr,
                 lval: false,
                 location: self.location,
                 ctype: Type::Bool,
@@ -1284,7 +1265,6 @@ impl Expr {
         debug_assert!(boolean.ctype == Type::Bool);
         let zero = Expr::zero(boolean.location).cast(&Type::Bool).unwrap();
         Ok(Expr {
-            constexpr: boolean.constexpr,
             lval: false,
             location: boolean.location,
             ctype: Type::Bool,
@@ -1311,7 +1291,6 @@ impl Expr {
         {
             Ok(Expr {
                 location: self.location,
-                constexpr: self.constexpr,
                 expr: ExprType::Cast(Box::new(self)),
                 lval: false,
                 ctype: ctype.clone(),
@@ -1353,7 +1332,6 @@ impl Expr {
         let offset = Expr {
             lval: false,
             location: index.location,
-            constexpr: index.constexpr,
             expr: ExprType::Cast(Box::new(index)),
             ctype: base.ctype.clone(),
         }
@@ -1379,21 +1357,18 @@ impl Expr {
             lval: false,
             location: offset.location,
             ctype: offset.ctype.clone(),
-            constexpr: true,
             expr: ExprType::Cast(Box::new(size_literal)),
         };
         let offset = Expr {
             lval: false,
             location: offset.location,
             ctype: offset.ctype.clone(),
-            constexpr: offset.constexpr,
             expr: ExprType::Mul(Box::new(size_cast), Box::new(offset)),
         };
         Ok(Expr {
             lval: false,
             location,
             ctype: base.ctype.clone(),
-            constexpr: base.constexpr && offset.constexpr,
             expr: ExprType::Add(Box::new(base), Box::new(offset)),
         })
     }
@@ -1421,7 +1396,6 @@ impl Expr {
         // ++i is syntactic sugar for i+=1
         if prefix {
             let rval = Expr {
-                constexpr: true,
                 lval: false,
                 ctype: expr.ctype.clone(),
                 location,
@@ -1429,7 +1403,6 @@ impl Expr {
             };
             Ok(Expr {
                 ctype: expr.ctype.clone(),
-                constexpr: rval.constexpr,
                 lval: false, // `(i = j) = 4`; is invalid
                 expr: ExprType::Assign(
                     Box::new(expr),
@@ -1444,7 +1417,6 @@ impl Expr {
             })
         } else {
             Ok(Expr {
-                constexpr: expr.constexpr,
                 lval: false,
                 ctype: expr.ctype.clone(),
                 // true, false: pre-decrement
@@ -1464,7 +1436,6 @@ impl Expr {
             Ok(Expr {
                 location: token.location,
                 ctype: left.ctype.clone(),
-                constexpr: left.constexpr && right.constexpr,
                 lval: false,
                 expr: constructor(Box::new(left), Box::new(right)),
             })
@@ -1511,7 +1482,6 @@ impl Expr {
         }
         assert!(!left.lval && !right.lval);
         Ok(Expr {
-            constexpr: left.constexpr && right.constexpr,
             lval: false,
             location: token.location,
             ctype: Type::Bool,
@@ -1522,11 +1492,6 @@ impl Expr {
         Self {
             // TODO: this clone will get expensive fast
             expr: ExprType::Id(symbol.clone()),
-            // TODO: check if symbol is constexpr
-            // in particular, I would love for this to compile:
-            // `int a = 5; int b[a];`
-            // NOTE: neither GCC nor Clang accept that
-            constexpr: false,
             ctype: symbol.ctype.clone(),
             lval: true,
             location,
@@ -1544,7 +1509,6 @@ impl From<(Literal, Location)> for Expr {
             Literal::Str(s) => Type::for_string_literal(s.len() as SIZE_T),
         };
         Expr {
-            constexpr: true,
             lval: false,
             ctype,
             location,
@@ -1815,7 +1779,6 @@ pub(crate) mod tests {
             Ok(Expr {
                 location: get_location(&parsed),
                 ctype: Type::Int(true),
-                constexpr: false,
                 lval: true,
                 expr: ExprType::Id(x)
             })

@@ -76,6 +76,16 @@ impl Expr {
             false
         }
     }
+    /// Return whether this expression is a constant expression
+    ///
+    /// Constant expressions have been evaluated at compile time
+    /// and can be used in static initializers, etc.
+    pub fn is_constexpr(&self) -> bool {
+        match self.expr {
+            ExprType::Literal(_) => true,
+            _ => false,
+        }
+    }
     pub(crate) fn constexpr(self) -> CompileResult<Locatable<(Literal, Type)>> {
         let folded = self.const_fold()?;
         match folded.expr {
@@ -139,7 +149,7 @@ impl Expr {
             ExprType::Comma(left, right) => {
                 let (left, right) = (left.const_fold()?, right.const_fold()?);
                 // check if we can ignore left or it has side effects
-                if left.constexpr {
+                if left.is_constexpr() {
                     right.expr
                 } else {
                     ExprType::Comma(Box::new(left), Box::new(right))
@@ -329,14 +339,8 @@ impl Expr {
             )?,
             ExprType::StaticRef(inner) => ExprType::StaticRef(Box::new(inner.const_fold()?)),
         };
-        let is_constexpr = match folded {
-            ExprType::Literal(_) => true,
-            _ => false,
-        };
-        //assert_eq!(self.constexpr, is_constexpr);
         Ok(Expr {
             expr: folded,
-            constexpr: is_constexpr,
             location,
             ..self
         })

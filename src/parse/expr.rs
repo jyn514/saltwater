@@ -1498,7 +1498,7 @@ impl Expr {
             expr: ExprType::Binary(BinaryOp::Compare(token.data), left, right),
         })
     }
-    fn id(symbol: &Symbol, location: Location) -> Self {
+    fn id(symbol: &Metadata, location: Location) -> Self {
         Self {
             // TODO: this clone will get expensive fast
             expr: ExprType::Id(symbol.clone()),
@@ -1704,7 +1704,7 @@ impl Type {
     }
 }
 
-fn is_typedef(s: InternedStr, scope: &crate::data::Scope<InternedStr, Symbol>) -> bool {
+fn is_typedef(s: InternedStr, scope: &crate::data::Scope<InternedStr, Metadata>) -> bool {
     use crate::data::StorageClass;
     if let Some(symbol) = scope.get(&s) {
         symbol.storage_class == StorageClass::Typedef
@@ -1738,7 +1738,7 @@ pub(crate) mod tests {
         let parsed = parse_expr(&token.to_string());
         assert_eq!(parsed, Ok(Expr::from((token, get_location(&parsed)))));
     }
-    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[&Symbol]) -> CompileResult<Expr> {
+    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[&Metadata]) -> CompileResult<Expr> {
         let mut parser = parser(input);
         let mut scope = Scope::new();
         for var in variables {
@@ -1776,7 +1776,7 @@ pub(crate) mod tests {
             parsed,
             Ok(Expr::from((Literal::Int(1), get_location(&parsed))))
         );
-        let x = Symbol {
+        let x = Metadata {
             ctype: Type::Int(true),
             id: InternedStr::get_or_intern("x"),
             qualifiers: Default::default(),
@@ -1802,13 +1802,13 @@ pub(crate) mod tests {
     }
     #[test]
     fn test_funcall() {
-        let f = Symbol {
+        let f = Metadata {
             id: InternedStr::get_or_intern("f"),
             init: false,
             qualifiers: Default::default(),
             storage_class: Default::default(),
             ctype: Type::Function(types::FunctionType {
-                params: vec![Symbol {
+                params: vec![Metadata {
                     ctype: Type::Void,
                     id: Default::default(),
                     init: false,

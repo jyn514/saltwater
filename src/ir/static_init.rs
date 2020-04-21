@@ -256,8 +256,6 @@ impl<B: Backend> Compiler<B> {
                     }
                     Ok(())
                 }
-                Type::Bitfield(_) => unimplemented!("bitfield initalizers"),
-
                 Type::Function(_) => unreachable!("function initializers"),
                 Type::Void => unreachable!("initializer for void type"),
                 _ => unreachable!("scalar types should have been handled"),

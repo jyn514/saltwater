@@ -8,13 +8,13 @@ pub use struct_ref::{StructRef, StructType};
 use crate::arch::SIZE_T;
 use crate::intern::InternedStr;
 
-use super::Symbol;
+use super::Metadata;
 
 mod struct_ref {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use super::Symbol;
+    use super::Metadata;
 
     thread_local!(
         /// The global storage for all struct definitions.
@@ -26,7 +26,7 @@ mod struct_ref {
         /// Rc: A hack so that the members can be accessed across function boundaries,
         /// see the documentation for `StructRef::get`.
         /// Vec<Symbol>: The members of a single struct definition.
-        static TYPES: RefCell<Vec<Rc<Vec<Symbol>>>> = Default::default()
+        static TYPES: RefCell<Vec<Rc<Vec<Metadata>>>> = Default::default()
     );
 
     /// A reference to a struct definition. Allows self-referencing structs.
@@ -72,7 +72,7 @@ mod struct_ref {
         // Implementation hack: because thread_local items cannot be returned
         // from a closure, this uses an Rc so that it can be `clone`d cheaply.
         // The clone is necessary so the members do not reference TYPES.
-        pub fn get(self) -> Rc<Vec<Symbol>> {
+        pub fn get(self) -> Rc<Vec<Metadata>> {
             TYPES.with(|list| list.borrow()[self.0].clone())
         }
 
@@ -90,7 +90,7 @@ mod struct_ref {
         /// ```
         pub(crate) fn update<V>(self, members: V)
         where
-            V: Into<Rc<Vec<Symbol>>>,
+            V: Into<Rc<Vec<Metadata>>>,
         {
             TYPES.with(|list| {
                 let mut types = list.borrow_mut();
@@ -111,12 +111,12 @@ mod struct_ref {
         Named(super::InternedStr, StructRef),
         /// Anonymous structs carry all their information with them,
         /// there's no need (or way) to use StructRef.
-        Anonymous(Rc<Vec<Symbol>>),
+        Anonymous(Rc<Vec<Metadata>>),
     }
 
     impl StructType {
         /// Get the members of a struct, regardless of which variant it is
-        pub fn members(&self) -> Rc<Vec<Symbol>> {
+        pub fn members(&self) -> Rc<Vec<Metadata>> {
             match self {
                 StructType::Anonymous(members) => Rc::clone(members),
                 StructType::Named(_, struct_ref) => struct_ref.get(),
@@ -179,7 +179,7 @@ pub struct FunctionType {
     //    (as opposed to concrete arguments).
     //    this is as good a place to store them as any.
     pub return_type: Box<Type>,
-    pub params: Vec<Symbol>,
+    pub params: Vec<Metadata>,
     pub varargs: bool,
 }
 

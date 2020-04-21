@@ -35,7 +35,7 @@ pub struct Parser<I: Iterator<Item = Lexeme>> {
     /// - ordinary identifiers
     ///
     /// This holds the scope for ordinary identifiers: variables and typedefs
-    scope: Scope<InternedStr, Symbol>,
+    scope: Scope<InternedStr, Metadata>,
     /// the compound types that have been declared (struct/union/enum)
     tag_scope: TagScope,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but

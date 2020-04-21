@@ -234,7 +234,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             Stmt,
             StmtType,
             Declaration,
-            Symbol,
+            Metadata,
             StructType,
             Token,
             RecoverableResult<Expr>

@@ -98,7 +98,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             return Ok(VecDeque::new());
         }
 
-        let mut symbol = Symbol {
+        let mut symbol = Metadata {
             id: id.data,
             ctype: first_type,
             qualifiers,
@@ -227,7 +227,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 id.location,
             );
         }
-        let typedef = Symbol {
+        let typedef = Metadata {
             id: id.data,
             ctype: ctype.clone(),
             qualifiers,
@@ -250,7 +250,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             self.semantic_err(message, id.location);
         }
     }
-    fn declare(&mut self, decl: &mut Symbol, location: &Location) {
+    fn declare(&mut self, decl: &mut Metadata, location: &Location) {
         if decl.id == InternedStr::get_or_intern("main") {
             if let Type::Function(ftype) = &decl.ctype {
                 if !Self::is_main_func_signature(ftype) {
@@ -316,7 +316,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         };
 
         // clean up and go home
-        let symbol = Symbol {
+        let symbol = Metadata {
             id: id.data,
             qualifiers,
             storage_class: if sc == StorageClass::Auto && ctype.is_function() {
@@ -468,7 +468,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn compound_error(kind: Keyword) -> SyntaxResult<Type> {
         use std::rc::Rc;
-        let bad = Symbol {
+        let bad = Metadata {
             ctype: Type::Error,
             id: Default::default(),
             init: Default::default(),
@@ -639,7 +639,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
             }
             members.push((name, current));
             // TODO: this is such a hack
-            let tmp_symbol = Symbol {
+            let tmp_symbol = Metadata {
                 id: name,
                 qualifiers: Qualifiers {
                     c_const: true,
@@ -680,7 +680,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 for (id, _) in members {
                     self.scope.insert(
                         id.clone(),
-                        Symbol {
+                        Metadata {
                             id: *id,
                             init: true,
                             storage_class: StorageClass::Register,
@@ -774,7 +774,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         | declarator ':' constant_expr
         ;
     */
-    fn struct_declarator_list(&mut self, members: &mut Vec<Symbol>) -> SyntaxResult<()> {
+    fn struct_declarator_list(&mut self, members: &mut Vec<Metadata>) -> SyntaxResult<()> {
         let (sc, qualifiers, original_ctype, _) = self.declaration_specifiers()?;
         if let Some(token) = self.match_next(&Token::Semicolon) {
             self.error_handler
@@ -798,7 +798,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 .recover(&mut self.error_handler);
             // TODO: Declarator needs to be redesigned so there's only one unwrap
             let Locatable { data: id, location } = declarator.unwrap();
-            let mut symbol = Symbol {
+            let mut symbol = Metadata {
                 storage_class: StorageClass::Auto,
                 qualifiers,
                 ctype,
@@ -974,7 +974,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 }
                 params.push(Locatable {
                     location,
-                    data: Symbol {
+                    data: Metadata {
                         id: data,
                         ctype,
                         qualifiers: quals,
@@ -992,7 +992,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                 // abstract param
                 params.push(Locatable {
                     location: self.last_location,
-                    data: Symbol {
+                    data: Metadata {
                         id: Default::default(),
                         ctype: param_type,
                         qualifiers: quals,
@@ -1837,7 +1837,7 @@ enum DeclaratorType {
 
 #[derive(Clone, Debug)]
 struct FunctionDeclarator {
-    params: Vec<Locatable<Symbol>>,
+    params: Vec<Locatable<Metadata>>,
     varargs: bool,
 }
 
@@ -1852,7 +1852,7 @@ mod tests {
     use crate::data::{
         prelude::*,
         types::{ArrayType, FunctionType},
-        Declaration, Initializer, Qualifiers, Symbol,
+        Declaration, Initializer, Metadata, Qualifiers,
     };
     use crate::intern::InternedStr;
     use crate::parse::tests::{
@@ -1995,21 +1995,21 @@ mod tests {
             Pointer(Box::new(Function(FunctionType {
                 return_type: Box::new(Int(true)),
                 params: vec![
-                    Symbol {
+                    Metadata {
                         id: Default::default(),
                         ctype: Int(true),
                         qualifiers: Default::default(),
                         init: true,
                         storage_class: Default::default()
                     },
-                    Symbol {
+                    Metadata {
                         id: Default::default(),
                         ctype: Char(true),
                         qualifiers: Default::default(),
                         init: true,
                         storage_class: Default::default()
                     },
-                    Symbol {
+                    Metadata {
                         id: Default::default(),
                         ctype: Float,
                         qualifiers: Default::default(),
@@ -2025,7 +2025,7 @@ mod tests {
             parse("int (*i)(int (*f)());"),
             Pointer(Box::new(Function(FunctionType {
                 return_type: Box::new(Int(true)),
-                params: vec![Symbol {
+                params: vec![Metadata {
                     id: InternedStr::get_or_intern("f"),
                     ctype: Pointer(Box::new(Function(FunctionType {
                         return_type: Box::new(Int(true)),
@@ -2043,7 +2043,7 @@ mod tests {
             parse("int f(int, ...);"),
             Function(FunctionType {
                 return_type: Box::new(Int(true)),
-                params: vec![Symbol {
+                params: vec![Metadata {
                     id: Default::default(),
                     ctype: Int(true),
                     qualifiers: Default::default(),
@@ -2060,7 +2060,7 @@ mod tests {
             parse("void f(int a[static 5]);"),
             Function(FunctionType {
                 return_type: Box::new(Void),
-                params: vec![Symbol {
+                params: vec![Metadata {
                     id: InternedStr::get_or_intern("a"),
                     ctype: Pointer(Box::new(Int(true))),
                     qualifiers: Default::default(),
@@ -2104,7 +2104,7 @@ mod tests {
             Pointer(Box::new(Array(
                 Box::new(Pointer(Box::new(Function(FunctionType {
                     return_type: Box::new(Pointer(Box::new(Char(true)))),
-                    params: vec![Symbol {
+                    params: vec![Metadata {
                         ctype: Int(true),
                         storage_class: Default::default(),
                         id: Default::default(),
@@ -2124,7 +2124,7 @@ mod tests {
                     Box::new(Int(true)),
                     ArrayType::Unbounded
                 )),)),
-                params: vec![Symbol {
+                params: vec![Metadata {
                     ctype: Void,
                     storage_class: Default::default(),
                     id: Default::default(),

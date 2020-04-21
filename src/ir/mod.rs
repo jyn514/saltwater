@@ -98,7 +98,9 @@ struct Compiler<T: Backend> {
 
 /// Compile a program from a high level IR to a Cranelift Module
 pub(crate) fn compile<B: Backend>(
-    module: Module<B>, program: Vec<Locatable<Declaration>>, debug: bool,
+    module: Module<B>,
+    program: Vec<Locatable<Declaration>>,
+    debug: bool,
 ) -> (Result<Module<B>, CompileError>, VecDeque<CompileWarning>) {
     // really we'd like to have all errors but that requires a refactor
     let mut err = None;
@@ -187,7 +189,10 @@ impl<B: Backend> Compiler<B> {
     }
     /// declare an object on the stack
     fn declare_stack(
-        &mut self, decl: Declaration, location: Location, builder: &mut FunctionBuilder,
+        &mut self,
+        decl: Declaration,
+        location: Location,
+        builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         let meta = decl.symbol.get();
         if let StorageClass::Typedef = meta.storage_class {
@@ -227,7 +232,10 @@ impl<B: Backend> Compiler<B> {
         Ok(())
     }
     fn store_stack(
-        &mut self, init: Initializer, stack_slot: StackSlot, builder: &mut FunctionBuilder,
+        &mut self,
+        init: Initializer,
+        stack_slot: StackSlot,
+        builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         match init {
             Initializer::Scalar(expr) => {
@@ -245,7 +253,10 @@ impl<B: Backend> Compiler<B> {
     // TODO: this is grossly inefficient, ask Cranelift devs if
     // there's an easier way to make parameters modifiable.
     fn store_stack_params(
-        &mut self, params: &[MetadataRef], func_start: Block, location: &Location,
+        &mut self,
+        params: &[MetadataRef],
+        func_start: Block,
+        location: &Location,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         // Cranelift requires that all block params are declared up front
@@ -288,7 +299,10 @@ impl<B: Backend> Compiler<B> {
         Ok(())
     }
     fn compile_func(
-        &mut self, symbol: MetadataRef, func_type: &FunctionType, stmts: Vec<Stmt>,
+        &mut self,
+        symbol: MetadataRef,
+        func_type: &FunctionType,
+        stmts: Vec<Stmt>,
         location: Location,
     ) -> CompileResult<()> {
         let func_id = self.declare_func(symbol, true)?;

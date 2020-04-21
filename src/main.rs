@@ -80,7 +80,11 @@ struct BinOpt {
 // TODO: when std::process::termination is stable, make err_exit an impl for CompilerError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
 fn real_main(
-    buf: Rc<str>, file_db: &mut Files, file_id: FileId, opt: &BinOpt, output: &Path,
+    buf: Rc<str>,
+    file_db: &mut Files,
+    file_id: FileId,
+    opt: &BinOpt,
+    output: &Path,
 ) -> Result<(), Error> {
     let opt = if opt.preprocess_only {
         use std::io::{BufWriter, Write};
@@ -120,7 +124,11 @@ fn real_main(
 
 #[inline]
 fn aot_main(
-    buf: &str, opt: &Opt, file_id: FileId, file_db: &mut Files, output: &Path,
+    buf: &str,
+    opt: &Opt,
+    file_id: FileId,
+    file_db: &mut Files,
+    output: &Path,
 ) -> Result<(), Error> {
     let module = rcc::initialize_aot_module("rccmain".to_owned());
     let (result, warnings) = compile(module, buf, opt, file_id, file_db);
@@ -316,7 +324,10 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files) {
 
 #[must_use]
 fn pretty_print<T: std::fmt::Display>(
-    prefix: ANSIString, msg: T, location: Location, file_db: &Files,
+    prefix: ANSIString,
+    msg: T,
+    location: Location,
+    file_db: &Files,
 ) -> String {
     let file = location.file;
     let start = file_db

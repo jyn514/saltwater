@@ -144,7 +144,11 @@ impl<B: Backend> Compiler<B> {
         }
     }
     fn ternary(
-        &mut self, condition: Expr, left: Expr, right: Expr, builder: &mut FunctionBuilder,
+        &mut self,
+        condition: Expr,
+        left: Expr,
+        right: Expr,
+        builder: &mut FunctionBuilder,
     ) -> IrResult {
         let target_block = builder.create_block();
         let target_type = left.ctype.as_ir_type();
@@ -171,7 +175,11 @@ impl<B: Backend> Compiler<B> {
         })
     }
     fn logical_expr(
-        &mut self, left: Expr, right: Expr, brz: bool, builder: &mut FunctionBuilder,
+        &mut self,
+        left: Expr,
+        right: Expr,
+        brz: bool,
+        builder: &mut FunctionBuilder,
     ) -> IrResult {
         let target_block = builder.create_block();
         builder.append_block_param(target_block, types::B1);
@@ -199,7 +207,11 @@ impl<B: Backend> Compiler<B> {
         })
     }
     fn compile_literal(
-        &mut self, ir_type: IrType, ctype: Type, token: Literal, location: Location,
+        &mut self,
+        ir_type: IrType,
+        ctype: Type,
+        token: Literal,
+        location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let ir_val = match (token, ir_type) {
@@ -238,7 +250,11 @@ impl<B: Backend> Compiler<B> {
     }
     #[inline]
     fn binary_assign_op(
-        &mut self, left: Expr, right: Expr, ctype: Type, op: BinaryOp,
+        &mut self,
+        left: Expr,
+        right: Expr,
+        ctype: Type,
+        op: BinaryOp,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let (left, right) = (
@@ -248,7 +264,11 @@ impl<B: Backend> Compiler<B> {
         Self::binary_assign_ir(left, right, ctype, op, builder)
     }
     fn binary_assign_ir(
-        left: Value, right: Value, ctype: Type, op: BinaryOp, builder: &mut FunctionBuilder,
+        left: Value,
+        right: Value,
+        ctype: Type,
+        op: BinaryOp,
+        builder: &mut FunctionBuilder,
     ) -> IrResult {
         use cranelift::codegen::ir::InstBuilder as b;
         use BinaryOp::*;
@@ -315,7 +335,11 @@ impl<B: Backend> Compiler<B> {
         })
     }
     fn cast_ir(
-        from: IrType, to: IrType, val: IrValue, from_signed: bool, to_signed: bool,
+        from: IrType,
+        to: IrType,
+        val: IrValue,
+        from_signed: bool,
+        to_signed: bool,
         builder: &mut FunctionBuilder,
     ) -> IrValue {
         // NOTE: we compare the IR types, not the C types, because multiple C types
@@ -413,7 +437,10 @@ impl<B: Backend> Compiler<B> {
         })
     }
     fn compare(
-        left: Value, right: Value, token: ComparisonToken, builder: &mut FunctionBuilder,
+        left: Value,
+        right: Value,
+        token: ComparisonToken,
+        builder: &mut FunctionBuilder,
     ) -> IrResult {
         assert_eq!(left.ir_type, right.ir_type);
 
@@ -472,7 +499,11 @@ impl<B: Backend> Compiler<B> {
         Ok(value)
     }
     fn call(
-        &mut self, func: FuncCall, ctype: Type, args: Vec<Expr>, builder: &mut FunctionBuilder,
+        &mut self,
+        func: FuncCall,
+        ctype: Type,
+        args: Vec<Expr>,
+        builder: &mut FunctionBuilder,
     ) -> IrResult {
         use crate::data::hir::Qualifiers;
         use cranelift::codegen::ir::{AbiParam, ArgumentPurpose};

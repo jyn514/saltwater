@@ -7,7 +7,7 @@ fn write_git_version() {
         let commit = git(&["rev-parse", "--short=7", "HEAD"]).unwrap_or_else(|| "????".into());
         let most_recent_tag = match git(&["describe", "--tags", "--abbrev=0", "HEAD"]) {
             Some(c) => c,
-            None => return "????".into(),
+            None => return std::env::var("CARGO_PKG_VERSION").unwrap(),
         };
         format!("{}-dev ({})", most_recent_tag, commit)
     });

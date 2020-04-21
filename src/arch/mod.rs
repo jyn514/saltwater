@@ -129,7 +129,6 @@ impl Type {
             }
             Union(struct_type) => struct_type.union_size(),
             Struct(struct_type) => struct_type.struct_size(),
-            Bitfield(_) => unimplemented!("sizeof(bitfield)"),
             // illegal operations
             Function(_) => Err("cannot take `sizeof` a function"),
             Void => Err("cannot take `sizeof` void"),
@@ -154,7 +153,6 @@ impl Type {
             // Not sure why, but who am I to argue
             // Anyway, Faerie panics if the alignment isn't a power of two so it's probably for the best
             Union(struct_type) | Struct(struct_type) => struct_type.align(),
-            Bitfield(_) => unimplemented!("alignof bitfield"),
             Function(_) => Err("cannot take `alignof` function"),
             Void => Err("cannot take `alignof` void"),
             VaList => Err("cannot take `alignof` va_list"),

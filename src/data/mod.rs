@@ -82,12 +82,6 @@ pub struct Expr {
     /// ctype: holds the type of the expression
     pub ctype: Type,
 
-    /// constexpr: whether a value can be constant-folded at compile-time
-    ///
-    /// unrelated to the `const` keyword
-    /// NOTE: can sometimes be true at the same time as `lval` (e.g. for constant arrays)
-    pub constexpr: bool,
-
     /// lval: whether an expression can be assigned to
     ///
     /// for example, variables, array elements, and pointer dereferences are lvals,

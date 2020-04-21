@@ -106,10 +106,7 @@ fn run_one(path: &path::Path) -> Result<(), io::Error> {
 /// // END
 /// ```
 fn output_test<B: BufRead>(
-    line: &str,
-    reader: &mut B,
-    program: &str,
-    path: path::PathBuf,
+    line: &str, reader: &mut B, program: &str, path: path::PathBuf,
 ) -> Result<(), io::Error> {
     const BEGIN: &str = "BEGIN: ";
     const END: &str = "END";

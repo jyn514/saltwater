@@ -979,11 +979,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// `token` should be the token for the operation.
     /// `ctype` should be the type of the resulting expression (_not_ the operands).
     fn scalar_left_associative_binary_op<E, G>(
-        &mut self,
-        next_grammar_func: G,
-        expr_func: E,
-        token: &Token,
-        ctype: Type,
+        &mut self, next_grammar_func: G, expr_func: E, token: &Token, ctype: Type,
     ) -> SyntaxResult
     where
         E: Fn(Box<Expr>, Box<Expr>) -> Result<ExprType, (Locatable<SemanticError>, Expr)>,
@@ -1026,10 +1022,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// next_grammar_func should parse `grammar_item`.
     /// `expr_func` is usually an Enum constructor.
     fn integral_left_associative_binary_op<E, G>(
-        &mut self,
-        next_grammar_func: G,
-        tokens: &[&Token],
-        expr_func: E,
+        &mut self, next_grammar_func: G, tokens: &[&Token], expr_func: E,
     ) -> SyntaxResult
     where
         E: Fn(Expr, Expr, Locatable<Token>) -> RecoverableResult<Expr, Locatable<SemanticError>>,
@@ -1071,10 +1064,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// consider `scalar_left_associative_binary_op` or `left_associative_binary_op`
     #[inline]
     fn left_associative_binary_op<E, G>(
-        &mut self,
-        next_grammar_func: G,
-        tokens: &[&Token],
-        mut expr_func: E,
+        &mut self, next_grammar_func: G, tokens: &[&Token], mut expr_func: E,
     ) -> SyntaxResult
     where
         E: FnMut(
@@ -1236,8 +1226,7 @@ impl Expr {
     //
     // See `Type::binary_promote` for conversion rules.
     fn binary_promote(
-        left: Expr,
-        right: Expr,
+        left: Expr, right: Expr,
     ) -> RecoverableResult<(Expr, Expr), Locatable<SemanticError>> {
         let (left, right) = (left.rval(), right.rval());
         let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
@@ -1298,8 +1287,7 @@ impl Expr {
     // Simple assignment rules, section 6.5.16.1 of the C standard
     // the funky return type is so we don't consume the original expression in case of an error
     pub(super) fn cast(
-        mut self,
-        ctype: &Type,
+        mut self, ctype: &Type,
     ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         if self.ctype == *ctype {
             Ok(self)
@@ -1345,10 +1333,7 @@ impl Expr {
         }
     }
     fn pointer_arithmetic(
-        base: Expr,
-        index: Expr,
-        pointee: &Type,
-        location: Location,
+        base: Expr, index: Expr, pointee: &Type, location: Location,
     ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         let offset = Expr {
             lval: false,
@@ -1398,10 +1383,7 @@ impl Expr {
         })
     }
     fn increment_op(
-        prefix: bool,
-        increment: bool,
-        expr: Expr,
-        location: Location,
+        prefix: bool, increment: bool, expr: Expr, location: Location,
     ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         if let Err(err) = expr.modifiable_lval() {
             return Err((expr.location.with(err), expr));
@@ -1472,9 +1454,7 @@ impl Expr {
     }
     // helper function since == and > have almost identical logic
     fn relational_expr(
-        mut left: Box<Expr>,
-        mut right: Box<Expr>,
-        token: Locatable<Token>,
+        mut left: Box<Expr>, mut right: Box<Expr>, token: Locatable<Token>,
     ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
         let token = match token.data {
             Token::Comparison(c) => token.location.with(c),

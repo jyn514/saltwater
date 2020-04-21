@@ -46,9 +46,7 @@ pub struct PreProcessorBuilder<'a> {
 
 impl<'a> PreProcessorBuilder<'a> {
     pub fn new<S: Into<Rc<str>>>(
-        buf: S,
-        file: FileId,
-        files: &'a mut Files,
+        buf: S, file: FileId, files: &'a mut Files,
     ) -> PreProcessorBuilder<'a> {
         PreProcessorBuilder {
             debug: false,
@@ -291,9 +289,7 @@ impl<'a> PreProcessor<'a> {
     }
     /// Possibly recursively replace tokens. This also handles turning identifiers into keywords.
     fn handle_token(
-        &mut self,
-        token: PendingToken,
-        location: Location,
+        &mut self, token: PendingToken, location: Location,
     ) -> Option<CppResult<Token>> {
         let (token, needs_replacement) = match token {
             PendingToken::Replacement(tok) => (tok, true),
@@ -333,11 +329,7 @@ impl<'a> PreProcessor<'a> {
         I: IntoIterator<Item = Cow<'search, Path>>,
         S: Into<Rc<str>>,
     >(
-        file: FileId,
-        chars: S,
-        debug: bool,
-        user_search_path: I,
-        files: &'files mut Files,
+        file: FileId, chars: S, debug: bool, user_search_path: I, files: &'files mut Files,
     ) -> Self {
         let system_path = format!(
             "{}-{}-{}",
@@ -602,9 +594,7 @@ impl<'a> PreProcessor<'a> {
     /// see the `recursive_macros` test for more details.
     // TODO: this needs to have an idea of 'pending chars', not just pending tokens
     fn replace_id(
-        &mut self,
-        mut name: InternedStr,
-        location: Location,
+        &mut self, mut name: InternedStr, location: Location,
     ) -> Option<CppResult<Token>> {
         let start = self.offset();
         let mut ids_seen = std::collections::HashSet::new();
@@ -744,8 +734,7 @@ impl<'a> PreProcessor<'a> {
     // http://port70.net/~nsz/c/c11/n1570.html#6.10.1p1
     fn defined(
         lex_tokens: &mut impl Iterator<Item = Result<Locatable<Token>, CompileError>>,
-        cpp_tokens: &mut Vec<Result<Locatable<Token>, CompileError>>,
-        location: Location,
+        cpp_tokens: &mut Vec<Result<Locatable<Token>, CompileError>>, location: Location,
     ) -> Result<InternedStr, CompileError> {
         enum State {
             Start,
@@ -1108,10 +1097,7 @@ impl<'a> PreProcessor<'a> {
     // we've done the parsing for an `#include`,
     // now we want to figure what file on disk it corresponds to
     fn find_include_path(
-        &mut self,
-        filename: String,
-        local: bool,
-        start: u32,
+        &mut self, filename: String, local: bool, start: u32,
     ) -> Result<PathBuf, Locatable<Error>> {
         if filename.is_empty() {
             return Err(CompileError::new(
@@ -1163,10 +1149,7 @@ impl<'a> PreProcessor<'a> {
     // we've done the parsing for an `#include`,
     // now we want to do the dirty work of reading it into memory
     fn include_path(
-        &mut self,
-        filename: Vec<u8>,
-        local: bool,
-        start: u32,
+        &mut self, filename: Vec<u8>, local: bool, start: u32,
     ) -> Result<(), Locatable<Error>> {
         // Recall that the original file was valid UTF8.
         // Since in UTF8 no ASCII character can occur

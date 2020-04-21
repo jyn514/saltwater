@@ -296,9 +296,7 @@ impl std::fmt::Display for Type {
 }
 
 pub(super) fn print_type(
-    ctype: &Type,
-    name: Option<InternedStr>,
-    f: &mut Formatter,
+    ctype: &Type, name: Option<InternedStr>, f: &mut Formatter,
 ) -> fmt::Result {
     print_pre(ctype, f)?;
     print_mid(ctype, name, f)?;

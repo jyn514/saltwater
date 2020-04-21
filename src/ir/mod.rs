@@ -95,9 +95,7 @@ struct Compiler<T: Backend> {
 
 /// Compile a program from a high level IR to a Cranelift Module
 pub(crate) fn compile<B: Backend>(
-    module: Module<B>,
-    program: Vec<Locatable<Declaration>>,
-    debug: bool,
+    module: Module<B>, program: Vec<Locatable<Declaration>>, debug: bool,
 ) -> (Result<Module<B>, CompileError>, VecDeque<CompileWarning>) {
     // really we'd like to have all errors but that requires a refactor
     let mut err = None;
@@ -164,11 +162,7 @@ impl<B: Backend> Compiler<B> {
     // 3. should always declare `id` as export or local.
     // 2. and 4. should be a no-op.
     fn declare_func(
-        &mut self,
-        id: InternedStr,
-        signature: &Signature,
-        sc: StorageClass,
-        is_definition: bool,
+        &mut self, id: InternedStr, signature: &Signature, sc: StorageClass, is_definition: bool,
     ) -> CompileResult<FuncId> {
         use crate::get_str;
         if !is_definition {
@@ -192,10 +186,7 @@ impl<B: Backend> Compiler<B> {
     }
     /// declare an object on the stack
     fn declare_stack(
-        &mut self,
-        decl: Declaration,
-        location: Location,
-        builder: &mut FunctionBuilder,
+        &mut self, decl: Declaration, location: Location, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         if let Type::Function(ftype) = decl.symbol.ctype {
             self.declare_func(
@@ -236,10 +227,7 @@ impl<B: Backend> Compiler<B> {
         Ok(())
     }
     fn store_stack(
-        &mut self,
-        init: Initializer,
-        stack_slot: StackSlot,
-        builder: &mut FunctionBuilder,
+        &mut self, init: Initializer, stack_slot: StackSlot, builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         match init {
             Initializer::Scalar(expr) => {
@@ -257,10 +245,7 @@ impl<B: Backend> Compiler<B> {
     // TODO: this is grossly inefficient, ask Cranelift devs if
     // there's an easier way to make parameters modifiable.
     fn store_stack_params(
-        &mut self,
-        params: Vec<Symbol>,
-        func_start: Block,
-        location: &Location,
+        &mut self, params: Vec<Symbol>, func_start: Block, location: &Location,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         // Cranelift requires that all block params are declared up front
@@ -303,11 +288,7 @@ impl<B: Backend> Compiler<B> {
         Ok(())
     }
     fn compile_func(
-        &mut self,
-        id: InternedStr,
-        func_type: FunctionType,
-        sc: StorageClass,
-        stmts: Vec<Stmt>,
+        &mut self, id: InternedStr, func_type: FunctionType, sc: StorageClass, stmts: Vec<Stmt>,
         location: Location,
     ) -> CompileResult<()> {
         let signature = func_type.signature(self.module.isa());

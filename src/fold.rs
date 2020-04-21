@@ -16,10 +16,8 @@ macro_rules! fold_int_bin_op {
 
 #[inline]
 fn fold_scalar_bin_op(
-    simple: fn(f64, f64) -> f64,
-    overflowing: fn(i64, i64) -> (i64, bool),
-    wrapping: fn(u64, u64) -> u64,
-    wrapping_byte: fn(u8, u8) -> u8,
+    simple: fn(f64, f64) -> f64, overflowing: fn(i64, i64) -> (i64, bool),
+    wrapping: fn(u64, u64) -> u64, wrapping_byte: fn(u8, u8) -> u8,
 ) -> impl Fn(&Literal, &Literal, &Type) -> Result<Option<Literal>, SemanticError> {
     move |a: &Literal, b: &Literal, _ctype| match (a, b) {
         (Int(a), Int(b)) => {
@@ -347,11 +345,7 @@ impl Expr {
     /// `Ok(None)`: Non-foldable expression
     /// `Err(_)`: Error while folding
     fn literal_bin_op<F, C>(
-        self,
-        other: Expr,
-        location: &Location,
-        fold_func: F,
-        constructor: C,
+        self, other: Expr, location: &Location, fold_func: F, constructor: C,
     ) -> CompileResult<ExprType>
     where
         F: FnOnce(&Literal, &Literal, &Type) -> Result<Option<Literal>, SemanticError>,
@@ -372,10 +366,7 @@ impl Expr {
         Ok(literal.unwrap_or_else(|| constructor(Box::new(left), Box::new(right))))
     }
     fn map_literal<F, C>(
-        self,
-        location: &Location,
-        literal_func: F,
-        constructor: C,
+        self, location: &Location, literal_func: F, constructor: C,
     ) -> CompileResult<ExprType>
     where
         F: FnOnce(Literal) -> Result<Literal, SemanticError>,
@@ -453,10 +444,7 @@ fn const_cast(token: &Literal, ctype: &Type) -> Option<Literal> {
 }
 
 fn shift_right(
-    left: Expr,
-    right: Expr,
-    ctype: &Type,
-    location: &Location,
+    left: Expr, right: Expr, ctype: &Type, location: &Location,
 ) -> CompileResult<ExprType> {
     let (left, right) = (left.const_fold()?, right.const_fold()?);
     if let ExprType::Literal(token) = right.expr {
@@ -500,10 +488,7 @@ fn shift_right(
 }
 
 fn shift_left(
-    left: Expr,
-    right: Expr,
-    ctype: &Type,
-    location: &Location,
+    left: Expr, right: Expr, ctype: &Type, location: &Location,
 ) -> CompileResult<ExprType> {
     let (left, right) = (left.const_fold()?, right.const_fold()?);
     if let ExprType::Literal(token) = right.expr {

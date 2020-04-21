@@ -194,9 +194,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
     }
     fn parse_typedef(
-        &mut self,
-        first_id: Locatable<InternedStr>,
-        first_ctype: Type,
+        &mut self, first_id: Locatable<InternedStr>, first_ctype: Type,
         first_qualifiers: Qualifiers,
     ) -> SyntaxResult<()> {
         self.declare_typedef(first_id, first_ctype.clone(), first_qualifiers);
@@ -293,10 +291,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         }
     }
     fn init_declarator(
-        &mut self,
-        sc: StorageClass,
-        qualifiers: Qualifiers,
-        ctype: Type,
+        &mut self, sc: StorageClass, qualifiers: Qualifiers, ctype: Type,
     ) -> SyntaxResult<Locatable<Declaration>> {
         // parse declarator
         // declarator: Result<Symbol, SyntaxError>
@@ -568,10 +563,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
         Ok(ctype)
     }
     fn forward_declaration(
-        &mut self,
-        kind: Keyword,
-        ident: InternedStr,
-        location: Location,
+        &mut self, kind: Keyword, ident: InternedStr, location: Location,
     ) -> Type {
         if kind == Keyword::Enum {
             // see section 6.7.2.3 of the C11 standard
@@ -596,9 +588,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     enumerator: identifier ('=' constant_expr)? ;
     */
     fn enumerators(
-        &mut self,
-        ident: Option<InternedStr>,
-        location: Location,
+        &mut self, ident: Option<InternedStr>, location: Location,
     ) -> SyntaxResult<Type> {
         let mut current = 0;
         let mut members = vec![];
@@ -698,10 +688,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     struct_declaration: (type_specifier | type_qualifier)+ struct_declarator_list ';' ;
     */
     fn struct_declaration(
-        &mut self,
-        ident: Option<InternedStr>,
-        c_struct: bool,
-        location: &Location,
+        &mut self, ident: Option<InternedStr>, c_struct: bool, location: &Location,
     ) -> SyntaxResult<Type> {
         use std::rc::Rc;
         let mut members = vec![];
@@ -1023,10 +1010,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *      ;
      */
     fn postfix_type(
-        &mut self,
-        mut prefix: Option<Declarator>,
-        allow_abstract: bool,
-        qualifiers: Qualifiers,
+        &mut self, mut prefix: Option<Declarator>, allow_abstract: bool, qualifiers: Qualifiers,
     ) -> SyntaxResult<Option<Declarator>> {
         // postfix
         while let Some(data) = self.peek_token() {
@@ -1127,9 +1111,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *   https://stackoverflow.com/questions/56410673/how-should-int-fint-be-parsed
      */
     fn direct_declarator(
-        &mut self,
-        allow_abstract: bool,
-        qualifiers: Qualifiers,
+        &mut self, allow_abstract: bool, qualifiers: Qualifiers,
     ) -> SyntaxResult<Option<Declarator>> {
         // we'll pass this to postfix_type in just a second
         // if None, we didn't find an ID
@@ -1213,9 +1195,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      *
      */
     fn declarator(
-        &mut self,
-        allow_abstract: bool,
-        qualifiers: Qualifiers,
+        &mut self, allow_abstract: bool, qualifiers: Qualifiers,
     ) -> SyntaxResult<Option<Declarator>> {
         let _guard = self.recursion_check();
         if let Some(data) = self.peek_token() {
@@ -1382,10 +1362,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
 
     fn function_body(
-        &mut self,
-        id: InternedStr,
-        ftype: FunctionType,
-        location: Location,
+        &mut self, id: InternedStr, ftype: FunctionType, location: Location,
     ) -> SyntaxResult<Vec<Stmt>> {
         // if it's a function, set up state so we know the return type
         // TODO: rework all of this so semantic analysis is done _after_ parsing
@@ -1452,12 +1429,8 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
      * TODO: refactor this to use a HashSet<Locatable<Token>>
      */
     fn declaration_specifier(
-        &mut self,
-        keyword: Keyword,
-        storage_class: &mut Option<StorageClass>,
-        qualifiers: &mut Qualifiers,
-        ctype: &mut Option<Type>,
-        signed: &mut Option<bool>,
+        &mut self, keyword: Keyword, storage_class: &mut Option<StorageClass>,
+        qualifiers: &mut Qualifiers, ctype: &mut Option<Type>, signed: &mut Option<bool>,
         location: Location,
     ) {
         // we use `if` instead of `qualifiers.x = keyword == y` because

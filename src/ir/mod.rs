@@ -258,7 +258,7 @@ impl<B: Backend> Compiler<B> {
     // there's an easier way to make parameters modifiable.
     fn store_stack_params(
         &mut self,
-        params: Vec<Symbol>,
+        params: Vec<Metadata>,
         func_start: Block,
         location: &Location,
         builder: &mut FunctionBuilder,

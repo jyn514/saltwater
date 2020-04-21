@@ -167,7 +167,7 @@ mod tests {
 
     use crate::data::{
         types::{tests::arb_type, StructType, Type},
-        Qualifiers, StorageClass, Symbol,
+        Metadata, Qualifiers, StorageClass,
     };
 
     use super::*;
@@ -183,8 +183,8 @@ mod tests {
         }
     }
 
-    fn symbol_for_type(ctype: Type, id: InternedStr) -> Symbol {
-        Symbol {
+    fn symbol_for_type(ctype: Type, id: InternedStr) -> Metadata {
+        Metadata {
             id,
             ctype,
             init: false,

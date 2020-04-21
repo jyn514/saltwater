@@ -411,7 +411,7 @@ impl<B: Backend> Compiler<B> {
             _ => unreachable!("parser should catch illegal types"),
         })
     }
-    fn load_addr(&self, var: Symbol, builder: &mut FunctionBuilder) -> IrResult {
+    fn load_addr(&self, var: Metadata, builder: &mut FunctionBuilder) -> IrResult {
         let ptr_type = Type::ptr_type();
         let ir_val = match self.scope.get(&var.id).unwrap() {
             Id::Function(func_id) => {
@@ -548,7 +548,7 @@ impl<B: Backend> Compiler<B> {
                 if arg.ctype.is_floating() {
                     float_variadic += 1;
                 }
-                ftype.params.push(Symbol {
+                ftype.params.push(Metadata {
                     ctype: arg.ctype.clone(),
                     id: Default::default(),
                     init: true,

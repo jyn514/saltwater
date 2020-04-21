@@ -17,7 +17,7 @@ pub mod prelude {
         },
         lex::{Literal, Locatable, Location, Token},
         types::{StructRef, StructType, Type},
-        Declaration, Expr, ExprType, Radix, Stmt, StmtType, Symbol,
+        Declaration, Expr, ExprType, Metadata, Radix, Stmt, StmtType,
     };
     pub use crate::intern::InternedStr;
 }
@@ -59,7 +59,7 @@ impl Default for StmtType {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Declaration {
-    pub symbol: Symbol,
+    pub symbol: Metadata,
     pub init: Option<Initializer>,
 }
 
@@ -98,7 +98,7 @@ pub struct Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExprType {
-    Id(Symbol),
+    Id(Metadata),
     Literal(Literal),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, InternedStr),
@@ -154,7 +154,7 @@ pub enum StorageClass {
 
 /* structs */
 #[derive(Clone, Debug)]
-pub struct Symbol {
+pub struct Metadata {
     pub id: InternedStr,
     pub ctype: Type,
     pub qualifiers: Qualifiers,
@@ -421,7 +421,7 @@ impl StmtType {
     }
 }
 
-impl Display for Symbol {
+impl Display for Metadata {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} {}", self.storage_class, self.qualifiers)?;
         types::print_type(&self.ctype, Some(self.id), f)
@@ -452,7 +452,7 @@ impl Display for Declaration {
     }
 }
 
-impl PartialEq for Symbol {
+impl PartialEq for Metadata {
     // don't require both symbols to be `init` to be equal
     fn eq(&self, other: &Self) -> bool {
         self.ctype == other.ctype
@@ -467,7 +467,7 @@ impl PartialEq for Symbol {
     }
 }
 
-impl Eq for Symbol {}
+impl Eq for Metadata {}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Radix {

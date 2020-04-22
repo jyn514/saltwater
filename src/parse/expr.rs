@@ -433,9 +433,9 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
                     location: token.location,
                     lval: false,
                     expr: match token.data {
-                        Token::Star => ExprType::Binary(BinaryOp::Mul,Box::new(p_left), Box::new(right)),
-                        Token::Divide => ExprType::Binary(BinaryOp::Div,Box::new(p_left), Box::new(right)),
-                        Token::Mod => ExprType::Binary(BinaryOp::Mod,Box::new(p_left), Box::new(right)),
+                        Token::Star => ExprType::Binary(BinaryOp::Mul, Box::new(p_left), Box::new(right)),
+                        Token::Divide => ExprType::Binary(BinaryOp::Div, Box::new(p_left), Box::new(right)),
+                        Token::Mod => ExprType::Binary(BinaryOp::Mod, Box::new(p_left), Box::new(right)),
                         _ => {
                             panic!("left_associative_binary_op should only return tokens given to it")
                         }

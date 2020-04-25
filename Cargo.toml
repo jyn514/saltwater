@@ -22,14 +22,15 @@ documentation = "https://docs.rs/rcc"
 [dependencies]
 lazy_static = "1"
 ansi_term = { version = "0.12", optional = true }
-cranelift = { version = "0.59", optional = true }
-cranelift-module = { version = "0.59", optional = true }
-cranelift-object = { version = "0.59", optional = true }
-cranelift-simplejit = { version = "0.59", optional = true }
+cranelift = { version = "0.62", optional = true }
+cranelift-module = { version = "0.62", optional = true }
+cranelift-object = { version = "0.62", optional = true }
+cranelift-simplejit = { version = "0.62", optional = true }
 hexponent = "0.2.2"
 thiserror = ">=1.0.10"
 target-lexicon = "0.10"
 tempfile = { version = "3", optional = true }
+object = { version = "0.18", default-features = false }
 pico-args = { version = "0.3", optional = true }
 string-interner = { version = "0.7", default-features = false }
 codespan = "0.8"

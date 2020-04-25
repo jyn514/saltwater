@@ -74,8 +74,8 @@ mod parse;
 pub enum Error {
     #[error("{}", .0.iter().map(|err| err.data.to_string()).collect::<Vec<_>>().join("\n"))]
     Source(VecDeque<CompileError>),
-    #[error("platform-specific error: {0}")]
-    Platform(String),
+    #[error("linking error: {0}")]
+    Platform(object::write::Error),
     #[error("io error: {0}")]
     IO(#[from] io::Error),
 }

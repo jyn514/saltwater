@@ -74,6 +74,7 @@ mod parse;
 pub enum Error {
     #[error("{}", .0.iter().map(|err| err.data.to_string()).collect::<Vec<_>>().join("\n"))]
     Source(VecDeque<CompileError>),
+    #[cfg(feature = "codegen")]
     #[error("linking error: {0}")]
     Platform(object::write::Error),
     #[error("io error: {0}")]

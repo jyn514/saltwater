@@ -47,6 +47,7 @@ impl<B: Backend> Compiler<B> {
                 get_str!(metadata.id),
                 linkage,
                 !metadata.qualifiers.c_const,
+                false,
                 Some(align),
             )
             .map_err(|err| Locatable {
@@ -114,7 +115,10 @@ impl<B: Backend> Compiler<B> {
             Entry::Occupied(id) => return Ok(*id.get()),
             Entry::Vacant(empty) => {
                 let name = format!("str.{}", len);
-                let id = match self.module.declare_data(&name, Linkage::Local, false, None) {
+                let id = match self
+                    .module
+                    .declare_data(&name, Linkage::Local, false, false, None)
+                {
                     Ok(id) => id,
                     Err(err) => {
                         semantic_err!(format!("error declaring static string: {}", err), location)

@@ -76,7 +76,7 @@ impl<B: Backend> Compiler<B> {
                     *size = ArrayType::Fixed(len.try_into().unwrap());
                 };
             }
-            let size_t = metadata.ctype.sizeof().map_err(|err| Locatable {
+            let size_t = ctype.sizeof().map_err(|err| Locatable {
                 data: err.to_string(),
                 location,
             })?;

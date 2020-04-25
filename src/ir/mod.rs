@@ -25,7 +25,7 @@ use cranelift::codegen::{
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Block, FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{self, Backend, DataId, FuncId, Linkage, Module};
-use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectTrapCollection};
+use cranelift_object::{ObjectBackend, ObjectBuilder};
 use lazy_static::lazy_static;
 
 // TODO: make this const when const_if_match is stabilized
@@ -66,7 +66,6 @@ pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
     Module::new(ObjectBuilder::new(
         get_isa(false),
         name,
-        ObjectTrapCollection::Disabled,
         cranelift_module::default_libcall_names(),
     ))
 }
@@ -362,7 +361,11 @@ impl<B: Backend> Compiler<B> {
         }
 
         let mut ctx = codegen::Context::for_function(func);
-        if let Err(err) = self.module.define_function(func_id, &mut ctx) {
+        let mut trap_sink = codegen::binemit::NullTrapSink {};
+        if let Err(err) = self
+            .module
+            .define_function(func_id, &mut ctx, &mut trap_sink)
+        {
             panic!(
                 "definition error: {}\nnote: while compiling {}",
                 err, ctx.func

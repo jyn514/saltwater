@@ -448,6 +448,7 @@ impl<I: Lexer> Analyzer<I> {
                 self.tag_scope.get_immediate(&id)
             {
                 let struct_ref = *struct_ref;
+                // struct s { int i; }; struct s { int i; };
                 if !struct_ref.get().is_empty() {
                     self.err(
                         SemanticError::from(format!(
@@ -472,6 +473,7 @@ impl<I: Lexer> Analyzer<I> {
             *declared_struct = true;
             constructor(StructType::Named(id, struct_ref))
         } else {
+            // struct { int i; }
             constructor(StructType::Anonymous(std::rc::Rc::new(members)))
         }
     }
@@ -517,6 +519,7 @@ impl<I: Lexer> Analyzer<I> {
                 ctype,
                 id: decl.id.expect("struct members should have an id"),
             };
+            // struct s { int i: 5 };
             if let Some(bitfield) = bitfield {
                 let bit_size = match Self::const_uint(self.parse_expr(bitfield)) {
                     Ok(e) => e,
@@ -532,6 +535,7 @@ impl<I: Lexer> Analyzer<I> {
                         symbol.id
                     ));
                     self.err(err, location);
+                // struct s { int i: 65 }
                 } else if bit_size > type_size * u64::from(crate::arch::CHAR_BIT) {
                     let err = SemanticError::from(format!(
                         "cannot have bitfield {} with size {} larger than containing type {}",
@@ -564,6 +568,7 @@ impl<I: Lexer> Analyzer<I> {
             }
             parsed_members.push(symbol);
         }
+        // struct s { extern int i; };
         if let Some(class) = parsed_type.storage_class {
             let member = parsed_members
                 .last()
@@ -589,24 +594,29 @@ impl<I: Lexer> Analyzer<I> {
         let ast_members = match ast_members {
             Some(members) => members,
             None => {
+                // enum e
                 let name = if let Some(name) = enum_name {
                     name
                 } else {
+                    // enum;
                     let err = SemanticError::from("bare 'enum' as type specifier is not allowed");
                     self.error_handler.error(err, location);
                     return Type::Error;
                 };
                 match self.tag_scope.get(&name) {
+                    // enum e { A }; enum e my_e;
                     Some(TagEntry::Enum(members)) => {
                         *saw_enum = false;
                         return Type::Enum(Some(name), members.clone());
                     }
+                    // struct e; enum e my_e;
                     Some(_) => {
                         // TODO: say what the previous type was
                         let err = SemanticError::from(format!("use of '{}' with type tag 'enum' that does not match previous struct declaration", name));
                         self.error_handler.push_back(Locatable::new(err, location));
                         return Type::Error;
                     }
+                    // `enum e;` (invalid)
                     None => return self.forward_declaration(Keyword::Enum, name, location),
                 }
             }
@@ -615,6 +625,7 @@ impl<I: Lexer> Analyzer<I> {
         let mut discriminant = 0;
         let mut members = vec![];
         for (name, maybe_value) in ast_members {
+            // enum E { A = 5 };
             if let Some(value) = maybe_value {
                 discriminant = Self::const_sint(self.parse_expr(value)).unwrap_or_else(|err| {
                     self.error_handler.push_back(err);
@@ -642,10 +653,12 @@ impl<I: Lexer> Analyzer<I> {
         for (name, _) in &members {
             self.scope._remove(name);
         }
+        // enum e {}
         if members.is_empty() {
             self.err(SemanticError::from("enums cannot be empty"), location)
         }
         if let Some(id) = enum_name {
+            // enum e { A }; enum e { A };
             if self
                 .tag_scope
                 .insert(id.clone(), TagEntry::Enum(members.clone()))
@@ -674,6 +687,7 @@ impl<I: Lexer> Analyzer<I> {
         }
         ctype
     }
+    // struct s;
     fn forward_declaration(
         &mut self,
         kind: Keyword,
@@ -711,6 +725,7 @@ impl<I: Lexer> Analyzer<I> {
     ) -> Type {
         use crate::data::ast::DeclaratorType::*;
         use crate::data::types::{ArrayType, FunctionType};
+
         match decl {
             End => current,
             Pointer { to, qualifiers } => {
@@ -738,6 +753,7 @@ impl<I: Lexer> Analyzer<I> {
                 Type::Pointer(Box::new(inner), qualifiers)
             }
             Array { of, size } => {
+                // int a[5]
                 let size = if let Some(expr) = size {
                     let size = Self::const_uint(self.parse_expr(*expr)).unwrap_or_else(|err| {
                         self.error_handler.push_back(err);
@@ -745,9 +761,11 @@ impl<I: Lexer> Analyzer<I> {
                     });
                     ArrayType::Fixed(size)
                 } else {
+                    // int a[]
                     ArrayType::Unbounded
                 };
                 let of = self.parse_declarator(current, *of, location);
+                // int a[]()
                 if let Type::Function(_) = &of {
                     self.err(SemanticError::ArrayStoringFunction(of.clone()), location);
                 }
@@ -757,10 +775,12 @@ impl<I: Lexer> Analyzer<I> {
                 // TODO: give a warning for `const int f();` somewhere
                 let return_type = self.parse_declarator(current, *func.return_type, location);
                 match &return_type {
+                    // int a()[]
                     Type::Array(_, _) => self.err(
                         SemanticError::IllegalReturnType(return_type.clone()),
                         location,
                     ),
+                    // int a()()
                     Type::Function(_) => self.err(
                         SemanticError::IllegalReturnType(return_type.clone()),
                         location,
@@ -775,6 +795,7 @@ impl<I: Lexer> Analyzer<I> {
                     let mut param_type =
                         self.parse_type(param.specifiers, param.declarator.decl, location);
 
+                    // `int f(int a[])` -> `int f(int *a)`
                     if let Type::Array(to, _) = param_type.ctype {
                         param_type.ctype = Type::Pointer(to, Qualifiers::default());
                     }
@@ -782,24 +803,27 @@ impl<I: Lexer> Analyzer<I> {
                     // C11 Standard 6.7.6.3 paragraph 8
                     // "A declaration of a parameter as 'function returning type' shall be
                     //  adjusted to 'pointer to function returning type', as in 6.3.2.1."
+                    // `int f(int g())` -> `int f(int (*g)())`
                     if param_type.ctype.is_function() {
                         param_type.ctype =
                             Type::Pointer(Box::new(param_type.ctype), Qualifiers::default());
                     }
 
+                    // int a(extern int i)
                     if let Some(sc) = param_type.storage_class {
                         self.err(SemanticError::ParameterStorageClass(sc), location);
                     }
                     let id = if let Some(name) = param.declarator.id {
+                        // int f(int a, int a)
                         if names.contains(&name) {
                             self.err(SemanticError::DuplicateParameter(name), location)
                         }
                         names.insert(name);
                         name
                     } else {
+                        // int f(int)
                         InternedStr::default()
                     };
-                    // TODO: `int f(int g())` should decay to `int f(int (*g)())`
                     let meta = Metadata {
                         ctype: param_type.ctype,
                         id,
@@ -842,6 +866,7 @@ impl<I: Lexer> Analyzer<I> {
             ))
         })
     }
+    /// Return an unsigned integer that can be evaluated at compile time, or an error otherwise.
     fn const_uint(expr: Expr) -> CompileResult<crate::arch::SIZE_T> {
         use Literal::*;
 
@@ -865,6 +890,7 @@ impl<I: Lexer> Analyzer<I> {
             )),
         }
     }
+    /// Return a signed integer that can be evaluated at compile time, or an error otherwise.
     fn const_sint(expr: Expr) -> CompileResult<i64> {
         use Literal::*;
 
@@ -888,12 +914,12 @@ impl<I: Lexer> Analyzer<I> {
     fn declare(&mut self, mut decl: Metadata, init: bool, location: Location) -> MetadataRef {
         if decl.id == "main".into() {
             if let Type::Function(ftype) = &decl.ctype {
+                // int main(int)
                 if !ftype.is_main_func_signature() {
                     self.err(SemanticError::IllegalMainSignature, location);
                 }
             }
         }
-        //let decl_init = self.initialized.contains(&symbol);
         // e.g. extern int i = 1;
         // this is a silly thing to do, but valid: https://stackoverflow.com/a/57900212/7669110
         if decl.storage_class == StorageClass::Extern && !decl.ctype.is_function() && init {
@@ -906,24 +932,37 @@ impl<I: Lexer> Analyzer<I> {
             let existing = existing_ref.get();
             let meta = symbol.get();
             // 6.2.2p4
-            // For an identifier declared with the storage-class specifier extern in a scope in which a prior declaration of that identifier is visible,
-            // if the prior declaration specifies internal or external linkage,
-            // the linkage of the identifier at the later declaration is the same as the linkage specified at the prior declaration.
-            // If no prior declaration is visible, or if the prior declaration specifies no linkage, then the identifier has external linkage.
+            // > For an identifier declared with the storage-class specifier extern in a scope in which a prior declaration of that identifier is visible,
+            // > if the prior declaration specifies internal or external linkage,
+            // > the linkage of the identifier at the later declaration is the same as the linkage specified at the prior declaration.
+            // > If no prior declaration is visible, or if the prior declaration specifies no linkage, then the identifier has external linkage.
             //
             // i.e. `static int f(); int f();` is the same as `static int f(); static int f();`
             // special case redefining the same type
             if self.scope.is_global()
+                // int i; int i;
                 && (existing == meta
+                    // `static int i; extern int i;` or `int i; extern int i;`
                     || ((existing.storage_class == StorageClass::Static
                         || existing.storage_class == StorageClass::Auto)
                         && meta.storage_class == StorageClass::Extern)
-                    || existing.storage_class == StorageClass::Extern)
+                    // 6.2.2
+                    // > For an identifier declared with the storage-class specifier extern ...
+                    // > If no prior declaration is visible ... then the identifier has external linkage.
+                    // and also
+                    // > 3 If the declaration of a file scope identifier for an object contains the storage- class specifier static, the identifier has internal linkage.
+                    // so since
+                    // > If, within a translation unit, the same identifier appears with both internal and external linkage, the behavior is undefined. 
+
+                    // extern int i; int i;
+                    || (existing.storage_class == StorageClass::Extern && meta.storage_class != StorageClass::Static))
             {
+                // int i = 1; int i = 2;
                 if init && self.initialized.contains(&existing_ref) {
                     self.err(SemanticError::Redefinition(id), location);
                 }
             } else {
+                // extern int i; static int i;
                 let err = SemanticError::IncompatibleRedeclaration(id, existing_ref, symbol);
                 self.err(err, location);
             }

@@ -176,7 +176,6 @@ pub struct FunctionType {
     // 2. when we do scoping, we need to know the names of formal parameters
     //    (as opposed to concrete arguments).
     //    this is as good a place to store them as any.
-    // None represents an abstract parameter
     pub params: Vec<MetadataRef>,
     pub varargs: bool,
 }
@@ -429,7 +428,6 @@ pub(crate) mod tests {
                 //Type::Function(FunctionType),
                 //Type::Union(StructType),
                 //Type::Struct(StructType),
-                //Type::Bitfield(Vec<BitfieldType>),
             ]
         })
     }

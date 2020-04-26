@@ -197,21 +197,6 @@ impl Display for BinaryOp {
     }
 }
 
-impl Expr {
-    pub fn into_literal(self) -> Result<Literal, Expr> {
-        match self.expr {
-            ExprType::Literal(lit) => Ok(lit),
-            _ => Err(self),
-        }
-    }
-    pub fn is_constexpr(&self) -> bool {
-        match &self.expr {
-            ExprType::Literal(_) => true,
-            _ => false,
-        }
-    }
-}
-
 /* structs */
 /// The metadata stored for variables and function parameters.
 ///

@@ -1,9 +1,7 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 
-use crate::data::hir::{BinaryOp, Expr, ExprType};
-// TODO: architecture dependent stuff
-//use crate::arch::CHAR_BIT;
-const CHAR_BIT: u8 = 8;
+use crate::arch::CHAR_BIT;
+use crate::data::hir::*;
 use crate::data::lex::Literal::*;
 use crate::data::*;
 use std::ops::{Add, Div, Mul, Sub};
@@ -79,6 +77,24 @@ impl Expr {
             }
         } else {
             false
+        }
+    }
+    /// Return whether this expression is a constant expression
+    ///
+    /// Constant expressions have been evaluated at compile time
+    /// and can be used in static initializers, etc.
+    pub fn is_constexpr(&self) -> bool {
+        match self.expr {
+            ExprType::Literal(_) => true,
+            _ => false,
+        }
+    }
+
+    /// Returns a `Literal` if this is a literal, or the original expression otherwise
+    pub fn into_literal(self) -> Result<Literal, Expr> {
+        match self.expr {
+            ExprType::Literal(lit) => Ok(lit),
+            _ => Err(self),
         }
     }
     pub(crate) fn constexpr(self) -> CompileResult<Locatable<(Literal, Type)>> {

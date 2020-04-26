@@ -1,18 +1,12 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-#![allow(clippy::mem_replace_with_default)]
-
 mod decl;
 mod expr;
 mod stmt;
 
-use std::collections::{HashSet, VecDeque};
-use std::fmt;
+use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 use std::rc::Rc;
 
-pub(crate) use crate::analyze::Analyzer;
 use crate::data::*;
 use crate::data::{ast::ExternalDeclaration, hir::Scope, lex::Keyword};
 
@@ -27,14 +21,6 @@ impl<I: Iterator<Item = Result<Locatable<Token>, E>>, E: Into<CompileError>> Lex
     fn next(&mut self) -> Option<Lexeme> {
         Iterator::next(self).map(|res| res.map_err(Into::into))
     }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum TagEntry {
-    Struct(StructRef),
-    Union(StructRef),
-    // list of (name, value)s
-    Enum(Vec<(InternedStr, i64)>),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -288,14 +274,6 @@ impl<I: Lexer> Parser<I> {
         }
         None
     }
-    /* error handling functions */
-    fn semantic_err<S: Into<String>>(&mut self, msg: S, location: Location) {
-        self.error_handler
-            .push_back(CompileError::semantic(Locatable {
-                location,
-                data: msg.into(),
-            }));
-    }
     /*
      * If we're in an invalid state, try to recover.
      * Consume tokens until the end of a statement - either ';' or '}'
@@ -315,8 +293,6 @@ impl<I: Lexer> Parser<I> {
         if let Some(id) = self.match_id() {
             Ok(id)
         } else {
-            use std::borrow::Cow;
-
             let err = Err(Locatable {
                 data: SyntaxError::ExpectedId(self.peek_token().cloned()),
                 location: self.next_location(),
@@ -379,16 +355,6 @@ impl<I: Lexer> Parser<I> {
     }
 }
 
-impl std::fmt::Display for TagEntry {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            TagEntry::Enum(_) => write!(f, "enum"),
-            TagEntry::Struct(_) => write!(f, "struct"),
-            TagEntry::Union(_) => write!(f, "union"),
-        }
-    }
-}
-
 impl Token {
     fn same_kind(&self, other: &Self) -> bool {
         match (self, other) {
@@ -412,20 +378,7 @@ pub(crate) mod test {
     use proptest::prelude::*;
 
     pub(crate) type ParseType = CompileResult<Locatable<ExternalDeclaration>>;
-    pub(crate) fn parse(input: &str) -> Option<ParseType> {
-        let mut all = parse_all(input);
-        match all.len() {
-            0 => None,
-            1 => Some(all.remove(0)),
-            n => Some(Err(CompileError::semantic(Locatable {
-                location: match all.remove(1) {
-                    Ok(x) => x.location,
-                    Err(x) => x.location(),
-                },
-                data: format!("Expected exactly one statement, got {}", n),
-            }))),
-        }
-    }
+
     #[inline]
     pub(crate) fn parse_all(input: &str) -> Vec<ParseType> {
         parser(input).collect()
@@ -435,12 +388,6 @@ pub(crate) mod test {
         let mut lexer = cpp(input);
         let first: Locatable<Token> = lexer.next().unwrap().unwrap();
         Parser::new(first, lexer, false)
-    }
-
-    pub(crate) fn assert_same(left: &str, right: &str) {
-        let left: Vec<_> = parse_all(left).into_iter().map(Result::unwrap).collect();
-        let right: Vec<_> = parse_all(right).into_iter().map(Result::unwrap).collect();
-        assert_eq!(left, right);
     }
 
     prop_compose! {

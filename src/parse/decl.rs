@@ -1,5 +1,3 @@
-use counter::Counter;
-
 use super::*;
 use crate::data::ast::{
     self, Declaration, DeclarationSpecifier, Declarator, Expr, ExternalDeclaration, Initializer,
@@ -173,7 +171,6 @@ impl<I: Lexer> Parser<I> {
         mut start: Location,
     ) -> SyntaxResult<Locatable<DeclarationSpecifier>> {
         use crate::data::ast::StructSpecifier;
-        use crate::data::error::Warning;
 
         let name = self.match_id().map(|id| {
             start = start.merge(id.location);
@@ -662,19 +659,6 @@ impl InternalDeclarator {
         use crate::data::ast::DeclaratorType;
         use InternalDeclaratorType::*;
 
-        fn get_id(mut declarator: &InternalDeclarator) -> InternedStr {
-            loop {
-                match declarator.current {
-                    InternalDeclaratorType::Id(id) => return id,
-                    _ => {
-                        declarator = declarator
-                            .next
-                            .as_ref()
-                            .expect("should have been caught earlier")
-                    }
-                }
-            }
-        }
         let mut id = None;
         let mut current = DeclaratorType::End;
         let mut declarator = Some(self);
@@ -709,8 +693,6 @@ impl TryFrom<Keyword> for DeclarationSpecifier {
     #[rustfmt::skip]
     fn try_from(k: Keyword) -> Result<DeclarationSpecifier, ()> {
         use ast::UnitSpecifier;
-        use DeclarationSpecifier::*;
-        use Keyword::*;
 
         // TODO: get rid of this macro and store a `enum Keyword { Qualifier(Qualifier), etc. }` instead
         macro_rules! change_enum {

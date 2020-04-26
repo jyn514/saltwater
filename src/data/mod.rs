@@ -3,6 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::hash::Hash;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 pub mod error;
@@ -165,11 +166,15 @@ pub struct Metadata {
 }
 
 /// An identifier used to look up the metadata for a variable.
+///
+/// This cannot be shared across threads.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct MetadataRef(usize);
+// the PhantomData is so there will be a compile error when sharing across threads.
+// `*const` implements `!Send` and `!Sync`.
+pub struct MetadataRef(usize, PhantomData<*const MetadataStore>);
 
 thread_local!(
-    /// The global storage for all metadata.
+    /// The thread-local storage for all metadata.
     ///
     /// The type is read like so:
     /// RefCell: A container with interior mutability, used because `LocalKey`
@@ -185,7 +190,7 @@ impl MetadataStore {
     fn insert(&mut self, m: Metadata) -> MetadataRef {
         let i = self.0.len();
         self.0.push(Rc::new(m));
-        MetadataRef(i)
+        MetadataRef(i, PhantomData)
     }
     /// Guaranteed not to panic since `MetadataRef` is always valid
     fn get(&self, i: MetadataRef) -> Rc<Metadata> {

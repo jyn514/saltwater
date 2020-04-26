@@ -138,7 +138,6 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
         match (expr, *ret_type != Type::Void) {
             (None, false) => StmtType::Return(None),
             (None, true) => {
-                let err = format!("function '{}' does not return a value", self.metadata.id);
                 self.err(
                     SemanticError::MissingReturnValue(self.metadata.id),
                     location,

@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-
 mod expr;
 mod init;
 mod stmt;
@@ -76,8 +74,6 @@ impl<T: Lexer> Iterator for Analyzer<T> {
                 Err(err) => return Some(Err(err)),
                 Ok(decl) => decl,
             };
-            // Note that we need to store `next` so that we have the location in case it was empty.
-            let location = next.location;
             let decls = self.parse_external_declaration(next);
             // TODO: if an error occurs, should we still add the declaration to `pending`?
             self.pending.extend(decls);
@@ -420,10 +416,11 @@ impl<I: Lexer> Analyzer<I> {
                     (true, Some(TagEntry::Struct(s))) => Type::Struct(StructType::Named(name, *s)),
                     // `union s; union s;` or `union s { int i; }; union s`
                     (false, Some(TagEntry::Union(s))) => Type::Union(StructType::Named(name, *s)),
-                    (_, Some(other)) => {
+                    (_, Some(_)) => {
                         // `union s; struct s;`
                         if self.tag_scope.get_immediate(&name).is_some() {
                             let kind = if is_struct { "struct" } else { "union " };
+                            // TODO: say what the previous declaration was
                             let err = SemanticError::from(format!("use of '{}' with type tag '{}' that does not match previous struct declaration", name, kind));
                             self.error_handler.push_back(Locatable::new(err, location));
                             Type::Error
@@ -588,6 +585,7 @@ impl<I: Lexer> Analyzer<I> {
         saw_enum: &mut bool,
         location: Location,
     ) -> Type {
+        *saw_enum = true;
         let ast_members = match ast_members {
             Some(members) => members,
             None => {
@@ -600,9 +598,11 @@ impl<I: Lexer> Analyzer<I> {
                 };
                 match self.tag_scope.get(&name) {
                     Some(TagEntry::Enum(members)) => {
+                        *saw_enum = false;
                         return Type::Enum(Some(name), members.clone());
                     }
-                    Some(other) => {
+                    Some(_) => {
+                        // TODO: say what the previous type was
                         let err = SemanticError::from(format!("use of '{}' with type tag 'enum' that does not match previous struct declaration", name));
                         self.error_handler.push_back(Locatable::new(err, location));
                         return Type::Error;
@@ -616,7 +616,6 @@ impl<I: Lexer> Analyzer<I> {
         let mut members = vec![];
         for (name, maybe_value) in ast_members {
             if let Some(value) = maybe_value {
-                let location = value.location;
                 discriminant = Self::const_sint(self.parse_expr(value)).unwrap_or_else(|err| {
                     self.error_handler.push_back(err);
                     std::i64::MIN

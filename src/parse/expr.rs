@@ -1,4 +1,4 @@
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use super::*;
 use crate::data::ast::{Expr, ExprType, TypeName};
@@ -86,7 +86,7 @@ impl BinaryPrecedence {
 impl TryFrom<&Token> for BinaryPrecedence {
     type Error = ();
     fn try_from(t: &Token) -> Result<BinaryPrecedence, ()> {
-        use crate::data::lex::ComparisonToken::{self as Compare, *};
+        use crate::data::lex::ComparisonToken as Compare;
         use BinaryPrecedence::{self as Bin, *};
         use Token::*;
         Ok(match t {

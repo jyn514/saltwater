@@ -132,7 +132,7 @@ impl<T: Lexer> Analyzer<T> {
             BitwiseNot(inner) => self.bitwise_not(*inner),
             UnaryPlus(inner) => self.unary_add(*inner, true, expr.location),
             Negate(inner) => self.unary_add(*inner, false, expr.location),
-            LogicalNot(inner) => self.logical_not(*inner, expr.location),
+            LogicalNot(inner) => self.logical_not(*inner),
             LogicalAnd(left, right) => {
                 self.binary_helper(left, right, BinaryOp::LogicalAnd, Self::logical_bin_op)
             }
@@ -569,7 +569,7 @@ impl<T: Lexer> Analyzer<T> {
         let (target_type, array, index) = match (&left.ctype, &right.ctype) {
             (Type::Pointer(target, _), _) => ((**target).clone(), left, right),
             (_, Type::Pointer(target, _)) => ((**target).clone(), right, left),
-            (l, r) => {
+            (l, _) => {
                 self.err(SemanticError::NotAPointer(l.clone()), location);
                 return left;
             }
@@ -638,7 +638,7 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // !expr
-    fn logical_not(&mut self, expr: ast::Expr, location: Location) -> Expr {
+    fn logical_not(&mut self, expr: ast::Expr) -> Expr {
         let expr = self.parse_expr(expr);
         let boolean = expr.truthy(&mut self.error_handler);
         debug_assert_eq!(boolean.ctype, Type::Bool);
@@ -875,7 +875,7 @@ impl Type {
             Bool => Ok(false),
             // TODO: allow enums with values of UINT_MAX
             Enum(_, _) => Ok(true),
-            x => Err(()),
+            _ => Err(()),
         }
     }
 

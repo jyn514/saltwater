@@ -1,11 +1,9 @@
-use super::{Lexeme, Lexer, Parser, SyntaxResult};
+use super::{Lexer, Parser, SyntaxResult};
 use crate::data::*;
 use crate::data::{
     ast::{CompoundStatement, Declaration, Expr, ExternalDeclaration, Stmt, StmtType},
     lex::Keyword,
-    StorageClass,
 };
-use std::iter::Iterator;
 
 type StmtResult = SyntaxResult<Stmt>;
 

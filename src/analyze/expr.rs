@@ -156,6 +156,7 @@ impl<T: Lexer> Analyzer<T> {
     }
     // only meant for use with `parse_expr`
     // TODO: change ast::Expr to use `ExprType::Binary` as well
+    // TODO: these functions should have the locations of the parent expression, not the children
     #[allow(clippy::boxed_local)]
     fn binary_helper<F>(
         &mut self,
@@ -167,17 +168,9 @@ impl<T: Lexer> Analyzer<T> {
     where
         F: FnOnce(&mut Self, Expr, Expr, BinaryOp) -> Expr,
     {
-        let func = |a, b, this: &mut Self| expr_checker(this, a, b, op);
-        self.parse_binary(*left, *right, func)
-    }
-    // TODO: these functions should have the locations of the parent expression, not the children
-    fn parse_binary<F>(&mut self, left: ast::Expr, right: ast::Expr, f: F) -> Expr
-    where
-        F: FnOnce(Expr, Expr, &mut Self) -> Expr,
-    {
-        let left = self.parse_expr(left);
-        let right = self.parse_expr(right);
-        f(left, right, self)
+        let left = self.parse_expr(*left);
+        let right = self.parse_expr(*right);
+        expr_checker(self, left, right, op)
     }
     fn parse_integer_op(&mut self, left: Expr, right: Expr, op: BinaryOp) -> Expr {
         let non_scalar = if !left.ctype.is_integral() {

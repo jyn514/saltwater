@@ -4,8 +4,11 @@ use std::cmp::Ordering;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
+use crate::data::hir::BinaryOp;
 use crate::intern::InternedStr;
 
+// holds where a piece of code came from
+// should almost always be immutable
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Span {
     pub start: u32,
@@ -262,20 +265,21 @@ impl Literal {
 }
 
 impl AssignmentToken {
-    pub fn without_assignment(self) -> Token {
+    pub fn without_assignment(self) -> BinaryOp {
         use AssignmentToken::*;
+        use BinaryOp::*;
         match self {
-            Equal => Equal.into(), // there's not really a good behavior here...
-            AddEqual => Token::Plus,
-            SubEqual => Token::Minus,
-            MulEqual => Token::Star,
-            DivEqual => Token::Divide,
-            ModEqual => Token::Mod,
-            AndEqual => Token::Ampersand,
-            OrEqual => Token::BitwiseOr,
-            ShlEqual => Token::ShiftLeft,
-            ShrEqual => Token::ShiftRight,
-            XorEqual => Token::Xor,
+            Equal => panic!("can't call without_assignment on Equal"),
+            AddEqual => Add,
+            SubEqual => Sub,
+            MulEqual => Mul,
+            DivEqual => Div,
+            ModEqual => Mod,
+            AndEqual => BitwiseAnd,
+            OrEqual => BitwiseOr,
+            ShlEqual => Shl,
+            ShrEqual => Shr,
+            XorEqual => Xor,
         }
     }
 }

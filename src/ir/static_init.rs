@@ -44,11 +44,11 @@ impl<B: Backend> Compiler<B> {
                     .map_err(|_| format!("align of {} is greater than 256 bytes", metadata.id))
             })
             .map_err(err_closure)?;
-        let linkage = metadata.storage_class.try_into().map_err(err_closure)?;
         if align == 0 {
             // struct that was declared but never used
             return Ok(());
         }
+        let linkage = metadata.storage_class.try_into().map_err(err_closure)?;
         let id = self
             .module
             .declare_data(

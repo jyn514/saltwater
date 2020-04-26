@@ -172,6 +172,7 @@ impl<T: Lexer> Analyzer<T> {
         let right = self.parse_expr(*right);
         expr_checker(self, left, right, op)
     }
+    // left OP right, where OP is an operation that requires integral types
     fn parse_integer_op(&mut self, left: Expr, right: Expr, op: BinaryOp) -> Expr {
         let non_scalar = if !left.ctype.is_integral() {
             Some(&left.ctype)
@@ -192,6 +193,7 @@ impl<T: Lexer> Analyzer<T> {
             location,
         }
     }
+    // x
     fn parse_id(&mut self, name: InternedStr, location: Location) -> Expr {
         let mut pretend_zero = Expr::zero(location);
         pretend_zero.ctype = Type::Error;
@@ -202,6 +204,7 @@ impl<T: Lexer> Analyzer<T> {
             }
             Some(&symbol) => {
                 let meta = symbol.get();
+                // typedef int i; return i + 1;
                 if meta.storage_class == StorageClass::Typedef {
                     self.err(SemanticError::TypedefInExpressionContext, location);
                     return pretend_zero;
@@ -215,6 +218,7 @@ impl<T: Lexer> Analyzer<T> {
                         }
                     };
                     let enumerator = members.iter().find_map(mapper);
+                    // enum e { A }; return A;
                     if let Some(e) = enumerator {
                         return Expr {
                             ctype: Type::Enum(*ident, members.clone()),
@@ -223,11 +227,13 @@ impl<T: Lexer> Analyzer<T> {
                             expr: ExprType::Literal(Literal::Int(e)),
                         };
                     }
+                    // otherwise, `enum e { A } my_e; return my_e;`
                 }
                 Expr::id(symbol, location)
             }
         }
     }
+    // `left == right`, `left < right`, or similar
     fn relational_expr(
         &mut self,
         left: ast::Expr,
@@ -238,19 +244,25 @@ impl<T: Lexer> Analyzer<T> {
         let mut left = self.parse_expr(left);
         let mut right = self.parse_expr(right);
 
+        // i == i
         if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
             let tmp = Expr::binary_promote(left, right, &mut self.error_handler);
             left = tmp.0;
             right = tmp.1;
         } else {
             let (left_expr, right_expr) = (left.rval(), right.rval());
+            // p1 == p2
             if !((left_expr.ctype.is_pointer() && left_expr.ctype == right_expr.ctype)
                 // equality operations have different rules :(
                 || ((token == ComparisonToken::EqualEqual || token == ComparisonToken::NotEqual)
                     // shoot me now
+                    // (int*)p1 == (void*)p2
                     && ((left_expr.ctype.is_pointer() && right_expr.ctype.is_void_pointer())
+                        // (void*)p1 == (int*)p2
                         || (left_expr.ctype.is_void_pointer() && right_expr.ctype.is_pointer())
+                        // NULL == (int*)p2
                         || (left_expr.is_null() && right_expr.ctype.is_pointer())
+                        // (int*)p1 == NULL
                         || (left_expr.ctype.is_pointer() && right_expr.is_null()))))
             {
                 self.err(
@@ -273,6 +285,7 @@ impl<T: Lexer> Analyzer<T> {
             expr: ExprType::Binary(BinaryOp::Compare(token), Box::new(left), Box::new(right)),
         }
     }
+    // `left OP right`, where OP is Mul, Div, or Mod
     fn mul(&mut self, left: Expr, right: Expr, op: BinaryOp) -> Expr {
         let location = left.location.merge(right.location);
 
@@ -301,17 +314,20 @@ impl<T: Lexer> Analyzer<T> {
             expr: ExprType::Binary(op, Box::new(left), Box::new(right)),
         }
     }
+    // `a + b` or `a - b`
     // `op` should only be `Add` or `Sub`
     fn add(&mut self, mut left: Expr, mut right: Expr, op: BinaryOp) -> Expr {
         let is_add = op == BinaryOp::Add;
         let location = left.location.merge(right.location);
         match (&left.ctype, &right.ctype) {
+            // `p + i`
             (Type::Pointer(to, _), i)
             | (Type::Array(to, _), i) if i.is_integral() && to.is_complete() => {
                 let to = to.clone();
                 let (left, right) = (left.rval(), right.rval());
                 return self.pointer_arithmetic(left, right, &*to, location);
             }
+            // `i + p`
             (i, Type::Pointer(to, _))
                 // `i - p` for pointer p is not valid
             | (i, Type::Array(to, _)) if i.is_integral() && is_add && to.is_complete() => {
@@ -321,11 +337,13 @@ impl<T: Lexer> Analyzer<T> {
             }
             _ => {}
         };
+        // `i + i`
         let (ctype, lval) = if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
             let tmp = Expr::binary_promote(left, right, &mut self.error_handler);
             left = tmp.0;
             right = tmp.1;
             (left.ctype.clone(), false)
+        // `p1 - p2`
         // `p1 + p2` for pointers p1 and p2 is not valid
         } else if !is_add && left.ctype.is_pointer_to_complete_object() && left.ctype == right.ctype
         {
@@ -345,9 +363,11 @@ impl<T: Lexer> Analyzer<T> {
             expr: ExprType::Binary(op, Box::new(left), Box::new(right)),
         }
     }
+    // (int)i
     fn explicit_cast(&mut self, expr: ast::Expr, ctype: Type) -> Expr {
         let location = expr.location;
         let expr = self.parse_expr(expr).rval();
+        // (void)0;
         if ctype == Type::Void {
             // casting anything to void is allowed
             return Expr {
@@ -358,15 +378,20 @@ impl<T: Lexer> Analyzer<T> {
                 location,
             };
         }
+        // (struct s)1
         if !ctype.is_scalar() {
             self.err(SemanticError::NonScalarCast(ctype.clone()), location);
+        // (int*)1.0
         } else if expr.ctype.is_floating() && ctype.is_pointer()
+            // (float)(int*)p
             || expr.ctype.is_pointer() && ctype.is_floating()
         {
             self.err(SemanticError::FloatPointerCast(ctype.clone()), location);
+        // struct { int i; } s; (int)s
         } else if expr.ctype.is_struct() {
             // not implemented: galaga (https://github.com/jyn514/rcc/issues/98)
             self.err(SemanticError::StructCast, location);
+        // void f(); (int)f();
         } else if expr.ctype == Type::Void {
             self.err(SemanticError::VoidCast, location);
         }
@@ -377,6 +402,7 @@ impl<T: Lexer> Analyzer<T> {
             location,
         }
     }
+    // `base + index`, where `pointee` is the type of `*base`
     fn pointer_arithmetic(
         &mut self,
         base: Expr,
@@ -384,6 +410,7 @@ impl<T: Lexer> Analyzer<T> {
         pointee: &Type,
         location: Location,
     ) -> Expr {
+        // the idea is to desugar to `base + sizeof(base)*index`
         let offset = Expr {
             lval: false,
             location: index.location,
@@ -421,6 +448,7 @@ impl<T: Lexer> Analyzer<T> {
             expr: ExprType::Binary(BinaryOp::Add, Box::new(base), Box::new(offset)),
         }
     }
+    // `func(args)`
     fn func_call(&mut self, func: ast::Expr, args: Vec<ast::Expr>) -> Expr {
         let mut func = self.parse_expr(func);
         // if fp is a function pointer, fp() desugars to (*fp)()
@@ -450,6 +478,7 @@ impl<T: Lexer> Analyzer<T> {
         }
         // f() takes _any_ number of arguments
         if !functype.params.is_empty()
+            // `int f(int); f()` or `int f(int); f(1, 2)`
             && (args.len() < expected || args.len() > expected && !functype.varargs)
         {
             self.err(
@@ -461,9 +490,11 @@ impl<T: Lexer> Analyzer<T> {
         for (i, arg) in args.into_iter().enumerate() {
             let arg = self.parse_expr(arg);
             let promoted = match functype.params.get(i) {
+                // int f(int); f(1)
                 Some(expected) => arg
                     .rval()
                     .implicit_cast(&expected.get().ctype, &mut self.error_handler),
+                // `int f(); f(1)` or `int f(int, ...); f(1, 2)`
                 None => self.default_promote(arg),
             };
             promoted_args.push(promoted);
@@ -487,12 +518,14 @@ impl<T: Lexer> Analyzer<T> {
         match &expr.ctype {
             Type::Struct(stype) | Type::Union(stype) => {
                 let members = stype.members();
+                // struct s; s.a
                 if members.is_empty() {
                     self.err(
                         SemanticError::IncompleteDefinitionUsed(expr.ctype.clone()),
                         location,
                     );
                     expr
+                // struct s { int i; }; s.i
                 } else if let Some(member) = members.iter().find(|member| member.id == id) {
                     Expr {
                         ctype: member.ctype.clone(),
@@ -500,11 +533,13 @@ impl<T: Lexer> Analyzer<T> {
                         location,
                         expr: ExprType::Member(Box::new(expr), id),
                     }
+                // struct s { int i; }; s.j
                 } else {
                     self.err(SemanticError::NotAMember(id, expr.ctype.clone()), location);
                     expr
                 }
             }
+            // (1).a
             _ => {
                 self.err(SemanticError::NotAStruct(expr.ctype.clone()), location);
                 expr
@@ -544,6 +579,7 @@ impl<T: Lexer> Analyzer<T> {
                 AssignmentToken::SubEqual
             };
             self.assignment_expr(expr, rval, op, location)
+        // i++ requires support from the backend
         } else {
             Expr {
                 lval: false,
@@ -560,7 +596,9 @@ impl<T: Lexer> Analyzer<T> {
         let right = self.parse_expr(right).rval();
 
         let (target_type, array, index) = match (&left.ctype, &right.ctype) {
+            // p[i]
             (Type::Pointer(target, _), _) => ((**target).clone(), left, right),
+            // i[p]
             (_, Type::Pointer(target, _)) => ((**target).clone(), right, left),
             (l, _) => {
                 self.err(SemanticError::NotAPointer(l.clone()), location);
@@ -569,6 +607,7 @@ impl<T: Lexer> Analyzer<T> {
         };
         let mut addr = self.pointer_arithmetic(array, index, &target_type, location);
         addr.ctype = target_type;
+        // `p + i` -> `*(p + i)`
         addr.lval = true;
         addr
     }
@@ -688,6 +727,7 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
 
+    // `a = b` or `a += b`
     fn assignment_expr(
         &mut self,
         lval: Expr,
@@ -698,6 +738,7 @@ impl<T: Lexer> Analyzer<T> {
         if let Err(err) = lval.modifiable_lval() {
             self.err(err, location);
         }
+        // `a = b`
         if let lex::AssignmentToken::Equal = token {
             let mut rval = rval.rval();
             if rval.ctype != lval.ctype {
@@ -830,6 +871,7 @@ fn pointer_promote(left: &mut Expr, right: &mut Expr) -> bool {
         false
     }
 }
+
 impl Type {
     #[inline]
     fn is_void_pointer(&self) -> bool {
@@ -982,6 +1024,7 @@ impl Expr {
         }
     }
     fn is_null(&self) -> bool {
+        // TODO: I think we need to const fold this to allow `(void*)0`
         if let ExprType::Literal(token) = &self.expr {
             match token {
                 Literal::Int(0) | Literal::UnsignedInt(0) | Literal::Char(0) => true,
@@ -1004,6 +1047,8 @@ impl Expr {
     // Convert an expression to _Bool. Section 6.3.1.3 of the C standard:
     // "When any scalar value is converted to _Bool,
     // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
+    //
+    // TODO: this looks like the same as casting to _Bool, can we just offload to the backend instead?
     //
     // if (expr)
     pub(crate) fn truthy(mut self, error_handler: &mut ErrorHandler) -> Expr {
@@ -1110,14 +1155,20 @@ impl Expr {
         }
     }
 
+    // float f = (double)1.0
     pub(super) fn implicit_cast(self, ctype: &Type, error_handler: &mut ErrorHandler) -> Expr {
         let mut expr = self.rval();
         if &expr.ctype == ctype {
             expr
+        // int -> long
         } else if expr.ctype.is_arithmetic() && ctype.is_arithmetic()
+            // NULL -> int*
             || expr.is_null() && ctype.is_pointer()
+            // if ((int*)p)
             || expr.ctype.is_pointer() && ctype.is_bool()
+            // p -> void*
             || expr.ctype.is_pointer() && ctype.is_void_pointer()
+            // p -> char*
             || expr.ctype.is_pointer() && ctype.is_char_pointer()
         {
             Expr {
@@ -1126,6 +1177,7 @@ impl Expr {
                 lval: false,
                 ctype: ctype.clone(),
             }
+        // `NULL -> int*` or `void* -> int*` or `char* -> int*`
         } else if ctype.is_pointer()
             && (expr.is_null() || expr.ctype.is_void_pointer() || expr.ctype.is_char_pointer())
         {

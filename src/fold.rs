@@ -1,5 +1,3 @@
-#![allow(clippy::trivially_copy_pass_by_ref)]
-
 use crate::arch::CHAR_BIT;
 use crate::data::hir::*;
 use crate::data::lex::Literal::*;

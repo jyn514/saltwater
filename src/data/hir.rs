@@ -16,7 +16,6 @@ use crate::intern::InternedStr;
 pub type Stmt = Locatable<StmtType>;
 
 #[derive(Clone, Debug, PartialEq)]
-#[allow(clippy::large_enum_variant)]
 pub enum StmtType {
     Compound(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),

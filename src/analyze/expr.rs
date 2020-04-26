@@ -301,7 +301,7 @@ impl<T: Lexer> Analyzer<T> {
             expr: ExprType::Binary(op, Box::new(left), Box::new(right)),
         }
     }
-    // is_add should be set to `false` if this is a subtraction
+    // `op` should only be `Add` or `Sub`
     fn add(&mut self, mut left: Expr, mut right: Expr, op: BinaryOp) -> Expr {
         let is_add = op == BinaryOp::Add;
         let location = left.location.merge(right.location);

@@ -155,7 +155,7 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // only meant for use with `parse_expr`
-    // TODO: change ast::Expr to use `ExprType::Binary` as well
+    // TODO: change ast::Expr to use `ExprType::Binary` as well, which would make this unnecessary
     // TODO: these functions should have the locations of the parent expression, not the children
     #[allow(clippy::boxed_local)]
     fn binary_helper<F>(
@@ -194,10 +194,10 @@ impl<T: Lexer> Analyzer<T> {
     }
     fn parse_id(&mut self, name: InternedStr, location: Location) -> Expr {
         let mut pretend_zero = Expr::zero(location);
+        pretend_zero.ctype = Type::Error;
         match self.scope.get(&name) {
             None => {
                 self.err(SemanticError::UndeclaredVar(name), location);
-                pretend_zero.ctype = Type::Error;
                 pretend_zero
             }
             Some(&symbol) => {

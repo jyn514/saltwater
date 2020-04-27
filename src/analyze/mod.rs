@@ -158,9 +158,8 @@ impl<I: Lexer> Analyzer<I> {
 
             let id = d.data.declarator.id;
             let id = id.expect("declarations should never be abstract");
-            if sc == StorageClass::Typedef {
-                self.declarations.typedefs.insert(id, ());
-            } else if ctype == Type::Void {
+            // NOTE: the parser handles typedefs on its own
+            if ctype == Type::Void && sc != StorageClass::Typedef {
                 // TODO: catch this error for types besides void?
                 self.err(SemanticError::VoidType, location);
                 ctype = Type::Error;

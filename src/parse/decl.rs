@@ -81,11 +81,20 @@ impl<I: Lexer> Parser<I> {
             return Ok(Locatable::new(ExternalDeclaration::Function(def), location));
         }
         let mut decls = vec![declarator];
+        let has_typedef = specifiers
+            .iter()
+            .any(|s| *s == DeclarationSpecifier::Unit(crate::data::ast::UnitSpecifier::Typedef));
         while self.match_next(&Token::Semicolon).is_none() {
             self.expect(Token::Comma)?;
             let decl = self.init_declarator()?;
             location = location.merge(decl.location);
             decls.push(decl);
+        }
+        if has_typedef {
+            // `int *;` is caught later
+            for id in decls.iter().filter_map(|d| d.data.declarator.id) {
+                self.typedefs.insert(id, ());
+            }
         }
         let declaration = Declaration {
             specifiers,

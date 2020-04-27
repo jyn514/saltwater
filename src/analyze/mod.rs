@@ -189,6 +189,7 @@ impl<I: Lexer> Analyzer<I> {
     }
     #[cfg(test)]
     #[inline(always)]
+    // used only for testing, so that I can keep `parse_typename` private most of the time
     pub(crate) fn parse_typename_test(&mut self, ctype: ast::TypeName, location: Location) -> Type {
         self.parse_typename(ctype, location)
     }
@@ -237,7 +238,7 @@ impl<I: Lexer> Analyzer<I> {
         // instead, we see how many times each specifier is present
         // however, for some specifiers this doesn't really make sense:
         // if we see `struct s { int i; }` twice in a row,
-        // it's more likely that the user forgot a semicolon in between than try to make some weird double struct type.
+        // it's more likely that the user forgot a semicolon in between than tried to make some weird double struct type.
         // so: count the specifiers that are keywords and store the rest somewhere out of the way
 
         // TODO: initialization is a mess
@@ -245,8 +246,11 @@ impl<I: Lexer> Analyzer<I> {
         // Now that we've separated this into unit specifiers and compound specifiers,
         // see if we can pick up the proper types and qualifiers.
         let signed = match (counter.get(&Signed), counter.get(&Unsigned)) {
+            // `int i` or `signed i`
             (None, None) | (Some(_), None) => true,
+            // `unsigned i`
             (None, Some(_)) => false,
+            // `unsigned signed i`
             (Some(_), Some(_)) => {
                 self.err(SemanticError::ConflictingSigned, location);
                 true

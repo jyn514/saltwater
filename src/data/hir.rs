@@ -330,16 +330,24 @@ impl Display for StorageClass {
 
 impl Display for Qualifiers {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match (self.c_const, self.volatile) {
-                (true, true) => "const volatile",
-                (true, false) => "const",
-                (false, true) => "volatile",
-                (false, false) => "",
-            }
-        )
+        let mut basic_quals = match (self.c_const, self.volatile) {
+            (true, true) => "const volatile",
+            (true, false) => "const",
+            (false, true) => "volatile",
+            (false, false) => "",
+        }
+        .to_owned();
+        let func_quals = match (self.func.inline, self.func.no_return) {
+            (true, true) => "inline _Noreturn",
+            (true, false) => "inline",
+            (false, true) => "_Noreturn",
+            (false, false) => "",
+        };
+        if basic_quals != "" && func_quals != "" {
+            basic_quals.push(' ');
+        }
+        basic_quals.push_str(func_quals);
+        write!(f, "{}", basic_quals)
     }
 }
 

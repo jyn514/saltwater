@@ -1046,6 +1046,7 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
         location: Location,
     ) -> (MetadataRef, Vec<Stmt>) {
         let parsed_func = analyzer.parse_type(func.specifiers, func.declarator.into(), location);
+        // rcc ignores `inline` and `_Noreturn`
         if parsed_func.qualifiers != Qualifiers::default() {
             analyzer.error_handler.warn(
                 Warning::FunctionQualifiersIgnored(parsed_func.qualifiers),
@@ -1055,31 +1056,29 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
         let sc = match parsed_func.storage_class {
             None => StorageClass::Extern,
             Some(sc @ StorageClass::Extern) | Some(sc @ StorageClass::Static) => sc,
+            // auto int f();
             Some(other) => {
                 analyzer.err(SemanticError::InvalidFuncStorageClass(other), location);
                 StorageClass::Extern
             }
         };
         let metadata = Metadata {
-            // TODO: is it possible to remove this clone?
-            // if we made params store `MetadataRef` instead of `Metadata`
-            // we could use `func_type.params.iter()` instead of `into_iter()`.
             ctype: parsed_func.ctype.clone(),
             id: func.id,
             qualifiers: parsed_func.qualifiers,
             storage_class: sc,
         };
-        let metadata = analyzer.declare(metadata, true, location);
+        let symbol = analyzer.declare(metadata, true, location);
         let func_type = match parsed_func.ctype {
             Type::Function(ftype) => ftype,
             _ => unreachable!(),
         };
+        // used for figuring out what casts `return 1;` should make
         let tmp_metadata = FunctionData {
             location,
             id: func.id,
             return_type: *func_type.return_type,
         };
-        // TODO: add this function into the global scope
         assert!(analyzer.scope.is_global());
         assert!(analyzer.tag_scope.is_global());
         let mut func_analyzer = FunctionAnalyzer {
@@ -1090,6 +1089,7 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
         for (i, param) in func_type.params.into_iter().enumerate() {
             let meta = param.get();
             if meta.id == InternedStr::default() && meta.ctype != Type::Void {
+                // int f(int) {}
                 func_analyzer.err(
                     SemanticError::MissingParamName(i, meta.ctype.clone()),
                     location,
@@ -1104,11 +1104,11 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
             .into_iter()
             .map(|s| func_analyzer.parse_stmt(s))
             .collect();
-        // TODO: this should be the end of the function, not the start
+        // TODO: this location should be the end of the function, not the start
         func_analyzer.leave_scope(location);
         assert!(analyzer.tag_scope.is_global());
         assert!(analyzer.scope.is_global());
-        (metadata, stmts)
+        (symbol, stmts)
     }
 }
 
@@ -1127,9 +1127,11 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 Type::Struct(StructType::Named(name, members))
                 | Type::Union(StructType::Named(name, members)) => {
                     if members.get().is_empty()
+                        // `extern struct s my_s;` and `typedef struct s S;` are fine
                         && object.storage_class != StorageClass::Extern
                         && object.storage_class != StorageClass::Typedef
                     {
+                        // struct s my_s;
                         self.analyzer.error_handler.error(
                             SemanticError::ForwardDeclarationIncomplete(*name, object.id),
                             location,

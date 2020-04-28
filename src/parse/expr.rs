@@ -197,14 +197,43 @@ impl<I: Lexer> Parser<I> {
     fn unary_expr(&mut self) -> SyntaxResult<Expr> {
         // prefix expressions
         let mut prefixes = Vec::new();
-        while let Some(Locatable {
-            data: constructor,
-            location,
-        }) = self.match_prefix_operator()
-        {
-            prefixes.push((constructor, location));
-        }
-        let mut inner = self.primary_expr()?;
+        // hack: `sizeof` can be either a unary or primary expression, so we special-case it
+        let mut inner = loop {
+            if let Some(Locatable {
+                data: constructor,
+                location,
+            }) = self.match_prefix_operator()
+            {
+                prefixes.push((constructor, location));
+            // these keywords can be followed by either a type name or an expression
+            } else if let Some(keyword) = self.match_keywords(&[Keyword::Sizeof, Keyword::Alignof])
+            {
+                // `sizeof(int)` is a primary expr
+                if let Some(mut ctype) = self.parenthesized_type()? {
+                    ctype.location = keyword.location.merge(ctype.location);
+                    let constructor = if keyword.data == Keyword::Sizeof {
+                        ExprType::SizeofType
+                    } else {
+                        ExprType::AlignofType
+                    };
+                    // short-circuit here
+                    break self.postfix_expr(ctype.map(constructor))?;
+                // `sizeof +1` is a unary expr
+                } else {
+                    let constructor = if keyword.data == Keyword::Sizeof {
+                        ExprType::SizeofExpr
+                    } else {
+                        ExprType::AlignofExpr
+                    };
+                    prefixes.push((
+                        Box::new(move |a| constructor(Box::new(a))),
+                        keyword.location,
+                    ));
+                }
+            } else {
+                break self.primary_expr()?;
+            }
+        };
         while let Some((constructor, location)) = prefixes.pop() {
             inner = Locatable::new(constructor(inner), location);
         }
@@ -226,26 +255,6 @@ impl<I: Lexer> Parser<I> {
             let end_loc = self.expect(Token::RightParen)?.location;
             inner.location = paren.location.merge(&end_loc);
             inner
-        // these keywords can be followed by either a type name or an expression
-        } else if let Some(keyword) = self.match_keywords(&[Keyword::Sizeof, Keyword::Alignof]) {
-            if let Some(mut ctype) = self.parenthesized_type()? {
-                ctype.location = keyword.location.merge(ctype.location);
-                let constructor = if keyword.data == Keyword::Sizeof {
-                    ExprType::SizeofType
-                } else {
-                    ExprType::AlignofType
-                };
-                ctype.map(constructor)
-            } else {
-                let inner = self.unary_expr()?;
-                let location = keyword.location.merge(inner.location);
-                let constructor = if keyword.data == Keyword::Sizeof {
-                    ExprType::SizeofExpr
-                } else {
-                    ExprType::AlignofExpr
-                };
-                Locatable::new(constructor(Box::new(inner)), location)
-            }
         } else if let Some(loc) = self.match_id() {
             loc.map(ExprType::Id)
         } else if let Some(literal) = self.match_literal() {
@@ -446,5 +455,10 @@ mod test {
         assert_expr_display("sizeof 1 + 2", "(sizeof(1)) + (2)");
         // sizeof(int) takes precedence over (int)1
         assert_expr_display("sizeof (int)1 + 2", "sizeof(int)");
+    }
+    #[test]
+    fn sizeof() {
+        assert_same("sizeof(int)++", "(sizeof(int))++");
+        assert_same("++sizeof(int)", "++(sizeof(int))");
     }
 }

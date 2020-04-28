@@ -204,7 +204,7 @@ impl<I: Lexer> Parser<I> {
         {
             prefixes.push((constructor, location));
         }
-        let mut inner = self.postfix_expr()?;
+        let mut inner = self.primary_expr()?;
         while let Some((constructor, location)) = prefixes.pop() {
             inner = Locatable::new(constructor(inner), location);
         }
@@ -215,7 +215,7 @@ impl<I: Lexer> Parser<I> {
     //
     // TODO: `sizeof` and `alignof` should be unary expressions, not primary expressions
     #[inline]
-    fn postfix_expr(&mut self) -> SyntaxResult<Expr> {
+    fn primary_expr(&mut self) -> SyntaxResult<Expr> {
         // primary expression
         // this must be an expression since we already consumed all the prefix expressions
         let primary = if let Some(paren) = self.match_next(&Token::LeftParen) {
@@ -253,9 +253,12 @@ impl<I: Lexer> Parser<I> {
         } else {
             return Err(self.next_location().with(SyntaxError::MissingPrimary));
         };
-        let mut expr = primary;
-        // postfix expressions
-        // fortunately, they're all the same precedence
+        self.postfix_expr(primary)
+    }
+
+    // `expr` should be a primary expression
+    fn postfix_expr(&mut self, mut expr: Expr) -> SyntaxResult<Expr> {
+        // fortunately, all postfix expressions have the same precedence
         while let Some(Locatable {
             data: postfix_op,
             location,

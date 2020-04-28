@@ -307,7 +307,6 @@ impl<I: Lexer> Analyzer<I> {
             (Bool, Type::Bool),
             (Char, Type::Char(signed)),
             (Short, Type::Short(signed)),
-            (Int, Type::Int(signed)),
             // already handled `long` when we handled `long long`
             (Float, Type::Float),
             // NOTE: if we saw `long double` before, we'll set `ctype` to `double` now
@@ -317,13 +316,31 @@ impl<I: Lexer> Analyzer<I> {
             (VaList, Type::VaList),
         ] {
             if counter.get(&spec).is_some() {
-                if let Some(existing) = ctype {
-                    self.err(
-                        SemanticError::ConflictingType(existing, new_ctype.clone()),
-                        location,
-                    );
+                match (spec, ctype) {
+                    // `short int` is valid
+                    (_, None) | (Short, Some(Type::Int(_))) => {}
+                    (_, Some(existing)) => {
+                        self.err(
+                            SemanticError::ConflictingType(existing, new_ctype.clone()),
+                            location,
+                        );
+                    }
                 }
                 ctype = Some(new_ctype);
+            }
+        }
+        if counter.get(&Int).is_some() {
+            match ctype {
+                None => ctype = Some(Type::Int(signed)),
+                // `long int` is valid
+                Some(Type::Short(_)) | Some(Type::Long(_)) => {}
+                Some(existing) => {
+                    self.err(
+                        SemanticError::ConflictingType(existing, Type::Int(signed)),
+                        location,
+                    );
+                    ctype = Some(Type::Int(signed));
+                }
             }
         }
         let mut declared_compound_type = false;
@@ -1389,12 +1406,19 @@ pub(crate) mod test {
             })
         ));
         assert!(match_type(decl("const volatile int f;"), Type::Int(true)));
+        assert!(match_type(decl("long double d;"), Type::Double));
+        assert!(match_type(decl("short int i;"), Type::Short(true)));
+        assert!(match_type(decl("long int i;"), Type::Long(true)));
+        assert!(match_type(decl("long long int i;"), Type::Long(true)));
     }
     #[test]
     fn test_bad_decl_specs() {
         assert!(maybe_decl("int;").is_none());
         for s in &[
             "char char i;",
+            "char int i",
+            "_Bool int i",
+            "float int i",
             "char long i;",
             "long char i;",
             "float char i;",

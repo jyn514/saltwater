@@ -820,7 +820,7 @@ impl<'a> PreProcessor<'a> {
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn cpp_expr(&mut self) -> Result<Expr, CompileError> {
         let start = self.offset();
-        let defined = InternedStr::get_or_intern("defined");
+        let defined = "defined".into();
 
         let lex_tokens = self.tokens_until_newline();
         let mut cpp_tokens = Vec::with_capacity(lex_tokens.len());
@@ -840,9 +840,18 @@ impl<'a> PreProcessor<'a> {
                     Ok(location.with(Token::Literal(literal)))
                 }
                 Ok(Locatable {
-                    data: Token::Id(_),
+                    data: Token::Id(name),
                     location,
-                }) => Ok(location.with(Token::Literal(Literal::Int(0)))),
+                }) => match self.replace_id(name, location) {
+                    None => continue,
+                    Some(Err(err)) => Err(err),
+                    Some(Ok(mut token)) => {
+                        if let Token::Id(_) = &token.data {
+                            token.data = Token::Literal(Literal::Int(0));
+                        }
+                        Ok(token)
+                    }
+                },
                 _ => token,
             };
             cpp_tokens.push(token);
@@ -1520,6 +1529,20 @@ d
 #endif
 ";
         assert_err!(src, CppError::UnexpectedElse, "duplicate else",);
+    }
+    #[test]
+    fn elif() {
+        let src = "
+            #define __WORDSIZE 64
+            #if 0
+                wrong1
+            #elif __WORDSIZE == 64
+                right
+            #else
+                wrong2
+            #endif
+        ";
+        assert_same(src, "right");
     }
     #[test]
     fn function_body_replacement() {

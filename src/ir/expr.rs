@@ -492,7 +492,6 @@ impl<B: Backend> Compiler<B> {
         }
         // scalar assignment
         let target_val = target.ir_val;
-        let value = value;
         builder
             .ins()
             .store(MemFlags::new(), value.ir_val, target_val, 0);

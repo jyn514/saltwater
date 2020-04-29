@@ -80,7 +80,7 @@ pub enum Keyword {
     Struct,
     Enum,
     // the `i` in `typedef int i;`
-    UserTypedef(InternedStr),
+    UserType(InternedStr),
 
     // weird types
     Bool,

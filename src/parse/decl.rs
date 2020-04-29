@@ -146,7 +146,7 @@ impl<I: Lexer> Parser<I> {
                 Keyword::Struct => self.struct_specifier(true, location)?,
                 Keyword::Union => self.struct_specifier(false, location)?,
                 Keyword::Enum => self.enum_specifier(location)?,
-                Keyword::UserTypedef(name) => {
+                Keyword::UserType(name) => {
                     // absolute hack: allow awful code like `typedef int I; { I I; }`
                     if !seen_typedef {
                         seen_typedef = true;
@@ -743,7 +743,7 @@ impl Keyword {
             // complex type specifier
             | Struct | Union | Enum | VaList | Complex | Imaginary
             // user-defined type
-            | UserTypedef(_)
+            | UserType(_)
             // storage class
             | Extern | Static | Auto | Register | Typedef
             // qualifier

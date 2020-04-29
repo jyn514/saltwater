@@ -182,7 +182,7 @@ impl<I: Lexer> Parser<I> {
                     // https://doc.rust-lang.org/nomicon/lifetime-mismatch.html#limits-of-lifetimes
                     if let Token::Id(id) = token.data {
                         if self.typedefs.get(&id).is_some() {
-                            token.data = Token::Keyword(Keyword::UserTypedef(id));
+                            token.data = Token::Keyword(Keyword::UserType(id));
                         }
                     }
                     break Some(token);
@@ -228,7 +228,7 @@ impl<I: Lexer> Parser<I> {
     }
     fn match_id(&mut self) -> Option<Locatable<InternedStr>> {
         match self.peek_token() {
-            Some(&Token::Id(name)) | Some(&Token::Keyword(Keyword::UserTypedef(name))) => {
+            Some(&Token::Id(name)) | Some(&Token::Keyword(Keyword::UserType(name))) => {
                 let location = self.next_token().unwrap().location;
                 Some(Locatable::new(name, location))
             }

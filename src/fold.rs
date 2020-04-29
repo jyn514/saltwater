@@ -582,12 +582,11 @@ fn shift_left(
     }
 }
 
-#[cfg(never)]
+#[cfg(test)]
 mod tests {
-    use crate::analyze::{test::analyze_expr, Analyzer};
+    use crate::analyze::test::analyze_expr;
     use crate::data::hir::Expr;
     use crate::data::*;
-    use crate::test::parser;
 
     fn test_const_fold(s: &str) -> CompileResult<Expr> {
         analyze_expr(s).unwrap().const_fold()

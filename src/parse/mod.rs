@@ -17,6 +17,7 @@ type SyntaxResult<T> = Result<T, Locatable<SyntaxError>>;
 pub trait Lexer {
     fn next(&mut self) -> Option<Lexeme>;
 }
+
 impl<I: Iterator<Item = Result<Locatable<Token>, E>>, E: Into<CompileError>> Lexer for I {
     fn next(&mut self) -> Option<Lexeme> {
         Iterator::next(self).map(|res| res.map_err(Into::into))

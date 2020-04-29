@@ -21,6 +21,7 @@ pub(crate) enum TagEntry {
     Enum(Vec<(InternedStr, i64)>),
 }
 
+/// Used mostly for holding scopes and error handler. Implements `Iterator`.
 pub struct Analyzer<T: Lexer> {
     declarations: Parser<T>,
     // in case a `Declaration` has multiple declarators
@@ -109,6 +110,9 @@ impl<I: Lexer> Analyzer<I> {
     fn warn(&mut self, w: Warning, l: Location) {
         self.error_handler.warn(w, l);
     }
+    /// 6.9 External Definitions
+    ///
+    /// Either a function or a list of declarations.
     fn parse_external_declaration(
         &mut self,
         next: Locatable<ast::ExternalDeclaration>,
@@ -131,6 +135,7 @@ impl<I: Lexer> Analyzer<I> {
             }
         }
     }
+    /// A list of declarations: `int i, j, k;`
     fn parse_declaration(
         &mut self,
         declaration: ast::Declaration,
@@ -192,21 +197,30 @@ impl<I: Lexer> Analyzer<I> {
     pub(crate) fn parse_typename_test(&mut self, ctype: ast::TypeName, location: Location) -> Type {
         self.parse_typename(ctype, location)
     }
-    // TODO: I don't think this is a very good abstraction
+    /// Perform checks for parsing a single type name.
+    ///
+    /// Type names are used most often in casts: `(int)i`
+    /// This allows `int` or `int *` or `int (*)()`, but not `int i, j;` or `int i`
+    ///
+    /// 6.7.7 Type names
     fn parse_typename(&mut self, ctype: ast::TypeName, location: Location) -> Type {
         let parsed = self.parse_type(ctype.specifiers, ctype.declarator.decl, location);
         // TODO: should these be syntax errors instead?
+        // extern int
         if let Some(sc) = parsed.storage_class {
             self.err(SemanticError::IllegalStorageClass(sc), location);
         }
+        // const int
         if parsed.qualifiers != Qualifiers::default() {
             self.warn(Warning::IgnoredQualifier(parsed.qualifiers), location);
         }
+        // int i
         if let Some(id) = ctype.declarator.id {
             self.err(SemanticError::IdInTypeName(id), location);
         }
         parsed.ctype
     }
+    /// Parse a single type, given the specifiers and declarator.
     fn parse_type(
         &mut self,
         specifiers: Vec<ast::DeclarationSpecifier>,
@@ -225,6 +239,15 @@ impl<I: Lexer> Analyzer<I> {
 
         specs
     }
+    /// The specifiers for a declaration: `const extern long int`
+    ///
+    /// Note that specifiers are also used for declaring structs, such as
+    /// ```c
+    /// struct s { int i; };
+    /// ```
+    /// Normally, we warn when a declaration is empty,
+    /// but if we declared a struct, union, or enum, then no warning is emitted.
+    /// This is kept track of by `declared_compound_type`.
     fn parse_specifiers(
         &mut self,
         specifiers: Vec<ast::DeclarationSpecifier>,
@@ -240,7 +263,7 @@ impl<I: Lexer> Analyzer<I> {
         // it's more likely that the user forgot a semicolon in between than tried to make some weird double struct type.
         // so: count the specifiers that are keywords and store the rest somewhere out of the way
 
-        // TODO: initialization is a mess
+        // 6.7.2 Type specifiers
         let (counter, compounds) = count_specifiers(specifiers, &mut self.error_handler, location);
         // Now that we've separated this into unit specifiers and compound specifiers,
         // see if we can pick up the proper types and qualifiers.
@@ -275,6 +298,7 @@ impl<I: Lexer> Analyzer<I> {
                 }
             }
         }
+        // 6.7.3 Type qualifiers
         let qualifiers = Qualifiers {
             c_const: counter.get(&Const).is_some(),
             volatile: counter.get(&Volatile).is_some(),
@@ -283,6 +307,7 @@ impl<I: Lexer> Analyzer<I> {
                 no_return: counter.get(&NoReturn).is_some(),
             },
         };
+        // 6.7.1 Storage-class specifiers
         let mut storage_class = None;
         for (spec, sc) in &[
             (Auto, StorageClass::Auto),
@@ -301,6 +326,7 @@ impl<I: Lexer> Analyzer<I> {
                 storage_class = Some(*sc);
             }
         }
+        // back to type specifiers
         // TODO: maybe use `iter!` macro instead of `vec!` to avoid an allocation?
         // https://play.rust-lang.org/?gist=0535aa4f749a14cb1b28d658446f3c13
         for (spec, new_ctype) in vec![
@@ -400,6 +426,7 @@ impl<I: Lexer> Analyzer<I> {
             declared_compound_type,
         }
     }
+    // 6.7.2.1 Structure and union specifiers
     fn struct_specifier(
         &mut self,
         struct_spec: ast::StructSpecifier,
@@ -519,8 +546,11 @@ impl<I: Lexer> Analyzer<I> {
         }
 
         let mut parsed_members = Vec::new();
+        // A member of a structure or union may have any complete object type other than a variably modified type.
         for ast::StructDeclarator { decl, bitfield } in members.declarators {
             let decl = match decl {
+                // 12 A bit-field declaration with no declarator, but only a colon and a width, indicates an unnamed bit-field.
+                // TODO: this should give an error if `bitfield` is None.
                 None => continue,
                 Some(d) => d,
             };
@@ -603,6 +633,7 @@ impl<I: Lexer> Analyzer<I> {
         }
         parsed_members
     }
+    // 6.7.2.2 Enumeration specifiers
     fn enum_specifier(
         &mut self,
         enum_name: Option<InternedStr>,
@@ -707,7 +738,17 @@ impl<I: Lexer> Analyzer<I> {
         }
         ctype
     }
-    // struct s;
+    /// Used for forward declaration of structs and unions.
+    ///
+    /// Does not correspond to any grammar type.
+    /// e.g. `struct s;`
+    ///
+    /// See also 6.7.2.3 Tags:
+    /// > A declaration of the form `struct-or-union identifier ;`
+    /// > specifies a structure or union type and declares the identifier as a tag of that type.
+    /// > If a type specifier of the form `struct-or-union identifier`
+    /// > occurs other than as part of one of the above forms, and no other declaration of the identifier as a tag is visible,
+    /// > then it declares an incomplete structure or union type, and declares the identifier as the tag of that type.
     fn forward_declaration(
         &mut self,
         kind: Keyword,
@@ -737,6 +778,11 @@ impl<I: Lexer> Analyzer<I> {
     }
     /// Parse the declarator for a variable, given a starting type.
     /// e.g. for `int *p`, takes `start: Type::Int(true)` and returns `Type::Pointer(Type::Int(true))`
+    ///
+    /// The parser generated a linked list `DeclaratorType`,
+    /// which we now transform into the recursive `Type`.
+    ///
+    /// 6.7.6 Declarators
     fn parse_declarator(
         &mut self,
         current: Type,
@@ -752,8 +798,11 @@ impl<I: Lexer> Analyzer<I> {
                 use UnitSpecifier::*;
 
                 let inner = self.parse_declarator(current, *to, location);
+                // we reuse `count_specifiers` even though we really only want the qualifiers
                 let (counter, compounds) =
                     count_specifiers(qualifiers, &mut self.error_handler, location);
+                // *const volatile
+                // TODO: this shouldn't allow `inline` or `_Noreturn`
                 let qualifiers = Qualifiers {
                     c_const: counter.get(&Const).is_some(),
                     volatile: counter.get(&Volatile).is_some(),
@@ -764,10 +813,12 @@ impl<I: Lexer> Analyzer<I> {
                 };
                 for &q in counter.keys() {
                     if !q.is_qualifier() {
+                        // *extern
                         self.err(SemanticError::NotAQualifier(q.into()), location);
                     }
                 }
                 for spec in compounds {
+                    // *struct s {}
                     self.err(SemanticError::NotAQualifier(spec), location);
                 }
                 Type::Pointer(Box::new(inner), qualifiers)
@@ -931,6 +982,14 @@ impl<I: Lexer> Analyzer<I> {
             )),
         }
     }
+    /// Given some variable that we've already parsed (`decl`), perform various checks and add it to the current scope.
+    ///
+    /// In particular, this checks that
+    /// - for any function `main()`, it has a signature compatible with that required by the C standard
+    /// - either this variable has not yet been seen in this scope
+    ///     - or it is a global variable that is compatible with the previous declaration (see below)
+    ///
+    /// This returns an opaque index to the `Metadata`.
     fn declare(&mut self, mut decl: Metadata, init: bool, location: Location) -> MetadataRef {
         if decl.id == "main".into() {
             if let Type::Function(ftype) = &decl.ctype {
@@ -1033,6 +1092,9 @@ impl Type {
     }
 }
 
+/// Analyze a single function
+///
+/// This is separate from `Analyzer` so that `metadata` does not have to be an `Option`.
 struct FunctionAnalyzer<'a, T: Lexer> {
     /// the function we are currently compiling.
     /// used for checking return types

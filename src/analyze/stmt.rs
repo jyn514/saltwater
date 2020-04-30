@@ -14,6 +14,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
         // ugh so much boilerplate
         let data = match stmt.data {
             Compound(stmts) => {
+                // 6.2.1 Scopes of identifiers
                 self.enter_scope();
                 let mut parsed = Vec::new();
                 for inner in stmts {
@@ -22,6 +23,9 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 self.leave_scope(stmt.location);
                 S::Compound(parsed)
             }
+            // 6.8.3 Expression and null statements
+            Expr(expr) => S::Expr(self.parse_expr(expr)),
+            // 6.8.4.1 The if statement
             If(condition, then, otherwise) => {
                 let condition = self
                     .parse_expr(condition)
@@ -30,6 +34,19 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 let otherwise = otherwise.map(|s| Box::new(self.parse_stmt(*s)));
                 S::If(condition, Box::new(then), otherwise)
             }
+            // 6.8.4.2 The switch statement
+            Switch(value, body) => {
+                let value = self.parse_expr(value).rval();
+                if !value.ctype.is_integral() {
+                    self.err(
+                        SemanticError::NonIntegralSwitch(value.ctype.clone()),
+                        stmt.location,
+                    )
+                }
+                let body = self.parse_stmt(*body);
+                S::Switch(value, Box::new(body))
+            }
+            // 6.8.5.2 The do statement
             Do(body, condition) => {
                 let body = self.parse_stmt(*body);
                 let condition = self
@@ -37,6 +54,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                     .truthy(&mut self.analyzer.error_handler);
                 S::Do(Box::new(body), condition)
             }
+            // 6.8.5.1 The while statement
             While(condition, body) => {
                 let condition = self
                     .parse_expr(condition)
@@ -44,6 +62,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 let body = self.parse_stmt(*body);
                 S::While(condition, Box::new(body))
             }
+            // 6.8.5.3 The for statement
             For {
                 initializer,
                 condition,
@@ -62,29 +81,23 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 self.leave_scope(stmt.location);
                 S::For(Box::new(initializer), condition, post_loop, Box::new(body))
             }
-            Switch(value, body) => {
-                let value = self.parse_expr(value).rval();
-                if !value.ctype.is_integral() {
-                    self.err(
-                        SemanticError::NonIntegralSwitch(value.ctype.clone()),
-                        stmt.location,
-                    )
-                }
-                let body = self.parse_stmt(*body);
-                S::Switch(value, Box::new(body))
-            }
-            Expr(expr) => S::Expr(self.parse_expr(expr)),
-            Return(value) => self.return_statement(value, stmt.location),
+            // 6.8.1 Labeled statements
             // TODO: all of these should have semantic checking here, not in the backend
             Label(name, inner) => {
                 let inner = self.parse_stmt(*inner);
                 S::Label(name, Box::new(inner))
             }
             Case(expr, inner) => self.case_statement(*expr, *inner, stmt.location),
+            // 6.8.1 Labeled statements
             Default(inner) => S::Default(Box::new(self.parse_stmt(*inner))),
+            // 6.8.6.1 The goto statement
             Goto(label) => S::Goto(label),
+            // 6.8.6.2 The continue statement
             Continue => S::Continue,
+            // 6.8.6.3 The break statement
             Break => S::Break,
+            Return(value) => self.return_statement(value, stmt.location),
+            // 6.7 Declarations
             Decl(decls) => S::Decl(self.analyzer.parse_declaration(decls, stmt.location)),
         };
         let data = if !self.analyzer.decl_side_channel.is_empty() {
@@ -97,6 +110,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
         };
         Locatable::new(data, stmt.location)
     }
+    // 6.8.1 Labeled statements
     fn case_statement(
         &mut self,
         expr: ast::Expr,
@@ -130,13 +144,17 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
         let inner = self.parse_stmt(inner);
         StmtType::Case(int, Box::new(inner))
     }
+    // 6.8.6.4 The return statement
+    // A value of `None` for `expr` means `return;`
     fn return_statement(&mut self, expr: Option<ast::Expr>, location: Location) -> StmtType {
         use crate::data::Type;
 
         let expr = expr.map(|e| self.parse_expr(e));
         let ret_type = &self.metadata.return_type;
         match (expr, *ret_type != Type::Void) {
+            // void f() { return ;}
             (None, false) => StmtType::Return(None),
+            // int f() { return; }
             (None, true) => {
                 self.err(
                     SemanticError::MissingReturnValue(self.metadata.id),
@@ -144,6 +162,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 );
                 StmtType::Return(None)
             }
+            // void f() { return 1; }
             (Some(expr), false) => {
                 self.err(
                     SemanticError::ReturnFromVoid(self.metadata.id),
@@ -151,6 +170,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 );
                 StmtType::Return(None)
             }
+            // int f() { return 1; }
             (Some(expr), true) => {
                 let expr = expr.rval();
                 if expr.ctype != *ret_type {

@@ -8,8 +8,11 @@ impl<T: Lexer> Analyzer<T> {
     pub fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
         use ast::ExprType::*;
         match expr.data {
+            // 1 | "str" | 'a'
             Literal(lit) => literal(lit, expr.location),
+            // x
             Id(id) => self.parse_id(id, expr.location),
+            // (int)x
             Cast(ctype, inner) => {
                 let ctype = self.parse_typename(ctype, expr.location);
                 self.explicit_cast(*inner, ctype)
@@ -63,9 +66,13 @@ impl<T: Lexer> Analyzer<T> {
                         return inner;
                     }
                 };
+                // NOTE: when we pass `deref` to `struct_member`,
+                // it will always mark the resulting expression as an `lval`.
+                // To avoid a double dereference, we mark `deref` as an `rval`.
                 let deref = inner.indirection(false, struct_type);
                 self.struct_member(deref, id, expr.location)
             }
+            // `*p` or `a[i]`
             Deref(inner) => {
                 let inner = self.parse_expr(*inner);
                 match &inner.ctype {
@@ -82,11 +89,18 @@ impl<T: Lexer> Analyzer<T> {
                     }
                 }
             }
+            // &x
+            // 6.5.3.2 Address and indirection operators
             AddressOf(inner) => {
                 let inner = self.parse_expr(*inner);
                 match inner.expr {
-                    // parse &*p as p
+                    // parse &*x as x
+                    // footnote 102: &*E is equivalent to E (even if E is a null pointer)
                     ExprType::Deref(double_inner) => *double_inner,
+                    // footnote 121:
+                    // > the address of any part of an object declared with storage-class specifier register cannot be computed,
+                    // > either explicitly (by use of the unary & operator as discussed in 6.5.3.2)
+                    // > or implicitly (by converting an array name to a pointer as discussed in 6.3.2.1).
                     ExprType::Id(ref sym) if sym.get().storage_class == StorageClass::Register => {
                         self.err(
                             SemanticError::InvalidAddressOf("variable declared with `register`"),
@@ -94,6 +108,9 @@ impl<T: Lexer> Analyzer<T> {
                         );
                         inner
                     }
+                    // > The operand of the unary & operator shall be either a function designator,
+                    // > the result of a [] or unary * operator,
+                    // > or an lvalue that designates an object that is not a bit-field and is not declared with the register storage-class specifier.
                     _ if inner.lval => Expr {
                         lval: false,
                         location: expr.location,
@@ -106,12 +123,15 @@ impl<T: Lexer> Analyzer<T> {
                     }
                 }
             }
+            // ++x
             PreIncrement(inner, increment) => {
                 self.increment_op(true, increment, *inner, expr.location)
             }
+            // x++
             PostIncrement(inner, increment) => {
                 self.increment_op(false, increment, *inner, expr.location)
             }
+            // a[i]
             Index(left, right) => self.index(*left, *right, expr.location),
             AlignofType(type_name) => {
                 let ctype = self.parse_typename(type_name, expr.location);
@@ -132,13 +152,21 @@ impl<T: Lexer> Analyzer<T> {
             BitwiseNot(inner) => self.bitwise_not(*inner),
             UnaryPlus(inner) => self.unary_add(*inner, true, expr.location),
             Negate(inner) => self.unary_add(*inner, false, expr.location),
+            // !x
             LogicalNot(inner) => self.logical_not(*inner),
+            // x && y
             LogicalAnd(left, right) => {
                 self.binary_helper(left, right, BinaryOp::LogicalAnd, Self::logical_bin_op)
             }
+            // x || y
             LogicalOr(left, right) => {
                 self.binary_helper(left, right, BinaryOp::LogicalOr, Self::logical_bin_op)
             }
+            // x, y
+            // evaluate x, discarding its value, then yield the value of y
+            // mostly used to have multiple side effects in a single statement, such as in a for loop:
+            // `for(j = i, k = 0; k < n; j++, k++);`
+            // see also https://stackoverflow.com/a/43561555/7669110
             Comma(left, right) => {
                 let left = self.parse_expr(*left);
                 let right = self.parse_expr(*right).rval();
@@ -234,6 +262,7 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // `left == right`, `left < right`, or similar
+    // 6.5.9 Equality operators
     fn relational_expr(
         &mut self,
         left: ast::Expr,
@@ -286,6 +315,7 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // `left OP right`, where OP is Mul, Div, or Mod
+    // 6.5.5 Multiplicative operators
     fn mul(&mut self, left: Expr, right: Expr, op: BinaryOp) -> Expr {
         let location = left.location.merge(right.location);
 
@@ -316,6 +346,7 @@ impl<T: Lexer> Analyzer<T> {
     }
     // `a + b` or `a - b`
     // `op` should only be `Add` or `Sub`
+    // 6.5.6 Additive operators
     fn add(&mut self, mut left: Expr, mut right: Expr, op: BinaryOp) -> Expr {
         let is_add = op == BinaryOp::Add;
         let location = left.location.merge(right.location);
@@ -364,6 +395,7 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // (int)i
+    // 6.5.4 Cast operators
     fn explicit_cast(&mut self, expr: ast::Expr, ctype: Type) -> Expr {
         let location = expr.location;
         let expr = self.parse_expr(expr).rval();
@@ -403,6 +435,7 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // `base + index`, where `pointee` is the type of `*base`
+    // 6.5.6 Additive operators
     fn pointer_arithmetic(
         &mut self,
         base: Expr,
@@ -449,6 +482,7 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // `func(args)`
+    // 6.5.2.2 Function calls
     fn func_call(&mut self, func: ast::Expr, args: Vec<ast::Expr>) -> Expr {
         let mut func = self.parse_expr(func);
         // if fp is a function pointer, fp() desugars to (*fp)()
@@ -514,6 +548,7 @@ impl<T: Lexer> Analyzer<T> {
     }
     // parse a struct member
     // used for both s.a and s->a
+    // 6.5.2.3 Structure and union members
     fn struct_member(&mut self, expr: Expr, id: InternedStr, location: Location) -> Expr {
         match &expr.ctype {
             Type::Struct(stype) | Type::Union(stype) => {
@@ -547,6 +582,7 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // ++i, i--
+    // 6.5.2.4 Postfix increment and decrement operators
     fn increment_op(
         &mut self,
         prefix: bool,
@@ -580,17 +616,21 @@ impl<T: Lexer> Analyzer<T> {
             };
             self.assignment_expr(expr, rval, op, location)
         // i++ requires support from the backend
+        // 6.5.2.4 Postfix increment and decrement operators
+        // evaluate the rvalue of `i` and as a side effect, increment the value at the stored address
+        // ex: `int i = 0, j; j = i++;` leaves a value of 0 in j and a value of 1 in i
         } else {
             Expr {
                 lval: false,
                 ctype: expr.ctype.clone(),
-                // true, false: pre-decrement
+                // true, false: increment/decrement
                 expr: ExprType::PostIncrement(Box::new(expr), increment),
                 location,
             }
         }
     }
     // a[i] desugars to *(a + i)
+    // 6.5.2.1 Array subscripting
     fn index(&mut self, left: ast::Expr, right: ast::Expr, location: Location) -> Expr {
         let left = self.parse_expr(left).rval();
         let right = self.parse_expr(right).rval();
@@ -620,6 +660,7 @@ impl<T: Lexer> Analyzer<T> {
         literal(Literal::UnsignedInt(align), location)
     }
     // sizeof(int)
+    // 6.5.3.4 The sizeof and _Alignof operators
     fn sizeof(&mut self, ctype: Type, location: Location) -> Expr {
         let align = ctype.sizeof().unwrap_or_else(|err| {
             self.err(err.into(), location);
@@ -628,6 +669,7 @@ impl<T: Lexer> Analyzer<T> {
         literal(Literal::UnsignedInt(align), location)
     }
     // ~expr
+    // 6.5.3.3 Unary arithmetic operators
     fn bitwise_not(&mut self, expr: ast::Expr) -> Expr {
         let expr = self.parse_expr(expr);
         if !expr.ctype.is_integral() {
@@ -647,6 +689,7 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // -x and +x
+    // 6.5.3.3 Unary arithmetic operators
     fn unary_add(&mut self, expr: ast::Expr, add: bool, location: Location) -> Expr {
         let expr = self.parse_expr(expr);
         if !expr.ctype.is_arithmetic() {
@@ -670,6 +713,8 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // !expr
+    // 6.5.3.3 Unary arithmetic operators
+    // > The expression !E is equivalent to (0==E).
     fn logical_not(&mut self, expr: ast::Expr) -> Expr {
         let expr = self.parse_expr(expr);
         let boolean = expr.truthy(&mut self.error_handler);
@@ -687,17 +732,21 @@ impl<T: Lexer> Analyzer<T> {
         }
     }
     // a || b or a && b
+    // NOTE: this short circuits if possible
+    // 6.5.14 Logical OR operator and 6.5.13 Logical AND operator
     fn logical_bin_op(&mut self, a: Expr, b: Expr, op: BinaryOp) -> Expr {
         let a = a.implicit_cast(&Type::Bool, &mut self.error_handler);
         let b = b.implicit_cast(&Type::Bool, &mut self.error_handler);
         Expr {
             lval: false,
+            // TODO: this is wrong, it should be an int
             ctype: Type::Bool,
             location: a.location,
             expr: ExprType::Binary(op, Box::new(a), Box::new(b)),
         }
     }
     // condition ? then : otherwise
+    // like an `if` in Rust: evaluate `condition`, yield the value of `then` if true, otherwise yield the value of `otherwise`
     fn ternary(
         &mut self,
         condition: ast::Expr,
@@ -754,7 +803,8 @@ impl<T: Lexer> Analyzer<T> {
         // Complex assignment is tricky because the left side needs to be evaluated only once
         // Consider e.g. `*f() += 1`: `f()` should only be called once.
         // The hack implemented here is to treat `*f()` as a variable then load and store it to memory:
-        // `tmp = f(); *tmp = *tmp + 1;`
+        // `tmp = &f(); *tmp = *tmp + 1;`
+        // see also footnote 113 which has a similar algorithm (but is more convoluted because of atomics)
 
         // declare tmp in a new hidden scope
         // We really should only be modifying the scope in `FunctionAnalyzer`,
@@ -940,6 +990,7 @@ impl Type {
             _ => std::usize::MAX,
         }
     }
+    // Subclause 2 of 6.3.1.1 Boolean, characters, and integers
     fn integer_promote(self) -> Type {
         if self.rank() <= Type::Int(true).rank() {
             if Type::Int(true).can_represent(&self) {
@@ -951,6 +1002,7 @@ impl Type {
             self
         }
     }
+    // 6.3.1.8 Usual arithmetic conversions
     fn binary_promote(mut left: Type, mut right: Type) -> Result<Type, Type> {
         use Type::*;
         if left == Double || right == Double {
@@ -1023,6 +1075,7 @@ impl Expr {
             location,
         }
     }
+    // 6.3.2.3 Pointers
     fn is_null(&self) -> bool {
         // TODO: I think we need to const fold this to allow `(void*)0`
         if let ExprType::Literal(token) = &self.expr {
@@ -1110,6 +1163,9 @@ impl Expr {
     // - arrays -> pointers
     // - functions -> pointers
     // - variables -> value stored in that variable
+    // 6.3.2.1 Lvalues, arrays, and function designators
+    // >  Except when it is the operand of [a bunch of different operators],
+    // > an lvalue that does not have array type is converted to the value stored in the designated object (and is no longer an lvalue)
     pub(super) fn rval(self) -> Expr {
         match self.ctype {
             // a + 1 is the same as &a + 1
@@ -1143,7 +1199,15 @@ impl Expr {
             _ => self,
         }
     }
-    // `*p` when p is a pointer or `x` where variable used in an rval context
+    // `*p` when p is a pointer
+    //
+    // NOTE: this can be in _either_ an lval or an rval context
+    // in an rval context: `return *p;`
+    // in an lval context: `*p = 1`
+    //
+    // `ctype` is the type of the resulting expression
+    //
+    // 6.5.3.2 Address and indirection operators
     fn indirection(self, lval: bool, ctype: Type) -> Self {
         Expr {
             location: self.location,
@@ -1151,11 +1215,13 @@ impl Expr {
             lval,
             // this is super hacky but the only way I can think of to prevent
             // https://github.com/jyn514/rcc/issues/90
+            // we need to call `self.rval()` so that if `self` is a variable we get its value, not its address.
             expr: ExprType::Noop(Box::new(self.rval())),
         }
     }
 
     // float f = (double)1.0
+    // 6.3 Conversions
     pub(super) fn implicit_cast(self, ctype: &Type, error_handler: &mut ErrorHandler) -> Expr {
         let mut expr = self.rval();
         if &expr.ctype == ctype {

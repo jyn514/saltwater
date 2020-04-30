@@ -76,7 +76,7 @@ pub enum Error {
     Source(VecDeque<CompileError>),
     #[cfg(feature = "codegen")]
     #[error("linking error: {0}")]
-    Platform(object::write::Error),
+    Platform(cranelift_object::object::write::Error),
     #[error("io error: {0}")]
     IO(#[from] io::Error),
 }

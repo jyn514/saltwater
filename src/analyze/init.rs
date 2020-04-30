@@ -1,3 +1,5 @@
+//! 6.7.9 Initialization
+
 use super::Analyzer;
 use crate::data::{ast, error::SemanticError, hir::*, types, Location, Type};
 use crate::parse::Lexer;
@@ -59,6 +61,8 @@ impl<T: Lexer> Analyzer<T> {
 
     // handle char[][3] = {{1,2,3}}, but also = {1,2,3} and {{1}, 2, 3}
     // NOTE: this does NOT consume {} except for sub-elements
+    // see p17: "Each brace-enclosed initializer list has an associated current object"
+    // For each subobject of the enclosing object (`type_at`), initialize it, possibly recursively.
     fn aggregate_initializer(
         &mut self,
         list: &mut std::iter::Peekable<impl Iterator<Item = ast::Initializer>>,
@@ -75,6 +79,7 @@ impl<T: Lexer> Analyzer<T> {
         // char [][3] = {1};
         while let Some(elem) = list.peek() {
             let inner = elem_type.type_at(elems.len()).unwrap_or_else(|err| {
+                // int a[1] = {1, 2};
                 self.err(err, location);
                 Type::Error
             });
@@ -110,7 +115,6 @@ impl<T: Lexer> Analyzer<T> {
                                 .implicit_cast(&inner, &mut self.error_handler),
                             _ => unreachable!(),
                         };
-                        // scalar
                         Initializer::Scalar(Box::new(expr))
                     }
                 }

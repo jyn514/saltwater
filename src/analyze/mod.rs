@@ -161,7 +161,14 @@ impl<I: Lexer> Analyzer<I> {
             }
 
             let id = d.data.declarator.id;
-            let id = id.expect("declarations should never be abstract");
+            let id = match id {
+                Some(i) => i,
+                // int i, ();
+                None => {
+                    self.err("declarations cannot be abstract".into(), d.location);
+                    "<error>".into()
+                }
+            };
             // NOTE: the parser handles typedefs on its own
             if ctype == Type::Void && sc != StorageClass::Typedef {
                 // TODO: catch this error for types besides void?

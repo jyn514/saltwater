@@ -1,18 +1,34 @@
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 
-use codespan::{FileId, Span};
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use crate::data::BinaryOp;
+use crate::data::hir::BinaryOp;
 use crate::intern::InternedStr;
 
 // holds where a piece of code came from
 // should almost always be immutable
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Span {
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Location {
     pub span: Span,
-    pub file: FileId,
+    pub file: codespan::FileId,
+}
+
+use std::ops::Range;
+impl From<Range<u32>> for Span {
+    fn from(r: Range<u32>) -> Span {
+        Span {
+            start: r.start,
+            end: r.end,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -58,9 +74,14 @@ pub enum Keyword {
     Signed,
     Unsigned,
     Typedef,
+
+    // user-defined types
     Union,
     Struct,
     Enum,
+    // the `i` in `typedef int i;`
+    UserTypedef(InternedStr),
+
     // weird types
     Bool,
     Complex,
@@ -176,8 +197,32 @@ pub enum Token {
 }
 
 /* impls */
+impl PartialOrd for Location {
+    /// NOTE: this only compares the start of the spans, it ignores the end
+    fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
+        Some(self.span.cmp(&other.span))
+    }
+}
 
 impl Location {
+    pub fn merge<O: Borrow<Self>>(&self, other: O) -> Self {
+        use std::cmp::{max, min};
+
+        let other = other.borrow();
+        Location {
+            span: Span {
+                start: min(self.span.start, other.span.start),
+                end: max(self.span.end, other.span.end),
+            },
+            // TODO: what should happen if these come from different files?
+            file: self.file,
+        }
+    }
+    /// WARNING: the location for `original` will be on the _left_, not on the right
+    pub fn maybe_merge<O: Borrow<Self>>(&self, original: Option<O>) -> Self {
+        original.map_or(*self, |l| l.borrow().merge(self))
+    }
+
     pub fn with<T>(self, data: T) -> Locatable<T> {
         Locatable {
             data,
@@ -187,17 +232,6 @@ impl Location {
 
     pub fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError {
         self.with(error.into())
-    }
-}
-
-impl PartialOrd for Location {
-    /// NOTE: this only compares the start of the spans, it ignores the end
-    fn partial_cmp(&self, other: &Location) -> Option<Ordering> {
-        if self.file == other.file {
-            Some(self.span.cmp(&other.span))
-        } else {
-            None
-        }
     }
 }
 

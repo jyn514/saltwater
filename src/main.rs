@@ -19,10 +19,7 @@ use codespan::FileId;
 use pico_args::Arguments;
 use rcc::{
     assemble, compile,
-    data::{
-        error::{CompileWarning, RecoverableResult},
-        lex::Location,
-    },
+    data::{error::CompileWarning, Location},
     link, preprocess, Error, Files, Opt,
 };
 use std::ffi::OsStr;
@@ -209,7 +206,7 @@ fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
 }
 
 macro_rules! type_sizes {
-    ($($type: ty),*) => {
+    ($($type: ty),* $(,)?) => {
         $(println!("{}: {}", stringify!($type), std::mem::size_of::<$type>());)*
     };
 }
@@ -224,20 +221,24 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         std::process::exit(0);
     }
     if input.contains("--print-type-sizes") {
-        use rcc::data::prelude::*;
+        use rcc::data::*;
         type_sizes!(
             Location,
             CompileError,
             Type,
-            Expr,
-            ExprType,
-            Stmt,
-            StmtType,
-            Declaration,
-            Metadata,
+            ast::Expr,
+            ast::ExprType,
+            hir::Expr,
+            hir::ExprType,
+            ast::Stmt,
+            ast::StmtType,
+            hir::Stmt,
+            hir::StmtType,
+            ast::Declaration,
+            hir::Declaration,
+            hir::Metadata,
             StructType,
             Token,
-            RecoverableResult<Expr>
         );
     }
     let output = input
@@ -330,7 +331,7 @@ fn pretty_print<T: std::fmt::Display>(
 ) -> String {
     let file = location.file;
     let start = file_db
-        .location(file, location.span.start())
+        .location(file, location.span.start)
         .expect("start location should be in bounds");
     let buf = format!(
         "{}:{}:{} {}: {}\n",
@@ -341,11 +342,11 @@ fn pretty_print<T: std::fmt::Display>(
         msg
     );
     // avoid printing spurious newline for errors and EOF
-    if location.span.end() == 0.into() {
+    if location.span.end == 0 {
         return buf;
     }
     let end = file_db
-        .location(file, location.span.end())
+        .location(file, location.span.end)
         .expect("end location should be in bounds");
     if start.line == end.line {
         let line = file_db
@@ -382,7 +383,8 @@ fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
 mod test {
     use super::{Files, Location};
     use ansi_term::Style;
-    use codespan::Span;
+    //use codespan::Span;
+    use rcc::data::lex::Span;
 
     fn pp<S: Into<Span>>(span: S, source: &str) -> String {
         let mut file_db = Files::new();

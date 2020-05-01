@@ -4,7 +4,10 @@ use cranelift::prelude::{Block, FunctionBuilder, InstBuilder};
 use cranelift_module::Backend;
 
 use super::Compiler;
-use crate::data::prelude::*;
+use crate::data::{
+    hir::{Expr, Stmt, StmtType},
+    *,
+};
 
 impl<B: Backend> Compiler<B> {
     pub(super) fn compile_all(

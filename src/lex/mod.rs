@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use codespan::FileId;
 
-use super::data::{error::LexError, lex::*, prelude::*};
+use super::data::{error::LexError, lex::*, *};
 use super::intern::InternedStr;
 
 mod cpp;
@@ -24,7 +24,7 @@ type LexResult<T = Token> = Result<T, Locatable<LexError>>;
 /// Lexer implements iterator, so you can loop over the tokens.
 /// ```
 #[derive(Debug)]
-struct Lexer {
+pub struct Lexer {
     location: SingleLocation,
     chars: Rc<str>,
     /// used for 2-character tokens
@@ -60,7 +60,7 @@ struct SingleLocation {
 
 impl Lexer {
     /// Creates a Lexer from a filename and the contents of a file
-    fn new<S: Into<Rc<str>>>(file: FileId, chars: S, debug: bool) -> Lexer {
+    pub fn new<S: Into<Rc<str>>>(file: FileId, chars: S, debug: bool) -> Lexer {
         Lexer {
             debug,
             location: SingleLocation { offset: 0, file },

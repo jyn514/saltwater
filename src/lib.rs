@@ -50,15 +50,17 @@ pub type Product = <cranelift_object::ObjectBackend as Backend>::Product;
 /// Regardless, this always returns all warnings found.
 pub type WarningResult<T> = (Result<T, VecDeque<CompileError>>, VecDeque<CompileWarning>);
 
-use data::prelude::CompileError;
-pub use data::prelude::*;
+pub use analyze::Analyzer;
+pub use data::*;
 // https://github.com/rust-lang/rust/issues/64762
+pub use lex::Lexer;
 pub use lex::PreProcessor;
 pub use lex::PreProcessorBuilder;
 pub use parse::Parser;
 
 #[macro_use]
 mod macros;
+mod analyze;
 mod arch;
 pub mod data;
 mod fold;
@@ -149,7 +151,7 @@ pub fn check_semantics(
     opt: &Opt,
     file: FileId,
     files: &mut Files,
-) -> WarningResult<Vec<Locatable<Declaration>>> {
+) -> WarningResult<Vec<Locatable<hir::Declaration>>> {
     let path = opt.search_path.iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
     let mut errs = VecDeque::new();
@@ -187,7 +189,7 @@ pub fn check_semantics(
     };
 
     let mut hir = vec![];
-    let mut parser = Parser::new(first, &mut cpp, opt.debug_ast);
+    let mut parser = Analyzer::new(Parser::new(first, &mut cpp, opt.debug_ast));
     for res in &mut parser {
         match res {
             Ok(decl) => hir.push(decl),
@@ -392,7 +394,7 @@ impl<T: Into<Rc<str>>> From<T> for Source {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn compile(src: &str) -> Result<Vec<Declaration>, Error> {
+    fn compile(src: &str) -> Result<Vec<hir::Declaration>, Error> {
         let options = Opt::default();
         let mut files: Files = Default::default();
         let id = files.add("<test suite>", src.into());

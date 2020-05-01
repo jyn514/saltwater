@@ -1,14 +1,9 @@
-use std::fmt::{self, Formatter};
-
+use super::hir::{Metadata, MetadataRef};
+use crate::intern::InternedStr;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
-
+use std::fmt::{self, Formatter};
 pub use struct_ref::{StructRef, StructType};
-
-use crate::arch::SIZE_T;
-use crate::intern::InternedStr;
-
-use super::{Metadata, MetadataRef};
 
 mod struct_ref {
     use std::cell::RefCell;
@@ -100,7 +95,7 @@ mod struct_ref {
     }
 
     /// Structs can be either named or anonymous.
-    #[derive(Clone, Debug, PartialEq, Eq)]
+    #[derive(Clone, Debug, PartialEq)]
     pub enum StructType {
         /// Named structs can have forward declarations and be defined at any point
         /// in the program. In order to support self referential structs, named structs
@@ -138,7 +133,7 @@ mod struct_ref {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Void,
     Bool,
@@ -148,7 +143,8 @@ pub enum Type {
     Long(bool),
     Float,
     Double,
-    Pointer(Box<Type>),
+    // TODO: separate Qualifiers into LvalQualifiers and FunctionQualifiers
+    Pointer(Box<Type>, super::hir::Qualifiers),
     Array(Box<Type>, ArrayType),
     Function(FunctionType),
     Union(StructType),
@@ -161,18 +157,19 @@ pub enum Type {
     Error,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum ArrayType {
-    Fixed(SIZE_T),
+    Fixed(u64),
     Unbounded,
 }
 
-#[derive(Clone, Debug, Eq)]
-// note: old-style declarations are not supported at this time
+// NOTE: K&R declarations are not supported at this time
+#[derive(Clone, Debug)]
 pub struct FunctionType {
+    // TODO: allow FunctionQualifiers as well
     pub return_type: Box<Type>,
-    // why Symbol instead of Type?
+    // why Metadata instead of Type?
     // 1. we need to know qualifiers for the params. if we made that part of Type,
     //    we'd need qualifiers for every step along the way
     //    (consider that int a[][][] parses as 4 nested types).
@@ -232,7 +229,7 @@ impl Type {
     #[inline]
     pub fn is_pointer(&self) -> bool {
         match self {
-            Type::Pointer(_) => true,
+            Type::Pointer(_, _) => true,
             _ => false,
         }
     }
@@ -252,13 +249,6 @@ impl Type {
     }
 }
 
-impl PartialEq for ArrayType {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-impl Eq for ArrayType {}
-
 impl PartialEq for FunctionType {
     fn eq(&self, other: &Self) -> bool {
         // no prototype: any parameters are allowed
@@ -272,8 +262,8 @@ impl PartialEq for FunctionType {
             && self.params
                 .iter()
                 .zip(other.params.iter())
-                .all(|(this_param, other_param)| {
-                    let (this_param, other_param) = (this_param.get(), other_param.get());
+                .all(|(a, b)| {
+                    let (this_param, other_param) = (a.get(), b.get());
                     this_param.ctype == other_param.ctype
                         && this_param.qualifiers == other_param.qualifiers
                 })
@@ -309,8 +299,8 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
         }
         Bool => write!(f, "_Bool"),
         Float | Double | Void => write!(f, "{}", format!("{:?}", ctype).to_lowercase()),
-        Pointer(inner) | Array(inner, _) => print_pre(inner, f),
-        Function(ftype) => write!(f, "{}", ftype.return_type),
+        Pointer(inner, _) | Array(inner, _) => print_pre(inner, f),
+        Function(ftype) => print_type(&ftype.return_type, None, f),
         Enum(Some(ident), _) => write!(f, "enum {}", ident),
         Enum(None, _) => write!(f, "<anonymous enum>"),
         Union(StructType::Named(ident, _)) => write!(f, "union {}", ident),
@@ -324,27 +314,46 @@ fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
 
 fn print_mid(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt::Result {
     match ctype {
-        Type::Pointer(to) => {
+        Type::Pointer(to, qs) => {
+            let name = name.unwrap_or_default();
+            // what do we do for (**p)()?
+            // we have to look arbitrarily deep into the type,
+            // but also we have to only print the ( once,
+            // so how do we know we know if it's already been printed?
+            let depth = match &**to {
+                Type::Array(_, _) | Type::Function(_) => true,
+                _ => false,
+            };
             print_mid(to, None, f)?;
-            match &**to {
-                Type::Array(_, _) | Type::Function(_) => {
-                    write!(f, "(*{})", name.unwrap_or_default())?
-                }
-                _ => write!(f, " *{}", name.unwrap_or_default())?,
+
+            write!(f, " ")?;
+            if depth {
+                write!(f, "(")?;
             }
+
+            let pointer = if qs != &Default::default() && name != InternedStr::default() {
+                format!("*{} {}", qs, name)
+            } else {
+                format!("*{}{}", qs, name)
+            };
+            write!(f, "{}", pointer)?;
+            if depth {
+                write!(f, ")")?;
+            }
+            Ok(())
         }
-        Type::Array(to, _) => print_mid(to, name, f)?,
+        Type::Array(to, _) => print_mid(to, name, f),
         _ => {
             if let Some(name) = name {
                 write!(f, " {}", name)?;
             }
+            Ok(())
         }
     }
-    Ok(())
 }
 fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
     match ctype {
-        Type::Pointer(to) => print_post(to, f),
+        Type::Pointer(to, _) => print_post(to, f),
         Type::Array(to, size) => {
             write!(f, "[")?;
             if let ArrayType::Fixed(size) = size {
@@ -354,25 +363,28 @@ fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
             print_post(to, f)
         }
         Type::Function(func_type) => {
-            // https://stackoverflow.com/a/30325430
-            let mut comma_seperated = "(".to_string();
-            for param in &func_type.params {
-                let param = param.get();
-                comma_seperated.push_str(&param.ctype.to_string());
-                if param.id != Default::default() {
-                    comma_seperated.push(' ');
-                    comma_seperated.push_str(&param.id.to_string());
-                }
-                comma_seperated.push_str(", ");
+            write!(f, "(")?;
+            let mut params = func_type.params.iter();
+            let print = |f: &mut _, symbol: MetadataRef| {
+                let symbol = symbol.get();
+                let id = if symbol.id == InternedStr::default() {
+                    None
+                } else {
+                    Some(symbol.id)
+                };
+                print_type(&symbol.ctype, id, f)
+            };
+            if let Some(&first) = params.next() {
+                print(f, first)?;
+            }
+            for &symbol in params {
+                write!(f, ", ")?;
+                print(f, symbol)?;
             }
             if func_type.varargs {
-                comma_seperated.push_str("...");
-            } else if !func_type.params.is_empty() {
-                comma_seperated.pop();
-                comma_seperated.pop();
+                write!(f, ", ...")?;
             }
-            comma_seperated.push(')');
-            write!(f, "{}", comma_seperated)
+            write!(f, ")")
         }
         _ => Ok(()),
     }
@@ -389,6 +401,7 @@ pub(crate) mod tests {
     use proptest::prelude::*;
 
     use super::{ArrayType, InternedStr, Type};
+    use crate::data::hir::Qualifiers;
 
     pub(crate) fn arb_type() -> impl Strategy<Value = Type> {
         let leaf = prop_oneof![
@@ -409,7 +422,8 @@ pub(crate) mod tests {
 
         leaf.prop_recursive(8, 256, 10, |inner| {
             prop_oneof![
-                inner.clone().prop_map(|t| Type::Pointer(Box::new(t))),
+                (inner.clone(), any::<Qualifiers>())
+                    .prop_map(|(t, q)| Type::Pointer(Box::new(t), q)),
                 (inner, any::<ArrayType>()).prop_map(|(t, at)| Type::Array(Box::new(t), at)),
                 //Type::Function(FunctionType),
                 //Type::Union(StructType),

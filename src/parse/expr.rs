@@ -1,1853 +1,464 @@
-use super::{Lexeme, Parser, SyntaxResult};
-use crate::arch::SIZE_T;
-use crate::data::prelude::*;
-use crate::data::{
-    lex::{AssignmentToken, ComparisonToken, Keyword},
-    types::ArrayType,
-    BinaryOp,
-    StorageClass::Typedef,
-};
+use std::convert::TryFrom;
 
-impl<I: Iterator<Item = Lexeme>> Parser<I> {
-    /// expr_opt: expr ';' | ';'
-    pub(super) fn expr_opt(&mut self, token: Token) -> SyntaxResult<Option<Expr>> {
-        if self.match_next(&token).is_some() {
-            Ok(None)
-        } else {
-            let expr = self.expr()?;
-            self.expect(token)?;
-            Ok(Some(expr))
-        }
-    }
-    /// expr(): Parse an expression.
-    ///
-    /// In programming language terminology, an 'expression' is anything that has a value.
-    /// This can be a literal, a function call, or a series of operations like `2 + 3`.
-    /// You can think of it as anything you can put on the right-hand side of an assignment.
-    /// Contrast expressions to statements, which do NOT have values: you can't assign a while loop.
-    ///
-    /// For more discussion on the difference between expressions and statements,
-    /// see https://stackoverflow.com/a/19224 or an introductory programming textbook
-    /// (it will be discussed in the first few chapters,
-    /// in a part of the book no one usually reads).
-    // Original:
-    // expr:
-    //      assignment_expr
-    //      | expr ',' assignment_expr
-    //      ;
-    //
-    // We rewrite it as follows:
-    // expr:
-    //     assignment_expr (',' assignment_expr)*
-    //     ;
-    //
-    // Comma operator: evalutate the first expression (usually for its side effects)
-    // and return the second
-    pub(crate) fn expr(&mut self) -> SyntaxResult {
-        self.left_associative_binary_op(
-            Self::assignment_expr,
-            &[&Token::Comma],
-            |left, right, token| {
-                let right = right.rval();
-                Ok(Expr {
-                    ctype: right.ctype.clone(),
-                    lval: false,
-                    expr: ExprType::Comma(Box::new(*left), Box::new(right)),
-                    location: token.location,
-                })
-            },
-        )
-    }
+use super::*;
+use crate::data::ast::{Expr, ExprType, TypeName};
+use crate::data::lex::{AssignmentToken, Keyword};
+use crate::data::*;
 
-    /// Parses an expression and ensures that it can be evaluated at compile time.
-    // constant_expr: conditional_expr;
-    pub(super) fn constant_expr(&mut self) -> SyntaxResult {
-        let expr = self.conditional_expr()?;
-        let location = expr.location;
-        let expr = match expr.const_fold() {
-            Ok(folded) => {
-                if !folded.is_constexpr() {
-                    self.error_handler.push_back(
-                        folded
-                            .location
-                            .error(SemanticError::NotConstant(folded.clone())),
-                    );
-                }
-                folded
-            }
-            Err(err) => {
-                self.error_handler.push_back(err);
-                Expr::zero(location)
-            }
-        };
-        Ok(expr)
-    }
+trait UnaryExprFn: FnOnce(Expr) -> ExprType {}
+impl<T: FnOnce(Expr) -> ExprType> UnaryExprFn for T {}
 
-    /// assignment_expr
-    /// : conditional_expr
-    /// | unary_expr assignment_operator assignment_expr
-    /// ;
-    ///
-    /// Assignment expression: evaluate the right-hand side, assign it to the left,
-    /// and return the right.
-    ///
-    /// Unlike most operators, this is right-associative, that is
-    /// `a = b = 3` is parsed as `a = (b = 3)`. Contrast addition:
-    /// `a + b + 3` is parsed as `(a + b) + 3`.
-    ///
-    /// NOTE: because it's hard to tell the different between lvals and rvals in the grammar,
-    /// we parse an entire expression, see if an assignment operator follows it,
-    /// and only then check if the left is an lval.
-    /// NOTE: comma operators aren't allowed on the RHS of an assignment.
-    ///
-    /// This is public so that we can parse expressions that can't have commas
-    /// (usually initializers)
-    pub(super) fn assignment_expr(&mut self) -> SyntaxResult {
-        let lval = self.conditional_expr()?;
-        let assign_op = match self.next_token() {
-            Some(Locatable {
-                data: Token::Assignment(a),
-                location,
-            }) => location.with(a),
-            x => {
-                self.unput(x);
-                return Ok(lval);
-            }
-        };
-        let mut rval = self.assignment_expr()?.rval();
-        if let Err(err) = lval.modifiable_lval() {
-            self.error_handler.push_back(assign_op.location.error(err));
-            Ok(lval)
-        } else {
-            if rval.ctype != lval.ctype {
-                rval = rval.cast(&lval.ctype).recover(&mut self.error_handler);
-            }
-            Ok(Expr {
-                ctype: lval.ctype.clone(),
-                lval: false, // `(i = j) = 4`; is invalid
-                location: assign_op.location,
-                expr: ExprType::Binary(
-                    BinaryOp::Assign(assign_op.data),
-                    Box::new(lval),
-                    Box::new(rval),
-                ),
-            })
-        }
-    }
-
-    /// conditional_expr
-    /// : logical_or_expr
-    /// | logical_or_expr '?' expr ':' conditional_expr
-    /// ;
-    ///
-    /// Ternary operator. If logical_or_expr evaluates to true,
-    /// evaluates to `expr`, otherwise evaluates to `conditional_expr`.
-    /// This is the analog to `if` statements for expressions.
-    ///
-    /// Note that comma operators are allowed within ternaries (!!).
-    ///
-    /// The C standard requires that `expr` and `conditional_expr` have compatible types;
-    /// see https://stackoverflow.com/questions/13318336/ or section 6.5.15 of
-    /// http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf for formal requirements.
-    /// It does not specify what happens if this is not the case.
-    /// Clang and GCC give a warning; we are more strict and emit an error.
-    fn conditional_expr(&mut self) -> SyntaxResult {
-        let _guard = self.recursion_check();
-
-        let condition = self.logical_or_expr()?;
-        if let Some(Locatable { location, .. }) = self.match_next(&Token::Question) {
-            let condition = condition.truthy().recover(&mut self.error_handler);
-            let mut then = self.expr()?.rval();
-            self.expect(Token::Colon)?;
-            let mut otherwise = self.conditional_expr()?.rval();
-            if then.ctype.is_arithmetic() && otherwise.ctype.is_arithmetic() {
-                let (tmp1, tmp2) =
-                    Expr::binary_promote(then, otherwise).recover(&mut self.error_handler);
-                then = tmp1;
-                otherwise = tmp2;
-            } else if !Type::pointer_promote(&mut then, &mut otherwise) {
-                self.semantic_err(
-                    format!(
-                        "incompatible types in ternary expression: '{}' cannot be converted to '{}'",
-                        then.ctype, otherwise.ctype
-                    ),
-                    location,
-                );
-            }
-            Ok(Expr {
-                ctype: then.ctype.clone(),
-                lval: false,
-                location,
-                expr: ExprType::Ternary(Box::new(condition), Box::new(then), Box::new(otherwise)),
-            })
-        } else {
-            Ok(condition)
-        }
-    }
-
-    /// Original:
-    /// logical_or_expr
-    /// : logical_and_expr
-    /// | logical_or_expr OR_OP logical_and_expr
-    /// ;
-    ///
-    /// Rewritten:
-    /// logical_or_expr:
-    ///     logical_and_expr (OR_OP logical_and_expr)*
-    ///
-    /// A logical or ('||') evaluates the left-hand side. If the left is falsy, it evaluates and
-    /// returns the right-hand side as a boolean.
-    /// Both the left and right hand sides must be scalar types.
-    fn logical_or_expr(&mut self) -> SyntaxResult {
-        self.scalar_left_associative_binary_op(
-            Self::logical_and_expr,
-            |a, b| {
-                Ok(ExprType::Binary(
-                    BinaryOp::LogicalOr,
-                    Box::new(a.cast(&Type::Bool)?),
-                    Box::new(b.cast(&Type::Bool)?),
-                ))
-            },
-            &Token::LogicalOr,
-            Type::Bool,
-        )
-    }
-
-    /// logical_and_expr
-    /// : inclusive_or_expr
-    /// | logical_and_expr AND_OP inclusive_or_expr
-    /// ;
-    ///
-    /// Rewritten:
-    /// logical_and_expr:
-    ///     inclusive_or_expr (AND_OP inclusive_or_expr)*
-    ///
-    /// A logical and ('&&') evaluates the left-hand side. If the left is truthy, it evaluates
-    /// and returns the right-hand side as a boolean.
-    /// Both the left and right hand sides must be scalar types.
-    fn logical_and_expr(&mut self) -> SyntaxResult {
-        self.scalar_left_associative_binary_op(
-            Self::inclusive_or_expr,
-            |a, b| {
-                Ok(ExprType::Binary(
-                    BinaryOp::LogicalAnd,
-                    Box::new(a.cast(&Type::Bool)?),
-                    Box::new(b.cast(&Type::Bool)?),
-                ))
-            },
-            &Token::LogicalAnd,
-            Type::Bool,
-        )
-    }
-
-    /// inclusive_or_expr
-    /// : exclusive_or_expr
-    /// | inclusive_or_expr '|' exclusive_or_expr
-    /// ;
-    ///
-    /// Rewritten similarly.
-    fn inclusive_or_expr(&mut self) -> SyntaxResult {
-        self.integral_left_associative_binary_op(
-            Self::exclusive_or_expr,
-            &[&Token::BitwiseOr],
-            Expr::default_expr(BinaryOp::BitwiseOr),
-        )
-    }
-
-    /// exclusive_or_expr
-    /// : and_expr
-    /// | exclusive_or_expr '^' and_expr
-    /// ;
-    fn exclusive_or_expr(&mut self) -> SyntaxResult {
-        self.integral_left_associative_binary_op(
-            Self::and_expr,
-            &[&Token::Xor],
-            Expr::default_expr(BinaryOp::Xor),
-        )
-    }
-
-    /// and_expr
-    /// : equality_expr
-    /// | and_expr '&' equality_expr
-    /// ;
-    fn and_expr(&mut self) -> SyntaxResult {
-        self.integral_left_associative_binary_op(
-            Self::equality_expr,
-            &[&Token::Ampersand],
-            Expr::default_expr(BinaryOp::BitwiseAnd),
-        )
-    }
-
-    /// equality_expr
-    /// : relational_expr
-    /// | equality_expr EQ_OP relational_expr
-    /// | equality_expr NE_OP relational_expr
-    /// ;
-    fn equality_expr(&mut self) -> SyntaxResult {
-        self.left_associative_binary_op(
-            Self::relational_expr,
-            &[
-                &ComparisonToken::EqualEqual.into(),
-                &ComparisonToken::NotEqual.into(),
-            ],
-            Expr::relational_expr,
-        )
-    }
-
-    /// relational_expr
-    /// : shift_expr
-    /// | relational_expr '<' shift_expr
-    /// | relational_expr '>' shift_expr
-    /// | relational_expr LE_OP shift_expr
-    /// | relational_expr GE_OP shift_expr
-    /// ;
-    fn relational_expr(&mut self) -> SyntaxResult {
-        self.left_associative_binary_op(
-            Self::shift_expr,
-            &[
-                &ComparisonToken::Less.into(),
-                &ComparisonToken::Greater.into(),
-                &ComparisonToken::LessEqual.into(),
-                &ComparisonToken::GreaterEqual.into(),
-            ],
-            Expr::relational_expr,
-        )
-    }
-
-    /// shift_expr
-    /// : additive_expr
-    /// | shift_expr LEFT_OP additive_expr
-    /// | shift_expr RIGHT_OP additive_expr
-    /// ;
-    fn shift_expr(&mut self) -> SyntaxResult {
-        self.integral_left_associative_binary_op(
-            Self::additive_expr,
-            &[&Token::ShiftLeft, &Token::ShiftRight],
-            |left, right, token| {
-                Ok(Expr {
-                    ctype: left.ctype.clone(),
-                    location: token.location,
-                    lval: false,
-                    expr: ExprType::Binary(
-                        if token.data == Token::ShiftLeft {
-                            BinaryOp::Shl
-                        } else {
-                            BinaryOp::Shr
-                        },
-                        Box::new(left),
-                        Box::new(right),
-                    ),
-                })
-            },
-        )
-    }
-
-    /// additive_expr
-    /// : multiplicative_expr
-    /// | additive_expr '+' multiplicative_expr
-    /// | additive_expr '-' multiplicative_expr
-    /// ;
-    fn additive_expr(&mut self) -> SyntaxResult {
-        self.left_associative_binary_op(
-            Self::multiplicative_expr,
-            &[&Token::Plus, &Token::Minus],
-            |mut left, mut right, token| {
-                match (&left.ctype, &right.ctype) {
-                    (Type::Pointer(to), i)
-                    | (Type::Array(to, _), i) if i.is_integral() && to.is_complete() => {
-                        let to = to.clone();
-                        let (left, right) = (left.rval(), right.rval());
-                        return Expr::pointer_arithmetic(left, right, &*to, token.location);
-                    }
-                    (i, Type::Pointer(to))
-                        // `i - p` for pointer p is not valid
-                    | (i, Type::Array(to, _)) if i.is_integral() && token.data == Token::Plus && to.is_complete() => {
-                        let to = to.clone();
-                        let (left, right) = (left.rval(), right.rval());
-                        return Expr::pointer_arithmetic(right, left, &*to, token.location);
-                    }
-                    _ => {}
-                };
-                let (ctype, lval) = if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
-                    let tmp = Expr::binary_promote(*left, *right).map_err(flatten)?;
-                    *left = tmp.0;
-                    right = Box::new(tmp.1);
-                    (left.ctype.clone(), false)
-                // `p1 + p2` for pointers p1 and p2 is not valid
-                } else if token.data == Token::Minus && left.ctype.is_pointer_to_complete_object() && left.ctype == right.ctype {
-                    // not sure what type to use here, C11 standard doesn't mention it
-                    (left.ctype.clone(), true)
-                } else {
-                    return Err((token.location.with(
-                        SemanticError::from(format!(
-                            "invalid operators for '{}' (expected either arithmetic types or pointer operation, got '{} {} {}'",
-                            token.data,
-                            left.ctype,
-                            token.data,
-                            right.ctype
-                        ))), *left));
-                };
-                Ok(Expr {
-                    ctype,
-                    lval,
-                    location: token.location,
-                    expr: ExprType::Binary(if token.data == Token::Plus {
-                        BinaryOp::Add
-                    } else {
-                        BinaryOp::Sub
-                    },Box::new(*left), right),
-                })
-            },
-        )
-    }
-
-    /// multiplicative_expr
-    /// : cast_expr
-    /// | multiplicative_expr '*' cast_expr
-    /// | multiplicative_expr '/' cast_expr
-    /// | multiplicative_expr '%' cast_expr
-    /// ;
-    fn multiplicative_expr(&mut self) -> SyntaxResult {
-        self.left_associative_binary_op(
-            Self::cast_expr,
-            &[&Token::Star, &Token::Divide, &Token::Mod],
-            |left, right, token| {
-                if token.data == Token::Mod
-                    && !(left.ctype.is_integral() && right.ctype.is_integral())
-                {
-                    return Err((token.location.with(
-                        SemanticError::from(format!(
-                            "expected integers for both operators of %, got '{}' and '{}'",
-                            left.ctype, right.ctype
-                        ))), *left));
-                } else if !(left.ctype.is_arithmetic() && right.ctype.is_arithmetic()) {
-                    return Err((token.location.with(
-                        SemanticError::from(format!(
-                            "expected float or integer types for both operands of {}, got '{}' and '{}'",
-                            token.data, left.ctype, right.ctype
-                        ))), *left));
-                }
-                let (p_left, right) = Expr::binary_promote(*left, *right).map_err(flatten)?;
-                Ok(Expr {
-                    ctype: p_left.ctype.clone(),
-                    location: token.location,
-                    lval: false,
-                    expr: match token.data {
-                        Token::Star => ExprType::Binary(BinaryOp::Mul, Box::new(p_left), Box::new(right)),
-                        Token::Divide => ExprType::Binary(BinaryOp::Div, Box::new(p_left), Box::new(right)),
-                        Token::Mod => ExprType::Binary(BinaryOp::Mod, Box::new(p_left), Box::new(right)),
-                        _ => {
-                            panic!("left_associative_binary_op should only return tokens given to it")
-                        }
-                    },
-                })
-            },
-        )
-    }
-
-    /// cast_expr
-    /// : unary_expr
-    /// | '(' type_name ')' cast_expr
-    /// ;
-    fn cast_expr(&mut self) -> SyntaxResult {
-        let seen_param = self.peek_token() == Some(&Token::LeftParen);
-        let next_token = self.peek_next_token();
-        let is_cast = seen_param
-            && match next_token {
-                Some(Token::Keyword(k)) => k.is_decl_specifier(),
-                Some(Token::Id(id)) => {
-                    let id = *id;
-                    match self.scope.get(&id) {
-                        Some(symbol) => symbol.get().storage_class == Typedef,
-                        _ => false,
-                    }
-                }
-                _ => false,
-            };
-        if is_cast {
-            self.next_token();
-            let Locatable {
-                location,
-                data: (ctype, _),
-            } = self.type_name()?;
-            self.expect(Token::RightParen)?;
-            let expr = self.cast_expr()?.rval();
-            if ctype == Type::Void {
-                // casting anything to void is allowed
-                return Ok(Expr {
-                    lval: false,
-                    ctype,
-                    // this just signals to the backend to ignore this outer expr
-                    expr: ExprType::Cast(Box::new(expr)),
-                    location,
-                });
-            }
-            if !ctype.is_scalar() {
-                self.semantic_err(
-                    format!("cannot cast to non-scalar type '{}'", ctype),
-                    location,
-                );
-            } else if expr.ctype.is_floating() && ctype.is_pointer()
-                || expr.ctype.is_pointer() && ctype.is_floating()
-            {
-                self.semantic_err(
-                    format!("cannot cast pointer to float or vice versa. hint: if you really want to do this, use '({})(int)' instead",
-                    ctype),
-                    location,
-                );
-            } else if expr.ctype.is_struct() {
-                // not implemented: galaga (https://github.com/jyn514/rcc/issues/98)
-                self.semantic_err("cannot cast a struct to any type", location);
-            } else if expr.ctype == Type::Void {
-                self.semantic_err("cannot cast void to any type", location);
-            }
-            Ok(Expr {
-                lval: false,
-                expr: ExprType::Cast(Box::new(expr)),
-                ctype,
-                location,
-            })
-        } else {
-            self.unary_expr()
-        }
-    }
-
-    /// unary_expr
-    /// : postfix_expr
-    /// | INC_OP unary_expr
-    /// | DEC_OP unary_expr
-    /// | unary_operator cast_expr
-    /// | SIZEOF unary_expr
-    /// | SIZEOF '(' type_name ')'
-    /// ;
-    fn unary_expr(&mut self) -> SyntaxResult {
-        let _guard = self.recursion_check();
-        match self.peek_token() {
-            Some(Token::PlusPlus) => {
-                let Locatable { location, .. } = self.next_token().unwrap();
-                let expr = self.unary_expr()?;
-                Ok(Expr::increment_op(true, true, expr, location).recover(&mut self.error_handler))
-            }
-            Some(Token::MinusMinus) => {
-                let Locatable { location, .. } = self.next_token().unwrap();
-                let expr = self.unary_expr()?;
-                Ok(
-                    Expr::increment_op(true, false, expr, location)
-                        .recover(&mut self.error_handler),
-                )
-            }
-            Some(Token::Keyword(Keyword::Sizeof)) => {
-                self.next_token();
-                let (location, ctype) = if self.match_next(&Token::LeftParen).is_some() {
-                    let ret = match self.peek_token() {
-                        Some(Token::Keyword(k)) if k.is_decl_specifier() => {
-                            let ty = self.type_name()?;
-                            (ty.location, ty.data.0)
-                        }
-                        Some(Token::Id(s)) => {
-                            let s = *s;
-                            if is_typedef(s, &self.scope) {
-                                let ty = self.type_name()?;
-                                (ty.location, ty.data.0)
-                            } else {
-                                let expr = self.expr()?;
-                                (expr.location, expr.ctype)
-                            }
-                        }
-                        _ => {
-                            let expr = self.expr()?;
-                            (expr.location, expr.ctype)
-                        }
-                    };
-                    self.expect(Token::RightParen)?;
-                    ret
-                } else {
-                    let result = self.unary_expr()?;
-                    (result.location, result.ctype)
-                };
-                Ok(Expr {
-                    // the C11 standard states (6.5.3.4)
-                    // "If the type of the operand is a variable length array type, the operand is evaluated; otherwise, the operand is not evaluated and the result is an integer constant."
-                    // In an example, it states that the following code would perform
-                    // an 'execution time `sizeof`':
-                    // int f(int n) {
-                    //   char b[n+3];
-                    //   return sizeof b;
-                    // }
-                    // We do not currently handle this case.
-                    expr: ExprType::Sizeof(ctype),
-                    lval: false,
-                    location,
-                    ctype: Type::Int(false),
-                })
-            }
-            Some(op) if op.is_unary_operator() => {
-                use crate::data::StorageClass;
-                let Locatable { location, data: op } = self.next_token().unwrap();
-                let expr = self.cast_expr()?;
-                match op {
-                    // TODO: semantic checking for expr
-                    Token::Ampersand => match expr.expr {
-                        // parse &*p as p
-                        ExprType::Deref(inner) => Ok(*inner),
-                        ExprType::Id(ref sym)
-                            if sym.get().storage_class == StorageClass::Register =>
-                        {
-                            self.error_handler.push_back(location.error(
-                                SemanticError::InvalidAddressOf(
-                                    "variable declared with `register`",
-                                ),
-                            ));
-                            Ok(expr)
-                        }
-                        _ if expr.lval => Ok(Expr {
-                            lval: false,
-                            location,
-                            ctype: Type::Pointer(Box::new(expr.ctype.clone())),
-                            expr: expr.expr,
-                        }),
-                        _ => {
-                            self.error_handler.push_back(
-                                location.error(SemanticError::InvalidAddressOf("value")),
-                            );
-                            Ok(expr)
-                        }
-                    },
-                    Token::Star => match &expr.ctype {
-                        Type::Array(t, _) | Type::Pointer(t) => {
-                            let ctype = (**t).clone();
-                            Ok(expr.indirection(true, ctype, location))
-                        }
-                        _ => {
-                            self.semantic_err(
-                                format!(
-                                    "cannot dereference expression of non-pointer type '{}'",
-                                    expr.ctype
-                                ),
-                                location,
-                            );
-                            Ok(expr)
-                        }
-                    },
-                    Token::Plus => {
-                        if !expr.ctype.is_arithmetic() {
-                            self.semantic_err(
-                                format!("cannot use unary plus on expression of non-arithmetic type '{}'",
-                                expr.ctype),
-                                location,
-                            );
-                            Ok(expr)
-                        } else {
-                            let expr = expr.integer_promote().recover(&mut self.error_handler);
-                            Ok(Expr {
-                                lval: false,
-                                location,
-                                ..expr
-                            })
-                        }
-                    }
-                    Token::Minus => {
-                        if !expr.ctype.is_arithmetic() {
-                            self.semantic_err(
-                                format!("cannot use unary minus on expression of non-arithmetic type '{}'", expr.ctype),
-                                location,
-                            );
-                            Ok(expr)
-                        } else {
-                            let expr = expr.integer_promote().recover(&mut self.error_handler);
-                            Ok(Expr {
-                                lval: false,
-                                ctype: expr.ctype.clone(),
-                                location,
-                                expr: ExprType::Negate(Box::new(expr)),
-                            })
-                        }
-                    }
-                    Token::BinaryNot => {
-                        if !expr.ctype.is_integral() {
-                            self.semantic_err(
-                                format!("cannot use unary negation on expression of non-integer type '{}'", expr.ctype),
-                                location,
-                            );
-                            Ok(expr)
-                        } else {
-                            let expr = expr.integer_promote().recover(&mut self.error_handler);
-                            Ok(Expr {
-                                lval: false,
-                                ctype: expr.ctype.clone(),
-                                location,
-                                expr: ExprType::BitwiseNot(Box::new(expr)),
-                            })
-                        }
-                    }
-                    Token::LogicalNot => Ok(expr.logical_not().recover(&mut self.error_handler)),
-                    x => unreachable!("didn't expect '{}' to be an unary operand", x),
-                }
-            }
-            _ => self.postfix_expr(),
-        }
-    }
-
-    /// postfix_expr
-    /// : primary_expr
-    /// | postfix_expr '[' expr ']'
-    /// | postfix_expr '(' argument_expr_list_opt ')'
-    /// | postfix_expr '.' identifier
-    /// | postfix_expr PTR_OP identifier
-    /// | postfix_expr INC_OP
-    /// | postfix_expr DEC_OP
-    /// ;
-    fn postfix_expr(&mut self) -> SyntaxResult {
-        let mut expr = self.primary_expr()?;
-        while let Some(Locatable {
-            location,
-            data: token,
-        }) = self.next_token()
-        {
-            expr = match token {
-                // a[i] desugars to *(a + i)
-                Token::LeftBracket => {
-                    let left = expr.rval();
-                    let right = self.expr()?.rval();
-                    self.expect(Token::RightBracket)?;
-                    let (target_type, array, index) = match (&left.ctype, &right.ctype) {
-                        (Type::Pointer(target), _) => ((**target).clone(), left, right),
-                        (_, Type::Pointer(target)) => ((**target).clone(), right, left),
-                        (l, r) => {
-                            self.semantic_err(
-                                format!("neither {} nor {} are pointers types", l, r),
-                                location,
-                            );
-                            expr = left;
-                            continue;
-                        }
-                    };
-                    let mut addr = Expr::pointer_arithmetic(array, index, &target_type, location)
-                        .recover(&mut self.error_handler);
-                    addr.ctype = target_type;
-                    addr.lval = true;
-                    addr
-                }
-                // function call
-                Token::LeftParen => {
-                    let args = self.argument_expr_list_opt()?;
-                    self.expect(Token::RightParen)?;
-                    // if fp is a function pointer, fp() desugars to (*fp)()
-                    match expr.ctype {
-                        Type::Pointer(ref pointee) if pointee.is_function() => {
-                            expr = Expr {
-                                lval: false,
-                                location: expr.location,
-                                ctype: (**pointee).clone(),
-                                expr: ExprType::Deref(Box::new(expr)),
-                            }
-                        }
-                        _ => (),
-                    };
-                    let functype = match expr.ctype {
-                        Type::Function(ref functype) => functype,
-                        Type::Error => continue, // we've already reported this error
-                        _ => {
-                            self.semantic_err(
-                                format!("called object of type '{}' is not a function", expr.ctype),
-                                location,
-                            );
-                            continue;
-                        }
-                    };
-                    let mut expected = functype.params.len();
-                    if expected == 1 && functype.params[0].get().ctype == Type::Void {
-                        expected = 0;
-                    }
-                    if !functype.params.is_empty()
-                        && (args.len() < expected || args.len() > expected && !functype.varargs)
-                    {
-                        self.semantic_err(
-                            format!(
-                                "too {} arguments to function call: expected {}, have {}",
-                                if args.len() > expected { "many" } else { "few" },
-                                expected,
-                                args.len(),
-                            ),
-                            location,
-                        );
-                    }
-                    let mut promoted_args = vec![];
-                    for (i, arg) in args.into_iter().enumerate() {
-                        let maybe_err = match functype.params.get(i) {
-                            Some(expected) => arg.rval().cast(&expected.get().ctype),
-                            None => arg.default_promote(),
-                        };
-                        let promoted = maybe_err.recover(&mut self.error_handler);
-                        promoted_args.push(promoted);
-                    }
-                    Expr {
-                        location,
-                        lval: false, // no move semantics here!
-                        ctype: *functype.return_type.clone(),
-                        expr: ExprType::FuncCall(Box::new(expr), promoted_args),
-                    }
-                }
-                Token::Dot => {
-                    let Locatable { location, data } =
-                        self.expect(Token::Id(Default::default()))?;
-                    let id = match data {
-                        Token::Id(id) => id,
-                        _ => unreachable!("bug in Parser::expect"),
-                    };
-                    self.struct_member(expr, id, location)?
-                }
-                Token::StructDeref => {
-                    let Locatable { location, data } =
-                        self.expect(Token::Id(Default::default()))?;
-                    let id = match data {
-                        Token::Id(id) => id,
-                        _ => unreachable!("bug in Parser::expect"),
-                    };
-                    let struct_type = match &expr.ctype {
-                        Type::Pointer(ctype) => match **ctype {
-                            Type::Union(_) | Type::Struct(_) => (**ctype).clone(),
-                            _ => {
-                                self.semantic_err(
-                                    "pointer does not point to a struct or union",
-                                    location,
-                                );
-                                continue;
-                            }
-                        },
-                        _ => {
-                            self.semantic_err(
-                                "cannot use '->' operator on type that is not a pointer",
-                                location,
-                            );
-                            continue;
-                        }
-                    };
-                    let expr = expr.indirection(false, struct_type, location);
-                    self.struct_member(expr, id, location)?
-                }
-                Token::PlusPlus => {
-                    Expr::increment_op(false, true, expr, location).recover(&mut self.error_handler)
-                }
-                Token::MinusMinus => Expr::increment_op(false, false, expr, location)
-                    .recover(&mut self.error_handler),
-                _ => {
-                    self.unput(Some(Locatable {
-                        location,
-                        data: token,
-                    }));
-                    break;
-                }
-            }
-        }
-        Ok(expr)
-    }
-
-    /// argument_expr_list_opt
-    /// : /* empty */
-    /// | assignment_expr (',' assignment_expr)*
-    /// ;
-    fn argument_expr_list_opt(&mut self) -> SyntaxResult<Vec<Expr>> {
-        if self.peek_token() == Some(&Token::RightParen) {
-            return Ok(vec![]);
-        }
-        let mut args = vec![self.assignment_expr()?];
-        while self.match_next(&Token::Comma).is_some() {
-            args.push(self.assignment_expr()?);
-        }
-        Ok(args)
-    }
-
-    /// primary_expr
-    /// : identifier
-    /// | INT_CONSTANT
-    /// | DOUBLE_CONSTANT
-    /// | STRING_LITERAL
-    /// | '(' expr ')'
-    /// ;
-    fn primary_expr(&mut self) -> SyntaxResult {
-        use crate::data::StorageClass;
-        let mut pretend_zero = Expr::zero(self.next_location());
-        pretend_zero.ctype = Type::Error;
-        if let Some(Locatable { location, data }) = self.next_token() {
-            match data {
-                Token::Id(name) => match self.scope.get(&name) {
-                    None => {
-                        self.error_handler.push_back(CompileError::new(
-                            SemanticError::UndeclaredVar(name).into(),
-                            location,
-                        ));
-                        Ok(pretend_zero)
-                    }
-                    Some(symbol) => {
-                        let meta = symbol.get();
-                        if meta.storage_class == StorageClass::Typedef {
-                            self.error_handler.push_back(
-                                location.error(SemanticError::TypedefInExpressionContext),
-                            );
-                            return Ok(pretend_zero);
-                        }
-                        if let Type::Enum(ident, members) = &meta.ctype {
-                            let enumerator = members.iter().find_map(|(member, value)| {
-                                if name == *member {
-                                    Some(*value)
-                                } else {
-                                    None
-                                }
-                            });
-                            if let Some(e) = enumerator {
-                                return Ok(Expr {
-                                    ctype: Type::Enum(*ident, members.clone()),
-                                    location,
-                                    lval: false,
-                                    expr: ExprType::Literal(Literal::Int(e)),
-                                });
-                            }
-                        }
-                        Ok(Expr::id(*symbol, location))
-                    }
-                },
-                Token::Literal(literal) => Ok(Expr::from((literal, location))),
-                Token::LeftParen => {
-                    let expr = self.expr()?;
-                    self.expect(Token::RightParen)?;
-                    Ok(expr)
-                }
-                other => {
-                    let err = Err(Locatable {
-                        location,
-                        data: SyntaxError::from(format!(
-                            "expected '(' or literal in expression, got '{}'",
-                            other
-                        )),
-                    });
-                    self.unput(Some(Locatable {
-                        location,
-                        data: other,
-                    }));
-                    err
-                }
-            }
-        } else {
-            Err(Locatable {
-                data: SyntaxError::from("expected '(' or literal in expression, got <end-of-file>"),
-                location: self.next_location(),
-            })
-        }
-    }
-
-    // parse a struct member
-    // used for both s.a and s->a
-    fn struct_member(&mut self, expr: Expr, id: InternedStr, location: Location) -> SyntaxResult {
-        match &expr.ctype {
-            Type::Struct(stype) | Type::Union(stype) => {
-                let members = stype.members();
-                if members.is_empty() {
-                    self.semantic_err(format!("{} has not yet been defined", expr.ctype), location);
-                    Ok(expr)
-                } else if let Some(member) = members.iter().find(|member| member.id == id) {
-                    Ok(Expr {
-                        ctype: member.ctype.clone(),
-                        lval: true,
-                        location,
-                        expr: ExprType::Member(Box::new(expr), id),
-                    })
-                } else {
-                    self.semantic_err(
-                        format!("no member named '{}' in '{}'", id, expr.ctype),
-                        location,
-                    );
-                    Ok(expr)
-                }
-            }
-            _ => {
-                self.semantic_err(
-                    format!("expected struct or union, got type '{}'", expr.ctype),
-                    location,
-                );
-                Ok(expr)
-            }
-        }
-    }
-
-    /// Parse a grammar rule of the form
-    /// rule:
-    ///     grammar_item (TOKEN grammar_item)*
-    ///
-    /// which requires its operands to be scalar rvalues.
-    ///
-    /// next_grammar_func should parse `grammar_item`.
-    /// `expr_func` is usually an Enum constructor.
-    /// `token` should be the token for the operation.
-    /// `ctype` should be the type of the resulting expression (_not_ the operands).
-    fn scalar_left_associative_binary_op<E, G>(
-        &mut self,
-        next_grammar_func: G,
-        expr_func: E,
-        token: &Token,
-        ctype: Type,
-    ) -> SyntaxResult
-    where
-        E: Fn(Box<Expr>, Box<Expr>) -> Result<ExprType, (Locatable<SemanticError>, Expr)>,
-        G: Fn(&mut Self) -> SyntaxResult,
-    {
-        self.left_associative_binary_op(next_grammar_func, &[token], move |left, right, token| {
-            let non_scalar = if !left.ctype.is_scalar() {
-                Some(left.ctype.clone())
-            } else if !right.ctype.is_scalar() {
-                Some(right.ctype.clone())
-            } else {
-                None
-            };
-            if let Some(ctype) = non_scalar {
-                return Err((Locatable {
-                    data: SemanticError::from(format!(
-                        "expected scalar type (number or pointer) for both operands of '{}', got '{}'",
-                        token.data, ctype
-                    )),
-                    location: token.location,
-                }, *left));
-            }
-            Ok(Expr {
-                lval: false,
-                location: token.location,
-                ctype: ctype.clone(),
-                expr: expr_func(Box::new(left.rval()), Box::new(right.rval()))?,
-            })
-        })
-    }
-
-    /// Parse a grammar rule of the form
-    /// rule:
-    ///     grammar_item (TOKEN grammar_item)*
-    ///
-    /// which requires its operands to be integral.
-    /// The type of the resulting expression will be the same as that of its inputs.
-    ///
-    /// next_grammar_func should parse `grammar_item`.
-    /// `expr_func` is usually an Enum constructor.
-    fn integral_left_associative_binary_op<E, G>(
-        &mut self,
-        next_grammar_func: G,
-        tokens: &[&Token],
-        expr_func: E,
-    ) -> SyntaxResult
-    where
-        E: Fn(Expr, Expr, Locatable<Token>) -> RecoverableResult<Expr, Locatable<SemanticError>>,
-        G: Fn(&mut Self) -> SyntaxResult,
-    {
-        self.left_associative_binary_op(next_grammar_func, tokens, |expr, next, token| {
-            let non_scalar = if !expr.ctype.is_integral() {
-                Some(&expr.ctype)
-            } else if !next.ctype.is_integral() {
-                Some(&next.ctype)
-            } else {
-                None
-            };
-            if let Some(ctype) = non_scalar {
-                return Err((
-                    Locatable {
-                        data: SemanticError::from(format!(
-                            "expected integer on both sides of '{}', got '{}'",
-                            token.data, ctype
-                        )),
-                        location: token.location,
-                    },
-                    *expr,
-                ));
-            }
-            let (promoted_expr, next) = Expr::binary_promote(*expr, *next).map_err(flatten)?;
-            expr_func(promoted_expr, next, token)
-        })
-    }
-
-    /// Parse a grammar rule of the form
-    /// rule:
-    ///     grammar_item (TOKEN grammar_item)*
-    ///
-    /// next_grammar_func should parse `grammar_item`.
-    /// `token` should be the token for the operation.
-    /// `expr_func` is called with the arguments (grammar_item, grammar_item, TOKEN)
-    /// to allow maximum flexibility. If you want convenience instead,
-    /// consider `scalar_left_associative_binary_op` or `left_associative_binary_op`
-    #[inline]
-    fn left_associative_binary_op<E, G>(
-        &mut self,
-        next_grammar_func: G,
-        tokens: &[&Token],
-        mut expr_func: E,
-    ) -> SyntaxResult
-    where
-        E: FnMut(
-            Box<Expr>,
-            Box<Expr>,
-            Locatable<Token>,
-        ) -> RecoverableResult<Expr, Locatable<SemanticError>>,
-        G: Fn(&mut Self) -> SyntaxResult,
-    {
-        let mut expr = next_grammar_func(self)?;
-        while let Some(locatable) = self.match_any(tokens) {
-            let next = next_grammar_func(self)?;
-            match expr_func(Box::new(expr), Box::new(next), locatable) {
-                Ok(combined) => expr = combined,
-                Err((err, original)) => {
-                    expr = original;
-                    self.error_handler.push_back(err);
-                }
-            }
-        }
-        Ok(expr)
-    }
+#[derive(Copy, Clone, Debug)]
+#[rustfmt::skip]
+enum BinaryPrecedence {
+    Mul, Div, Mod,
+    Add, Sub,
+    Shl, Shr,
+    Less, Greater, LessEq, GreaterEq,
+    Eq, Ne,
+    BitAnd,
+    BitXor,
+    BitOr,
+    LogAnd,
+    LogOr,
+    Ternary,
+    Assignment(AssignmentToken),
+    Comma,
 }
 
-impl Token {
-    fn is_unary_operator(&self) -> bool {
+impl BinaryPrecedence {
+    fn prec(self) -> usize {
+        use BinaryPrecedence::*;
         match self {
-            Token::Ampersand
-            | Token::Star
-            | Token::Plus
-            | Token::Minus
-            | Token::BinaryNot
-            | Token::LogicalNot => true,
-            _ => false,
+            Mul | Div | Mod => 12,
+            Add | Sub => 11,
+            Shl | Shr => 10,
+            Less | Greater | LessEq | GreaterEq => 9,
+            Eq | Ne => 8,
+            BitAnd => 7,
+            BitXor => 6,
+            BitOr => 5,
+            LogAnd => 4,
+            LogOr => 3,
+            Ternary => 2,
+            Assignment(_) => 1,
+            Comma => 0,
         }
     }
-}
-
-/* stateless helper functions */
-impl Expr {
-    fn zero(location: Location) -> Expr {
-        Expr {
-            ctype: Type::Int(true),
-            expr: ExprType::Literal(Literal::Int(0)),
-            lval: false,
-            location,
-        }
-    }
-
-    fn indirection(self, lval: bool, ctype: Type, location: Location) -> Self {
-        Expr {
-            location,
-            ctype,
-            lval,
-            // this is super hacky but the only way I can think of to prevent
-            // https://github.com/jyn514/rcc/issues/90
-            expr: ExprType::Noop(Box::new(self.rval())),
-        }
-    }
-    fn is_null(&self) -> bool {
-        if let ExprType::Literal(token) = &self.expr {
-            match token {
-                Literal::Int(0) | Literal::UnsignedInt(0) | Literal::Char(0) => true,
-                _ => false,
-            }
-        } else {
-            false
-        }
-    }
-    /// See section 6.3.2.1 of the C Standard. In particular:
-    /// "A modifiable lvalue is an lvalue that does not have array type,
-    /// does not  have an incomplete type, does not have a const-qualified type,
-    /// and if it is a structure or union, does not have any member with a const-qualified type"
-    fn modifiable_lval(&self) -> Result<(), SemanticError> {
-        let err = |e| Err(SemanticError::NotAssignable(e));
-        // rval
-        if !self.lval {
-            return err("rvalue".to_string());
-        }
-        // incomplete type
-        if !self.ctype.is_complete() {
-            return err(format!("expression with incomplete type '{}'", self.ctype));
-        }
-        // const-qualified type
-        if let ExprType::Id(sym) = &self.expr {
-            let meta = sym.get();
-            if meta.qualifiers.c_const {
-                return err(format!("variable '{}' with `const` qualifier", meta.id));
-            }
-        }
-        match &self.ctype {
-            // array type
-            Type::Array(_, _) => err("array".to_string()),
-            // member with const-qualified type
-            Type::Struct(stype) | Type::Union(stype) => {
-                if stype
-                    .members()
-                    .iter()
-                    .map(|sym| sym.qualifiers.c_const)
-                    .any(|x| x)
-                {
-                    err("struct or union with `const` qualified member".to_string())
-                } else {
-                    Ok(())
-                }
-            }
-            _ => Ok(()),
-        }
-    }
-    // ensure an expression has a value. convert
-    // - arrays -> pointers
-    // - functions -> pointers
-    // - variables -> value stored in that variable
-    pub(super) fn rval(self) -> Expr {
-        match self.ctype {
-            // a + 1 is the same as &a + 1
-            Type::Array(to, _) => Expr {
-                lval: false,
-                ctype: Type::Pointer(to),
-                ..self
-            },
-            Type::Function(_) => Expr {
-                lval: false,
-                ctype: Type::Pointer(Box::new(self.ctype)),
-                ..self
-            },
-            // HACK: structs can't be dereferenced since they're not scalar, so we just fake it
-            Type::Struct(_) | Type::Union(_) if self.lval => Expr {
-                lval: false,
-                ..self
-            },
-            _ if self.lval => Expr {
-                ctype: self.ctype.clone(),
-                lval: false,
-                location: self.location,
-                expr: ExprType::Deref(Box::new(self)),
-            },
-            _ => self,
-        }
-    }
-    fn default_promote(self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
-        let expr = self.rval();
-        let ctype = expr.ctype.clone().default_promote();
-        expr.cast(&ctype)
-    }
-    // Perform an integer conversion, including all relevant casts.
-    //
-    // See `Type::integer_promote` for conversion rules.
-    fn integer_promote(self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
-        let expr = self.rval();
-        let ctype = expr.ctype.clone().integer_promote();
-        expr.cast(&ctype)
-    }
-    // Perform a binary conversion, including all relevant casts.
-    //
-    // See `Type::binary_promote` for conversion rules.
-    fn binary_promote(
-        left: Expr,
-        right: Expr,
-    ) -> RecoverableResult<(Expr, Expr), Locatable<SemanticError>> {
-        let (left, right) = (left.rval(), right.rval());
-        let ctype = Type::binary_promote(left.ctype.clone(), right.ctype.clone());
-        match (left.cast(&ctype), right.cast(&ctype)) {
-            (Ok(left_cast), Ok(right_cast)) => Ok((left_cast, right_cast)),
-            (Err((err, left)), Ok(right)) | (Ok(left), Err((err, right)))
-            // TODO: don't ignore this right error
-            | (Err((err, left)), Err((_, right))) => Err((err, (left, right))),
-        }
-    }
-    // Convert an expression to _Bool. Section 6.3.1.3 of the C standard:
-    // "When any scalar value is converted to _Bool,
-    // the result is 0 if the value compares equal to 0; otherwise, the result is 1."
-    //
-    // if (expr)
-    pub(crate) fn truthy(mut self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
-        self = self.rval();
-        if self.ctype == Type::Bool {
-            return Ok(self);
-        }
-        if !self.ctype.is_scalar() {
-            Err((
-                self.location.with(SemanticError::Generic(format!(
-                    "expression of type '{}' cannot be converted to bool",
-                    self.ctype
-                ))),
-                self,
-            ))
-        } else {
-            let zero = Expr::zero(self.location).cast(&self.ctype).unwrap();
-            debug_assert!(zero.ctype == self.ctype);
-            Ok(Expr {
-                lval: false,
-                location: self.location,
-                ctype: Type::Bool,
-                expr: ExprType::Binary(
-                    BinaryOp::Compare(ComparisonToken::NotEqual),
-                    Box::new(self),
-                    Box::new(zero),
-                ),
-            })
-        }
-    }
-    // !expr
-    fn logical_not(self) -> RecoverableResult<Expr, Locatable<SemanticError>> {
-        let boolean = self.truthy()?;
-        debug_assert!(boolean.ctype == Type::Bool);
-        let zero = Expr::zero(boolean.location).cast(&Type::Bool).unwrap();
-        Ok(Expr {
-            lval: false,
-            location: boolean.location,
-            ctype: Type::Bool,
-            expr: ExprType::Binary(
-                BinaryOp::Compare(ComparisonToken::EqualEqual),
-                Box::new(boolean),
-                Box::new(zero),
-            ),
-        })
-    }
-    // Simple assignment rules, section 6.5.16.1 of the C standard
-    // the funky return type is so we don't consume the original expression in case of an error
-    pub(super) fn cast(
-        mut self,
-        ctype: &Type,
-    ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
-        if self.ctype == *ctype {
-            Ok(self)
-        } else if self.ctype.is_arithmetic() && ctype.is_arithmetic()
-            || self.is_null() && ctype.is_pointer()
-            || self.ctype.is_pointer() && ctype.is_bool()
-            || self.ctype.is_pointer() && ctype.is_void_pointer()
-            || self.ctype.is_pointer() && ctype.is_char_pointer()
-        {
-            Ok(Expr {
-                location: self.location,
-                expr: ExprType::Cast(Box::new(self)),
-                lval: false,
-                ctype: ctype.clone(),
-            })
-        } else if ctype.is_pointer()
-            && (self.is_null() || self.ctype.is_void_pointer() || self.ctype.is_char_pointer())
-        {
-            self.ctype = ctype.clone();
-            Ok(self)
-        } else if self.ctype == Type::Error {
-            Ok(self)
-        // TODO: allow implicit casts of const pointers
-        } else {
-            Err((
-                Locatable {
-                    location: self.location,
-                    data: format!(
-                        "cannot implicitly convert '{}' to '{}'{}",
-                        self.ctype,
-                        ctype,
-                        if ctype.is_pointer() {
-                            format!(". help: use an explicit cast: ({})", ctype)
-                        } else {
-                            String::new()
-                        }
-                    )
-                    .into(),
-                },
-                self,
-            ))
-        }
-    }
-    fn pointer_arithmetic(
-        base: Expr,
-        index: Expr,
-        pointee: &Type,
-        location: Location,
-    ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
-        let offset = Expr {
-            lval: false,
-            location: index.location,
-            expr: ExprType::Cast(Box::new(index)),
-            ctype: base.ctype.clone(),
-        }
-        .rval();
-        let size = match pointee.sizeof() {
-            Ok(s) => s,
-            Err(_) => {
-                return Err((
-                    Locatable {
-                        location,
-                        data: format!(
-                    "cannot perform pointer arithmetic when size of pointed type '{}' is unknown",
-                    pointee
-                ),
-                    }
-                    .into(),
-                    base,
-                ))
-            }
-        };
-        let size_literal = Expr::from((Literal::UnsignedInt(size), offset.location));
-        let size_cast = Expr {
-            lval: false,
-            location: offset.location,
-            ctype: offset.ctype.clone(),
-            expr: ExprType::Cast(Box::new(size_literal)),
-        };
-        let offset = Expr {
-            lval: false,
-            location: offset.location,
-            ctype: offset.ctype.clone(),
-            expr: ExprType::Binary(BinaryOp::Mul, Box::new(size_cast), Box::new(offset)),
-        };
-        Ok(Expr {
-            lval: false,
-            location,
-            ctype: base.ctype.clone(),
-            expr: ExprType::Binary(BinaryOp::Add, Box::new(base), Box::new(offset)),
-        })
-    }
-    fn increment_op(
-        prefix: bool,
-        increment: bool,
-        expr: Expr,
-        location: Location,
-    ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
-        if let Err(err) = expr.modifiable_lval() {
-            return Err((expr.location.with(err), expr));
-        } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
-            return Err((
-                Locatable {
-                    location: expr.location,
-                    data: format!(
-                        "cannot increment or decrement value of type '{}'",
-                        expr.ctype
-                    ),
-                }
-                .into(),
-                expr,
-            ));
-        }
-        // ++i is syntactic sugar for i+=1
-        if prefix {
-            let rval = Expr {
-                lval: false,
-                ctype: expr.ctype.clone(),
-                location,
-                expr: ExprType::Cast(Box::new(Expr::from((Literal::Int(1), location)))),
-            };
-            let token = if increment {
-                AssignmentToken::AddEqual
-            } else {
-                AssignmentToken::SubEqual
-            };
-            Ok(Expr {
-                ctype: expr.ctype.clone(),
-                lval: false, // `(i = j) = 4`; is invalid
-                expr: ExprType::Binary(BinaryOp::Assign(token), Box::new(expr), Box::new(rval)),
-                location,
-            })
-        } else {
-            Ok(Expr {
-                lval: false,
-                ctype: expr.ctype.clone(),
-                // true, false: pre-decrement
-                expr: ExprType::PostIncrement(Box::new(expr), increment),
-                location,
-            })
-        }
-    }
-    // convenience method for constructing an Expr
-    fn default_expr(
-        op: BinaryOp,
-    ) -> impl Fn(Expr, Expr, Locatable<Token>) -> RecoverableResult<Expr, Locatable<SemanticError>>
-    {
-        move |left: Expr, right: Expr, token: Locatable<Token>| {
-            Ok(Expr {
-                location: token.location,
-                ctype: left.ctype.clone(),
-                lval: false,
-                expr: ExprType::Binary(op, Box::new(left), Box::new(right)),
-            })
-        }
-    }
-    // helper function since == and > have almost identical logic
-    fn relational_expr(
-        mut left: Box<Expr>,
-        mut right: Box<Expr>,
-        token: Locatable<Token>,
-    ) -> RecoverableResult<Expr, Locatable<SemanticError>> {
-        let token = match token.data {
-            Token::Comparison(c) => token.location.with(c),
-            _ => unreachable!("bad use of relational_expr"),
-        };
-        if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
-            let tmp = Expr::binary_promote(*left, *right).map_err(flatten)?;
-            *left = tmp.0;
-            right = Box::new(tmp.1);
-        } else {
-            let (left_expr, right_expr) = (left.rval(), right.rval());
-            if !((left_expr.ctype.is_pointer() && left_expr.ctype == right_expr.ctype)
-                // equality operations have different rules :(
-                || ((token.data == ComparisonToken::EqualEqual || token.data == ComparisonToken::NotEqual)
-                    // shoot me now
-                    && ((left_expr.ctype.is_pointer() && right_expr.ctype.is_void_pointer())
-                        || (left_expr.ctype.is_void_pointer() && right_expr.ctype.is_pointer())
-                        || (left_expr.is_null() && right_expr.ctype.is_pointer())
-                        || (left_expr.ctype.is_pointer() && right_expr.is_null()))))
-            {
-                return Err((Locatable {
-                    data: SemanticError::from(format!(
-                        "invalid types for '{}' (expected arithmetic types or compatible pointers, got {} {} {}",
-                        token.data,
-                        left_expr.ctype,
-                        token.data,
-                        right_expr.ctype
-                    )),
-                    location: token.location,
-                }, left_expr));
-            }
-            *left = left_expr;
-            right = Box::new(right_expr);
-        }
-        assert!(!left.lval && !right.lval);
-        Ok(Expr {
-            lval: false,
-            location: token.location,
-            ctype: Type::Bool,
-            expr: ExprType::Binary(BinaryOp::Compare(token.data), left, right),
-        })
-    }
-    fn id(symbol: MetadataRef, location: Location) -> Self {
-        Self {
-            // TODO: this clone will get expensive fast
-            expr: ExprType::Id(symbol),
-            ctype: symbol.get().ctype.clone(),
-            lval: true,
-            location,
-        }
-    }
-}
-
-impl From<(Literal, Location)> for Expr {
-    fn from((literal, location): (Literal, Location)) -> Self {
-        let ctype = match &literal {
-            Literal::Char(_) => Type::Char(true),
-            Literal::Int(_) => Type::Long(true),
-            Literal::UnsignedInt(_) => Type::Long(false),
-            Literal::Float(_) => Type::Double,
-            Literal::Str(s) => Type::for_string_literal(s.len() as SIZE_T),
-        };
-        Expr {
-            lval: false,
-            ctype,
-            location,
-            expr: ExprType::Literal(literal),
-        }
-    }
-}
-
-fn flatten<E>((err, (left, _)): (E, (Expr, Expr))) -> (E, Expr) {
-    (err, left)
-}
-
-/// Implicit conversions.
-/// These are handled here and no other part of the compiler deals with them directly.
-impl Type {
-    #[inline]
-    fn is_void_pointer(&self) -> bool {
+    fn left_associative(self) -> bool {
+        use BinaryPrecedence::*;
         match self {
-            Type::Pointer(t) => **t == Type::Void,
-            _ => false,
-        }
-    }
-    #[inline]
-    fn is_char_pointer(&self) -> bool {
-        match self {
-            Type::Pointer(t) => match **t {
-                Type::Char(_) => true,
-                _ => false,
-            },
-            _ => false,
-        }
-    }
-    #[inline]
-    /// used for pointer addition and subtraction, see section 6.5.6 of the C11 standard
-    fn is_pointer_to_complete_object(&self) -> bool {
-        match self {
-            Type::Pointer(ctype) => ctype.is_complete() && !ctype.is_function(),
-            Type::Array(_, _) => true,
-            _ => false,
-        }
-    }
-    #[inline]
-    fn is_struct(&self) -> bool {
-        match self {
-            Type::Struct(_) | Type::Union(_) => true,
-            _ => false,
-        }
-    }
-    #[inline]
-    fn is_complete(&self) -> bool {
-        match self {
-            Type::Void | Type::Function(_) | Type::Array(_, ArrayType::Unbounded) => false,
-            // TODO: update when we allow incomplete struct and union types (e.g. `struct s;`)
+            Ternary | Assignment(_) => false,
             _ => true,
         }
     }
-    // Perform the 'default promotions' from 6.5.2.2.6
-    fn default_promote(self) -> Type {
-        if self.is_integral() {
-            self.integer_promote()
-        } else if self == Type::Float {
-            Type::Double
-        } else {
-            self
-        }
-    }
-    fn integer_promote(self) -> Type {
-        if self.rank() <= Type::Int(true).rank() {
-            if Type::Int(true).can_represent(&self) {
-                Type::Int(true)
-            } else {
-                Type::Int(false)
-            }
-        } else {
-            self
-        }
-    }
-    /// Perform the 'usual arithmetic conversions' from 6.3.1.8 of the C standard.
-    ///
-    /// Algorithm:
-    /// If either object is a `double`, convert the other to a double.
-    /// Else if either is a `float`, convert the other to a float.
-    /// Else if both are signed or both are unsigned, convert the object with lesser rank to
-    /// the type of the object with greater rank.
-    /// Else if the unsigned object has rank >= other, convert other -> unsigned version (!!).
-    /// Else if signed type can represent all values of the unsigned type,
-    /// convert unsigned -> signed.
-    /// Else, convert signed -> unsigned.
-    ///
-    /// The exclamation marks are because the following will evaluate to MAX_UINT,
-    /// _not_ -1: `1ul + (short)-2`.
-    ///
-    /// Trying to promote derived types (pointers, functions, etc.) is an error.
-    /// Pointer arithmetic should not promote either argument, see 6.5.6 of the C standard.
-    fn binary_promote(mut left: Type, mut right: Type) -> Type {
-        use Type::*;
-        if left == Double || right == Double {
-            return Double; // toil and trouble
-        } else if left == Float || right == Float {
-            return Float;
-        }
-        left = left.integer_promote();
-        right = right.integer_promote();
-        let signs = (left.sign(), right.sign());
-        // same sign
-        if signs.0 == signs.1 {
-            return if left.rank() >= right.rank() {
-                left
-            } else {
-                right
-            };
+    fn constructor(self) -> impl Fn(Expr, Expr) -> ExprType {
+        use crate::data::lex::ComparisonToken;
+        use BinaryPrecedence::*;
+        use ExprType::*;
+        let func: Box<dyn Fn(_, _) -> _> = match self {
+            Self::Mul => Box::new(ExprType::Mul),
+            Self::Div => Box::new(ExprType::Div),
+            Self::Mod => Box::new(ExprType::Mod),
+            Self::Add => Box::new(ExprType::Add),
+            Self::Sub => Box::new(ExprType::Sub),
+            Shl => Box::new(|a, b| Shift(a, b, true)),
+            Shr => Box::new(|a, b| Shift(a, b, false)),
+            Less => Box::new(|a, b| Compare(a, b, ComparisonToken::Less)),
+            Greater => Box::new(|a, b| Compare(a, b, ComparisonToken::Greater)),
+            LessEq => Box::new(|a, b| Compare(a, b, ComparisonToken::LessEqual)),
+            GreaterEq => Box::new(|a, b| Compare(a, b, ComparisonToken::GreaterEqual)),
+            Eq => Box::new(|a, b| Compare(a, b, ComparisonToken::EqualEqual)),
+            Ne => Box::new(|a, b| Compare(a, b, ComparisonToken::NotEqual)),
+            BitAnd => Box::new(BitwiseAnd),
+            BitXor => Box::new(Xor),
+            BitOr => Box::new(BitwiseOr),
+            LogAnd => Box::new(LogicalAnd),
+            LogOr => Box::new(LogicalOr),
+            Self::Assignment(token) => Box::new(move |a, b| Assign(a, b, token)),
+            Self::Ternary => panic!("lol no"),
+            Self::Comma => Box::new(ExprType::Comma),
         };
-        let (signed, unsigned) = if signs.0 {
-            (left, right)
-        } else {
-            (right, left)
-        };
-        if signed.can_represent(&unsigned) {
-            signed
-        } else {
-            unsigned
-        }
-    }
-    fn pointer_promote(left: &mut Expr, right: &mut Expr) -> bool {
-        if left.ctype == right.ctype {
-            true
-        } else if left.ctype.is_void_pointer() || left.ctype.is_char_pointer() || left.is_null() {
-            left.ctype = right.ctype.clone();
-            true
-        } else if right.ctype.is_void_pointer() || right.ctype.is_char_pointer() || right.is_null()
-        {
-            right.ctype = left.ctype.clone();
-            true
-        } else {
-            false
-        }
-    }
-    /// Return whether self is a signed type.
-    ///
-    /// Should only be called on integral types.
-    /// Calling sign() on a floating or derived type will panic.
-    fn sign(&self) -> bool {
-        use Type::*;
-        match self {
-            Char(sign) | Short(sign) | Int(sign) | Long(sign) => *sign,
-            Bool => false,
-            // TODO: allow enums with values of UINT_MAX
-            Enum(_, _) => true,
-            x => panic!(
-                "Type::sign can only be called on integral types (got {})",
-                x
-            ),
-        }
-    }
-    /// Return the rank of an integral type, according to section 6.3.1.1 of the C standard.
-    ///
-    /// It is an error to take the rank of a non-integral type.
-    ///
-    /// Examples:
-    /// ```ignore
-    /// use rcc::data::types::Type::*;
-    /// assert!(Long(true).rank() > Int(true).rank());
-    /// assert!(Int(false).rank() > Short(false).rank());
-    /// assert!(Short(true).rank() > Char(true).rank());
-    /// assert!(Char(true).rank() > Bool.rank());
-    /// assert!(Long(false).rank() > Bool.rank());
-    /// assert!(Long(true).rank() == Long(false).rank());
-    /// ```
-    fn rank(&self) -> usize {
-        use Type::*;
-        match self {
-            Bool => 0,
-            Char(_) => 1,
-            Short(_) => 2,
-            Int(_) => 3,
-            Long(_) => 4,
-            // don't make this 5 in case we add `long long` at some point
-            _ => std::usize::MAX,
-        }
-    }
-    fn for_string_literal(len: SIZE_T) -> Type {
-        Type::Array(Box::new(Type::Char(true)), ArrayType::Fixed(len))
+        move |a, b| func(Box::new(a), Box::new(b))
     }
 }
 
-fn is_typedef(s: InternedStr, scope: &crate::data::Scope<InternedStr, MetadataRef>) -> bool {
-    use crate::data::StorageClass;
-    if let Some(symbol) = scope.get(&s) {
-        symbol.get().storage_class == StorageClass::Typedef
-    } else {
-        false
+impl TryFrom<&Token> for BinaryPrecedence {
+    type Error = ();
+    fn try_from(t: &Token) -> Result<BinaryPrecedence, ()> {
+        use crate::data::lex::ComparisonToken as Compare;
+        use BinaryPrecedence::{self as Bin, *};
+        use Token::*;
+        Ok(match t {
+            Star => Bin::Mul,
+            Divide => Div,
+            Token::Mod => Bin::Mod,
+            Plus => Add,
+            Minus => Sub,
+            ShiftLeft => Shl,
+            ShiftRight => Shr,
+            Comparison(Compare::Less) => Bin::Less,
+            Comparison(Compare::Greater) => Bin::Greater,
+            Comparison(Compare::LessEqual) => Bin::LessEq,
+            Comparison(Compare::GreaterEqual) => Bin::GreaterEq,
+            Comparison(Compare::EqualEqual) => Bin::Eq,
+            Comparison(Compare::NotEqual) => Bin::Ne,
+            Ampersand => BitAnd,
+            Xor => BitXor,
+            BitwiseOr => BitOr,
+            LogicalAnd => LogAnd,
+            LogicalOr => LogOr,
+            Token::Assignment(x) => Bin::Assignment(*x),
+            Question => Ternary,
+            Token::Comma => Bin::Comma,
+            _ => return Err(()),
+        })
+    }
+}
+
+impl<I: Lexer> Parser<I> {
+    #[inline]
+    pub fn expr(&mut self) -> SyntaxResult<Expr> {
+        let start = self.unary_expr()?;
+        self.binary_expr(start, 0)
+    }
+    #[inline]
+    pub fn assignment_expr(&mut self) -> SyntaxResult<Expr> {
+        self.custom_expr(BinaryPrecedence::Assignment(AssignmentToken::Equal))
+    }
+    #[inline]
+    pub fn ternary_expr(&mut self) -> SyntaxResult<Expr> {
+        self.custom_expr(BinaryPrecedence::Ternary)
+    }
+    fn custom_expr(&mut self, prec: BinaryPrecedence) -> SyntaxResult<Expr> {
+        let start = self.unary_expr()?;
+        self.binary_expr(start, prec.prec())
+    }
+    // see `BinaryPrecedence` for all possible binary expressions
+    fn binary_expr(&mut self, mut left: Expr, max_precedence: usize) -> SyntaxResult<Expr> {
+        let _guard = self.recursion_check();
+        while let Some(binop) = self
+            .peek_token()
+            .and_then(|tok| BinaryPrecedence::try_from(tok).ok())
+        {
+            let prec = binop.prec();
+            if prec < max_precedence {
+                break;
+            }
+            self.next_token();
+            let location = left.location;
+            let right = if binop.left_associative() {
+                let inner_left = self.unary_expr()?;
+                self.binary_expr(inner_left, prec + 1)?
+            } else if let BinaryPrecedence::Ternary = binop {
+                // conditional_expression
+                // : logical_or_expression
+                // | logical_or_expression '?' expression ':' conditional_expression
+                // ;
+                let inner = self.expr()?;
+                self.expect(Token::Colon)?;
+                let right_start = self.unary_expr()?;
+                let right = self.binary_expr(right_start, BinaryPrecedence::Ternary.prec())?;
+
+                let location = left.location.merge(&inner.location).merge(&right.location);
+                let ternary = ExprType::Ternary(Box::new(left), Box::new(inner), Box::new(right));
+                left = Expr::new(ternary, location);
+                continue;
+            } else {
+                let inner_left = self.unary_expr()?;
+                self.binary_expr(inner_left, prec)?
+            };
+
+            let constructor = binop.constructor();
+            let location = location.merge(&right.location);
+            left = location.with(constructor(left, right));
+        }
+        Ok(left)
+    }
+    // ambiguity between '(' expr ')' and '(' type_name ')'
+    // NOTE: there is no distinction between EOF and a non-parenthesized type here
+    fn parenthesized_type(&mut self) -> SyntaxResult<Option<Locatable<TypeName>>> {
+        if self.peek_token() == Some(&Token::LeftParen) {
+            if let Some(lookahead) = self.peek_next_token() {
+                if lookahead.is_decl_specifier() {
+                    let left_paren = self.next_token().unwrap().location;
+                    let mut ctype = self.type_name()?;
+                    let right_paren = self.expect(Token::RightParen)?.location;
+                    ctype.location = left_paren.merge(right_paren);
+                    return Ok(Some(ctype));
+                }
+            }
+        }
+        Ok(None)
+    }
+    // prefix_operator* postfix_expr
+    //
+    // this takes the place of `unary_expr` in the yacc grammar
+    fn unary_expr(&mut self) -> SyntaxResult<Expr> {
+        // prefix expressions
+        let mut prefixes = Vec::new();
+        // hack: `sizeof` can be either a unary or primary expression, so we special-case it
+        let mut inner = loop {
+            if let Some(Locatable {
+                data: constructor,
+                location,
+            }) = self.match_prefix_operator()
+            {
+                prefixes.push((constructor, location));
+            // these keywords can be followed by either a type name or an expression
+            } else if let Some(keyword) = self.match_keywords(&[Keyword::Sizeof, Keyword::Alignof])
+            {
+                // `sizeof(int)` is a primary expr
+                if let Some(mut ctype) = self.parenthesized_type()? {
+                    ctype.location = keyword.location.merge(ctype.location);
+                    let constructor = if keyword.data == Keyword::Sizeof {
+                        ExprType::SizeofType
+                    } else {
+                        ExprType::AlignofType
+                    };
+                    // short-circuit here
+                    break self.postfix_expr(ctype.map(constructor))?;
+                // `sizeof +1` is a unary expr
+                } else {
+                    let constructor = if keyword.data == Keyword::Sizeof {
+                        ExprType::SizeofExpr
+                    } else {
+                        ExprType::AlignofExpr
+                    };
+                    prefixes.push((
+                        Box::new(move |a| constructor(Box::new(a))),
+                        keyword.location,
+                    ));
+                }
+            } else {
+                break self.primary_expr()?;
+            }
+        };
+        while let Some((constructor, location)) = prefixes.pop() {
+            inner = Locatable::new(constructor(inner), location);
+        }
+        Ok(inner)
+    }
+    // postfix_expression: primary_expression postfix_op*
+    // primary_expression: '(' expr ')' | 'sizeof' unary_expression | 'alignof' unary_expression | ID | LITERAL
+    //
+    // TODO: `sizeof` and `alignof` should be unary expressions, not primary expressions
+    #[inline]
+    fn primary_expr(&mut self) -> SyntaxResult<Expr> {
+        // primary expression
+        // this must be an expression since we already consumed all the prefix expressions
+        let primary = if let Some(paren) = self.match_next(&Token::LeftParen) {
+            // take out lots of guards since there's a lot of indirection
+            let _guard = self.recursion_check();
+            let _guard2 = self.recursion_check();
+            let mut inner = self.expr()?;
+            let end_loc = self.expect(Token::RightParen)?.location;
+            inner.location = paren.location.merge(&end_loc);
+            inner
+        } else if let Some(loc) = self.match_id() {
+            loc.map(ExprType::Id)
+        } else if let Some(literal) = self.match_literal() {
+            literal.map(ExprType::Literal)
+        } else {
+            return Err(self.next_location().with(SyntaxError::MissingPrimary));
+        };
+        self.postfix_expr(primary)
+    }
+
+    // `expr` should be a primary expression
+    fn postfix_expr(&mut self, mut expr: Expr) -> SyntaxResult<Expr> {
+        // fortunately, all postfix expressions have the same precedence
+        while let Some(Locatable {
+            data: postfix_op,
+            location,
+        }) = self.match_postfix_op()?
+        {
+            let location = expr.location.merge(&location);
+            expr = location.with(postfix_op(expr));
+        }
+        Ok(expr)
+    }
+
+    // '(' TYPE_NAME ')' | '*' | '~' | '!' | '+' | '-' | '&' | '++' | '--'
+    fn match_prefix_operator(&mut self) -> Option<Locatable<Box<dyn UnaryExprFn>>> {
+        let maybe_type = self.parenthesized_type().unwrap_or_else(|err| {
+            self.error_handler.push_back(err);
+            None
+        });
+        if let Some(cast) = maybe_type {
+            let loc = cast.location;
+            return Some(Locatable::new(
+                Box::new(move |expr| ExprType::Cast(cast.data, Box::new(expr))),
+                loc,
+            ));
+        }
+        // prefix operator
+        let func = match self.peek_token()? {
+            Token::Star => ExprType::Deref,
+            Token::BinaryNot => ExprType::BitwiseNot,
+            Token::LogicalNot => ExprType::LogicalNot,
+            Token::Plus => ExprType::UnaryPlus,
+            Token::Minus => ExprType::Negate,
+            Token::Ampersand => ExprType::AddressOf,
+            Token::PlusPlus => |e| ExprType::PreIncrement(e, true),
+            Token::MinusMinus => |e| ExprType::PreIncrement(e, false),
+            _ => return None,
+        };
+        let loc = self.next_token().unwrap().location;
+        Some(Locatable::new(Box::new(move |e| func(Box::new(e))), loc))
+    }
+    // '[' expr ']' | '(' argument* ')' | '.' ID | '->' ID | '++' | '--'
+    fn match_postfix_op(&mut self) -> SyntaxResult<Option<Locatable<impl UnaryExprFn>>> {
+        let next_location = |this: &mut Parser<_>| this.next_token().unwrap().location;
+        let needs_id = |this: &mut Self, constructor: fn(Box<Expr>, InternedStr) -> ExprType| {
+            let start = next_location(this);
+            let Locatable { data: id, location } = this.expect_id()?;
+            let location = start.merge(&location);
+            Ok((Box::new(move |expr| constructor(expr, id)) as _, location))
+        };
+        // postfix operator
+        let (func, location): (Box<dyn FnOnce(_) -> _>, _) = match self.peek_token() {
+            Some(Token::Dot) => needs_id(self, ExprType::Member)?,
+            Some(Token::StructDeref) => needs_id(self, ExprType::DerefMember)?,
+            Some(Token::PlusPlus) => (
+                Box::new(|expr| ExprType::PostIncrement(expr, true)) as _,
+                next_location(self),
+            ),
+            Some(Token::MinusMinus) => (
+                Box::new(|expr| ExprType::PostIncrement(expr, false)) as _,
+                next_location(self),
+            ),
+            Some(Token::LeftBracket) => {
+                let start = next_location(self);
+                let index = self.expr()?;
+                let end = self.expect(Token::RightBracket)?.location;
+                let location = start.merge(&index.location).merge(&end);
+                (
+                    Box::new(move |expr| ExprType::Index(expr, Box::new(index))),
+                    location,
+                )
+            }
+            Some(Token::LeftParen) => {
+                let mut start = next_location(self);
+                let mut args = Vec::new();
+                if let Some(token) = self.match_next(&Token::RightParen) {
+                    start = start.merge(&token.location);
+                } else {
+                    loop {
+                        // TODO: maybe we could do some error handling here and consume the end right paren
+                        let arg = self.ternary_expr()?;
+                        start.merge(&arg.location);
+                        args.push(arg);
+                        if let Some(token) = self.match_next(&Token::Comma) {
+                            start.merge(token.location);
+                        } else {
+                            let token = self.expect(Token::RightParen)?;
+                            start = start.merge(token.location);
+                            break;
+                        }
+                    }
+                };
+                (Box::new(move |expr| ExprType::FuncCall(expr, args)), start)
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(Locatable {
+            data: move |e| func(Box::new(e)),
+            location,
+        }))
     }
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    use crate::data::{prelude::*, types, Scope, StorageClass};
-    use crate::intern::InternedStr;
-    use crate::parse::tests::*;
-    pub(crate) fn parse_expr(input: &str) -> CompileResult<Expr> {
-        // because we're a child module of parse, we can skip straight to `expr()`
-        let mut p = parser(input);
-        let exp = p.expr();
-        if let Some(err) = p.error_handler.pop_front() {
-            Err(err)
-        } else {
-            exp.map_err(CompileError::from)
-        }
-    }
-    fn get_location(r: &CompileResult<Expr>) -> Location {
-        match r {
-            Ok(expr) => expr.location,
-            Err(err) => err.location(),
-        }
-    }
-    fn assert_literal(token: Literal) {
-        let parsed = parse_expr(&token.to_string());
-        assert_eq!(parsed, Ok(Expr::from((token, get_location(&parsed)))));
-    }
-    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[MetadataRef]) -> CompileResult<Expr> {
-        let mut parser = parser(input);
-        let mut scope = Scope::new();
-        for &var in variables {
-            scope.insert(var.get().id, var);
-        }
-        parser.scope = scope;
-        let exp = parser.expr();
-        if let Some(err) = parser.error_handler.pop_front() {
-            Err(err)
-        } else {
-            exp.map_err(CompileError::from)
-        }
-    }
-    fn assert_type(input: &str, ctype: Type) {
-        assert!(match parse_expr(input) {
-            Ok(expr) => expr.ctype == ctype,
-            _ => false,
-        });
-    }
-    #[test]
-    fn test_primaries() {
-        assert_literal(Literal::Int(141));
-        let parsed = parse_expr("\"hi there\"");
+mod test {
+    use super::SyntaxResult;
+    use crate::data::ast::{Expr, ExprType};
+    use crate::parse::test::*;
+    use crate::parse::*;
 
+    fn assert_same(left: &str, right: &str) {
         assert_eq!(
-            parsed,
-            Ok(Expr::from((
-                Literal::Str("hi there\0".into()),
-                get_location(&parsed)
-            )))
-        );
-        assert_literal(Literal::Float(1.5));
-        let parsed = parse_expr("(1)");
-        assert_eq!(
-            parsed,
-            Ok(Expr::from((Literal::Int(1), get_location(&parsed))))
-        );
-        let x = Metadata {
-            ctype: Type::Int(true),
-            id: InternedStr::get_or_intern("x"),
-            qualifiers: Default::default(),
-            storage_class: Default::default(),
-            init: false,
-        }
-        .insert();
-        let parsed = parse_expr_with_scope("x", &[x]);
-        assert_eq!(
-            parsed,
-            Ok(Expr {
-                location: get_location(&parsed),
-                ctype: Type::Int(true),
-                lval: true,
-                expr: ExprType::Id(x)
-            })
+            expr(left).unwrap().to_string(),
+            expr(right).unwrap().to_string()
         );
     }
-    #[test]
-    fn test_mul() {
-        assert_type("1*1.0", Type::Double);
-        assert_type("1*2.0 / 1.3", Type::Double);
-        assert_type("3%2", Type::Long(true));
+    fn assert_expr_display(left: &str, right: &str) {
+        assert_eq!(expr(left).unwrap().to_string(), right);
     }
-    #[test]
-    fn test_funcall() {
-        let f = Metadata {
-            id: InternedStr::get_or_intern("f"),
-            init: false,
-            qualifiers: Default::default(),
-            storage_class: Default::default(),
-            ctype: Type::Function(types::FunctionType {
-                params: vec![Metadata {
-                    ctype: Type::Void,
-                    id: Default::default(),
-                    init: false,
-                    qualifiers: Default::default(),
-                    storage_class: StorageClass::Auto,
-                }
-                .insert()],
-                return_type: Box::new(Type::Int(true)),
-                varargs: false,
-            }),
-        }
-        .insert();
-        assert!(parse_expr_with_scope("f(1,2,3)", &[f]).is_err());
-        let parsed = parse_expr_with_scope("f()", &[f]);
-        assert!(match parsed {
-            Ok(Expr {
-                expr: ExprType::FuncCall(_, _),
-                ..
-            }) => true,
-            _ => false,
-        },);
-    }
-    #[test]
-    fn test_type_errors() {
-        assert!(parse_expr("1 % 2.0").is_err());
+
+    fn expr(e: &str) -> SyntaxResult<Expr> {
+        parser(e).expr()
     }
 
     #[test]
-    fn test_explicit_casts() {
-        assert_type("(int)4.2", Type::Int(true));
-        assert_type("(unsigned int)4.2", Type::Int(false));
-        assert_type("(float)4.2", Type::Float);
-        assert_type("(double)4.2", Type::Double);
-        assert!(parse_expr("(int*)4.2").is_err());
-        assert_type("(int*)(int)4.2", Type::Pointer(Box::new(Type::Int(true))));
+    fn parse_prefix() {
+        let expr_data = |s| expr(s).unwrap().data;
+        let x = || Box::new(Location::default().with(ExprType::Id("x".into())));
+        fn int() -> Box<Expr> {
+            Box::new(Location::default().with(ExprType::Literal(Literal::Int(1))))
+        }
+        fn assert_unary_int(s: &str, c: impl Fn(Box<Expr>) -> ExprType) {
+            assert_eq!(expr(s).unwrap().data, c(int()));
+        }
+        assert_unary_int("1", |i| i.data);
+        assert_unary_int("(((((1)))))", |i| i.data);
+        assert_unary_int("+(1)", ExprType::UnaryPlus);
+        assert_unary_int("-((1))", ExprType::Negate);
+        assert_unary_int("*1", ExprType::Deref);
+        assert_unary_int("~1", ExprType::BitwiseNot);
+        assert_unary_int("!1", ExprType::LogicalNot);
+        assert_unary_int("&1", ExprType::AddressOf);
+
+        assert_eq!(expr_data("x"), x().data);
+        assert_eq!(expr_data("x"), x().data);
+        assert_eq!(expr_data("(((((x)))))"), x().data);
+        assert_eq!(expr_data("+(x)"), ExprType::UnaryPlus(x()));
+        assert_eq!(expr_data("-((x))"), ExprType::Negate(x()));
+        assert_eq!(expr_data("*x"), ExprType::Deref(x()));
+        assert_eq!(expr_data("~x"), ExprType::BitwiseNot(x()));
+        assert_eq!(expr_data("!x"), ExprType::LogicalNot(x()));
+        assert_eq!(expr_data("&x"), ExprType::AddressOf(x()));
+
+        assert_same("++A[1]", "++(A[1])");
+        assert_same("A[1] += 1", "(A[1]) += 1");
+    }
+    #[test]
+    fn parse_postfix() {
+        assert_expr_display("a[1]", "(a)[1]");
+        assert_expr_display("a++", "(a)++");
+        assert_expr_display("a--", "(a)--");
+        assert_expr_display("a--", "(a)--");
+        assert_expr_display("a++--->b.c[d]", "(((((a)++)--)->b).c)[d]");
+        assert_expr_display("a(1, 2)(3)(4+5)", "(((a)(1, 2))(3))((4) + (5))");
+        // lol why not
+        assert_expr_display("1()()()", "(((1)())())()");
+    }
+    #[test]
+    fn parse_binary() {
+        assert_eq!(
+            expr("1 = 2 = 3 + 4*5 + 6 + 7").unwrap().to_string(),
+            "(1) = ((2) = ((((3) + ((4) * (5))) + (6)) + (7)))"
+        );
+    }
+    #[test]
+    fn parse_ternary() {
+        assert_expr_display("1||2 ? 3||4 : 5", "((1) || (2)) ? ((3) || (4)) : (5)");
+        assert_expr_display("1||2 ? 3?4:5 : 6", "((1) || (2)) ? ((3) ? (4) : (5)) : (6)");
+    }
+    #[test]
+    fn parse_casts() {
+        assert_expr_display(
+            "(int)(char)(double)(_Bool)0",
+            "(int)((char)((double)((_Bool)(0))))",
+        );
+        assert_expr_display("(int)&(char)0", "(int)(&((char)(0)))");
+        assert_expr_display("sizeof 1 + 2", "(sizeof(1)) + (2)");
+        // sizeof(int) takes precedence over (int)1
+        assert_expr_display("sizeof (int)1 + 2", "sizeof(int)");
+    }
+    #[test]
+    fn sizeof() {
+        assert_same("sizeof(int)++", "(sizeof(int))++");
+        assert_same("++sizeof(int)", "++(sizeof(int))");
     }
 }

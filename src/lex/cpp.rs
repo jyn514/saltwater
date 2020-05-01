@@ -12,7 +12,7 @@ use super::{Lexer, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
 use crate::data::lex::{Keyword, Literal};
-use crate::data::prelude::*;
+use crate::data::*;
 use crate::get_str;
 use crate::Files;
 
@@ -205,7 +205,7 @@ impl Iterator for PreProcessor<'_> {
                     Err(err) => return Some(Err(err)),
                     Ok(loc) => match loc.data {
                         CppToken::Directive(directive) => {
-                            let start = loc.location.span.start().to_usize() as u32;
+                            let start = loc.location.span.start;
                             match self.directive(directive, start) {
                                 Err(err) => break Some(Err(err)),
                                 Ok(()) => continue,
@@ -735,7 +735,12 @@ impl<'a> PreProcessor<'a> {
     // convienience function around cpp_expr
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
         // TODO: is this unwrap safe? there should only be scalar types in a cpp directive...
-        match self.cpp_expr()?.truthy().unwrap().constexpr()?.data {
+        match self
+            .cpp_expr()?
+            .truthy(&mut self.error_handler)
+            .constexpr()?
+            .data
+        {
             (Literal::Int(i), Type::Bool) => Ok(i != 0),
             _ => unreachable!("bug in const_fold or parser: cpp cond should be boolean"),
         }
@@ -818,7 +823,7 @@ impl<'a> PreProcessor<'a> {
     ///
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
-    fn cpp_expr(&mut self) -> Result<Expr, CompileError> {
+    fn cpp_expr(&mut self) -> Result<hir::Expr, CompileError> {
         let start = self.offset();
         let defined = "defined".into();
 
@@ -865,11 +870,13 @@ impl<'a> PreProcessor<'a> {
         // TODO: remove(0) is bad and I should feel bad
         // TODO: this only returns the first error because anything else requires a refactor
         let first = cpp_tokens.remove(0)?;
-        let mut parser = crate::Parser::new(first, cpp_tokens.into_iter(), false);
+        use crate::{analyze::Analyzer, Parser};
+        let mut parser = Parser::new(first, cpp_tokens.into_iter(), false);
+        let expr = parser.expr()?;
         // TODO: catch expressions that aren't allowed
         // (see https://github.com/jyn514/rcc/issues/5#issuecomment-575339427)
         // TODO: can semantic errors happen here? should we check?
-        parser.expr().map_err(CompileError::from)
+        Ok(Analyzer::new(parser).parse_expr(expr))
     }
     /// We saw an `#if`, `#ifdef`, or `#ifndef` token at the start of the line
     /// and want to either take the branch or ignore the tokens within the directive.

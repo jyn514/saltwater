@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use thiserror::Error;
 
-use super::{lex::Token, Expr, Locatable, Location, Type};
-use crate::intern::InternedStr;
+use super::hir::Expr;
+use super::*;
 
 use super::Radix;
 
@@ -43,6 +43,11 @@ impl<T> ErrorHandler<T> {
         Default::default()
     }
 
+    /// Whether any errors have been seen and not handled
+    pub(crate) fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
     /// Add an error to the error handler.
     pub(crate) fn push_back<E: Into<Locatable<T>>>(&mut self, error: E) {
         self.errors.push_back(error.into());
@@ -77,10 +82,6 @@ impl<T> ErrorHandler<T> {
             .extend(&mut other.errors.drain(..).map(|loc| loc.map(Into::into)));
         self.warnings.append(&mut other.warnings);
     }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.errors.is_empty() && self.warnings.is_empty()
-    }
 }
 
 impl Iterator for ErrorHandler {
@@ -113,27 +114,138 @@ pub enum SemanticError {
     #[error("{0}")]
     Generic(String),
 
+    // Declaration specifier errors
+    #[error("cannot combine '{new}' specifier with previous '{existing}' type specifier")]
+    InvalidSpecifier {
+        existing: ast::DeclarationSpecifier,
+        new: ast::DeclarationSpecifier,
+    },
+
+    #[error("'{0}' is not a qualifier and cannot be used for pointers")]
+    NotAQualifier(ast::DeclarationSpecifier),
+
+    #[error("'{}' is too long for rcc", vec!["long"; *.0].join(" "))]
+    TooLong(usize),
+
+    #[error("conflicting storage classes '{0}' and '{1}'")]
+    ConflictingStorageClass(StorageClass, StorageClass),
+
+    #[error("conflicting types '{0}' and '{1}'")]
+    ConflictingType(Type, Type),
+
+    #[error("'{0}' cannot be signed or unsigned")]
+    CannotBeSigned(Type),
+
+    #[error("types cannot be both signed and unsigned")]
+    ConflictingSigned,
+
+    #[error("only function-scoped variables can have an `auto` storage class")]
+    AutoAtGlobalScope,
+
     #[error("cannot have empty program")]
     EmptyProgram,
 
+    // Declarator errors
+    #[error("expected an integer")]
+    NonIntegralLength,
+
+    #[error("arrays must have a positive length")]
+    NegativeLength,
+
+    #[error("function parameters always have a storage class of `auto`")]
+    ParameterStorageClass(StorageClass),
+
+    #[error("duplicate parameter name '{0}' in function declaration")]
+    DuplicateParameter(InternedStr),
+
+    #[error("functions cannot return '{0}'")]
+    IllegalReturnType(Type),
+
+    // TODO: print params in the error message
+    #[error("arrays cannot contain functions (got '{0}'). help: try storing array of pointer to function: (*{}[])(...)")]
+    ArrayStoringFunction(Type),
+
+    #[error("void must be the first and only parameter if specified")]
+    InvalidVoidParameter,
+
+    #[error("overflow in enumeration constant")]
+    EnumOverflow,
+
+    #[error("variable has incomplete type 'void'")]
+    VoidType,
+
+    // expression errors
     #[error("use of undeclared identifier '{0}'")]
     UndeclaredVar(InternedStr),
 
-    #[error("`{0}` is only allowed on function declarations")]
-    InvalidFuncQualifiers(super::FunctionQualifiers),
+    #[error("expected expression, got typedef")]
+    TypedefInExpressionContext,
 
-    #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
-    ConstOverflow { is_positive: bool },
+    #[error("type casts cannot have a storage class")]
+    IllegalStorageClass(StorageClass),
 
-    #[error("not a constant expression: {0}")]
-    NotConstant(Expr),
+    #[error("type casts cannot have a variable name")]
+    IdInTypeName(InternedStr),
+
+    #[error("expected integer, got '{0}'")]
+    NonIntegralExpr(Type),
+
+    #[error("cannot implicitly convert '{0}' to '{1}'{}",
+        if .1.is_pointer() {
+            format!(". help: use an explicit cast: ({})", .1)
+        } else {
+            String::new()
+        })
+    ]
+    InvalidCast(Type, Type),
 
     // String is the reason it couldn't be assigned
     #[error("cannot assign to {0}")]
     NotAssignable(String),
 
+    #[error("invalid operators for '{0}' (expected either arithmetic types or pointer operation, got '{1} {0} {2}'")]
+    InvalidAdd(hir::BinaryOp, Type, Type),
+
+    #[error("cannot perform pointer arithmetic when size of pointed type '{0}' is unknown")]
+    PointerAddUnknownSize(Type),
+
+    #[error("called object of type '{0}' is not a function")]
+    NotAFunction(Type),
+
+    #[error("too {} arguments to function call: expected {0}, have {1}", if .1 > .0 { "many" } else { "few" })]
+    /// (actual, expected)
+    WrongArgumentNumber(usize, usize),
+
+    #[error("{0} has not yet been defined")]
+    IncompleteDefinitionUsed(Type),
+
+    #[error("no member named '{0}' in '{1}'")]
+    NotAMember(InternedStr, Type),
+
+    #[error("expected struct or union, got type '{0}'")]
+    NotAStruct(Type),
+
+    #[error("cannot use '->' operator on type that is not a pointer")]
+    NotAStructPointer(Type),
+
+    #[error("cannot dereference expression of non-pointer type '{0}'")]
+    NotAPointer(Type),
+
     #[error("cannot take address of {0}")]
     InvalidAddressOf(&'static str),
+
+    #[error("cannot increment or decrement value of type '{0}'")]
+    InvalidIncrement(Type),
+
+    #[error("cannot use unary plus on expression of non-arithmetic type '{0}'")]
+    NotArithmetic(Type),
+
+    #[error("incompatible types in ternary expression: '{0}' cannot be converted to '{1}'")]
+    IncompatibleTypes(Type, Type),
+
+    // const fold errors
+    #[error("{} overflow in expresson", if *(.is_positive) { "positive" } else { "negative" })]
+    ConstOverflow { is_positive: bool },
 
     #[error("cannot divide by zero")]
     DivideByZero,
@@ -141,7 +253,8 @@ pub enum SemanticError {
     #[error("cannot shift {} by a negative amount", if *(.is_left) { "left" } else { "right" })]
     NegativeShift { is_left: bool },
 
-    #[error("cannot shift {} by {maximum} or more bits for type '{ctype}' (got {current})", if *(.is_left) { "left" } else { "right" })]
+    #[error("cannot shift {} by {maximum} or more bits for type '{ctype}' (got {current})",
+        if *(.is_left) { "left" } else { "right" })]
     TooManyShiftBits {
         is_left: bool,
         maximum: u64,
@@ -149,6 +262,29 @@ pub enum SemanticError {
         current: u64,
     },
 
+    #[error("not a constant expression: {0}")]
+    NotConstant(Expr),
+
+    #[error("cannot dereference NULL pointer")]
+    NullPointerDereference,
+
+    #[error("invalid types for '{0}' (expected arithmetic types or compatible pointers, got {1} {0} {2}")]
+    InvalidRelationalType(lex::ComparisonToken, Type, Type),
+
+    #[error("cannot cast pointer to float or vice versa")]
+    FloatPointerCast(Type),
+
+    // TODO: this shouldn't be an error
+    #[error("cannot cast to non-scalar type '{0}'")]
+    NonScalarCast(Type),
+
+    #[error("cannot cast void to any type")]
+    VoidCast,
+
+    #[error("cannot cast structs to any type")]
+    StructCast,
+
+    // Control flow errors
     #[error("unreachable statement")]
     UnreachableStatement,
 
@@ -167,21 +303,53 @@ pub enum SemanticError {
             if *(.is_default) { "default " } else { "" } )]
     DuplicateCase { is_default: bool },
 
-    #[error("void must be the first and only parameter if specified")]
-    InvalidVoidParameter,
-
-    #[error("expected expression, got typedef")]
-    TypedefInExpressionContext,
-
-    #[error("overflow in enumeration constant")]
-    EnumOverflow,
-
+    // Initializer errors
     #[error("initializers cannot be empty")]
     EmptyInitializer,
+
+    #[error("scalar initializers for '{0}' may only have one element (initialized with {1})")]
+    AggregateInitializingScalar(Type, usize),
+
+    #[error("too many initializers (declared with {0} elements, found {1})")]
+    TooManyMembers(usize, usize),
+
+    // Function definition errors
+    #[error("illegal storage class {0} for function (only `static` and `extern` are allowed)")]
+    InvalidFuncStorageClass(StorageClass),
+
+    #[error("missing parameter name in function definition (parameter {0} of type '{1}')")]
+    MissingParamName(usize, Type),
+
+    #[error("forward declaration of {0} is never completed (used in {1})")]
+    ForwardDeclarationIncomplete(InternedStr, InternedStr),
+
+    #[error("illegal signature for main function (expected 'int main(void)' or 'int main(int, char **)'")]
+    IllegalMainSignature,
+
+    // declaration errors
+    #[error("redefinition of '{0}'")]
+    Redefinition(InternedStr),
+
+    #[error("redeclaration of '{0}' with different type or qualifiers (originally {}, now {})", .1.get(), .2.get())]
+    IncompatibleRedeclaration(InternedStr, hir::MetadataRef, hir::MetadataRef),
+
+    #[error("'{0}' can only appear on functions")]
+    FuncQualifiersNotAllowed(hir::FunctionQualifiers),
+
+    // stmt errors
+    // new with the new parser
+    #[error("switch expressions must have an integer type (got {0})")]
+    NonIntegralSwitch(Type),
+
+    #[error("function '{0}' does not return a value")]
+    MissingReturnValue(InternedStr),
+
+    #[error("void function '{0}' should not return a value")]
+    ReturnFromVoid(InternedStr),
 }
 
 /// Syntax errors are non-exhaustive and may have new variants added at any time
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 #[non_exhaustive]
 pub enum SyntaxError {
     #[error("{0}")]
@@ -192,6 +360,42 @@ pub enum SyntaxError {
 
     #[error("expected statement, got {0}")]
     NotAStatement(super::Keyword),
+
+    // expected a primary expression, but got EOF or an invalid token
+    #[error("expected variable, literal, or '('")]
+    MissingPrimary,
+
+    #[error("expected identifier, got '{}'",
+        .0.as_ref().map_or("<end-of-file>".into(),
+                           |t| std::borrow::Cow::Owned(t.to_string())))]
+    ExpectedId(Option<Token>),
+
+    #[error("expected declaration specifier, got keyword '{0}'")]
+    ExpectedDeclSpecifier(Keyword),
+
+    #[error("expected declarator in declaration")]
+    ExpectedDeclarator,
+
+    #[error("empty type name")]
+    ExpectedType,
+
+    #[error("expected '(', '*', or variable, got '{0}'")]
+    ExpectedDeclaratorStart(Token),
+
+    #[error("only functions can have a function body (got {0})")]
+    NotAFunction(ast::InitDeclarator),
+
+    #[error("functions cannot be initialized (got {0})")]
+    FunctionInitializer(ast::Initializer),
+
+    #[error("function not allowed in this context (got {})", .0.as_type())]
+    FunctionNotAllowed(ast::FunctionDefinition),
+
+    #[error("function definitions must have a name")]
+    MissingFunctionName,
+
+    #[error("`static` for array sizes is only allowed in function declarations")]
+    StaticInConcreteArray,
 }
 
 /// Preprocessing errors are non-exhaustive and may have new variants added at any time
@@ -342,11 +546,33 @@ pub enum Warning {
     #[error("#warning {}", (.0).iter().map(|t| t.to_string()).collect::<Vec<_>>().join(" "))]
     User(Vec<Token>),
 
+    #[error("extraneous semicolon in {0}")]
+    ExtraneousSemicolon(&'static str),
+
+    #[error("'{0}' qualifier on return type has no effect")]
+    FunctionQualifiersIgnored(hir::Qualifiers),
+
+    #[error("duplicate '{0}' declaration specifier{}",
+            if *.1 > 1 { format!(" occurs {} times", .1) } else { String::new() })]
+    DuplicateSpecifier(ast::UnitSpecifier, usize),
+
+    #[error("qualifiers in type casts are ignored")]
+    IgnoredQualifier(hir::Qualifiers),
+
+    #[error("declaration does not declare anything")]
+    EmptyDeclaration,
+
     #[error("rcc does not support #pragma")]
     IgnoredPragma,
 
     #[error("variadic macros are not yet supported")]
     IgnoredVariadic,
+
+    #[error("implicit int is deprecated and may be removed in a future release")]
+    ImplicitInt,
+
+    #[error("this is a definition, not a declaration, the 'extern' keyword has no effect")]
+    ExtraneousExtern,
 }
 
 impl<T: Into<String>> From<T> for Warning {
@@ -483,20 +709,6 @@ mod tests {
     }
 
     #[test]
-    fn test_error_handler_push_err() {
-        let mut error_handler = ErrorHandler::new();
-        error_handler.push_back(dummy_error());
-
-        assert_eq!(
-            error_handler,
-            ErrorHandler {
-                errors: vec_deque![dummy_error()],
-                warnings: VecDeque::new(),
-            }
-        );
-    }
-
-    #[test]
     fn test_error_handler_into_iterator() {
         let mut error_handler = ErrorHandler::new();
         error_handler.push_back(dummy_error());
@@ -541,16 +753,6 @@ mod tests {
             Error::Semantic(SemanticError::Generic("bad code".to_string())).to_string(),
             "invalid program: bad code"
         );
-    }
-
-    #[test]
-    fn test_compile_error_from_locatable_string() {
-        let _ = CompileError::from(Location::default().with("apples".to_string()));
-    }
-
-    #[test]
-    fn test_compile_error_from_syntax_error() {
-        let _ = Location::default().error(SyntaxError::from("oranges".to_string()));
     }
 
     #[test]

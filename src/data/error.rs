@@ -109,6 +109,7 @@ pub enum Error {
 
 /// Semantic errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum SemanticError {
     #[error("{0}")]
     Generic(String),
@@ -345,14 +346,11 @@ pub enum SemanticError {
 
     #[error("void function '{0}' should not return a value")]
     ReturnFromVoid(InternedStr),
-
-    #[doc(hidden)]
-    #[error("internal error: do not construct nonexhaustive variants")]
-    __Nonexhaustive,
 }
 
 /// Syntax errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum SyntaxError {
     #[error("{0}")]
     Generic(String),
@@ -398,14 +396,11 @@ pub enum SyntaxError {
 
     #[error("`static` for array sizes is only allowed in function declarations")]
     StaticInConcreteArray,
-
-    #[doc(hidden)]
-    #[error("internal error: do not construct nonexhaustive variants")]
-    __Nonexhaustive,
 }
 
 /// Preprocessing errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum CppError {
     /// A user-defined error (`#error`) was present.
     /// The `Vec<Token>` contains the tokens which followed the error.
@@ -477,14 +472,11 @@ pub enum CppError {
     /// b) an `#else` has already been seen.
     #[error("{}", if *early { "#elif without #if" } else { "#elif after #else " })]
     UnexpectedElif { early: bool },
-
-    #[doc(hidden)]
-    #[error("internal error: do not construct nonexhaustive variants")]
-    __Nonexhaustive,
 }
 
 /// Lex errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum LexError {
     #[error("unterminated /* comment")]
     UnterminatedComment,
@@ -538,13 +530,10 @@ pub enum LexError {
 
     #[error("{0}")]
     InvalidHexFloat(#[from] hexponent::ParseError),
-
-    #[doc(hidden)]
-    #[error("internal error: do not construct nonexhaustive variants")]
-    __Nonexhaustive,
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
+#[non_exhaustive]
 /// errors are non-exhaustive and may have new variants added at any time
 pub enum Warning {
     // for compatibility
@@ -584,10 +573,6 @@ pub enum Warning {
 
     #[error("this is a definition, not a declaration, the 'extern' keyword has no effect")]
     ExtraneousExtern,
-
-    #[doc(hidden)]
-    #[error("internal error: do not construct nonexhaustive variants")]
-    __Nonexhaustive,
 }
 
 impl<T: Into<String>> From<T> for Warning {

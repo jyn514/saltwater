@@ -1,8 +1,6 @@
-#![allow(clippy::trivially_copy_pass_by_ref)]
-
 use crate::arch::CHAR_BIT;
+use crate::data::hir::*;
 use crate::data::lex::Literal::*;
-use crate::data::prelude::*;
 use crate::data::*;
 use std::ops::{Add, Div, Mul, Sub};
 
@@ -90,6 +88,13 @@ impl Expr {
         }
     }
 
+    /// Returns a `Literal` if this is a literal, or the original expression otherwise
+    pub fn into_literal(self) -> Result<Literal, Expr> {
+        match self.expr {
+            ExprType::Literal(lit) => Ok(lit),
+            _ => Err(self),
+        }
+    }
     pub(crate) fn constexpr(self) -> CompileResult<Locatable<(Literal, Type)>> {
         let folded = self.const_fold()?;
         match folded.expr {
@@ -170,7 +175,10 @@ impl Expr {
             ExprType::Deref(expr) => {
                 let folded = expr.const_fold()?;
                 if let ExprType::Literal(Int(0)) = folded.expr {
-                    semantic_err!("cannot dereference NULL pointer".into(), folded.location);
+                    return Err(Locatable::new(
+                        SemanticError::NullPointerDereference.into(),
+                        location,
+                    ));
                 }
                 ExprType::Deref(Box::new(folded))
             }
@@ -380,10 +388,14 @@ fn fold_binary(
             },
             LogicalOr,
         ),
-        assign @ Assign(_) => {
+        Assign => {
             // TODO: could we propagate this information somehow?
             // e.g. fold `int main() { int x = 1; return x; }` to `return 1;`
-            Ok(ExprType::Binary(assign, Box::new(left), Box::new(right)))
+            Ok(ExprType::Binary(
+                BinaryOp::Assign,
+                Box::new(left),
+                Box::new(right),
+            ))
         }
         Compare(Less) => Ok(fold_compare_op!(left, right, Compare, <, Less)),
         Compare(LessEqual) => Ok(fold_compare_op!(left, right, Compare, <=, LessEqual)),
@@ -572,11 +584,12 @@ fn shift_left(
 
 #[cfg(test)]
 mod tests {
-    use crate::data::prelude::*;
-    use crate::parse::tests::parse_expr;
+    use crate::analyze::test::analyze_expr;
+    use crate::data::hir::Expr;
+    use crate::data::*;
 
     fn test_const_fold(s: &str) -> CompileResult<Expr> {
-        parse_expr(s).unwrap().const_fold()
+        analyze_expr(s).unwrap().const_fold()
     }
     fn assert_fold(original: &str, expected: &str) {
         let (folded_a, folded_b) = (

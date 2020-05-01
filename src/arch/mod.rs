@@ -5,8 +5,8 @@ use std::cmp::max;
 use target_lexicon::Triple;
 
 use crate::data::{
-    prelude::*,
     types::{ArrayType, StructType},
+    *,
 };
 use Type::*;
 
@@ -109,7 +109,7 @@ impl Type {
             Long(_) => Ok(LONG_SIZE.into()),
             Float => Ok(FLOAT_SIZE.into()),
             Double => Ok(DOUBLE_SIZE.into()),
-            Pointer(_) => Ok(PTR_SIZE.into()),
+            Pointer(_, _) => Ok(PTR_SIZE.into()),
             // now for the hard ones
             Array(t, ArrayType::Fixed(l)) => t
                 .sizeof()
@@ -146,7 +146,7 @@ impl Type {
             | Long(_)
             | Float
             | Double
-            | Pointer(_)
+            | Pointer(_, _)
             | Enum(_, _) => self.sizeof(),
             Array(t, _) => t.alignof(),
             // Clang uses the largest alignment of any element as the alignment of the whole
@@ -166,8 +166,10 @@ mod tests {
     use proptest::prelude::*;
 
     use crate::data::{
+        hir::Metadata,
+        hir::Qualifiers,
         types::{tests::arb_type, StructType, Type},
-        Metadata, Qualifiers, StorageClass,
+        StorageClass,
     };
 
     use super::*;
@@ -187,7 +189,6 @@ mod tests {
         Metadata {
             id,
             ctype,
-            init: false,
             qualifiers: Qualifiers::NONE,
             storage_class: StorageClass::Auto,
         }
@@ -257,7 +258,10 @@ mod tests {
     }
     #[test]
     fn align_of_non_char_struct() {
-        let ty = struct_for_types(vec![Pointer(Box::new(Int(true))), Int(true)]);
+        let ty = struct_for_types(vec![
+            Pointer(Box::new(Int(true)), Qualifiers::default()),
+            Int(true),
+        ]);
         assert_eq!(ty.alignof(), Ok(8));
     }
 

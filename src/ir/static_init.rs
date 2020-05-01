@@ -8,8 +8,13 @@ use cranelift_module::{Backend, DataContext, DataId, Linkage};
 
 use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
-use crate::data::prelude::*;
-use crate::data::{lex::Literal, types::ArrayType, Initializer, StorageClass};
+use crate::data::*;
+use crate::data::{
+    hir::{Expr, ExprType, Initializer, MetadataRef},
+    lex::Literal,
+    types::ArrayType,
+    StorageClass,
+};
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
@@ -23,11 +28,13 @@ impl<B: Backend> Compiler<B> {
     ) -> CompileResult<()> {
         use crate::get_str;
         let metadata = symbol.get();
+        if let StorageClass::Typedef = metadata.storage_class {
+            return Ok(());
+        }
         let err_closure = |err| Locatable {
             data: err,
             location,
         };
-        let linkage = metadata.storage_class.try_into().map_err(err_closure)?;
         let align = metadata
             .ctype
             .alignof()
@@ -41,6 +48,7 @@ impl<B: Backend> Compiler<B> {
             // struct that was declared but never used
             return Ok(());
         }
+        let linkage = metadata.storage_class.try_into().map_err(err_closure)?;
         let id = self
             .module
             .declare_data(
@@ -63,6 +71,7 @@ impl<B: Backend> Compiler<B> {
         }
 
         let mut ctx = DataContext::new();
+        // TODO: all of this should happen in the `analyze` module
         if let Some(init) = init {
             let mut ctype = metadata.ctype.clone();
             if let Type::Array(_, size @ ArrayType::Unbounded) = &mut ctype {
@@ -86,7 +95,7 @@ impl<B: Backend> Compiler<B> {
                 .expect("initializer is larger than SIZE_T on host platform");
             let mut buf = vec![0; size];
             let offset = 0;
-            self.init_symbol(&mut ctx, &mut buf, offset, init, &metadata.ctype, &location)?;
+            self.init_symbol(&mut ctx, &mut buf, offset, init, &ctype, &location)?;
             ctx.define(buf.into_boxed_slice());
         } else {
             ctx.define_zeroinit(

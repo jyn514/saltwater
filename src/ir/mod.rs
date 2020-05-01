@@ -6,9 +6,7 @@ use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
 use crate::arch::{CHAR_BIT, PTR_SIZE, SIZE_T, TARGET};
-use crate::data::{
-    lex::ComparisonToken, prelude::*, types::FunctionType, Initializer, StorageClass,
-};
+use crate::data::lex::ComparisonToken;
 use cranelift::codegen::{
     self,
     ir::{
@@ -28,6 +26,11 @@ use cranelift_module::{self, Backend, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder};
 use lazy_static::lazy_static;
 
+use crate::data::{
+    hir::{Declaration, Initializer, MetadataRef, Stmt},
+    types::FunctionType,
+    StorageClass, *,
+};
 // TODO: make this const when const_if_match is stabilized
 // TODO: see https://github.com/rust-lang/rust/issues/49146
 lazy_static! {
@@ -191,6 +194,9 @@ impl<B: Backend> Compiler<B> {
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
         let meta = decl.symbol.get();
+        if let StorageClass::Typedef = meta.storage_class {
+            return Ok(());
+        }
         if let Type::Function(_) = &meta.ctype {
             self.declare_func(decl.symbol, false)?;
             return Ok(());
@@ -458,7 +464,7 @@ impl Type {
         match self {
             // Integers
             Bool => types::B1,
-            Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_) | Enum(_, _) => {
+            Char(_) | Short(_) | Int(_) | Long(_) | Pointer(_, _) | Enum(_, _) => {
                 let int_size = SIZE_T::from(CHAR_BIT)
                     * self
                         .sizeof()

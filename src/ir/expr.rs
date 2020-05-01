@@ -3,10 +3,10 @@ use cranelift::prelude::{FunctionBuilder, InstBuilder, Type as IrType, Value as 
 use cranelift_module::Backend;
 
 use super::{Compiler, Id};
-use crate::data::prelude::*;
+use crate::data::*;
 use crate::data::{
-    lex::{AssignmentToken, ComparisonToken, Literal},
-    BinaryOp, Expr, ExprType, MetadataRef,
+    hir::{BinaryOp, Expr, ExprType, Metadata, MetadataRef},
+    lex::{ComparisonToken, Literal},
 };
 
 type IrResult = CompileResult<Value>;
@@ -70,8 +70,8 @@ impl<B: Backend> Compiler<B> {
             ExprType::Binary(BinaryOp::LogicalAnd, left, right) => {
                 self.logical_expr(*left, *right, true, builder)
             }
-            ExprType::Binary(BinaryOp::Assign(token), left, right) => {
-                self.assignment(*left, *right, token, builder)
+            ExprType::Binary(BinaryOp::Assign, left, right) => {
+                self.assignment(*left, *right, builder)
             }
             ExprType::Binary(op, left, right) => {
                 self.binary_assign_op(*left, *right, expr.ctype, op, builder)
@@ -104,7 +104,7 @@ impl<B: Backend> Compiler<B> {
             ExprType::PostIncrement(lval, increase) => {
                 let lval = self.compile_expr(*lval, builder)?;
                 let loaded_ctype = match lval.ctype {
-                    Type::Pointer(t) => *t,
+                    Type::Pointer(t, _) => *t,
                     _ => lval.ctype,
                 };
                 let ir_type = loaded_ctype.as_ir_type();
@@ -296,7 +296,7 @@ impl<B: Backend> Compiler<B> {
             (Shr, ty, false) if ty.is_int() => b::ushr,
             (Xor, ty, _) if ty.is_int() => b::bxor,
             (Compare(token), _, _) => return Self::compare(left, right, token, builder),
-            (Assign(_), _, _) | (LogicalAnd, _, _) | (LogicalOr, _, _) => {
+            (Assign, _, _) | (LogicalAnd, _, _) | (LogicalOr, _, _) => {
                 unreachable!("should be handled earlier")
             }
             _ => unreachable!(
@@ -414,7 +414,11 @@ impl<B: Backend> Compiler<B> {
     fn load_addr(&self, var: MetadataRef, builder: &mut FunctionBuilder) -> IrResult {
         let metadata = var.get();
         let ptr_type = Type::ptr_type();
-        let ir_val = match self.declarations.get(&var).unwrap() {
+        let ir_val = match self
+            .declarations
+            .get(&var)
+            .expect("bug in parser: loaded a variable that was not declared")
+        {
             Id::Function(func_id) => {
                 let func_ref = self.module.declare_func_in_func(*func_id, builder.func);
                 builder.ins().func_addr(ptr_type, func_ref)
@@ -425,7 +429,7 @@ impl<B: Backend> Compiler<B> {
             }
             Id::Local(stack_slot) => builder.ins().stack_addr(ptr_type, *stack_slot, 0),
         };
-        let ctype = Type::Pointer(Box::new(metadata.ctype.clone()));
+        let ctype = Type::Pointer(Box::new(metadata.ctype.clone()), hir::Qualifiers::default());
         Ok(Value {
             ir_type: ptr_type,
             ir_val,
@@ -459,13 +463,7 @@ impl<B: Backend> Compiler<B> {
             ctype: left.ctype,
         })
     }
-    fn assignment(
-        &mut self,
-        lval: Expr,
-        rval: Expr,
-        token: AssignmentToken,
-        builder: &mut FunctionBuilder,
-    ) -> IrResult {
+    fn assignment(&mut self, lval: Expr, rval: Expr, builder: &mut FunctionBuilder) -> IrResult {
         let ctype = lval.ctype.clone();
         let location = lval.location;
         let (target, value) = (
@@ -473,9 +471,6 @@ impl<B: Backend> Compiler<B> {
             self.compile_expr(rval, builder)?,
         );
         if let Type::Union(_) | Type::Struct(_) = ctype {
-            if token != AssignmentToken::Equal {
-                unreachable!("struct should not have a valid complex assignment");
-            }
             use std::convert::TryInto;
             let size = ctype.sizeof().map_err(|e| location.with(e.to_string()))?;
             let align = ctype
@@ -497,27 +492,6 @@ impl<B: Backend> Compiler<B> {
         }
         // scalar assignment
         let target_val = target.ir_val;
-        let mut value = value;
-        if token != AssignmentToken::Equal {
-            // need to deref explicitly to get an rval, the frontend didn't do it for us
-            let ir_type = ctype.as_ir_type();
-            let target = Value {
-                ir_val: builder
-                    .ins()
-                    .load(ir_type, MemFlags::new(), target.ir_val, 0),
-                ir_type,
-                ctype: ctype.clone(),
-            };
-            if value.ir_type != target.ir_type {
-                unimplemented!(
-                    "binary promotion for complex assignment ({} -> {})",
-                    value.ir_type,
-                    target.ir_type
-                );
-            }
-            value =
-                Self::binary_assign_ir(target, value, ctype, token.without_assignment(), builder)?;
-        }
         builder
             .ins()
             .store(MemFlags::new(), value.ir_val, target_val, 0);
@@ -530,7 +504,7 @@ impl<B: Backend> Compiler<B> {
         args: Vec<Expr>,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        use crate::data::{Qualifiers, StorageClass};
+        use crate::data::hir::Qualifiers;
         use cranelift::codegen::ir::{AbiParam, ArgumentPurpose};
 
         let mut ftype = match ctype {
@@ -555,7 +529,6 @@ impl<B: Backend> Compiler<B> {
                         id: Default::default(),
                         qualifiers: Qualifiers::NONE,
                         storage_class: StorageClass::Auto,
-                        init: true,
                     }
                     .insert(),
                 );

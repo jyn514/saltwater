@@ -250,7 +250,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     }
     fn next_token(&mut self) -> Option<Locatable<Token>> {
         if self.current.is_some() {
-            let tmp = mem::replace(&mut self.next, None);
+            let tmp = mem::take(&mut self.next);
             mem::replace(&mut self.current, tmp)
         } else {
             self.__impl_next_token()
@@ -365,7 +365,7 @@ impl<I: Iterator<Item = Lexeme>> Parser<I> {
     /// These warnings are consumed and will not be returned if you call
     /// `warnings()` again.
     pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
-        std::mem::replace(&mut self.error_handler.warnings, Default::default())
+        std::mem::take(&mut self.error_handler.warnings)
     }
 }
 

@@ -1,6 +1,4 @@
 #![allow(clippy::cognitive_complexity)]
-// mem::take was stabilized in 1.40, but we support back to 1.38
-#![allow(clippy::mem_replace_with_default)]
 #![warn(absolute_paths_not_starting_with_crate)]
 #![warn(explicit_outlives_requirements)]
 #![warn(unreachable_pub)]

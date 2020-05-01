@@ -58,7 +58,6 @@ pub struct Analyzer<T: Lexer> {
 impl<T: Lexer> Iterator for Analyzer<T> {
     type Item = CompileResult<Locatable<Declaration>>;
     fn next(&mut self) -> Option<Self::Item> {
-        // have to handle `int;` somehow
         loop {
             // Instead of returning `SemanticResult`, the analyzer puts all errors into `error_handler`.
             // This simplifies the logic in `next` greatly.
@@ -186,6 +185,7 @@ impl<I: Lexer> Analyzer<I> {
             }
             decls.push(Locatable::new(Declaration { symbol, init }, d.location));
         }
+        // int;
         if decls.is_empty() && !original.declared_compound_type {
             self.warn(Warning::EmptyDeclaration, location);
         }
@@ -343,7 +343,9 @@ impl<I: Lexer> Analyzer<I> {
         ] {
             if counter.get(&spec).is_some() {
                 match (spec, ctype) {
-                    // `short int` is valid
+                    // `short int` and `long int` are valid, see 6.7.2
+                    // `long` is handled earlier, so we don't have to worry
+                    // about it here.
                     (_, None) | (Short, Some(Type::Int(_))) => {}
                     (_, Some(existing)) => {
                         self.err(
@@ -414,7 +416,7 @@ impl<I: Lexer> Analyzer<I> {
                 None => ctype = Some(Type::Int(signed)),
             }
         }
-        // i;
+        // `i;` or `const i;`, etc.
         let ctype = ctype.unwrap_or_else(|| {
             self.warn(Warning::ImplicitInt, location);
             Type::Int(true)

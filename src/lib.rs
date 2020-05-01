@@ -1,6 +1,4 @@
 #![allow(clippy::cognitive_complexity)]
-// mem::take was stabilized in 1.40, but we support back to 1.37
-#![allow(clippy::mem_replace_with_default)]
 #![warn(absolute_paths_not_starting_with_crate)]
 #![warn(explicit_outlives_requirements)]
 #![warn(unreachable_pub)]
@@ -76,8 +74,9 @@ mod parse;
 pub enum Error {
     #[error("{}", .0.iter().map(|err| err.data.to_string()).collect::<Vec<_>>().join("\n"))]
     Source(VecDeque<CompileError>),
-    #[error("platform-specific error: {0}")]
-    Platform(String),
+    #[cfg(feature = "codegen")]
+    #[error("linking error: {0}")]
+    Platform(cranelift_object::object::write::Error),
     #[error("io error: {0}")]
     IO(#[from] io::Error),
 }

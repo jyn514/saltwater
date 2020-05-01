@@ -98,7 +98,7 @@ impl<I: Lexer> Analyzer<I> {
     /// These warnings are consumed and will not be returned if you call
     /// `warnings()` again.
     pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
-        std::mem::replace(&mut self.error_handler.warnings, Default::default())
+        std::mem::take(&mut self.error_handler.warnings)
     }
     // I type these a lot
     #[inline(always)]

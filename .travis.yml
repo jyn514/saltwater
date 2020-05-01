@@ -36,10 +36,6 @@ jobs:
               bash <(curl -s https://codecov.io/bash) &&
               echo "Uploaded code coverage"
 
-        - rust: 1.39.0
-          # make sure we're backwards compatible
-          script: cargo check
-
         - rust: beta
           script: cargo check
 

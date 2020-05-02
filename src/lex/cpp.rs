@@ -2,8 +2,7 @@ use lazy_static::lazy_static;
 
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
-use std::path::{Path, PathBuf};
-use std::str::Chars;
+use std::path::PathBuf;
 
 use codespan::FileId;
 
@@ -170,7 +169,7 @@ impl<'a> PreProcessor<'a> {
     pub fn new(file: FileId, chars: &'a str, debug: bool, files: &'a mut Files) -> Self {
         Self {
             debug,
-            first_lexer: Lexer::new(file, chars),
+            first_lexer: Lexer::new(file, chars.as_bytes()),
             includes: Default::default(),
             definitions: Default::default(),
             error_handler: Default::default(),
@@ -558,11 +557,11 @@ impl<'a> PreProcessor<'a> {
     }
     */
     fn include(&mut self, start: u32) -> Result<(), Locatable<Error>> {
-        use crate::data::lex::{ComparisonToken, Literal};
+        use crate::data::lex::ComparisonToken;
         let lexer = self.lexer_mut();
-        let local = if lexer.match_next('"') {
+        let local = if lexer.match_next(b'"') {
             true
-        } else if lexer.match_next('<') {
+        } else if lexer.match_next(b'<') {
             false
         } else {
             let (id, location) = match self.next_token() {
@@ -638,9 +637,11 @@ impl<'a> PreProcessor<'a> {
         let intern_lock = crate::intern::STRINGS
             .read()
             .expect("failed to lock String cache for reading");
+        /*
         let filename_str = intern_lock
-            .resolve(filename.0)
+            .resolve(filename)
             .expect("tried to get value of non-interned string");
+        */
         for path in SEARCH_PATH {
             let mut buf = PathBuf::from(path);
             buf.push(&filename);

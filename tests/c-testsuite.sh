@@ -9,12 +9,14 @@ cd "$ROOT/tests"
 cd c-testsuite
 
 cargo build --release
+TARGET="${CARGO_TARGET_DIR:-$ROOT/target}"
+
 cat > runners/single-exec/rcc << EOF
 #!/bin/sh
 
 set -eu
 
-CC="$ROOT/target/release/rcc"
+CC="$TARGET/release/rcc"
 CFLAGS=""
 
 export CC CFLAGS

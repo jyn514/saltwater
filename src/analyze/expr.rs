@@ -911,7 +911,7 @@ impl<T: Lexer> Analyzer<T> {
     fn integer_promote(&mut self, expr: Expr) -> Expr {
         let expr = expr.rval();
         let ctype = expr.ctype.clone().integer_promote(&self.target);
-        expr.implicit_cast(&ctype, &mut self. error_handler)
+        expr.implicit_cast(&ctype, &mut self.error_handler)
     }
 }
 

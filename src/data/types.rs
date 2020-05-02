@@ -2,9 +2,9 @@ use super::hir::{Metadata, MetadataRef};
 use crate::intern::InternedStr;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
-use target_lexicon::Triple;
 use std::fmt::{self, Formatter};
 pub use struct_ref::{StructRef, StructType};
+use target_lexicon::Triple;
 
 mod struct_ref {
     use std::cell::RefCell;

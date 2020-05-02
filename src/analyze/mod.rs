@@ -94,7 +94,6 @@ impl<I: Lexer> Analyzer<I> {
             tag_scope: Scope::new(),
             pending: VecDeque::new(),
             initialized: HashSet::new(),
-            // TODO: allow cross-compilation
             target,
             decl_side_channel: Vec::new(),
         }
@@ -693,10 +692,11 @@ impl<I: Lexer> Analyzer<I> {
         for (name, maybe_value) in ast_members {
             // enum E { A = 5 };
             if let Some(value) = maybe_value {
-                discriminant = Self::const_sint(self.parse_expr(value), &self.target).unwrap_or_else(|err| {
-                    self.error_handler.push_back(err);
-                    std::i64::MIN
-                });
+                discriminant = Self::const_sint(self.parse_expr(value), &self.target)
+                    .unwrap_or_else(|err| {
+                        self.error_handler.push_back(err);
+                        std::i64::MIN
+                    });
             }
             members.push((name, discriminant));
             // TODO: this is such a hack
@@ -841,10 +841,11 @@ impl<I: Lexer> Analyzer<I> {
             Array { of, size } => {
                 // int a[5]
                 let size = if let Some(expr) = size {
-                    let size = Self::const_uint(self.parse_expr(*expr), &self.target).unwrap_or_else(|err| {
-                        self.error_handler.push_back(err);
-                        1
-                    });
+                    let size = Self::const_uint(self.parse_expr(*expr), &self.target)
+                        .unwrap_or_else(|err| {
+                            self.error_handler.push_back(err);
+                            1
+                        });
                     ArrayType::Fixed(size)
                 } else {
                     // int a[]
@@ -945,12 +946,14 @@ impl<I: Lexer> Analyzer<I> {
     // used for arrays like `int a[BUF_SIZE - 1];` and enums like `enum { A = 1 }`
     fn const_literal(expr: Expr, target: &Triple) -> CompileResult<Literal> {
         let location = expr.location;
-        expr.const_fold(target)?.into_literal().or_else(|runtime_expr| {
-            Err(Locatable::new(
-                SemanticError::NotConstant(runtime_expr).into(),
-                location,
-            ))
-        })
+        expr.const_fold(target)?
+            .into_literal()
+            .or_else(|runtime_expr| {
+                Err(Locatable::new(
+                    SemanticError::NotConstant(runtime_expr).into(),
+                    location,
+                ))
+            })
     }
     /// Return an unsigned integer that can be evaluated at compile time, or an error otherwise.
     fn const_uint(expr: Expr, target: &Triple) -> CompileResult<u64> {
@@ -1308,6 +1311,7 @@ pub(crate) mod test {
     use crate::data::types::{ArrayType, FunctionType, Type::*};
     use crate::lex::PreProcessor;
     use crate::parse::test::*;
+    use target_lexicon::HOST;
 
     pub(crate) fn analyze<'c, 'input: 'c, P, A, R, S, E>(
         input: &'input str,
@@ -1321,7 +1325,7 @@ pub(crate) mod test {
     {
         let mut p = parser(input);
         let ast = parse_func(&mut p)?;
-        let mut a = Analyzer::new(p);
+        let mut a = Analyzer::new(p, HOST);
         let e = analyze_func(&mut a, ast);
         if let Some(err) = a.error_handler.pop_front() {
             return Err(err);
@@ -1338,13 +1342,13 @@ pub(crate) mod test {
     }
 
     pub(crate) fn decls(s: &str) -> Vec<CompileResult<Declaration>> {
-        Analyzer::new(parser(s))
+        Analyzer::new(parser(s), HOST)
             .map(|o| o.map(|l| l.data))
             .collect()
     }
 
     pub(crate) fn assert_errs_decls(input: &str, errs: usize, warnings: usize, decls: usize) {
-        let mut a = Analyzer::new(parser(input));
+        let mut a = Analyzer::new(parser(input), HOST);
         let (mut a_errs, mut a_decls) = (0, 0);
         for res in &mut a {
             if res.is_err() {

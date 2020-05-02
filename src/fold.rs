@@ -1,5 +1,5 @@
-use crate::data::hir::{BinaryOp, Expr, ExprType};
 use crate::arch::Arch;
+use crate::data::hir::{BinaryOp, Expr, ExprType};
 use crate::data::*;
 use std::ops::{Add, Div, Mul, Sub};
 use target_lexicon::Triple;
@@ -373,7 +373,9 @@ fn fold_binary(
             )
         }
         Xor => left.literal_bin_op(right, &location, fold_int_bin_op!(^), Xor, target),
-        BitwiseAnd => left.literal_bin_op(right, &location, fold_int_bin_op!(&), BitwiseAnd, target),
+        BitwiseAnd => {
+            left.literal_bin_op(right, &location, fold_int_bin_op!(&), BitwiseAnd, target)
+        }
         BitwiseOr => left.literal_bin_op(right, &location, fold_int_bin_op!(|), BitwiseOr, target),
         Shl => shift_left(left, right, parent_type, target, &location),
         Shr => shift_right(left, right, parent_type, target, &location),
@@ -411,7 +413,9 @@ fn fold_binary(
         Compare(Less) => Ok(fold_compare_op!(left, right, Compare, <, Less, target)),
         Compare(LessEqual) => Ok(fold_compare_op!(left, right, Compare, <=, LessEqual, target)),
         Compare(Greater) => Ok(fold_compare_op!(left, right, Compare, >, Greater, target)),
-        Compare(GreaterEqual) => Ok(fold_compare_op!(left, right, Compare, >=, GreaterEqual, target)),
+        Compare(GreaterEqual) => {
+            Ok(fold_compare_op!(left, right, Compare, >=, GreaterEqual, target))
+        }
         Compare(EqualEqual) => Ok(fold_compare_op!(left, right, Compare, ==, EqualEqual, target)),
         Compare(NotEqual) => Ok(fold_compare_op!(left, right, Compare, !=, NotEqual, target)),
     }
@@ -602,7 +606,9 @@ mod tests {
     use crate::data::*;
 
     fn test_const_fold(s: &str) -> CompileResult<Expr> {
-        analyze_expr(s).unwrap().const_fold(&target_lexicon::Triple::host())
+        analyze_expr(s)
+            .unwrap()
+            .const_fold(&target_lexicon::Triple::host())
     }
     fn assert_fold(original: &str, expected: &str) {
         let (folded_a, folded_b) = (

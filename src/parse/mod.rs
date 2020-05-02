@@ -403,7 +403,7 @@ pub(crate) mod test {
             first in any::<Token>(),
             tokens in arb_vec_result_locatable_token()
             ) {
-            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), Triple::host(), false);
+            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), false);
 
             let peek = parser.peek_token().cloned();
             let next = parser.next_token().map(|l| l.data);
@@ -416,7 +416,7 @@ pub(crate) mod test {
             first in any::<Token>(),
             tokens in arb_vec_result_locatable_token()
             ) {
-            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), Triple::host(), false);
+            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), false);
 
             let peek = parser.peek_next_token().cloned();
             parser.next_token();

@@ -212,7 +212,10 @@ pub fn check_semantics(
     };
 
     let mut hir = vec![];
-    let mut parser = Analyzer::new(Parser::new(first, &mut cpp, opt.debug_ast), opt.target.clone());
+    let mut parser = Analyzer::new(
+        Parser::new(first, &mut cpp, opt.debug_ast),
+        opt.target.clone(),
+    );
     for res in &mut parser {
         match res {
             Ok(decl) => hir.push(decl),

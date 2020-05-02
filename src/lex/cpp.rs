@@ -172,7 +172,7 @@ impl From<Vec<Token>> for Definition {
 }
 
 impl TryFrom<&str> for Definition {
-    type Error = Error;
+    type Error = error::LexError;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let value = Rc::from(format!("{}\n", value));
         let mut files = codespan::Files::new();
@@ -185,7 +185,6 @@ impl TryFrom<&str> for Definition {
             })
             .collect::<Result<_, _>>()
             .map(Definition::Object)
-            .map_err(Into::into)
     }
 }
 

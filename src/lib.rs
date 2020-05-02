@@ -55,7 +55,7 @@ pub use analyze::Analyzer;
 pub use data::*;
 // https://github.com/rust-lang/rust/issues/64762
 #[allow(unreachable_pub)]
-pub use lex::{Lexer, Definition, PreProcessor, PreProcessorBuilder};
+pub use lex::{Definition, Lexer, PreProcessor, PreProcessorBuilder};
 pub use parse::Parser;
 
 #[macro_use]
@@ -444,7 +444,7 @@ mod tests {
         let options = Opt::default();
         let mut files: Files = Default::default();
         let id = files.add("<test suite>", src.into());
-        let res = super::check_semantics(src, &options, id, &mut files).0;
+        let res = super::check_semantics(src, options, id, &mut files).0;
         match res {
             Ok(decls) => Ok(decls.into_iter().map(|l| l.data).collect()),
             Err(errs) => Err(Error::Source(errs)),

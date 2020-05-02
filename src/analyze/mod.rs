@@ -808,6 +808,7 @@ impl<I: Lexer> Analyzer<I> {
         use crate::data::ast::DeclaratorType::*;
         use crate::data::types::{ArrayType, FunctionType};
 
+        let _guard = self.recursion_check();
         match decl {
             End => current,
             Pointer { to, qualifiers } => {

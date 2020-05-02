@@ -10,6 +10,7 @@ use counter::Counter;
 use crate::data::{error::Warning, hir::*, lex::Keyword, *};
 use crate::intern::InternedStr;
 use crate::parse::{Lexer, Parser};
+use crate::RecursionGuard;
 
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
 
@@ -42,6 +43,8 @@ pub struct Analyzer<T: Lexer> {
     initialized: HashSet<MetadataRef>,
     /// Internal API which makes it easier to return errors lazily
     error_handler: ErrorHandler,
+    /// Internal API which prevents segfaults due to stack overflow
+    recursion_guard: RecursionGuard,
     /// Hack to make compound assignment work
     ///
     /// For `a += b`, `a` must only be evaluated once.
@@ -90,6 +93,7 @@ impl<I: Lexer> Analyzer<I> {
             tag_scope: Scope::new(),
             pending: VecDeque::new(),
             initialized: HashSet::new(),
+            recursion_guard: RecursionGuard::default(),
             decl_side_channel: Vec::new(),
         }
     }
@@ -108,6 +112,9 @@ impl<I: Lexer> Analyzer<I> {
     #[inline(always)]
     fn warn(&mut self, w: Warning, l: Location) {
         self.error_handler.warn(w, l);
+    }
+    fn recursion_check(&self) -> RecursionGuard {
+        self.recursion_guard.recursion_check(&self.error_handler)
     }
     /// 6.9 External Definitions
     ///

@@ -5,10 +5,10 @@ mod stmt;
 use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
-use std::rc::Rc;
 
 use crate::data::*;
 use crate::data::{ast::ExternalDeclaration, hir::Scope, lex::Keyword};
+use crate::RecursionGuard;
 
 type Lexeme = CompileResult<Locatable<Token>>;
 type SyntaxResult<T> = Result<T, Locatable<SyntaxError>>;
@@ -23,9 +23,6 @@ impl<I: Iterator<Item = Result<Locatable<Token>, E>>, E: Into<CompileError>> Lex
         Iterator::next(self).map(|res| res.map_err(Into::into))
     }
 }
-
-#[derive(Clone, Debug, Default)]
-struct RecursionGuard(Rc<()>);
 
 #[derive(Debug)]
 pub struct Parser<I: Lexer> {
@@ -136,40 +133,8 @@ impl<I: Lexer> Iterator for Parser<I> {
 }
 
 impl<I: Lexer> Parser<I> {
-    // make sure we don't crash on highly nested expressions
-    // or rather, crash in a controlled way
     fn recursion_check(&self) -> RecursionGuard {
-        // this is just a guesstimate, it should probably be configurable
-        //#[cfg(debug_assertions)]
-        //const MAX_DEPTH: usize = 50;
-        //#[cfg(not(debug_assertions))]
-        //const MAX_DEPTH: usize = 200;
-        #[cfg(debug_assertions)]
-        const MAX_DEPTH: usize = 1000;
-        #[cfg(not(debug_assertions))]
-        const MAX_DEPTH: usize = 10000;
-
-        let guard = self.recursion_guard.clone();
-        let depth = Rc::strong_count(&guard.0);
-        if depth > MAX_DEPTH {
-            eprintln!(
-                "fatal: maximum recursion depth exceeded ({} > {})",
-                depth, MAX_DEPTH
-            );
-            if !self.error_handler.is_empty() {
-                println!("pending errors:");
-                // needs a clone since we take `&self`
-                let mut handler = self.error_handler.clone();
-                for error in &mut handler {
-                    println!("- error: {}", error.data);
-                }
-                for warning in handler.warnings {
-                    println!("- warning: {}", warning.data);
-                }
-            }
-            std::process::exit(102);
-        }
-        guard
+        self.recursion_guard.recursion_check(&self.error_handler)
     }
     // don't use this, use next_token instead
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {

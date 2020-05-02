@@ -97,6 +97,7 @@ impl From<VecDeque<CompileError>> for Error {
 struct RecursionGuard(Rc<()>);
 
 impl RecursionGuard {
+<<<<<<< HEAD
     // this is just a guesstimate, it should probably be configurable
     #[cfg(debug_assertions)]
     const MAX_DEPTH: usize = 1000;

@@ -93,6 +93,50 @@ impl From<VecDeque<CompileError>> for Error {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct RecursionGuard(Rc<()>);
+
+impl RecursionGuard {
+    // this is just a guesstimate, it should probably be configurable
+    #[cfg(debug_assertions)]
+    const MAX_DEPTH: usize = 1000;
+    #[cfg(not(debug_assertions))]
+    const MAX_DEPTH: usize = 10000;
+
+    // make sure we don't crash on highly nested expressions
+    // or rather, crash in a controlled way
+    fn recursion_check(&self, error_handler: &ErrorHandler) -> RecursionGuard {
+        let guard = self.clone();
+        let depth = Rc::strong_count(&guard.0);
+        if depth > Self::MAX_DEPTH {
+            Self::recursion_check_failed(depth, error_handler);
+        }
+        guard
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn recursion_check_failed(depth: usize, error_handler: &ErrorHandler) -> ! {
+        eprintln!(
+            "fatal: maximum recursion depth exceeded ({} > {})",
+            depth,
+            Self::MAX_DEPTH
+        );
+        if !error_handler.is_empty() {
+            println!("pending errors:");
+            // needs a clone since we take `&self`
+            let mut handler = error_handler.clone();
+            for error in &mut handler {
+                println!("- error: {}", error.data);
+            }
+            for warning in handler.warnings {
+                println!("- warning: {}", warning.data);
+            }
+        }
+        std::process::exit(102);
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Opt {
     /// If set, print all tokens found by the lexer in addition to compiling.

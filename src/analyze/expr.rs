@@ -7,6 +7,9 @@ use crate::parse::Lexer;
 impl<T: Lexer> Analyzer<T> {
     pub fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
         use ast::ExprType::*;
+
+        let _guard = self.recursion_check();
+        let _guard2 = self.recursion_check();
         match expr.data {
             // 1 | "str" | 'a'
             Literal(lit) => literal(lit, expr.location),

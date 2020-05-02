@@ -272,7 +272,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             .next()
             .expect("apparently I don't understand pico_args");
         let val = iter.next().unwrap_or("1");
-        let def = val.try_into().map_err(|err: rcc::data::Error| {
+        let def = val.try_into().map_err(|err: rcc::data::error::LexError| {
             pico_args::Error::ArgumentParsingFailed {
                 cause: err.to_string(),
             }

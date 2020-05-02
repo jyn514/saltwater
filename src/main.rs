@@ -132,7 +132,7 @@ fn aot_main(
     file_db: &mut Files,
     output: &Path,
 ) -> Result<(), Error> {
-    let module = rcc::initialize_aot_module("rccmain".to_owned());
+    let module = rcc::initialize_aot_module("rccmain".to_owned(), opt.target.clone());
     let (result, warnings) = compile(module, buf, opt, file_id, file_db);
     handle_warnings(warnings, file_db);
 

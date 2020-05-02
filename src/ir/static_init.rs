@@ -8,7 +8,6 @@ use cranelift_module::{Backend, DataContext, DataId, Linkage};
 use target_lexicon::Triple;
 
 use super::{Compiler, Id};
-use crate::arch::TARGET;
 use crate::data::*;
 use crate::data::{
     hir::{Expr, ExprType, Initializer, MetadataRef},
@@ -369,7 +368,7 @@ impl Literal {
         error_handler: &mut ErrorHandler,
     ) -> CompileResult<Box<[u8]>> {
         let ir_type = ctype.as_ir_type(target);
-        let big_endian = TARGET
+        let big_endian = target
             .endianness()
             .expect("target should be big or little endian")
             == target_lexicon::Endianness::Big;

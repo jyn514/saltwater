@@ -7,10 +7,9 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use codespan::FileId;
-use target_lexicon::Triple;
+use target_lexicon::{Triple, HOST};
 
 use super::{Lexer, Token};
-use crate::arch::TARGET;
 use crate::data::error::CppError;
 use crate::data::lex::{Keyword, Literal};
 use crate::data::*;
@@ -43,6 +42,8 @@ pub struct PreProcessorBuilder<'a> {
     debug: bool,
     /// The paths to search for `#include`d files
     search_path: Vec<Cow<'a, Path>>,
+    /// The target to compile and set `#define`s for
+    target: Option<&'a Triple>,
 }
 
 impl<'a> PreProcessorBuilder<'a> {
@@ -57,6 +58,7 @@ impl<'a> PreProcessorBuilder<'a> {
             file,
             buf: buf.into(),
             search_path: Vec::new(),
+            target: None,
         }
     }
     pub fn debug(mut self, yes: bool) -> Self {
@@ -67,6 +69,10 @@ impl<'a> PreProcessorBuilder<'a> {
         self.search_path.push(path.into());
         self
     }
+    pub fn target(mut self, target: &'a Triple) -> Self {
+        self.target = Some(target);
+        self
+    }
     pub fn build(self) -> PreProcessor<'a> {
         PreProcessor::new(
             self.file,
@@ -74,6 +80,7 @@ impl<'a> PreProcessorBuilder<'a> {
             self.debug,
             self.search_path,
             self.files,
+            &self.target.unwrap_or(&HOST),
         )
     }
 }
@@ -98,12 +105,13 @@ impl<'a> PreProcessorBuilder<'a> {
 ///
 /// ```
 /// use rcc::{Files, PreProcessor, Source};
+/// use target_lexicon::HOST;
 ///
 /// let mut files = Files::new();
 /// let code = String::from("int main(void) { char *hello = \"hi\"; }\n").into();
 /// let src = Source { path: "example.c".into(), code: std::rc::Rc::clone(&code) };
 /// let file = files.add("example.c", src);
-/// let cpp = PreProcessor::new(file, code, false, vec![], &mut files);
+/// let cpp = PreProcessor::new(file, code, false, vec![], &mut files, &HOST);
 /// for token in cpp {
 ///     assert!(token.is_ok());
 /// }
@@ -339,10 +347,11 @@ impl<'a> PreProcessor<'a> {
         debug: bool,
         user_search_path: I,
         files: &'files mut Files,
+        target: &Triple,
     ) -> Self {
         let system_path = format!(
             "{}-{}-{}",
-            TARGET.architecture, TARGET.operating_system, TARGET.environment
+            target.architecture, target.operating_system, target.environment
         );
         let int = |i| Definition::Object(vec![Token::Literal(Literal::Int(i))]);
         let mut search_path = vec![
@@ -357,8 +366,8 @@ impl<'a> PreProcessor<'a> {
             first_lexer: Lexer::new(file, chars, debug),
             includes: Default::default(),
             definitions: map! {
-                format!("__{}__", TARGET.architecture).into() => int(1),
-                format!("__{}__", TARGET.operating_system).into() => int(1),
+                format!("__{}__", target.architecture).into() => int(1),
+                format!("__{}__", target.operating_system).into() => int(1),
                 "__STDC__".into() => int(1),
                 "__STDC_HOSTED__".into() => int(1),
                 "__STDC_VERSION__".into() => int(2011_12),

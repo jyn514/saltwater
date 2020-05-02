@@ -150,7 +150,7 @@ pub fn preprocess(
     files: &mut Files,
 ) -> WarningResult<VecDeque<Locatable<Token>>> {
     let path = opt.search_path.iter().map(|p| p.into());
-    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
+    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files, &opt.target);
 
     let mut tokens = VecDeque::new();
     let mut errs = VecDeque::new();
@@ -176,7 +176,7 @@ pub fn check_semantics(
     files: &mut Files,
 ) -> WarningResult<Vec<Locatable<hir::Declaration>>> {
     let path = opt.search_path.iter().map(|p| p.into());
-    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files);
+    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, files, &opt.target);
     let mut errs = VecDeque::new();
 
     macro_rules! handle_err {
@@ -293,10 +293,15 @@ mod jit {
     use crate::ir::get_isa;
     use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
     use std::convert::TryFrom;
+    use target_lexicon::HOST;
 
     pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
         let libcall_names = cranelift_module::default_libcall_names();
-        Module::new(SimpleJITBuilder::with_isa(get_isa(true), libcall_names))
+        Module::new(SimpleJITBuilder::with_isa(
+            // it doesn't make sense to cross compile for a JIT
+            get_isa(true, HOST),
+            libcall_names,
+        ))
     }
 
     /// Structure used to handle compiling C code to memory instead of to disk.

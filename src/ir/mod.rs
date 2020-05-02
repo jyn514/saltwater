@@ -2,7 +2,7 @@ mod expr;
 mod static_init;
 mod stmt;
 
-use crate::arch::{Arch, TARGET};
+use crate::arch::Arch;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 
@@ -24,7 +24,6 @@ use cranelift::frontend::Switch;
 use cranelift::prelude::{Block, FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{self, Backend, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder};
-use lazy_static::lazy_static;
 use target_lexicon::Triple;
 
 use crate::data::{
@@ -32,14 +31,8 @@ use crate::data::{
     types::FunctionType,
     StorageClass, *,
 };
-// TODO: make this const when const_if_match is stabilized
-// TODO: see https://github.com/rust-lang/rust/issues/49146
-lazy_static! {
-    /// The calling convention for the current target.
-    pub(crate) static ref CALLING_CONVENTION: CallConv = CallConv::triple_default(&TARGET);
-}
 
-pub(crate) fn get_isa(jit: bool) -> Box<dyn TargetIsa + 'static> {
+pub(crate) fn get_isa(jit: bool, target: Triple) -> Box<dyn TargetIsa + 'static> {
     let mut flags_builder = cranelift::codegen::settings::builder();
     // `simplejit` requires non-PIC code
     if !jit {
@@ -61,14 +54,14 @@ pub(crate) fn get_isa(jit: bool) -> Box<dyn TargetIsa + 'static> {
         .set("enable_probestack", "false")
         .expect("enable_probestack should be a valid option");
     let flags = Flags::new(flags_builder);
-    cranelift::codegen::isa::lookup(TARGET)
-        .unwrap_or_else(|_| panic!("platform not supported: {}", TARGET))
+    cranelift::codegen::isa::lookup(target)
+        .unwrap_or_else(|e| panic!("platform not supported: {}", e))
         .finish(flags)
 }
 
-pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
+pub fn initialize_aot_module(name: String, target: Triple) -> Module<ObjectBackend> {
     Module::new(ObjectBuilder::new(
-        get_isa(false),
+        get_isa(false, target),
         name,
         cranelift_module::default_libcall_names(),
     ))
@@ -422,8 +415,10 @@ impl FunctionType {
         } else {
             vec![AbiParam::new(self.return_type.as_ir_type(target))]
         };
+        // The calling convention for the current target.
+        let call_conv = CallConv::triple_default(target);
         Signature {
-            call_conv: *CALLING_CONVENTION,
+            call_conv,
             params,
             returns: return_type,
         }

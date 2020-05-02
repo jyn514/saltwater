@@ -10,6 +10,7 @@ extern crate tempfile;
 
 use log::info;
 use rcc::Error;
+use target_lexicon::HOST;
 
 pub fn init() {
     env_logger::builder().is_test(true).init();
@@ -49,7 +50,7 @@ pub fn compile(program: &str, path: PathBuf, no_link: bool) -> Result<tempfile::
         path,
     };
     let id = files.add("<test-suite>", source);
-    let module = rcc::initialize_aot_module(program.to_owned());
+    let module = rcc::initialize_aot_module(program.to_owned(), HOST);
     let (result, _warnings) = rcc::compile(module, program, &opts, id, &mut files);
     let module = result?.finish();
     let output = tempfile::NamedTempFile::new()

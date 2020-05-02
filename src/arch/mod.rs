@@ -16,15 +16,6 @@ use Type::*;
 /// http://port70.net/~nsz/c/c11/n1570.html#6.5.3.5
 const CHAR_SIZE: u16 = 1;
 
-// TODO: allow this to be configured at runtime
-/// The target triple for the host.
-///
-/// A "target triple" is used to represent information about a compiler target.
-/// Traditionaly, the target triple uses this format: `<architecture>-<vendor>-<operating system>`
-/// The target triple is represented as a struct and contains additional
-/// information like ABI and endianness.
-pub(crate) const TARGET: Triple = Triple::host();
-
 pub(crate) trait Arch {
     fn size_max(&self) -> u64;
 

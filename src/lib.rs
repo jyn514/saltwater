@@ -105,7 +105,7 @@ impl RecursionGuard {
 
     // make sure we don't crash on highly nested expressions
     // or rather, crash in a controlled way
-    fn recursion_check(&self, error_handler: &ErrorHandler) -> RecursionGuard {
+    fn recursion_check(&self, error_handler: &mut ErrorHandler) -> RecursionGuard {
         let guard = self.clone();
         let depth = Rc::strong_count(&guard.0);
         if depth > Self::MAX_DEPTH {
@@ -116,7 +116,7 @@ impl RecursionGuard {
 
     #[cold]
     #[inline(never)]
-    fn recursion_check_failed(depth: usize, error_handler: &ErrorHandler) -> ! {
+    fn recursion_check_failed(depth: usize, mut error_handler: &mut ErrorHandler) -> ! {
         eprintln!(
             "fatal: maximum recursion depth exceeded ({} > {})",
             depth,
@@ -124,12 +124,10 @@ impl RecursionGuard {
         );
         if !error_handler.is_empty() {
             println!("pending errors:");
-            // needs a clone since we take `&self`
-            let mut handler = error_handler.clone();
-            for error in &mut handler {
+            for error in &mut error_handler {
                 println!("- error: {}", error.data);
             }
-            for warning in handler.warnings {
+            for warning in &mut error_handler.warnings {
                 println!("- warning: {}", warning.data);
             }
         }

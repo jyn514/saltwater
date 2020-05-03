@@ -157,6 +157,7 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files) {
 fn main() {
     #[cfg(debug_assertions)]
     color_backtrace::install();
+    env_logger::init();
 
     let (mut opt, output) = match parse_args() {
         Ok(opt) => opt,

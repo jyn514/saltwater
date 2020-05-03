@@ -34,10 +34,10 @@ pico-args = { version = "0.3", optional = true }
 string-interner = { version = "0.7", default-features = false }
 codespan = "0.8"
 color-backtrace = { version = "0.3", default-features = false, optional = true }
+env_logger = { version = "0.7", default-features = false, optional = true }
 counter = "0.4"
 
 [dev-dependencies]
-env_logger = { version = "0.7", default-features = false }
 log = "0.4"
 criterion = "0.3.1"
 walkdir = "2"
@@ -47,7 +47,7 @@ proptest-derive = "0.1"
 [features]
 default = ["cc", "codegen"]
 # The `rcc` binary
-cc = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "codegen"]
+cc = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "codegen", "env_logger"]
 codegen = ["cranelift", "cranelift-module", "cranelift-object"]
 jit = ["codegen", "cranelift-simplejit"]
 # for internal use

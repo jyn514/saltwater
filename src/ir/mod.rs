@@ -106,6 +106,9 @@ pub(crate) fn compile<B: Backend>(
     let mut compiler = Compiler::new(module, debug);
     for decl in program {
         let meta = decl.data.symbol.get();
+        if let StorageClass::Typedef = meta.storage_class {
+            continue;
+        }
         let current = match &meta.ctype {
             Type::Function(func_type) => match decl.data.init {
                 Some(Initializer::FunctionBody(stmts)) => {

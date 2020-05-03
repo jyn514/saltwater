@@ -1,4 +1,5 @@
 use cranelift::codegen::cursor::Cursor;
+use cranelift::codegen::ir::entities::Inst;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{Block, FunctionBuilder, InstBuilder};
 use cranelift_module::Backend;
@@ -71,7 +72,9 @@ impl<B: Backend> Compiler<B> {
             StmtType::Switch(condition, body) => self.switch(condition, *body, builder),
             StmtType::Label(name, inner) => {
                 let new_block = builder.create_block();
-                Self::jump_to_block(new_block, builder);
+                if let Some(jump) = Self::jump_to_block(new_block, builder) {
+                    self.add_comment(jump, format!("{}:", name));
+                }
                 builder.switch_to_block(new_block);
                 if let Some(previous) = self.labels.insert(name, new_block) {
                     Err(stmt
@@ -171,8 +174,10 @@ impl<B: Backend> Compiler<B> {
 
         // for loops can loop forever: `for (;;) {}`
         if let Some(condition) = maybe_condition {
+            let pretty = format!("while ({})", condition);
             let condition = self.compile_expr(condition, builder)?;
-            builder.ins().brz(condition.ir_val, end_body, &[]);
+            let inst = builder.ins().brz(condition.ir_val, end_body, &[]);
+            self.add_comment(inst, pretty);
             self.fallthrough(builder);
         }
 
@@ -297,11 +302,13 @@ impl<B: Backend> Compiler<B> {
         if builder.is_pristine() {
             let current = builder.cursor().current_block().unwrap();
             switch.set_entry(constexpr, current);
+            self.add_comment(current, format!("case {}", constexpr));
         } else {
             let new = builder.create_block();
             switch.set_entry(constexpr, new);
             Self::jump_to_block(new, builder);
             builder.switch_to_block(new);
+            self.add_comment(new, format!("case {}", constexpr));
         };
         self.compile_stmt(stmt, builder)
     }
@@ -329,6 +336,7 @@ impl<B: Backend> Compiler<B> {
                 new
             };
             *default = Some(default_block);
+            self.add_comment(default_block, "default:");
             self.compile_stmt(inner, builder)
         }
     }
@@ -364,14 +372,17 @@ impl<B: Backend> Compiler<B> {
                 .switches
                 .last()
                 .expect("should be in a switch if last_saw_loop is false");
-            builder.ins().jump(*end_block, &[]);
+            let inst = builder.ins().jump(*end_block, &[]);
+            self.add_comment(inst, "break from switch");
             Ok(())
         }
     }
     #[inline]
-    fn jump_to_block(block: Block, builder: &mut FunctionBuilder) {
+    fn jump_to_block(block: Block, builder: &mut FunctionBuilder) -> Option<Inst> {
         if !builder.is_filled() {
-            builder.ins().jump(block, &[]);
+            Some(builder.ins().jump(block, &[]))
+        } else {
+            None
         }
     }
 }

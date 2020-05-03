@@ -89,7 +89,9 @@ impl CommentWriter {
     }
 
     pub(crate) fn add_comment<S: Into<String> + AsRef<str>, E: Into<AnyEntity>>(
-        &mut self, entity: E, comment: S,
+        &mut self,
+        entity: E,
+        comment: S,
     ) {
         use std::collections::hash_map::Entry;
         match self.entity_comments.entry(entity.into()) {
@@ -106,7 +108,10 @@ impl CommentWriter {
 
 impl FuncWriter for CommentWriter {
     fn write_preamble(
-        &mut self, w: &mut dyn fmt::Write, func: &Function, reg_info: Option<&isa::RegInfo>,
+        &mut self,
+        w: &mut dyn fmt::Write,
+        func: &Function,
+        reg_info: Option<&isa::RegInfo>,
     ) -> Result<bool, fmt::Error> {
         for comment in &self.global_comments {
             if !comment.is_empty() {
@@ -123,7 +128,10 @@ impl FuncWriter for CommentWriter {
     }
 
     fn write_entity_definition(
-        &mut self, w: &mut dyn fmt::Write, _func: &Function, entity: AnyEntity,
+        &mut self,
+        w: &mut dyn fmt::Write,
+        _func: &Function,
+        entity: AnyEntity,
         value: &dyn fmt::Display,
     ) -> fmt::Result {
         write!(w, "    {} = {}", entity, value)?;
@@ -136,15 +144,26 @@ impl FuncWriter for CommentWriter {
     }
 
     fn write_block_header(
-        &mut self, w: &mut dyn fmt::Write, func: &Function, isa: Option<&dyn isa::TargetIsa>,
-        block: Block, indent: usize,
+        &mut self,
+        w: &mut dyn fmt::Write,
+        func: &Function,
+        isa: Option<&dyn isa::TargetIsa>,
+        block: Block,
+        indent: usize,
     ) -> fmt::Result {
+        if let Some(comment) = self.entity_comments.get(&block.into()) {
+            writeln!(w, "; {}", comment.replace('\n', "\n; "))?;
+        }
         PlainWriter.write_block_header(w, func, isa, block, indent)
     }
 
     fn write_instruction(
-        &mut self, w: &mut dyn fmt::Write, func: &Function,
-        aliases: &SecondaryMap<Value, Vec<Value>>, isa: Option<&dyn isa::TargetIsa>, inst: Inst,
+        &mut self,
+        w: &mut dyn fmt::Write,
+        func: &Function,
+        aliases: &SecondaryMap<Value, Vec<Value>>,
+        isa: Option<&dyn isa::TargetIsa>,
+        inst: Inst,
         indent: usize,
     ) -> fmt::Result {
         if let Some(comment) = self.entity_comments.get(&inst.into()) {
@@ -166,7 +185,9 @@ impl<B: Backend> Compiler<B> {
     }
 
     pub(crate) fn add_comment<S: Into<String> + AsRef<str>, E: Into<AnyEntity>>(
-        &mut self, entity: E, comment: S,
+        &mut self,
+        entity: E,
+        comment: S,
     ) {
         self.comments.add_comment(entity, comment);
     }

@@ -14,6 +14,9 @@ extern crate color_backtrace;
 extern crate pico_args;
 extern crate rcc;
 
+#[cfg(debug_assertions)]
+use color_backtrace::termcolor;
+
 use ansi_term::{ANSIString, Colour};
 use codespan::FileId;
 use pico_args::Arguments;
@@ -29,12 +32,20 @@ static ERRORS: AtomicUsize = AtomicUsize::new(0);
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 
 const HELP: &str = concat!(
-    env!("CARGO_PKG_NAME"), " ", env!("RCC_GIT_REV"), "\n",
-    "Joshua Nelson <jyn514@gmail.com>\n",
-    env!("CARGO_PKG_DESCRIPTION"), "\n",
-    "Homepage: ", env!("CARGO_PKG_REPOSITORY"), "\n",
+    env!("CARGO_PKG_NAME"),
+    " ",
+    env!("RCC_GIT_REV"),
     "\n",
-"usage: ", env!("CARGO_PKG_NAME"), " [FLAGS] [OPTIONS] [<file>]
+    "Joshua Nelson <jyn514@gmail.com>\n",
+    env!("CARGO_PKG_DESCRIPTION"),
+    "\n",
+    "Homepage: ",
+    env!("CARGO_PKG_REPOSITORY"),
+    "\n",
+    "\n",
+    "usage: ",
+    env!("CARGO_PKG_NAME"),
+    r#" [FLAGS] [OPTIONS] [<file>]
 
 FLAGS:
         --debug-asm        If set, print the intermediate representation of the program in addition to compiling
@@ -49,8 +60,8 @@ FLAGS:
                             There is not currently a way to disable this behavior.
     -V, --version          Prints version information
     
-
 OPTIONS:
+        --color <when>       When to use color. May be "never", "auto", or "always". [default: auto]
     -o, --output <output>    The output file to use. [default: a.out]
         --max-errors <max>   The maximum number of errors to allow before giving up.
                              Use 0 to allow unlimited errors. [default: 10]
@@ -62,7 +73,8 @@ OPTIONS:
 
 ARGS:
     <file>    The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
-              Only one file at a time is currently accepted. [default: -]");
+              Only one file at a time is currently accepted. [default: -]"#
+);
 
 const USAGE: &str = "\
 usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
@@ -79,6 +91,47 @@ struct BinOpt {
     /// The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
     /// Only one file at a time is currently accepted. [default: -]
     filename: PathBuf,
+    /// Whether or not to use color
+    color: ColorChoice,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ColorChoice {
+    Always,
+    Auto,
+    Never,
+}
+
+impl ColorChoice {
+    fn use_color_for(self, stream: atty::Stream) -> bool {
+        match self {
+            ColorChoice::Always => true,
+            ColorChoice::Never => false,
+            ColorChoice::Auto => atty::is(stream),
+        }
+    }
+}
+
+impl std::str::FromStr for ColorChoice {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<ColorChoice, &'static str> {
+        match s {
+            "always" => Ok(ColorChoice::Always),
+            "auto" => Ok(ColorChoice::Auto),
+            "never" => Ok(ColorChoice::Never),
+            _ => Err("Invalid color choice"),
+        }
+    }
+}
+
+impl Into<color_backtrace::termcolor::ColorChoice> for ColorChoice {
+    fn into(self) -> termcolor::ColorChoice {
+        match self {
+            ColorChoice::Always => termcolor::ColorChoice::Always,
+            ColorChoice::Auto => termcolor::ColorChoice::Auto,
+            ColorChoice::Never => termcolor::ColorChoice::Never,
+        }
+    }
 }
 
 // TODO: when std::process::termination is stable, make err_exit an impl for CompileError
@@ -87,14 +140,14 @@ fn real_main(
     buf: Rc<str>,
     file_db: &mut Files,
     file_id: FileId,
-    opt: BinOpt,
+    bin_opt: BinOpt,
     output: &Path,
 ) -> Result<(), Error> {
-    let opt = if opt.preprocess_only {
+    let opt = if bin_opt.preprocess_only {
         use std::io::{BufWriter, Write};
 
-        let (tokens, warnings) = preprocess(&buf, opt.opt, file_id, file_db);
-        handle_warnings(warnings, file_db);
+        let (tokens, warnings) = preprocess(&buf, bin_opt.opt, file_id, file_db);
+        handle_warnings(warnings, file_db, bin_opt.color);
 
         let stdout = io::stdout();
         let mut stdout_buf = BufWriter::new(stdout.lock());
@@ -105,12 +158,12 @@ fn real_main(
 
         return Ok(());
     } else {
-        opt.opt
+        bin_opt.opt
     };
     #[cfg(feature = "jit")]
     {
         if !opt.jit {
-            aot_main(&buf, opt, file_id, file_db, output)
+            aot_main(&buf, opt, file_id, file_db, output, bin_opt.color)
         } else {
             let module = rcc::initialize_jit_module();
             let (result, warnings) = compile(module, &buf, opt, file_id, file_db);
@@ -123,7 +176,7 @@ fn real_main(
         }
     }
     #[cfg(not(feature = "jit"))]
-    aot_main(&buf, opt, file_id, file_db, output)
+    aot_main(&buf, opt, file_id, file_db, output, bin_opt.color)
 }
 
 #[inline]
@@ -133,11 +186,12 @@ fn aot_main(
     file_id: FileId,
     file_db: &mut Files,
     output: &Path,
+    color: ColorChoice,
 ) -> Result<(), Error> {
     let no_link = opt.no_link;
     let module = rcc::initialize_aot_module("rccmain".to_owned());
     let (result, warnings) = compile(module, buf, opt, file_id, file_db);
-    handle_warnings(warnings, file_db);
+    handle_warnings(warnings, file_db, color);
 
     let product = result.map(|x| x.finish())?;
     if no_link {
@@ -148,9 +202,13 @@ fn aot_main(
     link(tmp_file.as_ref(), output).map_err(io::Error::into)
 }
 
-fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files) {
+fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: ColorChoice) {
     WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
-    let tag = Colour::Yellow.bold().paint("warning");
+    let tag = if color.use_color_for(atty::Stream::Stdout) {
+        Colour::Yellow.bold().paint("warning")
+    } else {
+        ANSIString::from("warning")
+    };
     for warning in warnings {
         print!(
             "{}",
@@ -160,9 +218,6 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files) {
 }
 
 fn main() {
-    #[cfg(debug_assertions)]
-    color_backtrace::install();
-
     let (mut opt, output) = match parse_args() {
         Ok(opt) => opt,
         Err(err) => {
@@ -177,6 +232,16 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    #[cfg(debug_assertions)]
+    {
+        color_backtrace::install_with_settings(color_backtrace::Settings::new().output_stream(
+            Box::new(color_backtrace::termcolor::StandardStream::stderr(
+                opt.color.into(),
+            )),
+        ));
+    }
+
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
     opt.filename = if opt.filename == PathBuf::from("-") {
@@ -203,8 +268,9 @@ fn main() {
     let mut file_db = Files::new();
     let file_id = file_db.add(&opt.filename, source);
     let max_errors = opt.opt.max_errors;
+    let color_choice = opt.color;
     real_main(buf, &mut file_db, file_id, opt, &output)
-        .unwrap_or_else(|err| err_exit(err, max_errors, &file_db));
+        .unwrap_or_else(|err| err_exit(err, max_errors, &file_db, color_choice));
 }
 
 fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
@@ -257,6 +323,9 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             usize::from_str_radix(s, 10).map(NonZeroUsize::new)
         })?
         .unwrap_or_else(|| Some(NonZeroUsize::new(10).unwrap()));
+    let color_choice = input
+        .opt_value_from_str("--color")?
+        .unwrap_or(ColorChoice::Auto);
     let mut search_path = Vec::new();
     while let Some(include) =
         input.opt_value_from_os_str(["-I", "--include"], os_str_to_path_buf)?
@@ -296,17 +365,23 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             filename: input
                 .free_from_os_str(os_str_to_path_buf)?
                 .unwrap_or_else(|| "-".into()),
+            color: color_choice,
         },
         output,
     ))
 }
 
-fn err_exit(err: Error, max_errors: Option<NonZeroUsize>, file_db: &Files) -> ! {
+fn err_exit(
+    err: Error,
+    max_errors: Option<NonZeroUsize>,
+    file_db: &Files,
+    color: ColorChoice,
+) -> ! {
     use Error::*;
     match err {
         Source(errs) => {
             for err in &errs {
-                error(&err.data, err.location(), file_db);
+                error(&err.data, err.location(), file_db, color);
             }
             if let Some(max) = max_errors {
                 if usize::from(max) <= errs.len() {
@@ -320,8 +395,8 @@ fn err_exit(err: Error, max_errors: Option<NonZeroUsize>, file_db: &Files) -> ! 
             print_issues(num_warnings, num_errors);
             process::exit(2);
         }
-        IO(err) => fatal(&err, 3),
-        Platform(err) => fatal(&err, 4),
+        IO(err) => fatal(&err, 3, color),
+        Platform(err) => fatal(&err, 4, color),
     }
 }
 
@@ -339,12 +414,14 @@ fn print_issues(warnings: usize, errors: usize) {
     eprintln!("{} generated", msg);
 }
 
-fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files) {
+fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, color: ColorChoice) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
-    print!(
-        "{}",
-        pretty_print(Colour::Red.bold().paint("error"), msg, location, file_db,)
-    );
+    let prefix = if color.use_color_for(atty::Stream::Stdout) {
+        Colour::Red.bold().paint("error")
+    } else {
+        ANSIString::from("error")
+    };
+    print!("{}", pretty_print(prefix, msg, location, file_db,));
 }
 
 #[must_use]
@@ -399,8 +476,12 @@ fn get_errors() -> usize {
     ERRORS.load(Ordering::SeqCst)
 }
 
-fn fatal<T: std::fmt::Display>(msg: T, code: i32) -> ! {
-    eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
+fn fatal<T: std::fmt::Display>(msg: T, code: i32, color: ColorChoice) -> ! {
+    if color.use_color_for(atty::Stream::Stderr) {
+        eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
+    } else {
+        eprintln!("fatal: {}", msg);
+    }
     process::exit(code);
 }
 

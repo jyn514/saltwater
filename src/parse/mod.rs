@@ -133,8 +133,9 @@ impl<I: Lexer> Iterator for Parser<I> {
 }
 
 impl<I: Lexer> Parser<I> {
-    fn recursion_check(&self) -> RecursionGuard {
-        self.recursion_guard.recursion_check(&self.error_handler)
+    fn recursion_check(&mut self) -> RecursionGuard {
+        self.recursion_guard
+            .recursion_check(&mut self.error_handler)
     }
     // don't use this, use next_token instead
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {

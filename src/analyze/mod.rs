@@ -113,8 +113,9 @@ impl<I: Lexer> Analyzer<I> {
     fn warn(&mut self, w: Warning, l: Location) {
         self.error_handler.warn(w, l);
     }
-    fn recursion_check(&self) -> RecursionGuard {
-        self.recursion_guard.recursion_check(&self.error_handler)
+    fn recursion_check(&mut self) -> RecursionGuard {
+        self.recursion_guard
+            .recursion_check(&mut self.error_handler)
     }
     /// 6.9 External Definitions
     ///

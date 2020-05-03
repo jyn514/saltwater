@@ -72,9 +72,8 @@ impl<B: Backend> Compiler<B> {
             StmtType::Switch(condition, body) => self.switch(condition, *body, builder),
             StmtType::Label(name, inner) => {
                 let new_block = builder.create_block();
-                if let Some(jump) = Self::jump_to_block(new_block, builder) {
-                    self.add_comment(jump, format!("{}:", name));
-                }
+                let pretty = format!("goto {}:", name);
+                self.jump_to_block(new_block, builder, pretty);
                 builder.switch_to_block(new_block);
                 if let Some(previous) = self.labels.insert(name, new_block) {
                     Err(stmt
@@ -85,8 +84,8 @@ impl<B: Backend> Compiler<B> {
                 }
             }
             StmtType::Goto(name) => match self.labels.get(&name) {
-                Some(block) => {
-                    Self::jump_to_block(*block, builder);
+                Some(&block) => {
+                    self.jump_to_block(block, builder, "goto");
                     Ok(())
                 }
                 None => Err(stmt.location.error(SemanticError::UndeclaredLabel(name))),
@@ -121,7 +120,7 @@ impl<B: Backend> Compiler<B> {
             builder.switch_to_block(if_body);
             self.compile_stmt(body, builder)?;
             let if_has_return = builder.is_filled();
-            Self::jump_to_block(end_body, builder);
+            self.jump_to_block(end_body, builder, "endif");
 
             builder.switch_to_block(else_body);
             self.compile_stmt(*other, builder)?;
@@ -139,7 +138,7 @@ impl<B: Backend> Compiler<B> {
 
             builder.switch_to_block(if_body);
             self.compile_stmt(body, builder)?;
-            Self::jump_to_block(end_body, builder);
+            self.jump_to_block(end_body, builder, "endif");
 
             builder.switch_to_block(end_body);
         };
@@ -182,7 +181,7 @@ impl<B: Backend> Compiler<B> {
         }
 
         self.compile_stmt(body, builder)?;
-        Self::jump_to_block(loop_body, builder);
+        self.jump_to_block(loop_body, builder, "loop start");
 
         builder.switch_to_block(end_body);
         self.exit_loop(old_saw_loop);
@@ -209,7 +208,7 @@ impl<B: Backend> Compiler<B> {
         }
         let condition = self.compile_expr(condition, builder)?;
         builder.ins().brz(condition.ir_val, end_body, &[]);
-        Self::jump_to_block(loop_body, builder);
+        self.jump_to_block(loop_body, builder, "continue");
 
         builder.switch_to_block(end_body);
         self.exit_loop(old_saw_loop);
@@ -256,7 +255,7 @@ impl<B: Backend> Compiler<B> {
         // instead of switching to back to the current block to emit the Switch,
         // fill a new dummy block
         let dummy_block = builder.create_block();
-        Self::jump_to_block(dummy_block, builder);
+        self.jump_to_block(dummy_block, builder, "dummy");
 
         let start_block = builder.create_block();
         builder.switch_to_block(start_block);
@@ -269,7 +268,7 @@ impl<B: Backend> Compiler<B> {
         let (switch, default, end) = self.switches.pop().unwrap();
         self.last_saw_loop = old_saw_loop;
 
-        Self::jump_to_block(end, builder);
+        self.jump_to_block(end, builder, "end switch");
         builder.switch_to_block(dummy_block);
         switch.emit(
             builder,
@@ -306,9 +305,10 @@ impl<B: Backend> Compiler<B> {
         } else {
             let new = builder.create_block();
             switch.set_entry(constexpr, new);
-            Self::jump_to_block(new, builder);
+            let pretty = format!("case {}", constexpr);
+            self.jump_to_block(new, builder, &pretty);
             builder.switch_to_block(new);
-            self.add_comment(new, format!("case {}", constexpr));
+            self.add_comment(new, pretty);
         };
         self.compile_stmt(stmt, builder)
     }
@@ -328,14 +328,16 @@ impl<B: Backend> Compiler<B> {
             Err(location.error(SemanticError::DuplicateCase { is_default: true }))
         } else {
             let default_block = if builder.is_pristine() {
-                builder.cursor().current_block().unwrap()
+                let blk = builder.cursor().current_block().unwrap();
+                *default = Some(blk);
+                blk
             } else {
                 let new = builder.create_block();
-                Self::jump_to_block(new, builder);
+                *default = Some(new);
+                self.jump_to_block(new, builder, "goto default");
                 builder.switch_to_block(new);
                 new
             };
-            *default = Some(default_block);
             self.add_comment(default_block, "default:");
             self.compile_stmt(inner, builder)
         }
@@ -348,11 +350,11 @@ impl<B: Backend> Compiler<B> {
     ) -> CompileResult<()> {
         if self.last_saw_loop {
             // break from loop
-            if let Some((loop_start, loop_end)) = self.loops.last() {
+            if let Some(&(loop_start, loop_end)) = self.loops.last() {
                 if is_break {
-                    Self::jump_to_block(*loop_end, builder);
+                    self.jump_to_block(loop_end, builder, "break loop");
                 } else {
-                    Self::jump_to_block(*loop_start, builder);
+                    self.jump_to_block(loop_start, builder, "continue loop");
                 }
                 Ok(())
             } else {
@@ -378,9 +380,16 @@ impl<B: Backend> Compiler<B> {
         }
     }
     #[inline]
-    fn jump_to_block(block: Block, builder: &mut FunctionBuilder) -> Option<Inst> {
+    fn jump_to_block(
+        &mut self,
+        block: Block,
+        builder: &mut FunctionBuilder,
+        comment: impl std::string::ToString,
+    ) -> Option<Inst> {
         if !builder.is_filled() {
-            Some(builder.ins().jump(block, &[]))
+            let inst = builder.ins().jump(block, &[]);
+            self.add_comment(inst, comment.to_string());
+            Some(inst)
         } else {
             None
         }

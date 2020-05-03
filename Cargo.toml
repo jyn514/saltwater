@@ -35,6 +35,7 @@ string-interner = { version = "0.7", default-features = false }
 codespan = "0.8"
 color-backtrace = { version = "0.3", default-features = false, optional = true }
 counter = "0.4"
+atty = { version = "0.2", default-features = false, optional = true } 
 
 [dev-dependencies]
 env_logger = { version = "0.7", default-features = false }
@@ -47,7 +48,7 @@ proptest-derive = "0.1"
 [features]
 default = ["cc", "codegen"]
 # The `rcc` binary
-cc = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "codegen"]
+cc = ["ansi_term", "tempfile", "pico-args", "color-backtrace", "codegen", "atty"]
 codegen = ["cranelift", "cranelift-module", "cranelift-object"]
 jit = ["codegen", "cranelift-simplejit"]
 # for internal use

@@ -32,20 +32,12 @@ static ERRORS: AtomicUsize = AtomicUsize::new(0);
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 
 const HELP: &str = concat!(
-    env!("CARGO_PKG_NAME"),
-    " ",
-    env!("RCC_GIT_REV"),
-    "\n",
+    env!("CARGO_PKG_NAME"), " ", env!("RCC_GIT_REV"), "\n",
     "Joshua Nelson <jyn514@gmail.com>\n",
-    env!("CARGO_PKG_DESCRIPTION"),
+    env!("CARGO_PKG_DESCRIPTION"), "\n",
+    "Homepage: ", env!("CARGO_PKG_REPOSITORY"), "\n",
     "\n",
-    "Homepage: ",
-    env!("CARGO_PKG_REPOSITORY"),
-    "\n",
-    "\n",
-    "usage: ",
-    env!("CARGO_PKG_NAME"),
-    r#" [FLAGS] [OPTIONS] [<file>]
+    "usage: ", env!("CARGO_PKG_NAME"), " [FLAGS] [OPTIONS] [<file>]
 
 FLAGS:
         --debug-asm        If set, print the intermediate representation of the program in addition to compiling
@@ -61,7 +53,7 @@ FLAGS:
     -V, --version          Prints version information
     
 OPTIONS:
-        --color <when>       When to use color. May be "never", "auto", or "always". [default: auto]
+        --color <when>       When to use color. May be \"never\", \"auto\", or \"always\". [default: auto]
     -o, --output <output>    The output file to use. [default: a.out]
         --max-errors <max>   The maximum number of errors to allow before giving up.
                              Use 0 to allow unlimited errors. [default: 10]
@@ -73,7 +65,7 @@ OPTIONS:
 
 ARGS:
     <file>    The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
-              Only one file at a time is currently accepted. [default: -]"#
+              Only one file at a time is currently accepted. [default: -]"
 );
 
 const USAGE: &str = "\
@@ -124,7 +116,7 @@ impl std::str::FromStr for ColorChoice {
     }
 }
 
-impl Into<color_backtrace::termcolor::ColorChoice> for ColorChoice {
+impl Into<termcolor::ColorChoice> for ColorChoice {
     fn into(self) -> termcolor::ColorChoice {
         match self {
             ColorChoice::Always => termcolor::ColorChoice::Always,
@@ -234,13 +226,11 @@ fn main() {
     };
 
     #[cfg(debug_assertions)]
-    {
-        color_backtrace::install_with_settings(color_backtrace::Settings::new().output_stream(
-            Box::new(color_backtrace::termcolor::StandardStream::stderr(
-                opt.color.into(),
-            )),
-        ));
-    }
+    color_backtrace::install_with_settings(color_backtrace::Settings::new().output_stream(
+        Box::new(color_backtrace::termcolor::StandardStream::stderr(
+            opt.color.into(),
+        )),
+    ));
 
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();

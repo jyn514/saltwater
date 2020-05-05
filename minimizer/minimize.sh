@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 
-FILE="$1"
-CONDITION="$2"
+FILE="$1";
+CONDITION_SCRIPT="$2";
+shift;
+shift;
+CONDITION="$*";
 
 SCRIPT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" || exit; pwd -P);
 
@@ -19,7 +22,7 @@ WORKSPACE=$SCRIPT_PATH/workspace
 mkdir "$WORKSPACE";
 cp "$FILE" "$WORKSPACE"/input.c;
 
-dustmite --strip-comments --split "*.c:d" "$WORKSPACE"/input.c "$SCRIPT_PATH/conditions/$CONDITION";
+dustmite --strip-comments --split "*.c:d" "$WORKSPACE"/input.c "$SCRIPT_PATH/conditions/$CONDITION_SCRIPT.sh $CONDITION";
 
 if ! [[ -d "$WORKSPACE/input.reduced" ]]; then
     echo "DustMite failed. Cleaning up...";

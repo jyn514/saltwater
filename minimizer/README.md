@@ -4,13 +4,12 @@
 - `script` = script name in `conditions` subfolder
 - `args` = arguments to above script
 
-`.minimize.sh <input> "<script>  <args>"`
-
-It is important to put the condition script and its arguments
-in quotes so they end up as one argument inside of `minimize.sh`.
+`./minimize.sh <input> <script> <args>`
 
 ### Examples:
-`./path/to/minimize.sh ~/Downloads/panicking-input.c "return_code_equals.sh 101"`
+`./path/to/minimize.sh panicking-input.c return_code_equals 101`
+`./path/to/minimize.sh unreachable-panic.c output_contains unreachable`
 
-This will produce a new file named `panicking-input-reduced.c`
-next to `minimize.sh` if execution and reduction was successful.
+This will produce new files named `panicking-input-reduced.c`
+and `unreachable-panic-reduced.c` next to `minimize.sh`
+if execution and reduction was successful.

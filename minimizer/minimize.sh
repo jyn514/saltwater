@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+FILE=$1;
+CONDITION=$2;
+
+SCRIPT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P);
+
+if ! [[ -x $(command -v dustmite) ]]; then
+    echo "No DustMite installed. It is typically contained in a package called 'dtools'.";
+    exit 1;
+fi
+
+if ! test -f "$FILE"; then
+    echo "Input file '$FILE' not found.";
+    exit 1;
+fi
+
+WORKSPACE=$SCRIPT_PATH/workspace
+mkdir $WORKSPACE;
+cp $FILE $WORKSPACE/input.c;
+
+dustmite --strip-comments --split "*.c:d" $WORKSPACE/input.c "$SCRIPT_PATH/conditions/$CONDITION";
+
+if ! [[ -d "$WORKSPACE/input.reduced" ]]; then
+    echo "DustMite failed. Cleaning up...";
+    rm $WORKSPACE/input.c;
+    rmdir $WORKSPACE;
+    
+    exit 1;
+else
+    if ! [[ -f "$WORKSPACE/input.reduced/input.c" ]]; then
+        echo "DustMite failed. Cleaning up...";
+        rmdir $WORKSPACE/input.reduced;
+        rmdir $WORKSPACE;
+        exit 1;
+    else
+        rm $WORKSPACE/input.c;
+        
+        filename=$(basename -- "$FILE")
+        extension="${filename##*.}"
+        filename="${filename%.*}"
+        filename="$SCRIPT_PATH/$filename-reduced.$extension";
+        
+        mv $WORKSPACE/input.reduced/input.c $filename;
+        echo "Ignore the above. The file is actually here: $filename";
+        rmdir $WORKSPACE/input.reduced;
+        rmdir $WORKSPACE;
+        exit 0;
+    fi
+fi
+
+

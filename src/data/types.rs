@@ -281,17 +281,16 @@ pub(super) fn print_type(
     name: Option<InternedStr>,
     f: &mut Formatter,
 ) -> fmt::Result {
-
     print_declarator(ctype, name, f)?;
 
-    return Ok(());
+    Ok(())
 }
 
 fn write_struct_type(struct_type: &StructType, f: &mut Formatter) -> fmt::Result {
     match struct_type {
         StructType::Named(name, _) => {
             write!(f, "{}", name)?;
-        },
+        }
         StructType::Anonymous(members) => {
             write!(f, "{{ ")?;
             for member in members.iter() {
@@ -301,12 +300,10 @@ fn write_struct_type(struct_type: &StructType, f: &mut Formatter) -> fmt::Result
         }
     }
     Ok(())
-} 
+}
 
 pub fn print_declarator(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt::Result {
-    fn unroll_type(
-        ctype: &Type,
-    ) -> Vec<&Type> {
+    fn unroll_type(ctype: &Type) -> Vec<&Type> {
         let mut types = Vec::new();
         let mut next_type = ctype;
         loop {
@@ -314,17 +311,15 @@ pub fn print_declarator(ctype: &Type, name: Option<InternedStr>, f: &mut Formatt
             next_type = match next_type {
                 Type::Array(of, _) => of.as_ref(),
                 Type::Pointer(to, _) => to.as_ref(),
-                Type::Function(FunctionType {
-                    return_type, ..
-                }) => return_type.as_ref(),
+                Type::Function(FunctionType { return_type, .. }) => return_type.as_ref(),
                 _ => break,
             };
         }
-        return types;
+        types
     }
 
-    use Type::*;
     use std::fmt::Write;
+    use Type::*;
 
     let unrolled_type = unroll_type(ctype);
 
@@ -333,7 +328,7 @@ pub fn print_declarator(ctype: &Type, name: Option<InternedStr>, f: &mut Formatt
 
     // Need to skip the last item because that's the final type that needs to be
     // put in as the specifier
-    for (index, declarator_type) in unrolled_type[..unrolled_type.len()-1].iter().enumerate() {
+    for (index, declarator_type) in unrolled_type[..unrolled_type.len() - 1].iter().enumerate() {
         match declarator_type {
             Array(_, array_type) => {
                 prefixes.push(String::new());
@@ -359,17 +354,18 @@ pub fn print_declarator(ctype: &Type, name: Option<InternedStr>, f: &mut Formatt
                 if function_type.varargs {
                     write!(buff, "...")?;
                 }
-                
+
                 write!(buff, ")")?;
                 postfixes.push(buff);
             }
             Pointer(_, qs) => {
-                let needs_parens = match unrolled_type[index+1] {
+                let needs_parens = match unrolled_type[index + 1] {
                     Array(_, _) | Function(_) => true,
                     _ => false,
                 };
 
-                prefixes.push(format!("{}*{}",
+                prefixes.push(format!(
+                    "{}*{}",
                     if needs_parens { "(" } else { "" },
                     if *qs != Default::default() {
                         format!("{} ", qs)
@@ -384,20 +380,25 @@ pub fn print_declarator(ctype: &Type, name: Option<InternedStr>, f: &mut Formatt
                     postfixes.push(String::new());
                 }
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
-    let final_type = unrolled_type[unrolled_type.len()-1];
+    let final_type = unrolled_type[unrolled_type.len() - 1];
     match final_type {
         Char(signed) | Short(signed) | Int(signed) | Long(signed) => {
-            write!(f, "{}{}", if *signed { "" } else { "unsigned " }, match final_type {
-                Char(_) => "char",
-                Short(_) => "short",
-                Int(_) => "int",
-                Long(_) => "long",
-                _ => unreachable!(),
-            })?;
+            write!(
+                f,
+                "{}{}",
+                if *signed { "" } else { "unsigned " },
+                match final_type {
+                    Char(_) => "char",
+                    Short(_) => "short",
+                    Int(_) => "int",
+                    Long(_) => "long",
+                    _ => unreachable!(),
+                }
+            )?;
         }
         Bool => write!(f, "_Bool")?,
         Float => write!(f, "float")?,
@@ -419,7 +420,7 @@ pub fn print_declarator(ctype: &Type, name: Option<InternedStr>, f: &mut Formatt
         // Struct(_) => "<anonymous struct>".to_string(),
         VaList => write!(f, "va_list")?,
         Error => write!(f, "<type error>")?,
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 
     if unrolled_type.len() > 1 || name.unwrap_or_default() != InternedStr::default() {
@@ -494,6 +495,9 @@ pub(crate) mod tests {
         assert_decl_display("**const*volatile a;", "int **const *volatile a;");
         assert_decl_display("int (*a[])();", "int (*a[])();");
         assert_decl_display("int (*(*f))(int);", "int (**f)(int);");
-        assert_decl_display("int *(*jynelson)(int (*)(int));", "int *(*jynelson)(int (*)(int));")
+        assert_decl_display(
+            "int *(*jynelson)(int (*)(int));",
+            "int *(*jynelson)(int (*)(int));",
+        )
     }
 }

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 if ! [[ -x "$(command -v dustmite)" ]]; then
     echo "No DustMite installed. It is typically contained in a package called 'dtools'."
     exit 1

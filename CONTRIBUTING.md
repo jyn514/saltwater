@@ -50,6 +50,14 @@ See [`runner.rs:run_one`](https://github.com/jyn514/rcc/blob/697dd04f1e838d63b35
 for a full list of options.
 See `tests/runner-tests` for examples of existing tests.
 
+### Input minimizer
+
+In `minimizer/` is a script wrapping [DustMite](https://github.com/CyberShadow/DustMite)
+which can be used to minimize any C file using some simple conditions.
+You can read more about how to use it in `minimizer/README.md`.
+The minimizer can be used in combination with fuzzing, bug replication and of course
+bug reporting.
+
 ## Contributing Bug Reports
 
 If you contribute a lot of bug reports, you may find the `.github/report-issue.sh` script useful.

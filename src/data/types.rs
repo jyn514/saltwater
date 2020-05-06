@@ -276,118 +276,163 @@ impl std::fmt::Display for Type {
     }
 }
 
+fn write_struct_type(struct_type: &StructType, f: &mut Formatter) -> fmt::Result {
+    match struct_type {
+        StructType::Named(name, _) => {
+            write!(f, "{}", name)?;
+        }
+        StructType::Anonymous(members) => {
+            writeln!(f, "{{")?;
+            for member in members.iter() {
+                writeln!(f, "    {};", member)?;
+            }
+            write!(f, "}}")?;
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn print_type(
     ctype: &Type,
     name: Option<InternedStr>,
     f: &mut Formatter,
 ) -> fmt::Result {
-    print_pre(ctype, f)?;
-    print_mid(ctype, name, f)?;
-    print_post(ctype, f)
-}
+    fn unroll_type(ctype: &Type) -> Vec<&Type> {
+        let mut types = Vec::new();
+        let mut next_type = ctype;
+        loop {
+            types.push(next_type);
+            next_type = match next_type {
+                Type::Array(of, _) => of.as_ref(),
+                Type::Pointer(to, _) => to.as_ref(),
+                Type::Function(FunctionType { return_type, .. }) => return_type.as_ref(),
+                _ => break,
+            };
+        }
+        types
+    }
 
-fn print_pre(ctype: &Type, f: &mut Formatter) -> fmt::Result {
+    use std::fmt::Write;
     use Type::*;
-    match ctype {
-        Char(signed) | Short(signed) | Int(signed) | Long(signed) => {
-            let lower = &format!("{:?}", ctype).to_lowercase();
-            let substr = match lower.find('(') {
-                Some(n) => &lower[..n],
-                None => lower.as_str(),
-            };
-            write!(f, "{}{}", if *signed { "" } else { "unsigned " }, substr)
-        }
-        Bool => write!(f, "_Bool"),
-        Float | Double | Void => write!(f, "{}", format!("{:?}", ctype).to_lowercase()),
-        Pointer(inner, _) | Array(inner, _) => print_pre(inner, f),
-        Function(ftype) => print_type(&ftype.return_type, None, f),
-        Enum(Some(ident), _) => write!(f, "enum {}", ident),
-        Enum(None, _) => write!(f, "<anonymous enum>"),
-        Union(StructType::Named(ident, _)) => write!(f, "union {}", ident),
-        Union(_) => write!(f, "<anonymous union>"),
-        Struct(StructType::Named(ident, _)) => write!(f, "struct {}", ident),
-        Struct(_) => write!(f, "<anonymous struct>"),
-        VaList => write!(f, "va_list"),
-        Error => write!(f, "<type error>"),
-    }
-}
 
-fn print_mid(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt::Result {
-    match ctype {
-        Type::Pointer(to, qs) => {
-            let name = name.unwrap_or_default();
-            // what do we do for (**p)()?
-            // we have to look arbitrarily deep into the type,
-            // but also we have to only print the ( once,
-            // so how do we know we know if it's already been printed?
-            let depth = match &**to {
-                Type::Array(_, _) | Type::Function(_) => true,
-                _ => false,
-            };
-            print_mid(to, None, f)?;
+    let unrolled_type = unroll_type(ctype);
 
-            write!(f, " ")?;
-            if depth {
-                write!(f, "(")?;
-            }
+    let mut prefixes = Vec::new();
+    let mut postfixes = Vec::new();
 
-            let pointer = if qs != &Default::default() && name != InternedStr::default() {
-                format!("*{} {}", qs, name)
-            } else {
-                format!("*{}{}", qs, name)
-            };
-            write!(f, "{}", pointer)?;
-            if depth {
-                write!(f, ")")?;
+    // Need to skip the last item because that's the final type that needs to be
+    // put in as the specifier
+    for (index, declarator_type) in unrolled_type[..unrolled_type.len() - 1].iter().enumerate() {
+        match declarator_type {
+            Array(_, array_type) => {
+                prefixes.push(String::new());
+                postfixes.push(match array_type {
+                    ArrayType::Fixed(length) => format!("[{}]", length),
+                    ArrayType::Unbounded => "[]".to_string(),
+                });
             }
-            Ok(())
-        }
-        Type::Array(to, _) => print_mid(to, name, f),
-        _ => {
-            if let Some(name) = name {
-                write!(f, " {}", name)?;
+            Type::Function(function_type) => {
+                prefixes.push(String::new());
+
+                let params = &function_type.params;
+                let mut buff = String::new();
+                write!(buff, "(")?;
+                for (index, symbol) in params.iter().enumerate() {
+                    let symbol = symbol.get();
+                    write!(buff, "{}", symbol)?;
+                    if index != params.len() - 1 || function_type.varargs {
+                        write!(buff, ", ")?;
+                    }
+                }
+
+                if function_type.varargs {
+                    write!(buff, "...")?;
+                }
+
+                write!(buff, ")")?;
+                postfixes.push(buff);
             }
-            Ok(())
-        }
-    }
-}
-fn print_post(ctype: &Type, f: &mut Formatter) -> fmt::Result {
-    match ctype {
-        Type::Pointer(to, _) => print_post(to, f),
-        Type::Array(to, size) => {
-            write!(f, "[")?;
-            if let ArrayType::Fixed(size) = size {
-                write!(f, "{}", size)?;
-            }
-            write!(f, "]")?;
-            print_post(to, f)
-        }
-        Type::Function(func_type) => {
-            write!(f, "(")?;
-            let mut params = func_type.params.iter();
-            let print = |f: &mut _, symbol: MetadataRef| {
-                let symbol = symbol.get();
-                let id = if symbol.id == InternedStr::default() {
-                    None
-                } else {
-                    Some(symbol.id)
+            Pointer(_, qs) => {
+                let needs_parens = match unrolled_type[index + 1] {
+                    Array(_, _) | Function(_) => true,
+                    _ => false,
                 };
-                print_type(&symbol.ctype, id, f)
-            };
-            if let Some(&first) = params.next() {
-                print(f, first)?;
+
+                prefixes.push(format!(
+                    "{}*{}",
+                    if needs_parens { "(" } else { "" },
+                    if *qs != Default::default() {
+                        format!("{} ", qs)
+                    } else {
+                        String::new()
+                    }
+                ));
+
+                if needs_parens {
+                    postfixes.push(")".to_string());
+                } else {
+                    postfixes.push(String::new());
+                }
             }
-            for &symbol in params {
-                write!(f, ", ")?;
-                print(f, symbol)?;
-            }
-            if func_type.varargs {
-                write!(f, ", ...")?;
-            }
-            write!(f, ")")
+            _ => unreachable!(),
         }
-        _ => Ok(()),
     }
+
+    let final_type = unrolled_type[unrolled_type.len() - 1];
+    match final_type {
+        Char(signed) | Short(signed) | Int(signed) | Long(signed) => {
+            write!(
+                f,
+                "{}{}",
+                if *signed { "" } else { "unsigned " },
+                match final_type {
+                    Char(_) => "char",
+                    Short(_) => "short",
+                    Int(_) => "int",
+                    Long(_) => "long",
+                    _ => unreachable!(),
+                }
+            )?;
+        }
+        Bool => write!(f, "_Bool")?,
+        Float => write!(f, "float")?,
+        Double => write!(f, "double")?,
+        Void => write!(f, "void")?,
+        Enum(Some(ident), _) => write!(f, "enum {}", ident)?,
+        Enum(None, _) => write!(f, "<anonymous enum>")?,
+        Union(struct_type) => {
+            write!(f, "union ")?;
+            write_struct_type(struct_type, f)?;
+        }
+        Struct(struct_type) => {
+            write!(f, "struct ")?;
+            write_struct_type(struct_type, f)?;
+        }
+        VaList => write!(f, "va_list")?,
+        Error => write!(f, "<type error>")?,
+        // These are unreachable because if they were part of the type, the
+        // would have been unrolled. Only specifier types are valid final types
+        // in the unrolling algorithm.
+        Array(_, _) | Pointer(_, _) | Function(_) => unreachable!(),
+    }
+
+    if unrolled_type.len() > 1 || name.unwrap_or_default() != InternedStr::default() {
+        write!(f, " ")?;
+    }
+
+    for prefix in prefixes.iter().rev() {
+        write!(f, "{}", prefix)?;
+    }
+
+    if let Some(name) = name {
+        write!(f, "{}", name)?;
+    }
+
+    for postfix in postfixes.iter() {
+        write!(f, "{}", postfix)?;
+    }
+
+    Ok(())
 }
 
 impl FunctionType {
@@ -430,5 +475,23 @@ pub(crate) mod tests {
                 //Type::Struct(StructType),
             ]
         })
+    }
+
+    use crate::analyze::test::assert_decl_display;
+
+    #[test]
+    fn test_big_one() {
+        assert_decl_display("struct { int i; } S;", "struct {\n    int i;\n} S;");
+        assert_decl_display("int f();", "int f();");
+        assert_decl_display("int bar;", "int bar;");
+        assert_decl_display("int *foo;", "int *foo;");
+        assert_decl_display("**const*volatile a;", "int **const *volatile a;");
+        assert_decl_display("int (*a[])();", "int (*a[])();");
+        assert_decl_display("int (*(*f))(int);", "int (**f)(int);");
+        assert_decl_display(
+            "int *(*jynelson)(int (*)(int));",
+            "int *(*jynelson)(int (*)(int));",
+        );
+        assert_decl_display("int f(...);", "int f(...);");
     }
 }

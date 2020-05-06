@@ -1374,12 +1374,12 @@ pub(crate) mod test {
         analyze(s, Parser::expr, Analyzer::parse_expr)
     }
 
-    fn assert_decl_display(left: &str, right: &str) {
+    pub(crate) fn assert_decl_display(left: &str, right: &str) {
         assert_eq!(decl(left).unwrap().to_string(), right);
     }
     fn assert_extern_decl_display(s: &str) {
         // TODO: this `auto` is such a hack
-        assert_decl_display(s, &format!("auto {}", s));
+        assert_decl_display(s, &format!("{}", s));
     }
 
     pub(super) fn assert_same(left: &str, right: &str) {

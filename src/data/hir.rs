@@ -476,7 +476,9 @@ impl Display for Metadata {
         if self.qualifiers != Qualifiers::default() {
             write!(f, "{} ", self.qualifiers)?;
         }
-        write!(f, "{} ", self.storage_class)?;
+        if self.storage_class != StorageClass::default() {
+            write!(f, "{} ", self.storage_class)?;
+        }
         super::types::print_type(&self.ctype, Some(self.id), f)
     }
 }

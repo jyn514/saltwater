@@ -1,3 +1,3 @@
 #!/bin/sh
-cargo run -- --color never input.c 2>&1;
+source ./../run_cargo.sh
 ! [ $? = "$1" ]

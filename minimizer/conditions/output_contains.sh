@@ -1,2 +1,2 @@
 #!/bin/sh
-cargo run -- --color never input.c 2>&1 | grep "$1"
+source ./../run_cargo.sh | grep "$1"

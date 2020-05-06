@@ -43,13 +43,13 @@ shift
 CONDITION="$*"
 WORKSPACE=$SCRIPT_PATH/workspace
 mkdir "$WORKSPACE"
-cp "$FILE" "$WORKSPACE"/input.c
+ln -s "$(realpath "$FILE")" "$WORKSPACE"/input.c
 
 dustmite --strip-comments --split "*.c:d" "$WORKSPACE"/input.c "$SCRIPT_PATH/conditions/$CONDITION_SCRIPT.sh $CONDITION"
 
 if ! [[ -d "$WORKSPACE/input.reduced" ]]; then
     echo "DustMite failed. Cleaning up..."
-    rm "$WORKSPACE"/input.c
+    unlink "$WORKSPACE"/input.c
     rmdir "$WORKSPACE"
 
     exit 1;
@@ -59,7 +59,7 @@ else
         rm -r "$WORKSPACE"
         exit 1
     else
-        rm "$WORKSPACE"/input.c
+        unlink "$WORKSPACE"/input.c
 
         filename=$(basename -- "$FILE")
         extension="${filename##*.}"

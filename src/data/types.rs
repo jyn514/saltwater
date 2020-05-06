@@ -491,6 +491,7 @@ pub(crate) mod tests {
         assert_decl_display(
             "int *(*jynelson)(int (*)(int));",
             "int *(*jynelson)(int (*)(int));",
-        )
+        );
+        assert_decl_display("int f(...);", "int f(...);");
     }
 }

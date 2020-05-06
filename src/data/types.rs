@@ -276,16 +276,6 @@ impl std::fmt::Display for Type {
     }
 }
 
-pub(super) fn print_type(
-    ctype: &Type,
-    name: Option<InternedStr>,
-    f: &mut Formatter,
-) -> fmt::Result {
-    print_declarator(ctype, name, f)?;
-
-    Ok(())
-}
-
 fn write_struct_type(struct_type: &StructType, f: &mut Formatter) -> fmt::Result {
     match struct_type {
         StructType::Named(name, _) => {
@@ -294,7 +284,7 @@ fn write_struct_type(struct_type: &StructType, f: &mut Formatter) -> fmt::Result
         StructType::Anonymous(members) => {
             write!(f, "{{ ")?;
             for member in members.iter() {
-                write!(f, "{};", member)?;
+                writeln!(f, "{};", member)?;
             }
             write!(f, " }}")?;
         }
@@ -302,7 +292,11 @@ fn write_struct_type(struct_type: &StructType, f: &mut Formatter) -> fmt::Result
     Ok(())
 }
 
-pub fn print_declarator(ctype: &Type, name: Option<InternedStr>, f: &mut Formatter) -> fmt::Result {
+pub(super) fn print_type(
+    ctype: &Type,
+    name: Option<InternedStr>,
+    f: &mut Formatter,
+) -> fmt::Result {
     fn unroll_type(ctype: &Type) -> Vec<&Type> {
         let mut types = Vec::new();
         let mut next_type = ctype;
@@ -410,17 +404,16 @@ pub fn print_declarator(ctype: &Type, name: Option<InternedStr>, f: &mut Formatt
             write!(f, "union ")?;
             write_struct_type(struct_type, f)?;
         }
-        // Union(StructType::Named(ident, _)) => format!("union {}", ident),
-        // Union(_) => "<anonymous union>".to_string(),
         Struct(struct_type) => {
             write!(f, "struct ")?;
-            write_struct_type(struct_type, f);
+            write_struct_type(struct_type, f)?;
         }
-        // Struct(StructType::Named(ident, _)) => format!("struct {}", ident),
-        // Struct(_) => "<anonymous struct>".to_string(),
         VaList => write!(f, "va_list")?,
         Error => write!(f, "<type error>")?,
-        _ => unreachable!(),
+        // These are unreachable because if they were part of the type, the
+        // would have been unrolled. Only specifier types are valid final types
+        // in the unrolling algorithm.
+        Array(_, _) | Pointer(_, _) | Function(_) => unreachable!(),
     }
 
     if unrolled_type.len() > 1 || name.unwrap_or_default() != InternedStr::default() {

@@ -1379,7 +1379,6 @@ pub(crate) mod test {
     }
     fn assert_extern_decl_display(s: &str) {
         // TODO: this `auto` is such a hack
-        // TOOD: We really should make this work.
         assert_decl_display(s, &format!("{}", s));
     }
 

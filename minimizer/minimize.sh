@@ -41,7 +41,7 @@ shift
 CONDITION="$*"
 WORKSPACE=$SCRIPT_PATH/workspace
 mkdir "$WORKSPACE"
-cp "$FILE" "$WORKSPACE"/input.c
+ln -s "$FILE" "$WORKSPACE"/input.c
 
 dustmite --strip-comments --split "*.c:d" "$WORKSPACE"/input.c "$SCRIPT_PATH/conditions/$CONDITION_SCRIPT.sh $CONDITION"
 

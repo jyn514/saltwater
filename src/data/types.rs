@@ -282,11 +282,11 @@ fn write_struct_type(struct_type: &StructType, f: &mut Formatter) -> fmt::Result
             write!(f, "{}", name)?;
         }
         StructType::Anonymous(members) => {
-            write!(f, "{{ ")?;
+            write!(f, "{{")?;
             for member in members.iter() {
-                writeln!(f, "{};", member)?;
+                writeln!(f, "    {};", member)?;
             }
-            write!(f, " }}")?;
+            write!(f, "}}")?;
         }
     }
     Ok(())
@@ -481,7 +481,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_big_one() {
-        assert_decl_display("struct { int i; } S;", "struct { int i; } S;");
+        assert_decl_display("struct { int i; } S;", "struct {    int i;\n} S;");
         assert_decl_display("int f();", "int f();");
         assert_decl_display("int bar;", "int bar;");
         assert_decl_display("int *foo;", "int *foo;");

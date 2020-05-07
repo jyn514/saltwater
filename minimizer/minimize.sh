@@ -44,7 +44,7 @@ WORKSPACE=$SCRIPT_PATH/workspace
 mkdir -p "$WORKSPACE"
 ln -s "$(realpath "$FILE")" "$WORKSPACE"/input.c
 
-dustmite --strip-comments --split "*.c:d" "$WORKSPACE"/input.c "$(printf " %q" "$SCRIPT_PATH/conditions/$CONDITION_SCRIPT.sh" "$@")"
+dustmite --strip-comments --split "*.c:d" "$WORKSPACE"/input.c "$(printf " %q" "$CONDITION_SCRIPT" "$@")"
 
 if ! [[ -d "$WORKSPACE/input.reduced" ]]; then
     echo "DustMite failed. Cleaning up..."

@@ -940,7 +940,7 @@ impl<I: Lexer> Analyzer<I> {
                 } else if func.varargs && is_void {
                     self.err(SemanticError::VoidVarargs, location);
                 // int f(...)
-                } else if func.varargs && params.len() == 0 {
+                } else if func.varargs && params.is_empty() {
                     self.err(SemanticError::VarargsWithoutParam, location);
                 }
                 Type::Function(FunctionType {

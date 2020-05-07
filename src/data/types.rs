@@ -477,21 +477,18 @@ pub(crate) mod tests {
         })
     }
 
-    use crate::analyze::test::assert_decl_display;
+    use crate::analyze::test::{assert_decl_display, assert_no_change};
 
     #[test]
     fn test_big_one() {
         assert_decl_display("struct { int i; } S;", "struct {\n    int i;\n} S;");
-        assert_decl_display("int f();", "int f();");
-        assert_decl_display("int bar;", "int bar;");
-        assert_decl_display("int *foo;", "int *foo;");
+        assert_no_change("int f();");
+        assert_no_change("int bar;");
+        assert_no_change("int *foo;");
         assert_decl_display("**const*volatile a;", "int **const *volatile a;");
-        assert_decl_display("int (*a[])();", "int (*a[])();");
+        assert_no_change("int (*a[])();");
         assert_decl_display("int (*(*f))(int);", "int (**f)(int);");
-        assert_decl_display(
-            "int *(*jynelson)(int (*)(int));",
-            "int *(*jynelson)(int (*)(int));",
-        );
-        assert_decl_display("int f(...);", "int f(...);");
+        assert_no_change("int *(*jynelson)(int (*)(int));");
+        assert_no_change("int f(int, ...);");
     }
 }

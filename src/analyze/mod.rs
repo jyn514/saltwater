@@ -936,6 +936,12 @@ impl<I: Lexer> Analyzer<I> {
                     })
                 {
                     self.err(SemanticError::InvalidVoidParameter, location);
+                // int f(void, ...)
+                } else if func.varargs && is_void {
+                    self.err(SemanticError::VoidVarargs, location);
+                // int f(...)
+                } else if func.varargs && params.len() == 0 {
+                    self.err(SemanticError::VarargsWithoutParam, location);
                 }
                 Type::Function(FunctionType {
                     params: params.into_iter().map(|m| m.insert()).collect(),
@@ -1388,7 +1394,7 @@ pub(crate) mod test {
             decl(right).unwrap().to_string()
         );
     }
-    fn assert_no_change(s: &str) {
+    pub(crate) fn assert_no_change(s: &str) {
         assert_decl_display(s, s);
     }
 

@@ -29,10 +29,10 @@ if ! test -f "$FILE"; then
 fi
 
 SCRIPT_PATH=$(cd "$(dirname "${BASH_SOURCE[0]}")" || exit; pwd -P)
-CONDITION_SCRIPT="$2"
+CONDITION_SCRIPT="$SCRIPT_PATH/conditions/$2.sh"
 
-if ! test -f "$SCRIPT_PATH/conditions/$CONDITION_SCRIPT.sh"; then
-    echo "Condition script '$SCRIPT_PATH/conditions/$CONDITION_SCRIPT.sh' not found."
+if ! test -f "$CONDITION_SCRIPT"; then
+    echo "Condition script '$CONDITION_SCRIPT' not found."
     echo "available conditions are:"
     printf '\t%s\n' "${available_scripts[@]}"
     exit 1

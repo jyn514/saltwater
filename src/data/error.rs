@@ -331,7 +331,7 @@ pub enum SemanticError {
     Redefinition(InternedStr),
 
     #[error("redeclaration of '{0}' with different type or qualifiers (originally {}, now {})", .1.get(), .2.get())]
-    IncompatibleRedeclaration(InternedStr, hir::MetadataRef, hir::MetadataRef),
+    IncompatibleRedeclaration(InternedStr, hir::Symbol, hir::Symbol),
 
     #[error("'{0}' can only appear on functions")]
     FuncQualifiersNotAllowed(hir::FunctionQualifiers),

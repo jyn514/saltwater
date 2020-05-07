@@ -1090,7 +1090,7 @@ impl Expr {
             false
         }
     }
-    fn id(symbol: MetadataRef, location: Location) -> Self {
+    fn id(symbol: Symbol, location: Location) -> Self {
         Self {
             expr: ExprType::Id(symbol),
             // TODO: maybe pass in the type as well to avoid the lookup?
@@ -1344,7 +1344,7 @@ mod test {
         let location = get_location(&parsed);
         assert_eq!(parsed.unwrap(), literal(token, location));
     }
-    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[MetadataRef]) -> CompileResult<Expr> {
+    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[Symbol]) -> CompileResult<Expr> {
         analyze(input, Parser::expr, |a, expr| {
             for &meta in variables {
                 let id = meta.get().id;

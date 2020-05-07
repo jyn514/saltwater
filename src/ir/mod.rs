@@ -27,7 +27,7 @@ use cranelift_object::{ObjectBackend, ObjectBuilder};
 use lazy_static::lazy_static;
 
 use crate::data::{
-    hir::{Declaration, Initializer, MetadataRef, Stmt},
+    hir::{Declaration, Initializer, Stmt, Symbol},
     types::FunctionType,
     StorageClass, *,
 };
@@ -85,7 +85,7 @@ struct Compiler<T: Backend> {
     // if false, we last saw a switch
     last_saw_loop: bool,
     strings: HashMap<Vec<u8>, DataId>,
-    declarations: HashMap<MetadataRef, Id>,
+    declarations: HashMap<Symbol, Id>,
     loops: Vec<(Block, Block)>,
     // switch, default, end
     // if default is empty once we get to the end of a switch body,
@@ -162,7 +162,7 @@ impl<B: Backend> Compiler<B> {
     // 1. should declare `id` a import unless specified as `static`.
     // 3. should always declare `id` as export or local.
     // 2. and 4. should be a no-op.
-    fn declare_func(&mut self, symbol: MetadataRef, is_definition: bool) -> CompileResult<FuncId> {
+    fn declare_func(&mut self, symbol: Symbol, is_definition: bool) -> CompileResult<FuncId> {
         use crate::get_str;
         if !is_definition {
             // case 2 and 4
@@ -256,7 +256,7 @@ impl<B: Backend> Compiler<B> {
     // there's an easier way to make parameters modifiable.
     fn store_stack_params(
         &mut self,
-        params: &[MetadataRef],
+        params: &[Symbol],
         func_start: Block,
         location: &Location,
         builder: &mut FunctionBuilder,
@@ -302,7 +302,7 @@ impl<B: Backend> Compiler<B> {
     }
     fn compile_func(
         &mut self,
-        symbol: MetadataRef,
+        symbol: Symbol,
         func_type: &FunctionType,
         stmts: Vec<Stmt>,
         location: Location,

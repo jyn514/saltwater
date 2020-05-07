@@ -188,7 +188,7 @@ impl<I: Lexer> Analyzer<I> {
             } else {
                 None
             };
-            let symbol = Metadata {
+            let symbol = Variable {
                 ctype,
                 id,
                 qualifiers: original.qualifiers,
@@ -553,7 +553,7 @@ impl<I: Lexer> Analyzer<I> {
         &mut self,
         members: ast::StructDeclarationList,
         location: Location,
-    ) -> Vec<Metadata> {
+    ) -> Vec<Variable> {
         let parsed_type = self.parse_specifiers(members.specifiers, location);
         if parsed_type.qualifiers.has_func_qualifiers() {
             self.err(
@@ -580,7 +580,7 @@ impl<I: Lexer> Analyzer<I> {
                 }
                 other => other,
             };
-            let mut symbol = Metadata {
+            let mut symbol = Variable {
                 storage_class: StorageClass::Auto,
                 qualifiers: parsed_type.qualifiers,
                 ctype,
@@ -702,7 +702,7 @@ impl<I: Lexer> Analyzer<I> {
             }
             members.push((name, discriminant));
             // TODO: this is such a hack
-            let tmp_symbol = Metadata {
+            let tmp_symbol = Variable {
                 id: name,
                 qualifiers: Qualifiers {
                     c_const: true,
@@ -741,7 +741,7 @@ impl<I: Lexer> Analyzer<I> {
                 for (id, _) in members {
                     self.scope.insert(
                         id.clone(),
-                        Metadata {
+                        Variable {
                             id: *id,
                             storage_class: StorageClass::Register,
                             qualifiers: Qualifiers::NONE,
@@ -913,7 +913,7 @@ impl<I: Lexer> Analyzer<I> {
                         // int f(int)
                         InternedStr::default()
                     };
-                    let meta = Metadata {
+                    let meta = Variable {
                         ctype: param_type.ctype,
                         id,
                         qualifiers: param_type.qualifiers,
@@ -923,7 +923,7 @@ impl<I: Lexer> Analyzer<I> {
                 }
                 // int f(void);
                 let is_void = match params.as_slice() {
-                    [Metadata {
+                    [Variable {
                         ctype: Type::Void, ..
                     }] => true,
                     _ => false,
@@ -1008,7 +1008,7 @@ impl<I: Lexer> Analyzer<I> {
     ///     - or it is a global variable that is compatible with the previous declaration (see below)
     ///
     /// This returns an opaque index to the `Metadata`.
-    fn declare(&mut self, mut decl: Metadata, init: bool, location: Location) -> MetadataRef {
+    fn declare(&mut self, mut decl: Variable, init: bool, location: Location) -> MetadataRef {
         if decl.id == "main".into() {
             if let Type::Function(ftype) = &decl.ctype {
                 // int main(int)
@@ -1158,7 +1158,7 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
                 StorageClass::Extern
             }
         };
-        let metadata = Metadata {
+        let metadata = Variable {
             ctype: parsed_func.ctype.clone(),
             id: func.id,
             qualifiers: parsed_func.qualifiers,
@@ -1416,7 +1416,7 @@ pub(crate) mod test {
                 (a, b) => a == b,
             }
         }
-        fn metadata_helper(left: &Metadata, right: &Metadata) -> bool {
+        fn metadata_helper(left: &Variable, right: &Variable) -> bool {
             dbg!(type_helper(dbg!(&left.ctype), dbg!(&right.ctype)))
                 && left.storage_class == right.storage_class
                 && left.qualifiers == right.qualifiers
@@ -1608,7 +1608,7 @@ pub(crate) mod test {
             Pointer(
                 Box::new(Function(FunctionType {
                     return_type: Box::new(Int(true)),
-                    params: vec![Metadata {
+                    params: vec![Variable {
                         id: InternedStr::get_or_intern("f"),
                         ctype: Pointer(
                             Box::new(Function(FunctionType {
@@ -1631,7 +1631,7 @@ pub(crate) mod test {
             decl("int f(int, ...);"),
             Function(FunctionType {
                 return_type: Box::new(Int(true)),
-                params: vec![Metadata {
+                params: vec![Variable {
                     id: Default::default(),
                     ctype: Int(true),
                     qualifiers: Default::default(),
@@ -1648,7 +1648,7 @@ pub(crate) mod test {
             decl("void f(int a[static 5]);"),
             Function(FunctionType {
                 return_type: Box::new(Void),
-                params: vec![Metadata {
+                params: vec![Variable {
                     id: InternedStr::get_or_intern("a"),
                     ctype: Pointer(Box::new(Int(true)), Qualifiers::default()),
                     qualifiers: Default::default(),
@@ -1668,7 +1668,7 @@ pub(crate) mod test {
             decl("inline void f(void);"),
             Function(FunctionType {
                 return_type: Box::new(Void),
-                params: vec![Metadata {
+                params: vec![Variable {
                     id: InternedStr::default(),
                     ctype: Type::Void,
                     qualifiers: Qualifiers::default(),
@@ -1705,7 +1705,7 @@ pub(crate) mod test {
                                     ..Qualifiers::default()
                                 }
                             )),
-                            params: vec![Metadata {
+                            params: vec![Variable {
                                 ctype: Int(true),
                                 storage_class: Default::default(),
                                 id: Default::default(),
@@ -1733,7 +1733,7 @@ pub(crate) mod test {
                         Box::new(Array(Box::new(Int(true)), ArrayType::Unbounded)),
                         Qualifiers::default()
                     )),
-                    params: vec![Metadata {
+                    params: vec![Variable {
                         ctype: Void,
                         storage_class: Default::default(),
                         id: Default::default(),

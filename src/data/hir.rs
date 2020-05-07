@@ -94,27 +94,27 @@ thread_local!(
 );
 
 #[derive(Default)]
-struct MetadataStore(Vec<Rc<Metadata>>);
+struct MetadataStore(Vec<Rc<Variable>>);
 
 impl MetadataStore {
-    fn insert(&mut self, m: Metadata) -> MetadataRef {
+    fn insert(&mut self, m: Variable) -> MetadataRef {
         let i = self.0.len();
         self.0.push(Rc::new(m));
         MetadataRef(i)
     }
     /// Guaranteed not to panic since `MetadataRef` is always valid
-    pub(crate) fn get(&self, i: MetadataRef) -> Rc<Metadata> {
+    pub(crate) fn get(&self, i: MetadataRef) -> Rc<Variable> {
         self.0[i.0].clone()
     }
 }
 
 impl MetadataRef {
-    pub fn get(self) -> Rc<Metadata> {
+    pub fn get(self) -> Rc<Variable> {
         METADATA_STORE.with(|store| store.borrow().get(self))
     }
 }
 
-impl Metadata {
+impl Variable {
     pub(crate) fn insert(self) -> MetadataRef {
         METADATA_STORE.with(|store| store.borrow_mut().insert(self))
     }
@@ -202,7 +202,7 @@ impl Display for BinaryOp {
 /// For abstract function parameters, e.g. `int f(int)`, the `id` will resolve to the empty string.
 /// Furthermore, it is guaranteed to be equal to `InternedStr::default()`.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Metadata {
+pub struct Variable {
     pub ctype: Type,
     pub storage_class: StorageClass,
     pub qualifiers: Qualifiers,
@@ -471,7 +471,7 @@ impl StmtType {
     }
 }
 
-impl Display for Metadata {
+impl Display for Variable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.qualifiers != Qualifiers::default() {
             write!(f, "{} ", self.qualifiers)?;

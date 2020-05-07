@@ -5,7 +5,7 @@ use cranelift_module::Backend;
 use super::{Compiler, Id};
 use crate::data::*;
 use crate::data::{
-    hir::{BinaryOp, Expr, ExprType, Metadata, MetadataRef},
+    hir::{BinaryOp, Expr, ExprType, MetadataRef, Variable},
     lex::{ComparisonToken, Literal},
 };
 
@@ -524,7 +524,7 @@ impl<B: Backend> Compiler<B> {
                     float_variadic += 1;
                 }
                 ftype.params.push(
-                    Metadata {
+                    Variable {
                         ctype: arg.ctype.clone(),
                         id: Default::default(),
                         qualifiers: Qualifiers::NONE,

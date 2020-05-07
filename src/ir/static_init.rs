@@ -10,7 +10,7 @@ use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::*;
 use crate::data::{
-    hir::{Expr, ExprType, Initializer, MetadataRef},
+    hir::{Expr, ExprType, Initializer, Symbol},
     lex::Literal,
     types::ArrayType,
     StorageClass,
@@ -22,7 +22,7 @@ const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
 impl<B: Backend> Compiler<B> {
     pub(super) fn store_static(
         &mut self,
-        symbol: MetadataRef,
+        symbol: Symbol,
         init: Option<Initializer>,
         location: Location,
     ) -> CompileResult<()> {
@@ -195,13 +195,7 @@ impl<B: Backend> Compiler<B> {
         }
         Ok(())
     }
-    fn static_ref(
-        &self,
-        symbol: MetadataRef,
-        member_offset: i64,
-        offset: u32,
-        ctx: &mut DataContext,
-    ) {
+    fn static_ref(&self, symbol: Symbol, member_offset: i64, offset: u32, ctx: &mut DataContext) {
         match self.declarations.get(&symbol) {
             Some(Id::Function(func_id)) => {
                 let func_ref = self.module.declare_func_in_data(*func_id, ctx);

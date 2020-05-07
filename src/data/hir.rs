@@ -45,7 +45,7 @@ impl Default for StmtType {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Declaration {
-    pub symbol: MetadataRef,
+    pub symbol: Symbol,
     pub init: Option<Initializer>,
 }
 
@@ -81,7 +81,7 @@ pub struct Expr {
 
 /// An identifier used to look up the metadata for a variable.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
-pub struct MetadataRef(usize);
+pub struct Symbol(usize);
 
 thread_local!(
     /// The global storage for all metadata.
@@ -97,25 +97,25 @@ thread_local!(
 struct MetadataStore(Vec<Rc<Variable>>);
 
 impl MetadataStore {
-    fn insert(&mut self, m: Variable) -> MetadataRef {
+    fn insert(&mut self, m: Variable) -> Symbol {
         let i = self.0.len();
         self.0.push(Rc::new(m));
-        MetadataRef(i)
+        Symbol(i)
     }
     /// Guaranteed not to panic since `MetadataRef` is always valid
-    pub(crate) fn get(&self, i: MetadataRef) -> Rc<Variable> {
+    pub(crate) fn get(&self, i: Symbol) -> Rc<Variable> {
         self.0[i.0].clone()
     }
 }
 
-impl MetadataRef {
+impl Symbol {
     pub fn get(self) -> Rc<Variable> {
         METADATA_STORE.with(|store| store.borrow().get(self))
     }
 }
 
 impl Variable {
-    pub(crate) fn insert(self) -> MetadataRef {
+    pub(crate) fn insert(self) -> Symbol {
         METADATA_STORE.with(|store| store.borrow_mut().insert(self))
     }
 }
@@ -125,7 +125,7 @@ pub enum ExprType {
     // primary expressions
     // This stores a reference to the metadata for the identifier,
     // which can be looked up using a `metadata_store`.
-    Id(MetadataRef),
+    Id(Symbol),
     Literal(Literal),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, InternedStr),

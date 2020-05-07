@@ -1,4 +1,4 @@
-use super::hir::{MetadataRef, Variable};
+use super::hir::{Symbol, Variable};
 use crate::intern::InternedStr;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
@@ -176,7 +176,7 @@ pub struct FunctionType {
     // 2. when we do scoping, we need to know the names of formal parameters
     //    (as opposed to concrete arguments).
     //    this is as good a place to store them as any.
-    pub params: Vec<MetadataRef>,
+    pub params: Vec<Symbol>,
     pub varargs: bool,
 }
 

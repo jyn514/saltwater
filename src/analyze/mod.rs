@@ -35,12 +35,12 @@ pub struct Analyzer<T: Lexer> {
     /// 4. members
     ///
     /// This holds the scope for ordinary identifiers: variables and typedefs
-    scope: Scope<InternedStr, MetadataRef>,
+    scope: Scope<InternedStr, Symbol>,
     /// the compound types that have been declared (struct/union/enum)
     /// scope 2. from above
     tag_scope: TagScope,
     /// Stores all variables that have been initialized so far
-    initialized: HashSet<MetadataRef>,
+    initialized: HashSet<Symbol>,
     /// Internal API which makes it easier to return errors lazily
     error_handler: ErrorHandler,
     /// Internal API which prevents segfaults due to stack overflow
@@ -1008,7 +1008,7 @@ impl<I: Lexer> Analyzer<I> {
     ///     - or it is a global variable that is compatible with the previous declaration (see below)
     ///
     /// This returns an opaque index to the `Metadata`.
-    fn declare(&mut self, mut decl: Variable, init: bool, location: Location) -> MetadataRef {
+    fn declare(&mut self, mut decl: Variable, init: bool, location: Location) -> Symbol {
         if decl.id == "main".into() {
             if let Type::Function(ftype) = &decl.ctype {
                 // int main(int)
@@ -1140,7 +1140,7 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
         func: ast::FunctionDefinition,
         analyzer: &mut Analyzer<T>,
         location: Location,
-    ) -> (MetadataRef, Vec<Stmt>) {
+    ) -> (Symbol, Vec<Stmt>) {
         let parsed_func = analyzer.parse_type(func.specifiers, func.declarator.into(), location);
         // rcc ignores `inline` and `_Noreturn`
         if parsed_func.qualifiers != Qualifiers::default() {

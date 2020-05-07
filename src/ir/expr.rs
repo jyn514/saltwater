@@ -5,7 +5,7 @@ use cranelift_module::Backend;
 use super::{Compiler, Id};
 use crate::data::*;
 use crate::data::{
-    hir::{BinaryOp, Expr, ExprType, MetadataRef, Variable},
+    hir::{BinaryOp, Expr, ExprType, Symbol, Variable},
     lex::{ComparisonToken, Literal},
 };
 
@@ -19,7 +19,7 @@ pub(super) struct Value {
 }
 
 enum FuncCall {
-    Named(MetadataRef),
+    Named(Symbol),
     Indirect(Value),
 }
 
@@ -411,7 +411,7 @@ impl<B: Backend> Compiler<B> {
             _ => unreachable!("parser should catch illegal types"),
         })
     }
-    fn load_addr(&self, var: MetadataRef, builder: &mut FunctionBuilder) -> IrResult {
+    fn load_addr(&self, var: Symbol, builder: &mut FunctionBuilder) -> IrResult {
         let metadata = var.get();
         let ptr_type = Type::ptr_type();
         let ir_val = match self

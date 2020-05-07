@@ -40,7 +40,6 @@ fi
 
 shift
 shift
-CONDITION="$*"
 WORKSPACE=$SCRIPT_PATH/workspace
 mkdir -p "$WORKSPACE"
 ln -s "$(realpath "$FILE")" "$WORKSPACE"/input.c

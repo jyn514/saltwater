@@ -168,6 +168,12 @@ pub enum SemanticError {
     #[error("void must be the first and only parameter if specified")]
     InvalidVoidParameter,
 
+    #[error("functions taking `void` must not have variadic arguments")]
+    VoidVarargs,
+
+    #[error("functions taking variadic arguments must have at least one parameter first")]
+    VarargsWithoutParam,
+
     #[error("overflow in enumeration constant")]
     EnumOverflow,
 

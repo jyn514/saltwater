@@ -210,6 +210,9 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: C
 }
 
 fn main() {
+    #[cfg(debug_assertions)]
+    use color_backtrace::{termcolor::StandardStream, BacktracePrinter};
+
     let (mut opt, output) = match parse_args() {
         Ok(opt) => opt,
         Err(err) => {
@@ -226,11 +229,7 @@ fn main() {
     };
 
     #[cfg(debug_assertions)]
-    color_backtrace::install_with_settings(color_backtrace::Settings::new().output_stream(
-        Box::new(color_backtrace::termcolor::StandardStream::stderr(
-            opt.color.into(),
-        )),
-    ));
+    BacktracePrinter::new().install(Box::new(StandardStream::stderr(opt.color.into())));
 
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();

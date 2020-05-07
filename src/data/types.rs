@@ -1,4 +1,4 @@
-use super::hir::{Metadata, MetadataRef};
+use super::hir::{MetadataRef, Variable};
 use crate::intern::InternedStr;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
@@ -9,7 +9,7 @@ mod struct_ref {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use super::Metadata;
+    use super::Variable;
 
     thread_local!(
         /// The global storage for all struct definitions.
@@ -21,7 +21,7 @@ mod struct_ref {
         /// Rc: A hack so that the members can be accessed across function boundaries,
         /// see the documentation for `StructRef::get`.
         /// Vec<Symbol>: The members of a single struct definition.
-        static TYPES: RefCell<Vec<Rc<Vec<Metadata>>>> = Default::default()
+        static TYPES: RefCell<Vec<Rc<Vec<Variable>>>> = Default::default()
     );
 
     /// A reference to a struct definition. Allows self-referencing structs.
@@ -67,7 +67,7 @@ mod struct_ref {
         // Implementation hack: because thread_local items cannot be returned
         // from a closure, this uses an Rc so that it can be `clone`d cheaply.
         // The clone is necessary so the members do not reference TYPES.
-        pub fn get(self) -> Rc<Vec<Metadata>> {
+        pub fn get(self) -> Rc<Vec<Variable>> {
             TYPES.with(|list| list.borrow()[self.0].clone())
         }
 
@@ -85,7 +85,7 @@ mod struct_ref {
         /// ```
         pub(crate) fn update<V>(self, members: V)
         where
-            V: Into<Rc<Vec<Metadata>>>,
+            V: Into<Rc<Vec<Variable>>>,
         {
             TYPES.with(|list| {
                 let mut types = list.borrow_mut();
@@ -106,12 +106,12 @@ mod struct_ref {
         Named(super::InternedStr, StructRef),
         /// Anonymous structs carry all their information with them,
         /// there's no need (or way) to use StructRef.
-        Anonymous(Rc<Vec<Metadata>>),
+        Anonymous(Rc<Vec<Variable>>),
     }
 
     impl StructType {
         /// Get the members of a struct, regardless of which variant it is
-        pub fn members(&self) -> Rc<Vec<Metadata>> {
+        pub fn members(&self) -> Rc<Vec<Variable>> {
             match self {
                 StructType::Anonymous(members) => Rc::clone(members),
                 StructType::Named(_, struct_ref) => struct_ref.get(),

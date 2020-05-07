@@ -299,7 +299,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             hir::StmtType,
             ast::Declaration,
             hir::Declaration,
-            hir::Metadata,
+            hir::Variable,
             StructType,
             Token,
         );

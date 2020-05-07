@@ -166,8 +166,8 @@ mod tests {
     use proptest::prelude::*;
 
     use crate::data::{
-        hir::Metadata,
         hir::Qualifiers,
+        hir::Variable,
         types::{tests::arb_type, StructType, Type},
         StorageClass,
     };
@@ -185,8 +185,8 @@ mod tests {
         }
     }
 
-    fn symbol_for_type(ctype: Type, id: InternedStr) -> Metadata {
-        Metadata {
+    fn symbol_for_type(ctype: Type, id: InternedStr) -> Variable {
+        Variable {
             id,
             ctype,
             qualifiers: Qualifiers::NONE,

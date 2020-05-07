@@ -817,7 +817,7 @@ impl<T: Lexer> Analyzer<T> {
         let ctype = lval.ctype.clone();
         // TODO: we could probably make these qualifiers stronger
         let ptr_type = Type::Pointer(Box::new(ctype.clone()), Qualifiers::default());
-        let meta = Metadata {
+        let meta = Variable {
             id: tmp_name,
             ctype: ptr_type.clone(),
             qualifiers: Qualifiers::NONE,
@@ -1374,7 +1374,7 @@ mod test {
         assert_literal(Literal::Float(1.5));
         let parsed = parse_expr("(1)");
         assert_eq!(parsed, Ok(literal(Literal::Int(1), get_location(&parsed))));
-        let x = Metadata {
+        let x = Variable {
             ctype: Type::Int(true),
             id: InternedStr::get_or_intern("x"),
             qualifiers: Default::default(),
@@ -1400,12 +1400,12 @@ mod test {
     }
     #[test]
     fn test_funcall() {
-        let f = Metadata {
+        let f = Variable {
             id: InternedStr::get_or_intern("f"),
             qualifiers: Default::default(),
             storage_class: Default::default(),
             ctype: Type::Function(types::FunctionType {
-                params: vec![Metadata {
+                params: vec![Variable {
                     ctype: Type::Void,
                     id: Default::default(),
                     qualifiers: Default::default(),

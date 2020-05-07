@@ -90,13 +90,13 @@ thread_local!(
     /// RefCell: A container with interior mutability, used because `LocalKey`
     /// returns an immutable reference.
     /// MetadataStore: metadata for all variables seen so far
-    static METADATA_STORE: RefCell<MetadataStore> = Default::default()
+    static SYMBOL_TABLE: RefCell<SymbolTable> = Default::default()
 );
 
 #[derive(Default)]
-struct MetadataStore(Vec<Rc<Variable>>);
+struct SymbolTable(Vec<Rc<Variable>>);
 
-impl MetadataStore {
+impl SymbolTable {
     fn insert(&mut self, m: Variable) -> Symbol {
         let i = self.0.len();
         self.0.push(Rc::new(m));
@@ -110,13 +110,13 @@ impl MetadataStore {
 
 impl Symbol {
     pub fn get(self) -> Rc<Variable> {
-        METADATA_STORE.with(|store| store.borrow().get(self))
+        SYMBOL_TABLE.with(|store| store.borrow().get(self))
     }
 }
 
 impl Variable {
     pub(crate) fn insert(self) -> Symbol {
-        METADATA_STORE.with(|store| store.borrow_mut().insert(self))
+        SYMBOL_TABLE.with(|store| store.borrow_mut().insert(self))
     }
 }
 

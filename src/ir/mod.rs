@@ -51,10 +51,6 @@ pub(crate) fn get_isa(jit: bool) -> Box<dyn TargetIsa + 'static> {
     flags_builder
         .enable("enable_verifier")
         .expect("enable_verifier should be a valid option");
-    // minimal optimizations
-    flags_builder
-        .set("opt_level", "speed")
-        .expect("opt_level: speed should be a valid option");
     // don't emit call to __cranelift_probestack
     flags_builder
         .set("enable_probestack", "false")

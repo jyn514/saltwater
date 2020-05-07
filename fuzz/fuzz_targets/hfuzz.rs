@@ -27,7 +27,6 @@ fn is_exotic_keyword(s: &str, file: FileId, files: &mut Files) -> bool {
 
 fn main() {
     use rcc::Opt;
-    let opt = Opt::default();
 
     loop {
         fuzz!(|s: &[u8]| {
@@ -36,7 +35,8 @@ fn main() {
                 let file = files.add("<test-suite>", String::from(s).into());
                 if !is_exotic_keyword(s, file, &mut files) {
                     let module = rcc::initialize_aot_module("<test-suite>".into());
-                    let _ = rcc::compile(module, s, &opt, file, &mut files);
+                    let opt = Opt::default();
+                    let _ = rcc::compile(module, s, opt, file, &mut files);
                 }
             }
         });

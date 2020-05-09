@@ -296,8 +296,7 @@ impl<I: Lexer> Parser<I> {
     /// replace `self.next` with `self.current`
     /// the previous value of `self.next` is lost
     fn unput(&mut self, item: Option<Locatable<Token>>) {
-        let tmp = mem::replace(&mut self.current, item);
-        mem::replace(&mut self.next, tmp);
+        self.next = mem::replace(&mut self.current, item);
     }
     fn lex_error(&mut self, err: CompileError) {
         self.error_handler.push_back(err);

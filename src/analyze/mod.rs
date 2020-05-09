@@ -1088,19 +1088,16 @@ impl types::FunctionType {
         // so the borrow-checker doesn't complain
         let meta: Vec<_> = self.params.iter().map(|param| param.get()).collect();
         let types: Vec<_> = meta.iter().map(|param| &param.ctype).collect();
-        // allow 'main(void)'
-        if types == [&Type::Void] {
-            return true;
-        }
-        // TODO: allow 'int main(int argc, char *argv[], char *environ[])'
-        if types.len() != 2 || *types[0] != Type::Int(true) {
-            return false;
-        }
-        match types[1] {
-            Type::Pointer(t, _) | Type::Array(t, _) => match &**t {
-                Type::Pointer(inner, _) => inner.is_char(),
-                _ => false,
-            },
+        match types.as_slice() {
+            // allow 'main(void)'
+            [Type::Void] => true,
+            // TODO: allow 'int main(int argc, char *argv[], char *environ[])'
+            [Type::Int(true), Type::Pointer(t, _)] | [Type::Int(true), Type::Array(t, _)] => {
+                match &**t {
+                    Type::Pointer(inner, _) => inner.is_char(),
+                    _ => false,
+                }
+            }
             _ => false,
         }
     }

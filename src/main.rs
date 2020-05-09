@@ -116,16 +116,6 @@ impl std::str::FromStr for ColorChoice {
     }
 }
 
-impl Into<termcolor::ColorChoice> for ColorChoice {
-    fn into(self) -> termcolor::ColorChoice {
-        match self {
-            ColorChoice::Always => termcolor::ColorChoice::Always,
-            ColorChoice::Auto => termcolor::ColorChoice::Auto,
-            ColorChoice::Never => termcolor::ColorChoice::Never,
-        }
-    }
-}
-
 // TODO: when std::process::termination is stable, make err_exit an impl for CompileError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
 fn real_main(
@@ -210,9 +200,6 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: C
 }
 
 fn main() {
-    #[cfg(debug_assertions)]
-    use color_backtrace::{termcolor::StandardStream, BacktracePrinter};
-
     let (mut opt, output) = match parse_args() {
         Ok(opt) => opt,
         Err(err) => {
@@ -228,8 +215,8 @@ fn main() {
         }
     };
 
-    #[cfg(debug_assertions)]
-    BacktracePrinter::new().install(Box::new(StandardStream::stderr(opt.color.into())));
+    #[cfg(feature = "color-backtrace")]
+    backtrace::install(opt.color);
 
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
@@ -476,6 +463,27 @@ fn fatal<T: std::fmt::Display>(msg: T, code: i32, color: ColorChoice) -> ! {
         eprintln!("fatal: {}", msg);
     }
     process::exit(code);
+}
+
+#[cfg(feature = "color-backtrace")]
+mod backtrace {
+    use super::ColorChoice;
+    use color_backtrace::termcolor::{self, StandardStream};
+    use color_backtrace::BacktracePrinter;
+
+    impl Into<termcolor::ColorChoice> for ColorChoice {
+        fn into(self) -> termcolor::ColorChoice {
+            match self {
+                ColorChoice::Always => termcolor::ColorChoice::Always,
+                ColorChoice::Auto => termcolor::ColorChoice::Auto,
+                ColorChoice::Never => termcolor::ColorChoice::Never,
+            }
+        }
+    }
+
+    pub(super) fn install(color: ColorChoice) {
+        BacktracePrinter::new().install(Box::new(StandardStream::stderr(color.into())));
+    }
 }
 
 #[cfg(test)]

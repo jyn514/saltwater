@@ -729,7 +729,7 @@ impl<I: Lexer> Analyzer<I> {
             // enum e { A }; enum e { A };
             if self
                 .tag_scope
-                .insert(id.clone(), TagEntry::Enum(members.clone()))
+                .insert(id, TagEntry::Enum(members.clone()))
                 .is_some()
             {
                 self.err(format!("redefition of enum '{}'", id).into(), location);
@@ -738,11 +738,11 @@ impl<I: Lexer> Analyzer<I> {
         let ctype = Type::Enum(enum_name, members);
         match &ctype {
             Type::Enum(_, members) => {
-                for (id, _) in members {
+                for &(id, _) in members {
                     self.scope.insert(
-                        id.clone(),
+                        id,
                         Variable {
-                            id: *id,
+                            id,
                             storage_class: StorageClass::Register,
                             qualifiers: Qualifiers::NONE,
                             ctype: ctype.clone(),

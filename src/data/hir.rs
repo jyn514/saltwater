@@ -528,7 +528,10 @@ impl Eq for Symbol {}
 
 #[cfg(test)]
 mod tests {
-    use crate::parse::test::parser;
+    use crate::analyze::test::analyze;
+    use crate::Analyzer;
+    use crate::Locatable;
+    use crate::Parser;
 
     #[test]
     fn type_display() {
@@ -542,8 +545,14 @@ mod tests {
             "struct s",
         ];
         for ty in types.iter() {
-            let parsed_ty = parser(dbg!(ty)).type_name().unwrap().data;
-            assert_eq!(parsed_ty.to_string().trim(), *ty);
+            let printed_type_name =
+                analyze(*ty, Parser::type_name, |a, Locatable { data, location }| {
+                    Analyzer::parse_typename_test(a, data, location)
+                })
+                .unwrap()
+                .to_string();
+
+            assert_eq!(*ty, printed_type_name);
         }
     }
 }

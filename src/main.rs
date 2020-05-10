@@ -28,7 +28,7 @@ static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 git_testament_macros!(version);
 
 const HELP: &str = concat!(
-    env!("CARGO_PKG_NAME"), " ", version_testament!(), "\n",
+    env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"), "\n",
     "Joshua Nelson <jyn514@gmail.com>\n",
     env!("CARGO_PKG_DESCRIPTION"), "\n",
     "Homepage: ", env!("CARGO_PKG_REPOSITORY"), "\n",

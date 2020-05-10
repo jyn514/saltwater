@@ -436,73 +436,61 @@ impl Declarator {
 
 impl DeclaratorType {
     fn pretty_print(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
-        use std::fmt::Write;
-
         let mut unrolled_type = Vec::new();
         let mut next_type = self;
         loop {
             unrolled_type.push(next_type);
             next_type = match next_type {
-                DeclaratorType::Array { of, .. } => of.as_ref(),
-                DeclaratorType::Pointer { to, .. } => to.as_ref(),
-                DeclaratorType::Function(FunctionDeclarator { return_type, .. }) => {
-                    return_type.as_ref()
-                }
+                DeclaratorType::Array { of: next, .. }
+                | DeclaratorType::Pointer { to: next, .. }
+                | DeclaratorType::Function(FunctionDeclarator {
+                    return_type: next, ..
+                }) => next.as_ref(),
                 DeclaratorType::End => break,
             };
         }
 
-        let mut prefixes = Vec::new();
-        let mut postfixes = Vec::new();
-
-        for declarator_type in &unrolled_type[..unrolled_type.len() - 1] {
+        for declarator_type in unrolled_type[..unrolled_type.len() - 1].iter().rev() {
             match declarator_type {
-                DeclaratorType::Array { size, .. } => {
-                    prefixes.push(String::new());
-                    if let Some(size) = size {
-                        postfixes.push(format!("[{}]", size));
-                    } else {
-                        postfixes.push("[]".to_string());
-                    }
-                }
-                DeclaratorType::Function(function_definition) => {
-                    prefixes.push(String::new());
-
-                    let mut postfix = String::new();
-                    write!(
-                        postfix,
-                        "({}",
-                        joined(function_definition.params.iter(), ", ")
-                    )?;
-                    if function_definition.varargs {
-                        write!(f, ", ...")?;
-                    }
-                    write!(postfix, ")")?;
-                    postfixes.push(postfix);
-                }
                 DeclaratorType::Pointer { qualifiers, .. } => {
-                    prefixes.push(format!(
+                    write!(
+                        f,
                         "(*{}",
                         qualifiers
                             .iter()
-                            .map(|qual| format!("{} ", qual))
+                            .map(|q| format!("{} ", q))
                             .collect::<Vec<_>>()
                             .concat()
-                    ));
-                    postfixes.push(")".to_string());
+                    )?;
                 }
+                DeclaratorType::Array { .. } | DeclaratorType::Function(_) => {}
                 DeclaratorType::End => unreachable!(),
             }
-        }
-
-        for prefix in prefixes.iter().rev() {
-            write!(f, "{}", prefix)?;
         }
         if let Some(name) = name {
             write!(f, "{}", name)?;
         }
-        for postfix in postfixes.iter() {
-            write!(f, "{}", postfix)?;
+        for declarator_type in unrolled_type[..unrolled_type.len() - 1].iter() {
+            match declarator_type {
+                DeclaratorType::Array { size, .. } => {
+                    if let Some(size) = size {
+                        write!(f, "[{}]", size)?;
+                    } else {
+                        write!(f, "[]")?;
+                    }
+                }
+                DeclaratorType::Function(function_definition) => {
+                    write!(f, "({}", joined(function_definition.params.iter(), ", "))?;
+                    if function_definition.varargs {
+                        write!(f, ", ...")?;
+                    }
+                    write!(f, ")")?;
+                }
+                DeclaratorType::Pointer { .. } => {
+                    write!(f, ")")?;
+                }
+                DeclaratorType::End => unreachable!(),
+            }
         }
 
         Ok(())

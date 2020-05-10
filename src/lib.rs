@@ -140,8 +140,16 @@ pub struct Opt {
     /// If set, print all tokens found by the lexer in addition to compiling.
     pub debug_lex: bool,
 
-    /// If set, print the parsed abstract syntax tree in addition to compiling
+    /// If set, print the parsed abstract syntax tree (AST) in addition to compiling
+    ///
+    /// The AST does no type checking or validation, it only parses.
     pub debug_ast: bool,
+
+    /// If set, print the high intermediate representation (HIR) in addition to compiling
+    ///
+    /// This does type checking and validation and also desugars various expressions.
+    /// For static initialization, it will also perform constant folding.
+    pub debug_hir: bool,
 
     /// If set, print the intermediate representation of the program in addition to compiling
     pub debug_asm: bool,
@@ -235,7 +243,7 @@ pub fn check_semantics(
     };
 
     let mut hir = vec![];
-    let mut parser = Analyzer::new(Parser::new(first, &mut cpp, opt.debug_ast));
+    let mut parser = Analyzer::new(Parser::new(first, &mut cpp, opt.debug_ast), opt.debug_hir);
     for res in &mut parser {
         match res {
             Ok(decl) => hir.push(decl),

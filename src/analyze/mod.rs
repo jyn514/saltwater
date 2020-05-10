@@ -56,6 +56,8 @@ pub struct Analyzer<T: Lexer> {
     ///
     /// TODO: this should be a field on `FunctionAnalyzer`, not `Analyzer`
     decl_side_channel: Vec<Locatable<Declaration>>,
+    /// Whether to print each declaration as it is seen
+    debug: bool,
 }
 
 impl<T: Lexer> Iterator for Analyzer<T> {
@@ -70,6 +72,9 @@ impl<T: Lexer> Iterator for Analyzer<T> {
             // If we saw `int i, j, k;`, we treated those as different declarations
             // `j, k` will be stored into `pending`
             } else if let Some(decl) = self.pending.pop_front() {
+                if self.debug {
+                    println!("hir: {}", decl.data);
+                }
                 return Some(Ok(decl));
             }
             // Now do the real work.
@@ -85,7 +90,7 @@ impl<T: Lexer> Iterator for Analyzer<T> {
 }
 
 impl<I: Lexer> Analyzer<I> {
-    pub fn new(parser: Parser<I>) -> Self {
+    pub fn new(parser: Parser<I>, debug: bool) -> Self {
         Self {
             declarations: parser,
             error_handler: ErrorHandler::new(),
@@ -95,6 +100,7 @@ impl<I: Lexer> Analyzer<I> {
             initialized: HashSet::new(),
             recursion_guard: RecursionGuard::default(),
             decl_side_channel: Vec::new(),
+            debug,
         }
     }
     /// Return all warnings seen so far.
@@ -1327,7 +1333,7 @@ pub(crate) mod test {
     {
         let mut p = parser(input);
         let ast = parse_func(&mut p)?;
-        let mut a = Analyzer::new(p);
+        let mut a = Analyzer::new(p, false);
         let e = analyze_func(&mut a, ast);
         if let Some(err) = a.error_handler.pop_front() {
             return Err(err);
@@ -1344,13 +1350,13 @@ pub(crate) mod test {
     }
 
     pub(crate) fn decls(s: &str) -> Vec<CompileResult<Declaration>> {
-        Analyzer::new(parser(s))
+        Analyzer::new(parser(s), false)
             .map(|o| o.map(|l| l.data))
             .collect()
     }
 
     pub(crate) fn assert_errs_decls(input: &str, errs: usize, warnings: usize, decls: usize) {
-        let mut a = Analyzer::new(parser(input));
+        let mut a = Analyzer::new(parser(input), false);
         let (mut a_errs, mut a_decls) = (0, 0);
         for res in &mut a {
             if res.is_err() {

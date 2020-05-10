@@ -40,11 +40,13 @@ const HELP: &str = concat!(
     "usage: ", env!("CARGO_PKG_NAME"), " [FLAGS] [OPTIONS] [<file>]
 
 FLAGS:
-        --debug-asm        If set, print the intermediate representation of the program in addition to compiling
-    -a, --debug-ast        If set, print the parsed abstract syntax tree in addition to compiling
+        --debug-asm        If set, print the intermediate representation of the program in addition to compiling.
+        --debug-ast        If set, print the parsed abstract syntax tree in addition to compiling.
         --debug-lex        If set, print all tokens found by the lexer in addition to compiling.
+        --debug-hir        If set, print the high intermediate representation (HIR) in addition to compiling.
+                            This does type checking and validation and also desugars various expressions.
         --jit              If set, will use JIT compilation for C code and instantly run compiled code (No files produced).
-                           NOTE: this option only works if rcc was compiled with the `jit` feature.
+                            NOTE: this option only works if rcc was compiled with the `jit` feature.
     -h, --help             Prints help information
     -c, --no-link          If set, compile and assemble but do not link. Object file is machine-dependent.
     -E, --preprocess-only  If set, preprocess only, but do not do anything else.
@@ -69,8 +71,9 @@ ARGS:
 );
 
 const USAGE: &str = "\
-usage: rcc [--help] [--version | -V] [--debug-asm] [--debug-ast | -a]
-           [--debug-lex] [--jit] [--no-link | -c] [-I <dir>] [-D <id[=val]>] [<file>]";
+usage: rcc [--help | -h] [--version | -V] [--debug-asm] [--debug-ast] [--debug-lex]
+           [--debug-hir] [--jit] [--no-link | -c] [--preprocess-only | -E]
+           [-I <dir>] [-D <id[=val]>] [<file>]";
 
 struct BinOpt {
     /// The options that will be passed to `compile()`
@@ -275,7 +278,10 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
     use std::collections::HashMap;
 
     let mut input = Arguments::from_env();
-    if input.contains(["-h", "--help"]) {
+    if input.contains("-h") {
+        println!("{}", USAGE);
+        std::process::exit(1);
+    } else if input.contains("--help") {
         println!("{}", HELP);
         std::process::exit(1);
     }
@@ -343,7 +349,8 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             opt: Opt {
                 debug_lex: input.contains("--debug-lex"),
                 debug_asm: input.contains("--debug-asm"),
-                debug_ast: input.contains(["-a", "--debug-ast"]),
+                debug_ast: input.contains("--debug-ast"),
+                debug_hir: input.contains("--debug-hir"),
                 no_link: input.contains(["-c", "--no-link"]),
                 #[cfg(feature = "jit")]
                 jit: input.contains("--jit"),

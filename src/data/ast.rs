@@ -669,3 +669,14 @@ impl Display for Expr {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::parse::decl::test::assert_no_change;
+
+    #[test]
+    fn test_declaration_display() {
+        assert_no_change("int (*(*f))();");
+    }
+}

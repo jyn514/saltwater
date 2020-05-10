@@ -355,7 +355,7 @@ impl<B: Backend> Compiler<B> {
         let flags = settings::Flags::new(settings::builder());
 
         if self.debug {
-            println!("{}", func);
+            println!("ir: {}", func);
         }
 
         if let Err(err) = codegen::verify_function(&func, &flags) {

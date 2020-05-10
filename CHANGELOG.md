@@ -3,6 +3,107 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2020-05-11
+
+### Added
+
+- `rcc` now has a feature-flag for code generation.
+If you only need to parse C code without generating a binary,
+you can add `default-features = false` to `Cargo.toml`, which avoids having to compile all of cranelift.
+
+- `rcc` now allows setting macros on the command line with `-D`.
+  The syntax is intentionally as close to Clang as possible, but works differently internally:
+  if the macro consists of invalid tokens (e.g. `rcc -D 'a=@'`),
+  it will give an error immediately instead of waiting until macro replacement occurs.
+  See `rcc -h` for the syntax or `rcc --help` for a full description.
+
+- Added a `--color` option so that `rcc` will no longer always print errors in color.
+  Thank you to @pythondude for working on this!
+
+- Added a `--debug-hir` option which has the effect of the old `--debug-ast` flag.
+  `--debug-ast` now prints only the parsed code without performing type checking or validation.
+
+- Added documentation for `runner-tests`
+
+### Changed
+
+- The minimum supported Rust version (MSRV) has been removed.
+  Cranelift does not have a MSRV and it made no sense for rcc to test for versions
+  when it has no control over the supported version.
+
+- The parser and analyzer have been split into different modules ([#151](https://github.com/jyn514/rcc/issues/151)).
+  This fixed many different bugs and also came with a lot of performance improvements;
+  see [!370](https://github.com/jyn514/rcc/pull/370) for a full list.
+
+  In particular, this now uses a pratt-parser instead of full-recursive descent,
+  so it uses much less stack space to parse expressions. As a result, rcc can now parse
+  over 10,000 nested expressions in a row (e.g. something like `((((((((1)))))))))`).
+  Additionally, unary expressions are now parsed iteratively instead of recursively,
+  so `******p` will not overflow in the parser regardless of the number of dereferences
+  (it will still overflow in the analyzer if you have several thousand dereferences).
+
+- Spans are now merged properly! Before, errors would only point to a single token, like so:
+```c
+int *p = 4.0 + 1;
+<stdin>:1:14 error: invalid program: cannot implicitly convert 'double' to 'int *'. help: use an explicit cast: (int *)
+int *p = 4.0 + 1;
+             ^
+```
+  Now, the span shows the entire expression:
+```c
+int *p = 4.0 + 1;
+<stdin>:1:10 error: invalid program: cannot implicitly convert 'double' to 'int *'. help: use an explicit cast: (int *)
+int *p = 4.0 + 1;
+         ^^^^^^^
+```
+
+- The `compile` function (and similar in `lib.rs`) now takes `Opt` instead of `&Opt` (to support custom defines).
+- `color-backtrace` can now be disabled if you don't use it.
+- The `log` and `serde` dependencies have been removed.
+- Cranelift has been updated to 0.63.
+
+
+### Fixed
+
+- Compound assignment (`+=`) has been fixed! Previously, `rcc` was very fragile about how it handled 
+  compound assignment; the type checking was not always correct and it would sometimes panic.
+  See [#244](https://github.com/jyn514/rcc/issues/244), [#214](https://github.com/jyn514/rcc/issues/214),
+  [#121](https://github.com/jyn514/rcc/issues/121) for examples of the previous bugs.
+  Now, compound assignment [almost always](https://github.com/jyn514/rcc/issues/393) works correctly.
+
+- The pretty-printing for nested pointers has been fixed.
+  Previously, `char **p` would be parsed successfully, but printed as `char (*)*p`.
+  It now prints correctly as `char **p`. Thank you to @pythondude for working on this!
+  See [!407](https://github.com/jyn514/rcc/pull/407) for more details.
+
+  TODO: fix AST printing, it only fixed HIR printing
+
+- `rcc` now allows function declarations to add or remove a qualifier,
+  since it does not affect the definition ([#346](https://github.com/jyn514/rcc/issues/346)).
+  Before, it would erroneously give an error for this code:
+  ```c
+  int f(int i);
+  int f(const int i) { return i; }
+  <stdin>:2:6 error: invalid program: redeclaration of 'f' with different type or qualifiers (originally extern int f(int i), now extern int f(int i))
+  ```
+
+- Functions now properly decay to function pointers in arguments: `int f(int g())` -> `int f(int (*g)())`
+  ([#142](https://github.com/jyn514/rcc/issues/142)).
+  Thank you to @hdamron for working on this!
+- `int f(int ())` now correctly parses as 'function taking function returning int' ([#141](https://github.com/jyn514/rcc/issues/141))
+- The preprocessor detects cycles for function-like macros with more than one token ([#312](https://github.com/jyn514/rcc/issues/312))
+  There are currently no known issues with cycle detection.
+- The preprocessor allows arguments to function-like macros to contain parentheses ([#354](https://github.com/jyn514/rcc/issues/354))
+- The preprocessor now performs macro replacement for identifiers in `#elif` directives ([#387](https://github.com/jyn514/rcc/issues/387))
+- Fixed regression from 0.7 where strings would not be concatenated if there was a newline in between ([#350](https://github.com/jyn514/rcc/issues/350))
+- When using `--debug-ast`, declarations are no longer printed twice ([!423](https://github.com/jyn514/rcc/pull/423)).
+- The `rcc` binary now says the correct number of warnings and errors printed.
+  Before, it would always say there were as many warnings as errors.
+- Several panics have been fixed:
+    - [#282](https://github.com/jyn514/rcc/issues/282)
+    - [#339](https://github.com/jyn514/rcc/issues/339)
+    - [#404](https://github.com/jyn514/rcc/issues/404)
+
 ## [0.8.0] - 2020-03-14
 
 ### Added

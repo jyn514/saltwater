@@ -40,11 +40,12 @@ const HELP: &str = concat!(
     "usage: ", env!("CARGO_PKG_NAME"), " [FLAGS] [OPTIONS] [<file>]
 
 FLAGS:
-        --debug-asm        If set, print the intermediate representation of the program in addition to compiling.
-        --debug-ast        If set, print the parsed abstract syntax tree in addition to compiling.
-        --debug-lex        If set, print all tokens found by the lexer in addition to compiling.
+        --debug-ast        If set, print the parsed abstract syntax tree (AST) in addition to compiling.
+                            The AST does no type checking or validation, it only parses.
         --debug-hir        If set, print the high intermediate representation (HIR) in addition to compiling.
                             This does type checking and validation and also desugars various expressions.
+        --debug-ir         If set, print the intermediate representation (IR) of the program in addition to compiling.
+        --debug-lex        If set, print all tokens found by the lexer in addition to compiling.
         --jit              If set, will use JIT compilation for C code and instantly run compiled code (No files produced).
                             NOTE: this option only works if rcc was compiled with the `jit` feature.
     -h, --help             Prints help information
@@ -71,7 +72,7 @@ ARGS:
 );
 
 const USAGE: &str = "\
-usage: rcc [--help | -h] [--version | -V] [--debug-asm] [--debug-ast] [--debug-lex]
+usage: rcc [--help | -h] [--version | -V] [--debug-ir] [--debug-ast] [--debug-lex]
            [--debug-hir] [--jit] [--no-link | -c] [--preprocess-only | -E]
            [-I <dir>] [-D <id[=val]>] [<file>]";
 
@@ -348,7 +349,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             preprocess_only: input.contains(["-E", "--preprocess-only"]),
             opt: Opt {
                 debug_lex: input.contains("--debug-lex"),
-                debug_asm: input.contains("--debug-asm"),
+                debug_asm: input.contains("--debug-ir"),
                 debug_ast: input.contains("--debug-ast"),
                 debug_hir: input.contains("--debug-hir"),
                 no_link: input.contains(["-c", "--no-link"]),

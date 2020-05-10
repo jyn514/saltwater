@@ -756,7 +756,7 @@ impl Keyword {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use crate::data::ast::*;
     use crate::data::*;
     use crate::parse::test::*;
@@ -780,7 +780,7 @@ mod test {
     fn assert_display(left: &str, right: &str) {
         assert_eq!(display(left), right);
     }
-    fn assert_no_change(s: &str) {
+    pub(crate) fn assert_no_change(s: &str) {
         assert_display(s, s);
     }
 

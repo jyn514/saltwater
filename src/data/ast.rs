@@ -436,78 +436,76 @@ impl Declarator {
 
 impl DeclaratorType {
     fn pretty_print(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
-        self.print_pre(f)?;
-        self.print_mid(name, f)?;
-        self.print_post(f)
-    }
-    fn print_pre(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use DeclaratorType::*;
-        match self {
-            Pointer { to: inner, .. } | Array { of: inner, .. } => inner.print_pre(f),
-            Function(FunctionDeclarator { return_type, .. }) => write!(f, "{}", return_type),
-            End => Ok(()),
-        }
-    }
-    fn print_mid(&self, name: Option<InternedStr>, f: &mut fmt::Formatter) -> fmt::Result {
-        use DeclaratorType::*;
+        use std::fmt::Write;
 
-        match self {
-            Pointer { to, qualifiers } => {
-                to.print_mid(None, f)?;
-                let qs = joined(qualifiers, " ");
-                // we need to handle the following cases:
-                // `(*const p)()`
-                // `*const p`
-                // `*const (*p)()`
-                // `(*const)` (e.g. in an abstract parameter)
-                // `*p` (in any of the above contexts)
-                let name = name.unwrap_or_default();
-                let pointer = if !qs.is_empty() && name != Default::default() {
-                    format!("*{} {}", qs, name)
-                } else {
-                    format!("*{}{}", qs, name)
-                };
-                match **to {
-                    Array { .. } | Function { .. } => write!(f, "({})", pointer),
-                    // this is the only case when `*const (*p)()` can occur
-                    // TODO: maybe put a space after the qualifier if it's there?
-                    // clang-format disagrees with me about the space though
-                    End => write!(f, "{}", pointer),
-                    Pointer { .. } => write!(f, "{}", pointer),
+        let mut unrolled_type = Vec::new();
+        let mut next_type = self;
+        loop {
+            unrolled_type.push(next_type);
+            next_type = match next_type {
+                DeclaratorType::Array { of, .. } => of.as_ref(),
+                DeclaratorType::Pointer { to, .. } => to.as_ref(),
+                DeclaratorType::Function(FunctionDeclarator { return_type, .. }) => {
+                    return_type.as_ref()
                 }
-            }
-            Array { of, .. } => of.print_mid(name, f),
-            End | Function { .. } => {
-                if let Some(name) = name {
-                    write!(f, "{}", name)?;
+                DeclaratorType::End => break,
+            };
+        }
+
+        let mut prefixes = Vec::new();
+        let mut postfixes = Vec::new();
+
+        for declarator_type in &unrolled_type[..unrolled_type.len() - 1] {
+            match declarator_type {
+                DeclaratorType::Array { size, .. } => {
+                    prefixes.push(String::new());
+                    if let Some(size) = size {
+                        postfixes.push(format!("[{}]", size));
+                    } else {
+                        postfixes.push("[]".to_string());
+                    }
                 }
-                Ok(())
+                DeclaratorType::Function(function_definition) => {
+                    prefixes.push(String::new());
+
+                    let mut postfix = String::new();
+                    write!(
+                        postfix,
+                        "({}",
+                        joined(function_definition.params.iter(), ", ")
+                    )?;
+                    if function_definition.varargs {
+                        write!(f, ", ...")?;
+                    }
+                    write!(postfix, ")")?;
+                    postfixes.push(postfix);
+                }
+                DeclaratorType::Pointer { qualifiers, .. } => {
+                    prefixes.push(format!(
+                        "(*{}",
+                        qualifiers
+                            .iter()
+                            .map(|qual| format!("{} ", qual))
+                            .collect::<Vec<_>>()
+                            .concat()
+                    ));
+                    postfixes.push(")".to_string());
+                }
+                DeclaratorType::End => unreachable!(),
             }
         }
-    }
-    fn print_post(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use DeclaratorType::*;
-        match self {
-            Pointer { to, .. } => to.print_post(f),
-            Array { of, size } => {
-                write!(f, "[")?;
-                if let Some(expr) = size {
-                    write!(f, "{}", expr)?;
-                }
-                write!(f, "]")?;
-                of.print_post(f)
-            }
-            Function(FunctionDeclarator {
-                params, varargs, ..
-            }) => {
-                write!(f, "({}", joined(params, ", "))?;
-                if *varargs {
-                    write!(f, ", ...")?;
-                }
-                write!(f, ")")
-            }
-            End => Ok(()),
+
+        for prefix in prefixes.iter().rev() {
+            write!(f, "{}", prefix)?;
         }
+        if let Some(name) = name {
+            write!(f, "{}", name)?;
+        }
+        for postfix in postfixes.iter() {
+            write!(f, "{}", postfix)?;
+        }
+
+        Ok(())
     }
 }
 

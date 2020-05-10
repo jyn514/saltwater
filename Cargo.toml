@@ -47,7 +47,7 @@ proptest = "0.9"
 proptest-derive = "0.1"
 
 [features]
-default = ["cc", "codegen"]
+default = ["cc", "codegen", "color-backtrace"]
 # The `rcc` binary
 cc = ["ansi_term", "git-testament", "tempfile", "pico-args", "codegen", "atty"]
 codegen = ["cranelift", "cranelift-module", "cranelift-object"]

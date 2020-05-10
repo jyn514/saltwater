@@ -21,6 +21,9 @@ use cranelift_module::{Backend, Module};
 #[cfg(feature = "codegen")]
 pub use ir::initialize_aot_module;
 
+#[cfg(all(feature = "color-backtrace", not(feature = "cc")))]
+compile_error!("The color-backtrace feature does nothing unless used by the `rcc` binary.");
+
 /// The `Source` type for `codespan::Files`.
 ///
 /// Used to store extra metadata about the file, like the absolute filename.

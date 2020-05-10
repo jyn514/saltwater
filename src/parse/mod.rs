@@ -91,44 +91,41 @@ impl<I: Lexer> Iterator for Parser<I> {
     /// | declaration_specifiers declarator compound_statement
     /// ;
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self
-            .error_handler
-            .pop_front()
-            .map(Result::Err)
-            .or_else(|| self.pending.pop_front().map(Result::Ok))
-            .or_else(|| {
-                // Parse more of our file
-
-                // Remove extra semicolons
-                while let Some(locatable) = self.match_next(&Token::Semicolon) {
-                    self.error_handler
-                        .warn("extraneous semicolon at top level", locatable.location);
+        loop {
+            // check for pending changes from the last declaration
+            if let Some(err) = self.error_handler.pop_front() {
+                return Some(Err(err));
+            } else if let Some(decl) = self.pending.pop_front() {
+                if self.debug {
+                    println!("ast: {}", decl.data);
                 }
+                return Some(Ok(decl));
+            }
 
-                // Check for end of file
-                if self.peek_token().is_none() {
-                    self.error_handler.pop_front().map(Err)
-                } else {
-                    match self.external_declaration() {
-                        Ok(decls) => {
-                            self.pending.push_back(decls);
-                        }
-                        Err(err) => {
-                            // there could be semantic errors that were reported in the meantime,
-                            // so we can't just return this error (it might be in the wrong order)
-                            self.error_handler.push_back(err);
-                        }
+            // Parse more of our file
+
+            // Remove extra semicolons
+            while let Some(locatable) = self.match_next(&Token::Semicolon) {
+                self.error_handler
+                    .warn("extraneous semicolon at top level", locatable.location);
+            }
+
+            // Check for end of file
+            if self.peek_token().is_none() {
+                return None;
+            } else {
+                match self.external_declaration() {
+                    Ok(decls) => {
+                        self.pending.push_back(decls);
                     }
-
-                    self.next()
+                    Err(err) => {
+                        // there could be semantic errors that were reported in the meantime,
+                        // so we can't just return this error (it might be in the wrong order)
+                        self.error_handler.push_back(err);
+                    }
                 }
-            });
-        if self.debug {
-            if let Some(Ok(decl)) = &next {
-                println!("ast: {}", decl.data);
             }
         }
-        next
     }
 }
 

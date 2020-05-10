@@ -479,9 +479,9 @@ impl DeclaratorType {
                         write!(f, "[]")?;
                     }
                 }
-                DeclaratorType::Function(function_definition) => {
-                    write!(f, "({}", joined(function_definition.params.iter(), ", "))?;
-                    if function_definition.varargs {
+                DeclaratorType::Function(function_declarator) => {
+                    write!(f, "({}", joined(function_declarator.params.iter(), ", "))?;
+                    if function_declarator.varargs {
                         write!(f, ", ...")?;
                     }
                     write!(f, ")")?;

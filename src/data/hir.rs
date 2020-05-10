@@ -529,9 +529,7 @@ impl Eq for Symbol {}
 #[cfg(test)]
 mod tests {
     use crate::analyze::test::analyze;
-    use crate::Analyzer;
-    use crate::Locatable;
-    use crate::Parser;
+    use crate::{Analyzer, Locatable, Parser};
 
     #[test]
     fn type_display() {

@@ -7,9 +7,6 @@ use std::process;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[cfg(debug_assertions)]
-use color_backtrace::termcolor;
-
 use ansi_term::{ANSIString, Colour};
 use codespan::FileId;
 use git_testament::git_testament_macros;

@@ -783,6 +783,8 @@ impl<'a> PreProcessor<'a> {
                     .push_back(location.with(PendingToken::Replacement(token.clone())));
             }
         }
+        // NOTE: no errors could have occurred while parsing this function body
+        // since they would have returned before getting here.
         let first = self.pending.pop_front()?;
         self.handle_token(first.data, first.location)
     }

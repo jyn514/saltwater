@@ -672,7 +672,6 @@ impl Display for Expr {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use crate::parse::decl::test::assert_no_change;
 
     #[test]

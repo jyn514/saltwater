@@ -3,4 +3,4 @@
 **/*.rs.bak
 /fuzz/afl/inputs
 /fuzz/afl/outputs
-/tests/c-headers
+/tests/*

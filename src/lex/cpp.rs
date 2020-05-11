@@ -233,28 +233,38 @@ impl Iterator for PreProcessor<'_> {
     /// The preprocessor hides all internal complexity and returns only tokens.
     type Item = CppResult<Token>;
     fn next(&mut self) -> Option<Self::Item> {
+        // We have two things we need to handle.
+        // First, we could have gotten to the end of the file;
+        // Second, the current token could be an identifier that was `#define`d to an empty token list.
+        // This loop is for the second case, not the first.
         loop {
-            if let Some(err) = self.error_handler.pop_front() {
-                break Some(Err(err));
+            let replacement = if let Some(err) = self.error_handler.pop_front() {
+                return Some(Err(err));
             } else if let Some(token) = self.pending.pop_front() {
-                break self.handle_token(token.data, token.location);
+                self.handle_token(token.data, token.location)
             } else {
+                // This function does not perform macro replacement,
+                // so if it returns None we got to EOF.
                 match self.next_cpp_token()? {
                     Err(err) => return Some(Err(err)),
                     Ok(loc) => match loc.data {
                         CppToken::Directive(directive) => {
                             let start = loc.location.span.start;
                             match self.directive(directive, start) {
-                                Err(err) => break Some(Err(err)),
+                                Err(err) => return Some(Err(err)),
                                 Ok(()) => continue,
                             }
                         }
                         CppToken::Token(token) => {
-                            break self.handle_token(PendingToken::Replacement(token), loc.location)
+                            self.handle_token(PendingToken::Replacement(token), loc.location)
                         }
                     },
                 }
+            };
+            if let Some(token) = replacement {
+                return Some(token);
             }
+            // This token was an empty define, so continue looking for tokens
         }
     }
 }
@@ -328,6 +338,8 @@ impl<'a> PreProcessor<'a> {
         self.lexer().location.offset
     }
     /// Possibly recursively replace tokens. This also handles turning identifiers into keywords.
+    ///
+    /// If `token` was defined to an empty token list, this will return `None`.
     fn handle_token(
         &mut self,
         token: PendingToken,
@@ -654,8 +666,7 @@ impl<'a> PreProcessor<'a> {
         while let Some(Definition::Object(def)) = self.definitions.get(&name) {
             ids_seen.insert(name);
             if def.is_empty() {
-                // TODO: recursion is bad and I should feel bad
-                return self.next();
+                return None;
             }
             let first = &def[0];
 
@@ -725,13 +736,13 @@ impl<'a> PreProcessor<'a> {
             };
             match next.data.token() {
                 Token::Comma if nested_parens == 1 => {
-                    args.push(mem::replace(&mut current_arg, Vec::new()));
+                    args.push(mem::take(&mut current_arg));
                     continue;
                 }
                 Token::RightParen => {
                     nested_parens -= 1;
                     if nested_parens == 0 {
-                        args.push(mem::replace(&mut current_arg, Vec::new()));
+                        args.push(mem::take(&mut current_arg));
                         break;
                     }
                 }
@@ -772,7 +783,8 @@ impl<'a> PreProcessor<'a> {
                     .push_back(location.with(PendingToken::Replacement(token.clone())));
             }
         }
-        self.next()
+        let first = self.pending.pop_front()?;
+        self.handle_token(first.data, first.location)
     }
     // convienience function around cpp_expr
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {

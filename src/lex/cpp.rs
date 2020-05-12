@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 
 use std::borrow::Cow;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -133,6 +133,12 @@ pub struct PreProcessor<'a> {
     pending: VecDeque<Locatable<PendingToken>>,
     /// The paths to search for `#include`d files
     search_path: Vec<Cow<'a, Path>>,
+    /// The ids seen while replacing the current token.
+    ///
+    /// This allows cycle detection. It should be reset after every replacement list
+    /// - _not_ after every token, since otherwise that won't catch some mutual recursion
+    /// See https://github.com/jyn514/rcc/issues/427 for examples.
+    ids_seen: HashSet<InternedStr>,
 }
 
 #[derive(Clone)]
@@ -243,6 +249,8 @@ impl Iterator for PreProcessor<'_> {
             } else if let Some(token) = self.pending.pop_front() {
                 self.handle_token(token.data, token.location)
             } else {
+                // Since there are no tokens in `self.pending`, we must not be in the middle of replacing a macro.
+                self.ids_seen.clear();
                 // This function does not perform macro replacement,
                 // so if it returns None we got to EOF.
                 match self.next_cpp_token()? {
@@ -422,6 +430,7 @@ impl<'a> PreProcessor<'a> {
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
+            ids_seen: Default::default(),
             definitions,
             files,
             search_path,
@@ -661,10 +670,9 @@ impl<'a> PreProcessor<'a> {
         location: Location,
     ) -> Option<CppResult<Token>> {
         let start = self.offset();
-        let mut ids_seen = std::collections::HashSet::new();
         // first step: perform substitution on the ID
         while let Some(Definition::Object(def)) = self.definitions.get(&name) {
-            ids_seen.insert(name);
+            self.ids_seen.insert(name);
             if def.is_empty() {
                 return None;
             }
@@ -675,7 +683,7 @@ impl<'a> PreProcessor<'a> {
                 let mut new_pending = VecDeque::new();
                 new_pending.extend(def[1..].iter().map(|token| {
                     let pending_tok = if let Token::Id(id) = token {
-                        if ids_seen.contains(id) {
+                        if self.ids_seen.contains(id) {
                             PendingToken::Cyclic
                         } else {
                             PendingToken::Replacement
@@ -696,7 +704,7 @@ impl<'a> PreProcessor<'a> {
             if let Token::Id(new_name) = first {
                 name = *new_name;
                 // recursive definition, stop now and return the current name.
-                if ids_seen.contains(&name) {
+                if self.ids_seen.contains(&name) {
                     break;
                 }
             } else {
@@ -715,6 +723,10 @@ impl<'a> PreProcessor<'a> {
         } else {
             return no_replacement(self);
         };
+        // cyclic define, e.g. `#define f(a) f(a + 1)`
+        if self.ids_seen.contains(&name) {
+            return no_replacement(self);
+        }
         loop {
             match self.match_next(Token::LeftParen) {
                 Err(err) => self.error_handler.push_back(err),
@@ -723,6 +735,7 @@ impl<'a> PreProcessor<'a> {
             }
         }
 
+        self.ids_seen.insert(name);
         let location = self.span(start);
         let mut args = Vec::new();
         let mut current_arg = Vec::new();
@@ -770,13 +783,8 @@ impl<'a> PreProcessor<'a> {
                     let replacement = args[index].clone();
                     self.pending.extend(replacement);
                 } else {
-                    // #define f(a) f(a + 1)
-                    let pending = if id == name {
-                        PendingToken::Cyclic(Token::Id(id))
-                    } else {
-                        PendingToken::Replacement(Token::Id(id))
-                    };
-                    self.pending.push_back(location.with(pending));
+                    let token = PendingToken::Replacement(Token::Id(id));
+                    self.pending.push_back(location.with(token));
                 }
             } else {
                 self.pending
@@ -1717,5 +1725,15 @@ int main(){}
         let original = "#define f(a) f(a + 1)\nf(1)";
         let expected = "f(1 + 1)";
         assert_same(original, expected);
+    }
+    #[test]
+    // https://github.com/jyn514/rcc/issues/427
+    fn mutually_recursive_function() {
+        let original = "
+            #define a(c) b(c)
+            #define b(c) a(c)
+            a(1)
+        ";
+        assert_same(original, "a(1)");
     }
 }

@@ -41,17 +41,17 @@ pub fn compile_and_run(program: &str, path: PathBuf, args: &[&str]) -> Result<Ou
     run(&output, args).map_err(Error::IO)
 }
 
-pub fn compile(program: &str, path: PathBuf, no_link: bool) -> Result<tempfile::TempPath, Error> {
-    let opts = Default::default();
-    let mut files = rcc::Files::default();
-    let source = rcc::Source {
-        code: String::from(program).into(),
-        path,
+pub fn compile(
+    program: &str,
+    filename: PathBuf,
+    no_link: bool,
+) -> Result<tempfile::TempPath, Error> {
+    let opts = rcc::Opt {
+        filename,
+        ..Default::default()
     };
-    let id = files.add("<test-suite>", source);
     let module = rcc::initialize_aot_module(program.to_owned());
-    let (result, _warnings) = rcc::compile(module, program, opts, id, &mut files);
-    let module = result?.finish();
+    let module = rcc::compile(module, program, opts).result?.finish();
     let output = tempfile::NamedTempFile::new()
         .expect("cannot create tempfile")
         .into_temp_path();

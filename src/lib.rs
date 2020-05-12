@@ -14,7 +14,6 @@ use std::process::Command;
 use std::rc::Rc;
 
 pub use codespan;
-use codespan::FileId;
 #[cfg(feature = "codegen")]
 use cranelift_module::{Backend, Module};
 
@@ -32,6 +31,7 @@ compile_error!("The color-backtrace feature does nothing unless used by the `rcc
 /// then the path will be relative to the _compiler_, not to the current file.
 /// This is recommended only for test code and proof of concepts,
 /// since it does not adhere to the C standard.
+#[derive(Debug, Clone)]
 pub struct Source {
     pub code: Rc<str>,
     pub path: PathBuf,
@@ -49,10 +49,26 @@ pub type Product = <cranelift_object::ObjectBackend as Backend>::Product;
 /// A result which includes all warnings, even for `Err` variants.
 ///
 /// If successful, this returns an `Ok(T)`.
-/// If unsuccessful, this returns an `Err(VecDeque<Error>)`,
-/// so you can iterate the tokens in order without consuming them.
+/// If unsuccessful, this returns an `Err(E)`.
 /// Regardless, this always returns all warnings found.
-pub type WarningResult<T> = (Result<T, VecDeque<CompileError>>, VecDeque<CompileWarning>);
+pub struct Program<T, E = VecDeque<CompileError>> {
+    /// Either the errors found while compiling the program, or the successfully compiled program.
+    pub result: Result<T, E>,
+    /// The warnings emitted while compiling the program
+    pub warnings: VecDeque<CompileWarning>,
+    /// The files that were `#include`d by the preprocessor
+    pub files: Files,
+}
+
+impl<T, E> Program<T, E> {
+    fn from_cpp(mut cpp: PreProcessor, result: Result<T, E>) -> Self {
+        Program {
+            result,
+            warnings: cpp.warnings(),
+            files: cpp.into_files(),
+        }
+    }
+}
 
 pub use analyze::Analyzer;
 pub use data::*;
@@ -168,22 +184,24 @@ pub struct Opt {
     /// If None, allows an unlimited number of errors.
     pub max_errors: Option<std::num::NonZeroUsize>,
 
-    /// The directories to consider as part of the search path.
+    /// The directories to consider as part of the system search path.
     pub search_path: Vec<PathBuf>,
 
     /// The pre-defined macros to have as part of the preprocessor.
     pub definitions: HashMap<InternedStr, Definition>,
+
+    /// The path of the original file.
+    ///
+    /// This allows looking for local includes relative to that file.
+    /// An empty path is allowed but not recommended; it will cause the preprocessor
+    /// to look for includes relative to the current directory of the process.
+    pub filename: PathBuf,
 }
 
 /// Preprocess the source and return the tokens.
-pub fn preprocess(
-    buf: &str,
-    opt: Opt,
-    file: FileId,
-    files: &mut Files,
-) -> WarningResult<VecDeque<Locatable<Token>>> {
+pub fn preprocess(buf: &str, opt: Opt) -> Program<VecDeque<Locatable<Token>>> {
     let path = opt.search_path.iter().map(|p| p.into());
-    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, opt.definitions, files);
+    let mut cpp = PreProcessor::new(buf, opt.filename, opt.debug_lex, path, opt.definitions);
 
     let mut tokens = VecDeque::new();
     let mut errs = VecDeque::new();
@@ -193,23 +211,22 @@ pub fn preprocess(
             Err(err) => errs.push_back(err),
         }
     }
-    let res = if errs.is_empty() {
+    let result = if errs.is_empty() {
         Ok(tokens)
     } else {
         Err(errs)
     };
-    (res, cpp.warnings())
+    Program {
+        result,
+        warnings: cpp.warnings(),
+        files: cpp.into_files(),
+    }
 }
 
 /// Perform semantic analysis, including type checking and constant folding.
-pub fn check_semantics(
-    buf: &str,
-    opt: Opt,
-    file: FileId,
-    files: &mut Files,
-) -> WarningResult<Vec<Locatable<hir::Declaration>>> {
+pub fn check_semantics(buf: &str, opt: Opt) -> Program<Vec<Locatable<hir::Declaration>>> {
     let path = opt.search_path.iter().map(|p| p.into());
-    let mut cpp = PreProcessor::new(file, buf, opt.debug_lex, path, opt.definitions, files);
+    let mut cpp = PreProcessor::new(buf, opt.filename, opt.debug_lex, path, opt.definitions);
 
     let mut errs = VecDeque::new();
 
@@ -218,7 +235,7 @@ pub fn check_semantics(
             errs.push_back($err);
             if let Some(max) = opt.max_errors {
                 if errs.len() >= max.into() {
-                    return (Err(errs), cpp.warnings());
+                    return Program::from_cpp(cpp, Err(errs));
                 }
             }
         }};
@@ -230,18 +247,14 @@ pub fn check_semantics(
             None => break None,
         }
     };
-    let eof = || Location {
-        span: (buf.len() as u32..buf.len() as u32).into(),
-        file,
-    };
 
     let first = match first {
         Some(token) => token,
         None => {
             if errs.is_empty() {
-                errs.push_back(eof().error(SemanticError::EmptyProgram));
+                errs.push_back(cpp.eof().error(SemanticError::EmptyProgram));
             }
-            return (Err(errs), cpp.warnings());
+            return Program::from_cpp(cpp, Err(errs));
         }
     };
 
@@ -253,33 +266,42 @@ pub fn check_semantics(
             Err(err) => handle_err!(err),
         }
     }
-    if hir.is_empty() && errs.is_empty() {
-        errs.push_back(eof().error(SemanticError::EmptyProgram));
-    }
 
     let mut warnings = parser.warnings();
     warnings.extend(cpp.warnings());
-    let res = if !errs.is_empty() { Err(errs) } else { Ok(hir) };
-    (res, warnings)
+    if hir.is_empty() && errs.is_empty() {
+        errs.push_back(cpp.eof().error(SemanticError::EmptyProgram));
+    }
+    let result = if !errs.is_empty() { Err(errs) } else { Ok(hir) };
+    Program {
+        result,
+        warnings,
+        files: cpp.into_files(),
+    }
 }
 
 #[cfg(feature = "codegen")]
 /// Compile and return the declarations and warnings.
-pub fn compile<B: Backend>(
-    module: Module<B>,
-    buf: &str,
-    opt: Opt,
-    file: FileId,
-    files: &mut Files,
-) -> (Result<Module<B>, Error>, VecDeque<CompileWarning>) {
+pub fn compile<B: Backend>(module: Module<B>, buf: &str, opt: Opt) -> Program<Module<B>> {
     let debug_asm = opt.debug_asm;
-    let (hir, mut warnings) = match check_semantics(buf, opt, file, files) {
-        (Err(errs), warnings) => return (Err(Error::Source(errs)), warnings),
-        (Ok(hir), warnings) => (hir, warnings),
+    let mut program = check_semantics(buf, opt);
+    let hir = match program.result {
+        Ok(hir) => hir,
+        Err(err) => {
+            return Program {
+                result: Err(err),
+                warnings: program.warnings,
+                files: program.files,
+            }
+        }
     };
     let (result, ir_warnings) = ir::compile(module, hir, debug_asm);
-    warnings.extend(ir_warnings);
-    (result.map_err(Error::from), warnings)
+    program.warnings.extend(ir_warnings);
+    Program {
+        result: result.map_err(|errs| vec_deque![errs]),
+        warnings: program.warnings,
+        files: program.files,
+    }
 }
 
 #[cfg(feature = "codegen")]
@@ -349,28 +371,26 @@ mod jit {
 
     impl TryFrom<Rc<str>> for JIT {
         type Error = Error;
-        fn try_from(program: Rc<str>) -> Result<JIT, Self::Error> {
-            JIT::from_string(program, Opt::default()).0
+        fn try_from(source: Rc<str>) -> Result<JIT, Self::Error> {
+            JIT::from_string(source, Opt::default()).result
         }
     }
 
     impl JIT {
         /// Compile string and return JITed code.
-        pub fn from_string<R: Into<Rc<str>>>(
-            program: R,
-            opt: Opt,
-        ) -> (Result<Self, Error>, VecDeque<CompileWarning>) {
-            let program = program.into();
+        pub fn from_string<R: Into<Rc<str>>>(source: R, opt: Opt) -> Program<Self, Error> {
+            let source = source.into();
             let module = initialize_jit_module();
-            let mut files = Files::new();
-            let source = Source {
-                path: PathBuf::new(),
-                code: Rc::clone(&program),
+            let program = compile(module, &source, opt);
+            let result = match program.result {
+                Ok(module) => Ok(JIT::from(module)),
+                Err(errs) => Err(errs.into()),
             };
-            let file = files.add("<jit>", source);
-            let (result, warnings) = compile(module, &program, opt, file, &mut files);
-            let result = result.map(JIT::from);
-            (result, warnings)
+            Program {
+                result,
+                warnings: program.warnings,
+                files: program.files,
+            }
         }
 
         /// Invoke this function before trying to get access to "new" compiled functions.
@@ -451,9 +471,7 @@ mod tests {
     use super::*;
     fn compile(src: &str) -> Result<Vec<hir::Declaration>, Error> {
         let options = Opt::default();
-        let mut files: Files = Default::default();
-        let id = files.add("<test suite>", src.into());
-        let res = super::check_semantics(src, options, id, &mut files).0;
+        let res = super::check_semantics(src, options).result;
         match res {
             Ok(decls) => Ok(decls.into_iter().map(|l| l.data).collect()),
             Err(errs) => Err(Error::Source(errs)),

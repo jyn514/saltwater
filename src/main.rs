@@ -8,13 +8,12 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ansi_term::{ANSIString, Colour};
-use codespan::FileId;
 use git_testament::git_testament_macros;
 use pico_args::Arguments;
 use rcc::{
     assemble, compile,
     data::{error::CompileWarning, Location},
-    link, preprocess, Error, Files, Opt,
+    link, preprocess, Error, Files, Opt, Program,
 };
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
@@ -77,9 +76,6 @@ struct BinOpt {
     /// Note that preprocessing discards whitespace and comments.
     /// There is not currently a way to disable this behavior.
     preprocess_only: bool,
-    /// The file to read C source from. \"-\" means stdin (use ./- to read a file called '-').
-    /// Only one file at a time is currently accepted. [default: -]
-    filename: PathBuf,
     /// Whether or not to use color
     color: ColorChoice,
 }
@@ -113,24 +109,31 @@ impl std::str::FromStr for ColorChoice {
     }
 }
 
+macro_rules! rcc_try {
+    ($res: expr, $files: expr) => {
+        match $res {
+            Ok(program) => program,
+            Err(err) => return Err((err.into(), $files)),
+        }
+    };
+}
+
 // TODO: when std::process::termination is stable, make err_exit an impl for CompileError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
-fn real_main(
-    buf: Rc<str>,
-    file_db: &mut Files,
-    file_id: FileId,
-    bin_opt: BinOpt,
-    output: &Path,
-) -> Result<(), Error> {
+fn real_main(buf: Rc<str>, bin_opt: BinOpt, output: &Path) -> Result<(), (Error, Files)> {
     let opt = if bin_opt.preprocess_only {
         use std::io::{BufWriter, Write};
 
-        let (tokens, warnings) = preprocess(&buf, bin_opt.opt, file_id, file_db);
-        handle_warnings(warnings, file_db, bin_opt.color);
+        let Program {
+            result: tokens,
+            warnings,
+            files,
+        } = preprocess(&buf, bin_opt.opt);
+        handle_warnings(warnings, &files, bin_opt.color);
 
         let stdout = io::stdout();
         let mut stdout_buf = BufWriter::new(stdout.lock());
-        for token in tokens.map_err(Error::Source)? {
+        for token in rcc_try!(tokens, files) {
             write!(stdout_buf, "{} ", token.data).expect("failed to write to stdout");
         }
         writeln!(stdout_buf).expect("failed to write to stdout");
@@ -142,12 +145,16 @@ fn real_main(
     #[cfg(feature = "jit")]
     {
         if !opt.jit {
-            aot_main(&buf, opt, file_id, file_db, output, bin_opt.color)
+            aot_main(&buf, opt, output, bin_opt.color)
         } else {
             let module = rcc::initialize_jit_module();
-            let (result, warnings) = compile(module, &buf, opt, file_id, file_db);
-            handle_warnings(warnings, file_db, bin_opt.color);
-            let mut rccjit = rcc::JIT::from(result?);
+            let Program {
+                result,
+                warnings,
+                files,
+            } = compile(module, &buf, opt);
+            handle_warnings(warnings, &files, bin_opt.color);
+            let mut rccjit = rcc::JIT::from(rcc_try!(result, files));
             if let Some(exit_code) = unsafe { rccjit.run_main() } {
                 std::process::exit(exit_code);
             }
@@ -155,30 +162,29 @@ fn real_main(
         }
     }
     #[cfg(not(feature = "jit"))]
-    aot_main(&buf, opt, file_id, file_db, output, bin_opt.color)
+    aot_main(&buf, opt, output, bin_opt.color)
 }
 
 #[inline]
-fn aot_main(
-    buf: &str,
-    opt: Opt,
-    file_id: FileId,
-    file_db: &mut Files,
-    output: &Path,
-    color: ColorChoice,
-) -> Result<(), Error> {
+fn aot_main(buf: &str, opt: Opt, output: &Path, color: ColorChoice) -> Result<(), (Error, Files)> {
     let no_link = opt.no_link;
     let module = rcc::initialize_aot_module("rccmain".to_owned());
-    let (result, warnings) = compile(module, buf, opt, file_id, file_db);
-    handle_warnings(warnings, file_db, color);
+    let Program {
+        result,
+        warnings,
+        files,
+    } = compile(module, buf, opt);
+    handle_warnings(warnings, &files, color);
 
-    let product = result.map(|x| x.finish())?;
+    let product = rcc_try!(result.map(|x| x.finish()), files);
     if no_link {
-        return assemble(product, output);
+        rcc_try!(assemble(product, output), files);
+        return Ok(());
     }
-    let tmp_file = NamedTempFile::new()?;
-    assemble(product, tmp_file.as_ref())?;
-    link(tmp_file.as_ref(), output).map_err(io::Error::into)
+    let tmp_file = rcc_try!(NamedTempFile::new(), files);
+    rcc_try!(assemble(product, tmp_file.as_ref()), files);
+    rcc_try!(link(tmp_file.as_ref(), output), files);
+    Ok(())
 }
 
 fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: ColorChoice) {
@@ -217,33 +223,30 @@ fn main() {
 
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
-    opt.filename = if opt.filename == PathBuf::from("-") {
+    opt.opt.filename = if opt.opt.filename == PathBuf::from("-") {
         io::stdin().read_to_string(&mut buf).unwrap_or_else(|err| {
             eprintln!("Failed to read stdin: {}", err);
             process::exit(1);
         });
         PathBuf::from("<stdin>")
     } else {
-        File::open(opt.filename.as_path())
+        File::open(opt.opt.filename.as_path())
             .and_then(|mut file| file.read_to_string(&mut buf))
             .unwrap_or_else(|err| {
-                eprintln!("Failed to read {}: {}", opt.filename.to_string_lossy(), err);
+                eprintln!(
+                    "Failed to read {}: {}",
+                    opt.opt.filename.to_string_lossy(),
+                    err
+                );
                 process::exit(1);
             });
-        opt.filename
+        opt.opt.filename
     };
     let buf: Rc<_> = buf.into();
-    let source = rcc::Source {
-        path: opt.filename.clone(),
-        code: Rc::clone(&buf),
-    };
-
-    let mut file_db = Files::new();
-    let file_id = file_db.add(&opt.filename, source);
     let max_errors = opt.opt.max_errors;
     let color_choice = opt.color;
-    real_main(buf, &mut file_db, file_id, opt, &output)
-        .unwrap_or_else(|err| err_exit(err, max_errors, &file_db, color_choice));
+    real_main(buf, opt, &output)
+        .unwrap_or_else(|(err, files)| err_exit(err, max_errors, color_choice, &files));
 }
 
 fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
@@ -324,41 +327,36 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         })?;
         definitions.insert(key.into(), def);
     }
-    Ok((
-        BinOpt {
-            preprocess_only: input.contains(["-E", "--preprocess-only"]),
-            opt: Opt {
-                debug_lex: input.contains("--debug-lex"),
-                debug_asm: input.contains("--debug-ir"),
-                debug_ast: input.contains("--debug-ast"),
-                debug_hir: input.contains("--debug-hir"),
-                no_link: input.contains(["-c", "--no-link"]),
-                #[cfg(feature = "jit")]
-                jit: input.contains("--jit"),
-                max_errors,
-                definitions,
-                search_path,
-            },
+    let bin_opt = BinOpt {
+        preprocess_only: input.contains(["-E", "--preprocess-only"]),
+        opt: Opt {
+            debug_lex: input.contains("--debug-lex"),
+            debug_asm: input.contains("--debug-ir"),
+            debug_ast: input.contains("--debug-ast"),
+            debug_hir: input.contains("--debug-hir"),
+            no_link: input.contains(["-c", "--no-link"]),
+            #[cfg(feature = "jit")]
+            jit: input.contains("--jit"),
+            max_errors,
+            definitions,
+            search_path,
+            // This is a little odd because `free` expects no arguments to be left,
+            // so we have to parse it last.
             filename: input
                 .free_from_os_str(os_str_to_path_buf)?
                 .unwrap_or_else(|| "-".into()),
-            color: color_choice,
         },
-        output,
-    ))
+        color: color_choice,
+    };
+    Ok((bin_opt, output))
 }
 
-fn err_exit(
-    err: Error,
-    max_errors: Option<NonZeroUsize>,
-    file_db: &Files,
-    color: ColorChoice,
-) -> ! {
+fn err_exit(err: Error, max_errors: Option<NonZeroUsize>, color: ColorChoice, files: &Files) -> ! {
     use Error::*;
     match err {
         Source(errs) => {
             for err in &errs {
-                error(&err.data, err.location(), file_db, color);
+                error(&err.data, err.location(), files, color);
             }
             if let Some(max) = max_errors {
                 if usize::from(max) <= errs.len() {

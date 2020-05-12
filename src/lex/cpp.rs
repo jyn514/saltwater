@@ -6,8 +6,6 @@ use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use codespan::FileId;
-
 use super::{Lexer, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
@@ -20,13 +18,9 @@ use crate::Files;
 ///
 /// Here is the example for `PreProcessor::new()` using the builder:
 /// ```
-/// use rcc::{Files, PreProcessorBuilder, Source};
+/// use rcc::PreProcessorBuilder;
 ///
-/// let mut files = Files::new();
-/// let code = String::from("int main(void) { char *hello = \"hi\"; }\n").into();
-/// let src = Source { path: "example.c".into(), code: std::rc::Rc::clone(&code) };
-/// let file = files.add("example.c", src);
-/// let cpp = PreProcessorBuilder::new(code, file, &mut files).build();
+/// let cpp = PreProcessorBuilder::new("int main(void) { char *hello = \"hi\"; }\n").filename("example.c").build();
 /// for token in cpp {
 ///     assert!(token.is_ok());
 /// }
@@ -34,10 +28,8 @@ use crate::Files;
 pub struct PreProcessorBuilder<'a> {
     /// The buffer for the starting file
     buf: Rc<str>,
-    /// The starting file
-    file: FileId,
-    /// All known files, including files which have already been read.
-    files: &'a mut Files,
+    /// The name of the file
+    filename: PathBuf,
     /// Whether to print each token before replacement
     debug: bool,
     /// The paths to search for `#include`d files
@@ -47,19 +39,18 @@ pub struct PreProcessorBuilder<'a> {
 }
 
 impl<'a> PreProcessorBuilder<'a> {
-    pub fn new<S: Into<Rc<str>>>(
-        buf: S,
-        file: FileId,
-        files: &'a mut Files,
-    ) -> PreProcessorBuilder<'a> {
+    pub fn new<S: Into<Rc<str>>>(buf: S) -> PreProcessorBuilder<'a> {
         PreProcessorBuilder {
             debug: false,
-            files,
-            file,
+            filename: PathBuf::default(),
             buf: buf.into(),
             search_path: Vec::new(),
             definitions: HashMap::new(),
         }
+    }
+    pub fn filename<P: Into<PathBuf>>(mut self, name: P) -> Self {
+        self.filename = name.into();
+        self
     }
     pub fn debug(mut self, yes: bool) -> Self {
         self.debug = yes;
@@ -75,12 +66,11 @@ impl<'a> PreProcessorBuilder<'a> {
     }
     pub fn build(self) -> PreProcessor<'a> {
         PreProcessor::new(
-            self.file,
             self.buf,
+            self.filename,
             self.debug,
             self.search_path,
             self.definitions,
-            self.files,
         )
     }
 }
@@ -104,13 +94,9 @@ impl<'a> PreProcessorBuilder<'a> {
 /// Examples:
 ///
 /// ```
-/// use rcc::{Files, PreProcessor, Source};
+/// use rcc::PreProcessor;
 ///
-/// let mut files = Files::new();
-/// let code = String::from("int main(void) { char *hello = \"hi\"; }\n").into();
-/// let src = Source { path: "example.c".into(), code: std::rc::Rc::clone(&code) };
-/// let file = files.add("example.c", src);
-/// let cpp = PreProcessor::new(file, code, false, vec![], Default::default(), &mut files);
+/// let cpp = PreProcessor::new("int main(void) { char *hello = \"hi\"; }\n", "example.c", false, vec![], Default::default());
 /// for token in cpp {
 ///     assert!(token.is_ok());
 /// }
@@ -122,7 +108,7 @@ pub struct PreProcessor<'a> {
     /// Each lexer represents a separate source file that is currently being processed.
     includes: Vec<Lexer>,
     /// All known files, including files which have already been read.
-    files: &'a mut Files,
+    files: Files,
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
     definitions: HashMap<InternedStr, Definition>,
@@ -385,18 +371,12 @@ impl<'a> PreProcessor<'a> {
     /// but will never delete a file.
     ///
     /// The `debug` parameter specifies whether to print out tokens before replacement.
-    pub fn new<
-        'files: 'a,
-        'search: 'a,
-        I: IntoIterator<Item = Cow<'search, Path>>,
-        S: Into<Rc<str>>,
-    >(
-        file: FileId,
+    pub fn new<'search: 'a, I: IntoIterator<Item = Cow<'search, Path>>, S: Into<Rc<str>>>(
         chars: S,
+        filename: impl Into<std::ffi::OsString>,
         debug: bool,
         user_search_path: I,
         user_definitions: HashMap<InternedStr, Definition>,
-        files: &'files mut Files,
     ) -> Self {
         let system_path = format!(
             "{}-{}-{}",
@@ -424,6 +404,16 @@ impl<'a> PreProcessor<'a> {
             Path::new("/usr/include").into(),
         ];
         search_path.extend(user_search_path.into_iter());
+
+        let mut files = Files::new();
+        let chars = chars.into();
+        let filename = filename.into();
+        let source = crate::Source {
+            code: Rc::clone(&chars),
+            path: filename.clone().into(),
+        };
+        let file = files.add(filename, source);
+
         Self {
             first_lexer: Lexer::new(file, chars, debug),
             includes: Default::default(),
@@ -457,6 +447,22 @@ impl<'a> PreProcessor<'a> {
     /// `warnings()` again.
     pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
         std::mem::take(&mut self.error_handler.warnings)
+    }
+
+    /// Return a `Location` representing the end of the first file.
+    pub fn eof(&self) -> Location {
+        let lex = &self.first_lexer;
+        Location {
+            span: (lex.chars.len() as u32..lex.chars.len() as u32).into(),
+            file: lex.location.file,
+        }
+    }
+
+    /// Return all files loaded by the preprocessor, consuming it in the process.
+    ///
+    /// Files can be loaded by C source using `#include` directives.
+    pub fn into_files(self) -> Files {
+        self.files
     }
 
     /* internal functions */

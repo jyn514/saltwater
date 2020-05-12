@@ -427,9 +427,7 @@ pub(crate) mod test {
     }
     /// Create a new preprocessor with `s` as the input, but without a trailing newline
     pub(crate) fn cpp_no_newline(s: &str) -> PreProcessor {
-        let mut files: Files = Default::default();
-        let id = files.add("<test suite>", String::new().into());
-        PreProcessorBuilder::new(s, id, Box::leak(Box::new(files))).build()
+        PreProcessorBuilder::new(s).build()
     }
 
     #[test]

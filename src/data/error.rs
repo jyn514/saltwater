@@ -588,9 +588,6 @@ impl<T: Into<String>> From<T> for Warning {
 }
 
 impl CompileError {
-    pub(crate) fn semantic(err: Locatable<String>) -> Self {
-        Self::from(err)
-    }
     pub fn location(&self) -> Location {
         self.location
     }
@@ -720,14 +717,6 @@ mod tests {
         error_handler.push_back(dummy_error());
         let errors = error_handler.collect::<Vec<_>>();
         assert_eq!(errors.len(), 1);
-    }
-
-    #[test]
-    fn test_compile_error_semantic() {
-        assert_eq!(
-            CompileError::semantic(Location::default().with("".to_string())).data,
-            Error::Semantic(SemanticError::Generic("".to_string())),
-        );
     }
 
     #[test]

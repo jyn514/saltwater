@@ -1,8 +1,7 @@
 use super::FunctionAnalyzer;
 use crate::data::{ast, error::SemanticError, hir::*, lex::Locatable, Location};
-use crate::parse::Lexer;
 
-impl<T: Lexer> FunctionAnalyzer<'_, T> {
+impl FunctionAnalyzer<'_> {
     #[inline(always)]
     fn expr(&mut self, expr: ast::Expr) -> Expr {
         self.analyzer.expr(expr)

@@ -940,13 +940,13 @@ impl<'a> PreProcessor<'a> {
         // TODO: remove(0) is bad and I should feel bad
         // TODO: this only returns the first error because anything else requires a refactor
         let first = cpp_tokens.remove(0)?;
-        use crate::{analyze::Analyzer, Parser};
+        use crate::{analyze::PureAnalyzer, Parser};
         let mut parser = Parser::new(first, cpp_tokens.into_iter(), false);
         let expr = parser.expr()?;
         // TODO: catch expressions that aren't allowed
         // (see https://github.com/jyn514/rcc/issues/5#issuecomment-575339427)
         // TODO: can semantic errors happen here? should we check?
-        Ok(Analyzer::new(parser, false).expr(expr))
+        Ok(PureAnalyzer::new().expr(expr))
     }
     /// We saw an `#if`, `#ifdef`, or `#ifndef` token at the start of the line
     /// and want to either take the branch or ignore the tokens within the directive.

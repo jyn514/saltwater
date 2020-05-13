@@ -940,7 +940,7 @@ impl<'a> PreProcessor<'a> {
         // TODO: catch expressions that aren't allowed
         // (see https://github.com/jyn514/rcc/issues/5#issuecomment-575339427)
         // TODO: can semantic errors happen here? should we check?
-        Ok(Analyzer::new(parser, false).parse_expr(expr))
+        Ok(Analyzer::new(parser, false).expr(expr))
     }
     /// We saw an `#if`, `#ifdef`, or `#ifndef` token at the start of the line
     /// and want to either take the branch or ignore the tokens within the directive.

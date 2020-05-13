@@ -15,7 +15,7 @@ impl<T: Lexer> Analyzer<T> {
         // initializer_list
         let mut expr = match init {
             Aggregate(list) => return self.check_aggregate_overflow(list, ctype, location),
-            Scalar(expr) => self.parse_expr(*expr),
+            Scalar(expr) => self.expr(*expr),
         };
         // The only time (that I know of) that an expression will initialize a non-scalar
         // is for character literals.
@@ -110,7 +110,7 @@ impl<T: Lexer> Analyzer<T> {
                     } else {
                         let expr = match list.next() {
                             Some(Scalar(expr)) => self
-                                .parse_expr(*expr)
+                                .expr(*expr)
                                 .rval()
                                 .implicit_cast(&inner, &mut self.error_handler),
                             _ => unreachable!(),

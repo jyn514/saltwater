@@ -4,8 +4,8 @@ use crate::parse::Lexer;
 
 impl<T: Lexer> FunctionAnalyzer<'_, T> {
     #[inline(always)]
-    fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
-        self.analyzer.parse_expr(expr)
+    fn expr(&mut self, expr: ast::Expr) -> Expr {
+        self.analyzer.expr(expr)
     }
     pub(crate) fn parse_stmt(&mut self, stmt: ast::Stmt) -> Stmt {
         use ast::StmtType::*;
@@ -24,11 +24,11 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 S::Compound(parsed)
             }
             // 6.8.3 Expression and null statements
-            Expr(expr) => S::Expr(self.parse_expr(expr)),
+            Expr(expr) => S::Expr(self.expr(expr)),
             // 6.8.4.1 The if statement
             If(condition, then, otherwise) => {
                 let condition = self
-                    .parse_expr(condition)
+                    .expr(condition)
                     .truthy(&mut self.analyzer.error_handler);
                 let then = self.parse_stmt(*then);
                 let otherwise = otherwise.map(|s| Box::new(self.parse_stmt(*s)));
@@ -36,7 +36,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
             }
             // 6.8.4.2 The switch statement
             Switch(value, body) => {
-                let value = self.parse_expr(value).rval();
+                let value = self.expr(value).rval();
                 if !value.ctype.is_integral() {
                     self.err(
                         SemanticError::NonIntegralSwitch(value.ctype.clone()),
@@ -50,14 +50,14 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
             Do(body, condition) => {
                 let body = self.parse_stmt(*body);
                 let condition = self
-                    .parse_expr(condition)
+                    .expr(condition)
                     .truthy(&mut self.analyzer.error_handler);
                 S::Do(Box::new(body), condition)
             }
             // 6.8.5.1 The while statement
             While(condition, body) => {
                 let condition = self
-                    .parse_expr(condition)
+                    .expr(condition)
                     .truthy(&mut self.analyzer.error_handler);
                 let body = self.parse_stmt(*body);
                 S::While(condition, Box::new(body))
@@ -74,9 +74,9 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 self.enter_scope();
                 let initializer = self.parse_stmt(*initializer);
                 let condition = condition.map(|e| {
-                    Box::new(self.parse_expr(*e).truthy(&mut self.analyzer.error_handler))
+                    Box::new(self.expr(*e).truthy(&mut self.analyzer.error_handler))
                 });
-                let post_loop = post_loop.map(|e| Box::new(self.parse_expr(*e)));
+                let post_loop = post_loop.map(|e| Box::new(self.expr(*e)));
                 let body = self.parse_stmt(*body);
                 self.leave_scope(stmt.location);
                 S::For(Box::new(initializer), condition, post_loop, Box::new(body))
@@ -120,7 +120,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
         use super::expr::literal;
         use crate::data::lex::Literal;
 
-        let expr = match self.parse_expr(expr).const_fold() {
+        let expr = match self.expr(expr).const_fold() {
             Ok(e) => e,
             Err(err) => {
                 self.analyzer.error_handler.push_back(err);
@@ -149,7 +149,7 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
     fn return_statement(&mut self, expr: Option<ast::Expr>, location: Location) -> StmtType {
         use crate::data::Type;
 
-        let expr = expr.map(|e| self.parse_expr(e));
+        let expr = expr.map(|e| self.expr(e));
         let ret_type = &self.metadata.return_type;
         match (expr, *ret_type != Type::Void) {
             // void f() { return ;}

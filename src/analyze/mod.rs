@@ -594,7 +594,7 @@ impl<I: Lexer> Analyzer<I> {
             };
             // struct s { int i: 5 };
             if let Some(bitfield) = bitfield {
-                let bit_size = match Self::const_uint(self.parse_expr(bitfield)) {
+                let bit_size = match Self::const_uint(self.expr(bitfield)) {
                     Ok(e) => e,
                     Err(err) => {
                         self.error_handler.push_back(err);
@@ -701,7 +701,7 @@ impl<I: Lexer> Analyzer<I> {
         for (name, maybe_value) in ast_members {
             // enum E { A = 5 };
             if let Some(value) = maybe_value {
-                discriminant = Self::const_sint(self.parse_expr(value)).unwrap_or_else(|err| {
+                discriminant = Self::const_sint(self.expr(value)).unwrap_or_else(|err| {
                     self.error_handler.push_back(err);
                     std::i64::MIN
                 });
@@ -850,7 +850,7 @@ impl<I: Lexer> Analyzer<I> {
             Array { of, size } => {
                 // int a[5]
                 let size = if let Some(expr) = size {
-                    let size = Self::const_uint(self.parse_expr(*expr)).unwrap_or_else(|err| {
+                    let size = Self::const_uint(self.expr(*expr)).unwrap_or_else(|err| {
                         self.error_handler.push_back(err);
                         1
                     });
@@ -1380,7 +1380,7 @@ pub(crate) mod test {
     }
 
     pub(crate) fn analyze_expr(s: &str) -> CompileResult<Expr> {
-        analyze(s, Parser::expr, Analyzer::parse_expr)
+        analyze(s, Parser::expr, Analyzer::expr)
     }
 
     pub(crate) fn assert_decl_display(left: &str, right: &str) {

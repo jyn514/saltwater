@@ -1,3 +1,25 @@
+/// Return an error from a function
+/// Assumes that 'Locatable' is in scope and that the function it is called in
+/// returns a 'Result<Locatable<T>>'
+macro_rules! semantic_err {
+    ($message: expr, $location: expr $(,)?) => {
+        return Err(CompileError::semantic(Locatable {
+            data: $message,
+            location: $location,
+        }));
+    };
+}
+
+/// ensure that a condition is true at compile time
+/// thanks to https://nikolaivazquez.com/posts/programming/rust-static-assertions/
+macro_rules! const_assert {
+    ($condition:expr) => {
+        #[deny(const_err)]
+        #[allow(dead_code)]
+        const ASSERT: usize = 0 - !$condition as usize;
+    };
+}
+
 mod expr;
 mod static_init;
 mod stmt;
@@ -490,4 +512,31 @@ impl Type {
             _ => types::INVALID,
         }
     }
+    fn member_offset(&self, member: InternedStr) -> Result<u64, ()> {
+        match self {
+            Type::Struct(stype) => Ok(stype.offset(member)),
+            Type::Union(_) => Ok(0),
+            _ => Err(()),
+        }
+    }
+}
+
+impl CompileError {
+    fn semantic(err: Locatable<String>) -> Self {
+        Self::from(err)
+    }
+}
+
+impl FunctionType {
+    fn should_return(&self) -> bool {
+        *self.return_type != Type::Void
+    }
+}
+#[cfg(test)]
+#[test]
+fn test_compile_error_semantic() {
+    assert_eq!(
+        CompileError::semantic(Location::default().with("".to_string())).data,
+        Error::Semantic(SemanticError::Generic("".to_string())),
+    );
 }

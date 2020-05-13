@@ -92,6 +92,7 @@ impl<I: Lexer> Iterator for Parser<I> {
     /// | declaration_specifiers declarator compound_statement
     /// ;
     /// ```
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#translation_unit>
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // check for pending changes from the last declaration

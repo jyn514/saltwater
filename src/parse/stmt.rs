@@ -246,6 +246,7 @@ impl<I: Lexer> Parser<I> {
         })
     }
     /// do_while_statement: DO statement WHILE '(' expr ')' ';'
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#iteration_statement>
     fn do_while_statement(&mut self) -> StmtResult {
         let start = self
             .expect(Token::Keyword(Keyword::Do))
@@ -266,6 +267,7 @@ impl<I: Lexer> Parser<I> {
     }
 
     /// expr_opt: expr ';' | ';'
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#expression_statement>
     ///
     /// `token` is the delimiter that ends the expression;
     /// `token` is usually `;` but sometimes `)` (in `for` loops)
@@ -282,6 +284,7 @@ impl<I: Lexer> Parser<I> {
     /// for_statement:
     ///     FOR '(' expr_opt ';' expr_opt ';' expr_opt ') statement
     ///   | FOR '(' declaration expr_opt ';' expr_opt ') statement
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#iteration_statement>
     fn for_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::For))?;
         let paren = self.expect(Token::LeftParen)?;
@@ -330,6 +333,7 @@ impl<I: Lexer> Parser<I> {
         })
     }
     /// goto_statement: GOTO identifier ';'
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#jump_statement>
     fn goto_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::Goto)).unwrap();
         let id = self.expect_id()?;

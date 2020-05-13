@@ -155,6 +155,7 @@ impl<I: Lexer> Parser<I> {
                 // : logical_or_expression
                 // | logical_or_expression '?' expression ':' conditional_expression
                 // ;
+                // <http://www.quut.com/c/ANSI-C-grammar-y.html#conditional_expression>
                 let inner = self.expr()?;
                 self.expect(Token::Colon)?;
                 let right_start = self.unary_expr()?;

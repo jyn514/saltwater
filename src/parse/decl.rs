@@ -40,6 +40,7 @@ impl<I: Lexer> Parser<I> {
     /// | declaration_specifiers init_declarator_list ';'
     /// ;
     /// ```
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#external_declaration>
     pub fn external_declaration(&mut self) -> SyntaxResult<Locatable<ExternalDeclaration>> {
         let (specifiers, specifier_locations) = self.specifiers()?;
 
@@ -178,6 +179,7 @@ impl<I: Lexer> Parser<I> {
     /// | (struct | union) identifier
     /// ;
     /// ```
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#struct_or_union_specifier>
     fn struct_specifier(
         &mut self,
         is_struct: bool,
@@ -232,6 +234,7 @@ impl<I: Lexer> Parser<I> {
     /// | declarator ':' constant_expr
     /// ;
     /// ```
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#struct_declaration>
     fn struct_declaration_list(&mut self) -> SyntaxResult<Locatable<ast::StructDeclarationList>> {
         //use data::lex::LocationTrait;
         let (specifiers, mut spec_location) = self.specifiers()?;
@@ -299,6 +302,7 @@ impl<I: Lexer> Parser<I> {
     /// | IDENTIFIER '=' constant_expression
     /// ;
     /// ```
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#enum_specifier>
 
     // we've already seen an `enum` token,, `location` is where we saw it
     fn enum_specifier(
@@ -422,6 +426,7 @@ impl<I: Lexer> Parser<I> {
      *  | direct_declarator '(' ')'
      *  | direct_declarator '(' parameter_type_list ')'
      *  ;
+     * <http://www.quut.com/c/ANSI-C-grammar-y.html#direct_declarator>
      *
      * Additionally, we combine abstract_declarators, because most of the code is the same.
      * direct_abstract_declarator
@@ -435,11 +440,12 @@ impl<I: Lexer> Parser<I> {
      *  | direct_abstract_declarator '(' ')'
      *  | direct_abstract_declarator '(' parameter_type_list ')'
      *  ;
+     * <http://www.quut.com/c/ANSI-C-grammar-y.html#direct_abstract_declarator>
      *
      * Because we can't handle left-recursion, we rewrite it as follows:
      * direct_abstract_declarator
-     *   | identifier postfix_type*
      *   : '(' abstract_declarator ')' postfix_type*
+     *   | identifier postfix_type*
      *   | postfix_type*  /* only for abstract_declarators */
      *   ;
      *
@@ -597,6 +603,7 @@ impl<I: Lexer> Parser<I> {
      *      | declaration_specifiers abstract_declarator
      *      ;
      *
+     * <http://www.quut.com/c/ANSI-C-grammar-y.html#parameter_type_list>
      */
     fn parameter_type_list(&mut self) -> SyntaxResult<Locatable<InternalDeclaratorType>> {
         let left_paren = self

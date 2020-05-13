@@ -266,7 +266,7 @@ pub fn check_semantics(buf: &str, opt: Opt) -> Program<Vec<Locatable<hir::Declar
         }
     }
 
-    let mut warnings = parser.warnings();
+    let mut warnings = parser.inner.warnings();
     warnings.extend(cpp.warnings());
     if hir.is_empty() && errs.is_empty() {
         errs.push_back(cpp.eof().error(SemanticError::EmptyProgram));

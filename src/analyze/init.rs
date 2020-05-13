@@ -1,10 +1,9 @@
 //! 6.7.9 Initialization
 
-use super::Analyzer;
+use super::PureAnalyzer;
 use crate::data::{ast, error::SemanticError, hir::*, types, Location, Type};
-use crate::parse::Lexer;
 
-impl<T: Lexer> Analyzer<T> {
+impl PureAnalyzer {
     pub(super) fn parse_initializer(
         &mut self,
         init: ast::Initializer,

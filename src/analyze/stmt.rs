@@ -73,9 +73,8 @@ impl<T: Lexer> FunctionAnalyzer<'_, T> {
                 // Or encode that in the type somehow?
                 self.enter_scope();
                 let initializer = self.parse_stmt(*initializer);
-                let condition = condition.map(|e| {
-                    Box::new(self.expr(*e).truthy(&mut self.analyzer.error_handler))
-                });
+                let condition = condition
+                    .map(|e| Box::new(self.expr(*e).truthy(&mut self.analyzer.error_handler)));
                 let post_loop = post_loop.map(|e| Box::new(self.expr(*e)));
                 let body = self.parse_stmt(*body);
                 self.leave_scope(stmt.location);

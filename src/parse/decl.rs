@@ -29,6 +29,7 @@ struct InternalDeclarator {
 }
 
 impl<I: Lexer> Parser<I> {
+    /// ```yacc
     /// external_declaration
     /// : function_definition
     /// | declaration
@@ -38,6 +39,7 @@ impl<I: Lexer> Parser<I> {
     /// : declaration_specifiers ';'
     /// | declaration_specifiers init_declarator_list ';'
     /// ;
+    /// ```
     pub fn external_declaration(&mut self) -> SyntaxResult<Locatable<ExternalDeclaration>> {
         let (specifiers, specifier_locations) = self.specifiers()?;
 
@@ -169,11 +171,13 @@ impl<I: Lexer> Parser<I> {
         }
         Ok((specifiers, all_locs))
     }
+    /// ```yacc
     /// struct_or_union_specifier
     /// : (struct | union) '{' struct_declaration + '}'
     /// | (struct | union) identifier '{' struct_declaration + '}'
     /// | (struct | union) identifier
     /// ;
+    /// ```
     fn struct_specifier(
         &mut self,
         is_struct: bool,
@@ -217,6 +221,7 @@ impl<I: Lexer> Parser<I> {
         Ok(Locatable::new(spec, start))
     }
 
+    /// ```yacc
     /// struct_declaration: (type_specifier | type_qualifier)+ struct_declarator_list ';'
     ///
     /// struct_declarator_list: struct_declarator (',' struct_declarator)* ;
@@ -226,6 +231,7 @@ impl<I: Lexer> Parser<I> {
     /// | ':' constant_expr  // bitfield, not supported
     /// | declarator ':' constant_expr
     /// ;
+    /// ```
     fn struct_declaration_list(&mut self) -> SyntaxResult<Locatable<ast::StructDeclarationList>> {
         //use data::lex::LocationTrait;
         let (specifiers, mut spec_location) = self.specifiers()?;
@@ -272,15 +278,16 @@ impl<I: Lexer> Parser<I> {
             location.maybe_merge(spec_location),
         ))
     }
+    /// ```yacc
     /// enum_specifier
-    ///  : 'enum' '{' enumerator_list '}'
-    ///  | 'enum' identifier '{' enumerator_list '}'
+    /// : 'enum' '{' enumerator_list '}'
+    /// | 'enum' identifier '{' enumerator_list '}'
 
     // this is not valid for declaring an enum, but it's fine for an enum we've already seen
     // e.g. `enum E { A }; enum E e;`
 
-    ///  | 'enum' identifier
-    ///  ;
+    /// | 'enum' identifier
+    /// ;
     ///
     /// enumerator_list
     /// : enumerator
@@ -291,6 +298,7 @@ impl<I: Lexer> Parser<I> {
     /// : IDENTIFIER
     /// | IDENTIFIER '=' constant_expression
     /// ;
+    /// ```
 
     // we've already seen an `enum` token,, `location` is where we saw it
     fn enum_specifier(
@@ -441,6 +449,7 @@ impl<I: Lexer> Parser<I> {
      *   | '(' ')'
      *   | '(' parameter_type_list ')'
      *   ;
+     * ```
      *
      *   How do we tell abstract_declarator and parameter_type_list apart?
      *   parameter_type_list starts with declaration specifiers, abstract_declarator doesn't:

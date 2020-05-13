@@ -24,7 +24,6 @@ type LexResult<T = Token> = Result<T, Locatable<LexError>>;
 /// You may also find the `warn` and `error` functions in `utils.rs` to be useful.
 ///
 /// Lexer implements iterator, so you can loop over the tokens.
-/// ```
 #[derive(Debug)]
 pub struct Lexer {
     location: SingleLocation,

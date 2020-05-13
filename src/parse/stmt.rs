@@ -52,6 +52,7 @@ impl<I: Lexer> Parser<I> {
             Ok(declaration) => Ok(Stmt::new(StmtType::Decl(declaration), decl.location)),
         }
     }
+    /// ```yacc
     /// statement
     /// : labeled_statement
     /// | compound_statement
@@ -61,12 +62,15 @@ impl<I: Lexer> Parser<I> {
     /// | jump_statement
     /// ;
     ///
-    /// labeled_statement:
-    ///     identifier ':' statement
-    ///   | CASE constant_expr ':' statement
-    ///   | DEFAULT ':' statement
+    /// labeled_statement
+    /// : identifier ':' statement
+    /// | CASE constant_expr ':' statement
+    /// | DEFAULT ':' statement
+    /// ;
+    /// ```
     ///
     /// Result: whether there was an error in the program source
+    ///
     /// Option: empty semicolons still count as a statement (so case labels can work)
     pub fn statement(&mut self) -> SyntaxResult<Stmt> {
         let _guard = self.recursion_check();

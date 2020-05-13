@@ -5,7 +5,7 @@ use crate::intern::InternedStr;
 use crate::parse::Lexer;
 
 impl<T: Lexer> Analyzer<T> {
-    pub fn parse_expr(&mut self, expr: ast::Expr) -> Expr {
+    pub fn expr(&mut self, expr: ast::Expr) -> Expr {
         use ast::ExprType::*;
 
         let _guard = self.recursion_check();
@@ -42,20 +42,20 @@ impl<T: Lexer> Analyzer<T> {
             Div(left, right) => self.binary_helper(left, right, BinaryOp::Div, Self::mul),
             Mod(left, right) => self.binary_helper(left, right, BinaryOp::Mod, Self::mul),
             Assign(lval, rval, token) => {
-                let lval = self.parse_expr(*lval);
-                let rval = self.parse_expr(*rval);
+                let lval = self.expr(*lval);
+                let rval = self.expr(*rval);
                 self.assignment_expr(lval, rval, token, expr.location)
             }
             Add(left, right) => self.binary_helper(left, right, BinaryOp::Add, Self::add),
             Sub(left, right) => self.binary_helper(left, right, BinaryOp::Sub, Self::add),
             FuncCall(func, args) => self.func_call(*func, args),
             Member(struct_, id) => {
-                let struct_ = self.parse_expr(*struct_);
+                let struct_ = self.expr(*struct_);
                 self.struct_member(struct_, id, expr.location)
             }
             // s->p desguars to (*s).p
             DerefMember(inner, id) => {
-                let inner = self.parse_expr(*inner);
+                let inner = self.expr(*inner);
                 let struct_type = match &inner.ctype {
                     Type::Pointer(ctype, _) => match &**ctype {
                         Type::Union(_) | Type::Struct(_) => (**ctype).clone(),
@@ -77,7 +77,7 @@ impl<T: Lexer> Analyzer<T> {
             }
             // `*p` or `a[i]`
             Deref(inner) => {
-                let inner = self.parse_expr(*inner);
+                let inner = self.expr(*inner);
                 match &inner.ctype {
                     Type::Array(t, _) | Type::Pointer(t, _) => {
                         let ctype = (**t).clone();
@@ -95,7 +95,7 @@ impl<T: Lexer> Analyzer<T> {
             // &x
             // 6.5.3.2 Address and indirection operators
             AddressOf(inner) => {
-                let inner = self.parse_expr(*inner);
+                let inner = self.expr(*inner);
                 match inner.expr {
                     // parse &*x as x
                     // footnote 102: &*E is equivalent to E (even if E is a null pointer)
@@ -141,7 +141,7 @@ impl<T: Lexer> Analyzer<T> {
                 self.align(ctype, expr.location)
             }
             AlignofExpr(inner) => {
-                let inner = self.parse_expr(*inner);
+                let inner = self.expr(*inner);
                 self.align(inner.ctype, expr.location)
             }
             SizeofType(type_name) => {
@@ -149,7 +149,7 @@ impl<T: Lexer> Analyzer<T> {
                 self.sizeof(ctype, expr.location)
             }
             SizeofExpr(inner) => {
-                let inner = self.parse_expr(*inner);
+                let inner = self.expr(*inner);
                 self.sizeof(inner.ctype, expr.location)
             }
             BitwiseNot(inner) => self.bitwise_not(*inner),
@@ -171,8 +171,8 @@ impl<T: Lexer> Analyzer<T> {
             // `for(j = i, k = 0; k < n; j++, k++);`
             // see also https://stackoverflow.com/a/43561555/7669110
             Comma(left, right) => {
-                let left = self.parse_expr(*left);
-                let right = self.parse_expr(*right).rval();
+                let left = self.expr(*left);
+                let right = self.expr(*right).rval();
                 Expr {
                     ctype: right.ctype.clone(),
                     lval: false,
@@ -185,7 +185,7 @@ impl<T: Lexer> Analyzer<T> {
             }
         }
     }
-    // only meant for use with `parse_expr`
+    // only meant for use with `expr`
     // TODO: change ast::Expr to use `ExprType::Binary` as well, which would make this unnecessary
     // TODO: these functions should have the locations of the parent expression, not the children
     #[allow(clippy::boxed_local)]
@@ -199,8 +199,8 @@ impl<T: Lexer> Analyzer<T> {
     where
         F: FnOnce(&mut Self, Expr, Expr, BinaryOp) -> Expr,
     {
-        let left = self.parse_expr(*left);
-        let right = self.parse_expr(*right);
+        let left = self.expr(*left);
+        let right = self.expr(*right);
         expr_checker(self, left, right, op)
     }
     // left OP right, where OP is an operation that requires integral types
@@ -273,8 +273,8 @@ impl<T: Lexer> Analyzer<T> {
         token: ComparisonToken,
     ) -> Expr {
         let location = left.location.merge(right.location);
-        let mut left = self.parse_expr(left);
-        let mut right = self.parse_expr(right);
+        let mut left = self.expr(left);
+        let mut right = self.expr(right);
 
         // i == i
         if left.ctype.is_arithmetic() && right.ctype.is_arithmetic() {
@@ -401,7 +401,7 @@ impl<T: Lexer> Analyzer<T> {
     // 6.5.4 Cast operators
     fn explicit_cast(&mut self, expr: ast::Expr, ctype: Type) -> Expr {
         let location = expr.location;
-        let expr = self.parse_expr(expr).rval();
+        let expr = self.expr(expr).rval();
         // (void)0;
         if ctype == Type::Void {
             // casting anything to void is allowed
@@ -487,7 +487,7 @@ impl<T: Lexer> Analyzer<T> {
     // `func(args)`
     // 6.5.2.2 Function calls
     fn func_call(&mut self, func: ast::Expr, args: Vec<ast::Expr>) -> Expr {
-        let mut func = self.parse_expr(func);
+        let mut func = self.expr(func);
         // if fp is a function pointer, fp() desugars to (*fp)()
         match &func.ctype {
             Type::Pointer(pointee, _) if pointee.is_function() => {
@@ -525,7 +525,7 @@ impl<T: Lexer> Analyzer<T> {
         }
         let mut promoted_args = vec![];
         for (i, arg) in args.into_iter().enumerate() {
-            let arg = self.parse_expr(arg);
+            let arg = self.expr(arg);
             let promoted = match functype.params.get(i) {
                 // int f(int); f(1)
                 Some(expected) => arg
@@ -595,7 +595,7 @@ impl<T: Lexer> Analyzer<T> {
     ) -> Expr {
         use crate::data::lex::AssignmentToken;
 
-        let expr = self.parse_expr(expr);
+        let expr = self.expr(expr);
         if let Err(err) = expr.modifiable_lval() {
             self.err(err, location);
         } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
@@ -635,8 +635,8 @@ impl<T: Lexer> Analyzer<T> {
     // a[i] desugars to *(a + i)
     // 6.5.2.1 Array subscripting
     fn index(&mut self, left: ast::Expr, right: ast::Expr, location: Location) -> Expr {
-        let left = self.parse_expr(left).rval();
-        let right = self.parse_expr(right).rval();
+        let left = self.expr(left).rval();
+        let right = self.expr(right).rval();
 
         let (target_type, array, index) = match (&left.ctype, &right.ctype) {
             // p[i]
@@ -674,7 +674,7 @@ impl<T: Lexer> Analyzer<T> {
     // ~expr
     // 6.5.3.3 Unary arithmetic operators
     fn bitwise_not(&mut self, expr: ast::Expr) -> Expr {
-        let expr = self.parse_expr(expr);
+        let expr = self.expr(expr);
         if !expr.ctype.is_integral() {
             self.err(
                 SemanticError::NonIntegralExpr(expr.ctype.clone()),
@@ -694,7 +694,7 @@ impl<T: Lexer> Analyzer<T> {
     // -x and +x
     // 6.5.3.3 Unary arithmetic operators
     fn unary_add(&mut self, expr: ast::Expr, add: bool, location: Location) -> Expr {
-        let expr = self.parse_expr(expr);
+        let expr = self.expr(expr);
         if !expr.ctype.is_arithmetic() {
             self.err(SemanticError::NotArithmetic(expr.ctype.clone()), location);
             return expr;
@@ -719,7 +719,7 @@ impl<T: Lexer> Analyzer<T> {
     // 6.5.3.3 Unary arithmetic operators
     // > The expression !E is equivalent to (0==E).
     fn logical_not(&mut self, expr: ast::Expr) -> Expr {
-        let expr = self.parse_expr(expr);
+        let expr = self.expr(expr);
         let boolean = expr.truthy(&mut self.error_handler);
         debug_assert_eq!(boolean.ctype, Type::Bool);
         let zero = Expr::zero(boolean.location).implicit_cast(&Type::Bool, &mut self.error_handler);
@@ -757,9 +757,9 @@ impl<T: Lexer> Analyzer<T> {
         otherwise: ast::Expr,
         location: Location,
     ) -> Expr {
-        let condition = self.parse_expr(condition).truthy(&mut self.error_handler);
-        let mut then = self.parse_expr(then).rval();
-        let mut otherwise = self.parse_expr(otherwise).rval();
+        let condition = self.expr(condition).truthy(&mut self.error_handler);
+        let mut then = self.expr(then).rval();
+        let mut otherwise = self.expr(otherwise).rval();
 
         if then.ctype.is_arithmetic() && otherwise.ctype.is_arithmetic() {
             let (tmp1, tmp2) = Expr::binary_promote(then, otherwise, &mut self.error_handler);
@@ -1330,8 +1330,8 @@ mod test {
     use super::*;
     use crate::analyze::test::analyze;
     use crate::analyze::*;
-    pub(crate) fn parse_expr(input: &str) -> CompileResult<Expr> {
-        analyze(input, Parser::expr, Analyzer::parse_expr)
+    pub(crate) fn expr(input: &str) -> CompileResult<Expr> {
+        analyze(input, Parser::expr, Analyzer::expr)
     }
     fn get_location(r: &CompileResult<Expr>) -> Location {
         match r {
@@ -1340,21 +1340,21 @@ mod test {
         }
     }
     fn assert_literal(token: Literal) {
-        let parsed = parse_expr(&token.to_string());
+        let parsed = expr(&token.to_string());
         let location = get_location(&parsed);
         assert_eq!(parsed.unwrap(), literal(token, location));
     }
-    fn parse_expr_with_scope<'a>(input: &'a str, variables: &[Symbol]) -> CompileResult<Expr> {
+    fn expr_with_scope<'a>(input: &'a str, variables: &[Symbol]) -> CompileResult<Expr> {
         analyze(input, Parser::expr, |a, expr| {
             for &meta in variables {
                 let id = meta.get().id;
                 a.scope.insert(id, meta);
             }
-            a.parse_expr(expr)
+            a.expr(expr)
         })
     }
     fn assert_type(input: &str, ctype: Type) {
-        match parse_expr(input) {
+        match expr(input) {
             Ok(expr) => assert_eq!(expr.ctype, ctype),
             Err(err) => panic!("error: {}", err.data),
         };
@@ -1362,7 +1362,7 @@ mod test {
     #[test]
     fn test_primaries() {
         assert_literal(Literal::Int(141));
-        let parsed = parse_expr("\"hi there\"");
+        let parsed = expr("\"hi there\"");
 
         assert_eq!(
             parsed,
@@ -1372,7 +1372,7 @@ mod test {
             )),
         );
         assert_literal(Literal::Float(1.5));
-        let parsed = parse_expr("(1)");
+        let parsed = expr("(1)");
         assert_eq!(parsed, Ok(literal(Literal::Int(1), get_location(&parsed))));
         let x = Variable {
             ctype: Type::Int(true),
@@ -1381,7 +1381,7 @@ mod test {
             storage_class: Default::default(),
         }
         .insert();
-        let parsed = parse_expr_with_scope("x", &[x]);
+        let parsed = expr_with_scope("x", &[x]);
         assert_eq!(
             parsed,
             Ok(Expr {
@@ -1417,8 +1417,8 @@ mod test {
             }),
         }
         .insert();
-        assert!(parse_expr_with_scope("f(1,2,3)", &[f]).is_err());
-        let parsed = parse_expr_with_scope("f()", &[f]);
+        assert!(expr_with_scope("f(1,2,3)", &[f]).is_err());
+        let parsed = expr_with_scope("f()", &[f]);
         assert!(match parsed {
             Ok(Expr {
                 expr: ExprType::FuncCall(_, _),
@@ -1429,7 +1429,7 @@ mod test {
     }
     #[test]
     fn test_type_errors() {
-        assert!(parse_expr("1 % 2.0").is_err());
+        assert!(expr("1 % 2.0").is_err());
     }
 
     #[test]
@@ -1438,7 +1438,7 @@ mod test {
         assert_type("(unsigned int)4.2", Type::Int(false));
         assert_type("(float)4.2", Type::Float);
         assert_type("(double)4.2", Type::Double);
-        assert!(parse_expr("(int*)4.2").is_err());
+        assert!(expr("(int*)4.2").is_err());
         assert_type(
             "(int*)(int)4.2",
             Type::Pointer(Box::new(Type::Int(true)), Qualifiers::default()),

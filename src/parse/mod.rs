@@ -76,6 +76,7 @@ impl<I: Lexer> Parser<I> {
 
 impl<I: Lexer> Iterator for Parser<I> {
     type Item = CompileResult<Locatable<ExternalDeclaration>>;
+    /// ```yacc
     /// translation_unit
     /// : external_declaration
     /// | translation_unit external_declaration
@@ -90,6 +91,8 @@ impl<I: Lexer> Iterator for Parser<I> {
     /// : declarator compound_statement
     /// | declaration_specifiers declarator compound_statement
     /// ;
+    /// ```
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#translation_unit>
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // check for pending changes from the last declaration

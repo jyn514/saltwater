@@ -52,6 +52,7 @@ impl<I: Lexer> Parser<I> {
             Ok(declaration) => Ok(Stmt::new(StmtType::Decl(declaration), decl.location)),
         }
     }
+    /// ```yacc
     /// statement
     /// : labeled_statement
     /// | compound_statement
@@ -61,13 +62,12 @@ impl<I: Lexer> Parser<I> {
     /// | jump_statement
     /// ;
     ///
-    /// labeled_statement:
-    ///     identifier ':' statement
-    ///   | CASE constant_expr ':' statement
-    ///   | DEFAULT ':' statement
-    ///
-    /// Result: whether there was an error in the program source
-    /// Option: empty semicolons still count as a statement (so case labels can work)
+    /// labeled_statement
+    /// : identifier ':' statement
+    /// | CASE constant_expr ':' statement
+    /// | DEFAULT ':' statement
+    /// ;
+    /// ```
     pub fn statement(&mut self) -> SyntaxResult<Stmt> {
         let _guard = self.recursion_check();
         // take out 2 guards since this goes through `compound_statement` before calling itself again
@@ -242,6 +242,7 @@ impl<I: Lexer> Parser<I> {
         })
     }
     /// do_while_statement: DO statement WHILE '(' expr ')' ';'
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#iteration_statement>
     fn do_while_statement(&mut self) -> StmtResult {
         let start = self
             .expect(Token::Keyword(Keyword::Do))
@@ -261,7 +262,9 @@ impl<I: Lexer> Parser<I> {
         })
     }
 
-    /// expr_opt: expr ';' | ';'
+    /// `expr_opt: expr ';' | ';'`
+    ///
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#expression_statement>
     ///
     /// `token` is the delimiter that ends the expression;
     /// `token` is usually `;` but sometimes `)` (in `for` loops)
@@ -275,9 +278,12 @@ impl<I: Lexer> Parser<I> {
         }
     }
 
+    /// ```yacc
     /// for_statement:
     ///     FOR '(' expr_opt ';' expr_opt ';' expr_opt ') statement
-    ///   | FOR '(' declaration expr_opt ';' expr_opt ') statement
+    ///   | FOR '(' declaration expr_opt ';' expr_opt ') statement;
+    /// ```
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#iteration_statement>
     fn for_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::For))?;
         let paren = self.expect(Token::LeftParen)?;
@@ -325,7 +331,9 @@ impl<I: Lexer> Parser<I> {
             location: start.location,
         })
     }
-    /// goto_statement: GOTO identifier ';'
+    /// `goto_statement: GOTO identifier ';'`
+    ///
+    /// <http://www.quut.com/c/ANSI-C-grammar-y.html#jump_statement>
     fn goto_statement(&mut self) -> StmtResult {
         let start = self.expect(Token::Keyword(Keyword::Goto)).unwrap();
         let id = self.expect_id()?;

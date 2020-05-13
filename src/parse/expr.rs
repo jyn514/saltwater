@@ -155,6 +155,7 @@ impl<I: Lexer> Parser<I> {
                 // : logical_or_expression
                 // | logical_or_expression '?' expression ':' conditional_expression
                 // ;
+                // <http://www.quut.com/c/ANSI-C-grammar-y.html#conditional_expression>
                 let inner = self.expr()?;
                 self.expect(Token::Colon)?;
                 let right_start = self.unary_expr()?;
@@ -241,6 +242,7 @@ impl<I: Lexer> Parser<I> {
     }
     // postfix_expression: primary_expression postfix_op*
     // primary_expression: '(' expr ')' | 'sizeof' unary_expression | 'alignof' unary_expression | ID | LITERAL
+    // <http://www.quut.com/c/ANSI-C-grammar-y.html#postfix_expression>
     //
     // TODO: `sizeof` and `alignof` should be unary expressions, not primary expressions
     #[inline]

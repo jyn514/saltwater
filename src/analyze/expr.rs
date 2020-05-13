@@ -1,10 +1,9 @@
-use super::Analyzer;
+use super::PureAnalyzer;
 use crate::arch;
 use crate::data::{hir::*, lex::ComparisonToken, *};
 use crate::intern::InternedStr;
-use crate::parse::Lexer;
 
-impl<T: Lexer> Analyzer<T> {
+impl PureAnalyzer {
     pub fn expr(&mut self, expr: ast::Expr) -> Expr {
         use ast::ExprType::*;
 
@@ -1331,7 +1330,7 @@ mod test {
     use crate::analyze::test::analyze;
     use crate::analyze::*;
     pub(crate) fn expr(input: &str) -> CompileResult<Expr> {
-        analyze(input, Parser::expr, Analyzer::expr)
+        analyze(input, Parser::expr, PureAnalyzer::expr)
     }
     fn get_location(r: &CompileResult<Expr>) -> Location {
         match r {

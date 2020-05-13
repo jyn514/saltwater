@@ -528,8 +528,8 @@ impl Eq for Symbol {}
 
 #[cfg(test)]
 mod tests {
-    use crate::analyze::test::analyze;
-    use crate::{Analyzer, Locatable, Parser};
+    use crate::analyze::{test::analyze, PureAnalyzer};
+    use crate::{Locatable, Parser};
 
     #[test]
     fn type_display() {
@@ -545,7 +545,7 @@ mod tests {
         for ty in types.iter() {
             let printed_type_name =
                 analyze(*ty, Parser::type_name, |a, Locatable { data, location }| {
-                    Analyzer::parse_typename_test(a, data, location)
+                    PureAnalyzer::parse_typename_test(a, data, location)
                 })
                 .unwrap()
                 .to_string();

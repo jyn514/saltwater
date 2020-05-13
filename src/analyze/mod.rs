@@ -22,9 +22,25 @@ pub(crate) enum TagEntry {
     Enum(Vec<(InternedStr, i64)>),
 }
 
-/// Used mostly for holding scopes and error handler. Implements `Iterator`.
+/// The driver for `PureAnalyzer`.
+///
+/// This implements `Iterator` and ensures that declarations and errors are returned in the correct error.
+/// Use this if you want to compile an entire C program,
+/// or if it is important to show errors in the correct order relative to declarations.
 pub struct Analyzer<T: Lexer> {
     declarations: Parser<T>,
+    pub inner: PureAnalyzer,
+    /// Whether to print each declaration as it is seen
+    pub debug: bool,
+}
+
+/// A `PureAnalyzer` turns AST types into HIR types.
+///
+/// In particular, it performs type checking and semantic analysis.
+/// Use this if you need to analyze a specific AST data type without parsing a whole program.
+
+// The struct is used mostly for holding scopes and error handler.
+pub struct PureAnalyzer {
     // in case a `Declaration` has multiple declarators
     pending: VecDeque<Locatable<Declaration>>,
     /// objects that are in scope
@@ -56,8 +72,6 @@ pub struct Analyzer<T: Lexer> {
     ///
     /// TODO: this should be a field on `FunctionAnalyzer`, not `Analyzer`
     decl_side_channel: Vec<Locatable<Declaration>>,
-    /// Whether to print each declaration as it is seen
-    debug: bool,
 }
 
 impl<T: Lexer> Iterator for Analyzer<T> {
@@ -67,11 +81,11 @@ impl<T: Lexer> Iterator for Analyzer<T> {
             // Instead of returning `SemanticResult`, the analyzer puts all errors into `error_handler`.
             // This simplifies the logic in `next` greatly.
             // NOTE: this returns errors for a declaration before the declaration itself
-            if let Some(err) = self.error_handler.pop_front() {
+            if let Some(err) = self.inner.error_handler.pop_front() {
                 return Some(Err(err));
             // If we saw `int i, j, k;`, we treated those as different declarations
             // `j, k` will be stored into `pending`
-            } else if let Some(decl) = self.pending.pop_front() {
+            } else if let Some(decl) = self.inner.pending.pop_front() {
                 if self.debug {
                     println!("hir: {}", decl.data);
                 }
@@ -82,9 +96,9 @@ impl<T: Lexer> Iterator for Analyzer<T> {
                 Err(err) => return Some(Err(err)),
                 Ok(decl) => decl,
             };
-            let decls = self.parse_external_declaration(next);
+            let decls = self.inner.parse_external_declaration(next);
             // TODO: if an error occurs, should we still add the declaration to `pending`?
-            self.pending.extend(decls);
+            self.inner.pending.extend(decls);
         }
     }
 }
@@ -93,6 +107,21 @@ impl<I: Lexer> Analyzer<I> {
     pub fn new(parser: Parser<I>, debug: bool) -> Self {
         Self {
             declarations: parser,
+            debug,
+            inner: PureAnalyzer::new(),
+        }
+    }
+}
+
+impl Default for PureAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PureAnalyzer {
+    pub fn new() -> Self {
+        Self {
             error_handler: ErrorHandler::new(),
             scope: Scope::new(),
             tag_scope: Scope::new(),
@@ -100,9 +129,9 @@ impl<I: Lexer> Analyzer<I> {
             initialized: HashSet::new(),
             recursion_guard: RecursionGuard::default(),
             decl_side_channel: Vec::new(),
-            debug,
         }
     }
+
     /// Return all warnings seen so far.
     ///
     /// These warnings are consumed and will not be returned if you call
@@ -1122,12 +1151,12 @@ impl Type {
 /// Analyze a single function
 ///
 /// This is separate from `Analyzer` so that `metadata` does not have to be an `Option`.
-struct FunctionAnalyzer<'a, T: Lexer> {
+struct FunctionAnalyzer<'a> {
     /// the function we are currently compiling.
     /// used for checking return types
     metadata: FunctionData,
     /// We need this for the scopes, as well as for parsing expressions
-    analyzer: &'a mut Analyzer<T>,
+    analyzer: &'a mut PureAnalyzer,
 }
 
 #[derive(Debug)]
@@ -1142,12 +1171,12 @@ struct FunctionData {
     return_type: Type,
 }
 
-impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
+impl FunctionAnalyzer<'_> {
     /// Performs semantic analysis on the function and adds it to `METADATA_STORE`.
     /// Returns the analyzed statements.
     fn analyze(
         func: ast::FunctionDefinition,
-        analyzer: &mut Analyzer<T>,
+        analyzer: &mut PureAnalyzer,
         location: Location,
     ) -> (Symbol, Vec<Stmt>) {
         let parsed_func = analyzer.parse_type(func.specifiers, func.declarator.into(), location);
@@ -1217,7 +1246,7 @@ impl<'a, T: Lexer> FunctionAnalyzer<'a, T> {
     }
 }
 
-impl<T: Lexer> FunctionAnalyzer<'_, T> {
+impl FunctionAnalyzer<'_> {
     fn err(&mut self, err: SemanticError, location: Location) {
         self.analyzer.err(err, location);
     }
@@ -1328,12 +1357,12 @@ pub(crate) mod test {
     ) -> CompileResult<R>
     where
         P: Fn(&mut Parser<PreProcessor<'c>>) -> Result<S, E>,
-        A: Fn(&mut Analyzer<PreProcessor<'c>>, S) -> R,
+        A: Fn(&mut PureAnalyzer, S) -> R,
         CompileError: From<E>,
     {
         let mut p = parser(input);
         let ast = parse_func(&mut p)?;
-        let mut a = Analyzer::new(p, false);
+        let mut a = PureAnalyzer::new();
         let e = analyze_func(&mut a, ast);
         if let Some(err) = a.error_handler.pop_front() {
             return Err(err);
@@ -1365,7 +1394,7 @@ pub(crate) mod test {
                 a_decls += 1;
             }
         }
-        let a_warns = a.error_handler.warnings.len();
+        let a_warns = a.inner.error_handler.warnings.len();
 
         if (a_errs, a_warns, a_decls) != (errs, warnings, decls) {
             println!(
@@ -1373,14 +1402,14 @@ pub(crate) mod test {
                 a_errs, a_warns, a_decls, errs, warnings, decls, input
             );
             println!("note: warnings:");
-            for warning in a.error_handler.warnings {
+            for warning in a.inner.error_handler.warnings {
                 println!("- {}", warning.data);
             }
         };
     }
 
     pub(crate) fn analyze_expr(s: &str) -> CompileResult<Expr> {
-        analyze(s, Parser::expr, Analyzer::expr)
+        analyze(s, Parser::expr, PureAnalyzer::expr)
     }
 
     pub(crate) fn assert_decl_display(left: &str, right: &str) {

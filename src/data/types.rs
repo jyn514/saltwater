@@ -240,13 +240,6 @@ impl Type {
             _ => false,
         }
     }
-    pub(crate) fn member_offset(&self, member: InternedStr) -> Result<u64, ()> {
-        match self {
-            Type::Struct(stype) => Ok(stype.offset(member)),
-            Type::Union(_) => Ok(0),
-            _ => Err(()),
-        }
-    }
 }
 
 impl PartialEq for FunctionType {
@@ -433,12 +426,6 @@ pub(super) fn print_type(
     }
 
     Ok(())
-}
-
-impl FunctionType {
-    pub(crate) fn should_return(&self) -> bool {
-        *self.return_type != Type::Void
-    }
 }
 
 #[cfg(test)]

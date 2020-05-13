@@ -1,13 +1,3 @@
-/// ensure that a condition is true at compile time
-/// thanks to https://nikolaivazquez.com/posts/programming/rust-static-assertions/
-macro_rules! const_assert {
-    ($condition:expr) => {
-        #[deny(const_err)]
-        #[allow(dead_code)]
-        const ASSERT: usize = 0 - !$condition as usize;
-    };
-}
-
 /// A simple macro to create a HashMap with minimal fuss.
 ///
 /// Example:
@@ -44,16 +34,4 @@ macro_rules! vec_deque {
         VecDeque::from(vec![$($x),*])
     });
     ($($x:expr,)*) => ($crate::vec_deque![$($x),*])
-}
-
-/// Return an error from a function
-/// Assumes that 'Locatable' is in scope and that the function it is called in
-/// returns a 'Result<Locatable<T>>'
-macro_rules! semantic_err {
-    ($message: expr, $location: expr $(,)?) => {
-        return Err(CompileError::semantic(Locatable {
-            data: $message,
-            location: $location,
-        }));
-    };
 }

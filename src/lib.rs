@@ -7,8 +7,7 @@
 #![deny(unused_extern_crates)]
 
 use std::collections::{HashMap, VecDeque};
-use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
@@ -306,6 +305,9 @@ pub fn compile<B: Backend>(module: Module<B>, buf: &str, opt: Opt) -> Program<Mo
 
 #[cfg(feature = "codegen")]
 pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {
+    use io::Write;
+    use std::fs::File;
+
     let bytes = product.emit().map_err(Error::Platform)?;
     File::create(output)?
         .write_all(&bytes)

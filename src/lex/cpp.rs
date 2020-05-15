@@ -1,11 +1,37 @@
+//! The preprocessor is made of 3 separate, nested iterators:
+//!
+//! 1. The innermost iterator (`FileProcessor`) deals with multiple files/lexers.
+//!    If one included file runs out of tokens, it seamlessly goes on to the next one.
+//! 2. The middle iterator (`MacroReplacer`) performs macro replacement.
+//! 3. The outermost iterator (`PreProcessor`) deals with preprocessing directives.
+//!    Additionally, because of the weird way I lumped the lexer and preprocessor together,
+//!    it recognizes keywords and turns `Token::Id` into `Token::Keyword` as necessary.
+//!
+//! The `PreProcessor` sometimes does not want to replace its tokens (e.g. for `#if defined(a)`).
+//! In this case, it reaches through the replacer into the `FileProcessor` to drag out those tokens.
+//! Because of this, the `MacroReplacer` cannot have any idea of pending tokens,
+//! or its `pending` will conflict with the `PreProcessor`'s `pending`.
+//!
+//! This supports inputs other than `FileProcessor`,
+//! but at the same time the `MacroReplacer` needs to be able to peek ahead in the input
+//! to see whether a token defined as a function macro is followed by a `(`.
+//! To support both these use cases, I create a new trait called `Peekable`;
+//! the intent is that users of rcc can use arbitrary iterators over `Token` by calling `iter.peekable()`.
+//!
+//! TODO: The `PreProcessor` is very tightly coupled to the `FileProcessor`.
+//!
+//! This is the file for the `PreProcessor`.
+
 use lazy_static::lazy_static;
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use super::files::FileProcessor;
+use super::replace::{Definition, MacroReplacer};
 use super::{Lexer, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
@@ -13,6 +39,11 @@ use crate::data::lex::{Keyword, Literal};
 use crate::data::*;
 use crate::get_str;
 use crate::Files;
+
+enum PendingToken {
+    Replaced(Token),
+    NeedsReplacement(Token),
+}
 
 /// An easier interface for constructing a preprocessor.
 ///
@@ -75,6 +106,20 @@ impl<'a> PreProcessorBuilder<'a> {
     }
 }
 
+enum Unimplemented {}
+impl Iterator for Unimplemented {
+    type Item = CppResult<Token>;
+    fn next(&mut self) -> Option<Self::Item> {
+        None
+    }
+}
+
+impl Default for Unimplemented {
+    fn default() -> Self {
+        unimplemented!()
+    }
+}
+
 /// A preprocessor does textual substitution and deletion on a C source file.
 ///
 /// The C preprocessor, or `cpp`, is tightly tied to C tokenization.
@@ -102,16 +147,6 @@ impl<'a> PreProcessorBuilder<'a> {
 /// }
 /// ```
 pub struct PreProcessor<'a> {
-    /// The preprocessor collaborates extremely closely with the lexer,
-    /// since it sometimes needs to know if a token is followed by whitespace.
-    first_lexer: Lexer,
-    /// Each lexer represents a separate source file that is currently being processed.
-    includes: Vec<Lexer>,
-    /// All known files, including files which have already been read.
-    files: Files,
-    /// Note that this is a simple HashMap and not a Scope, because
-    /// the preprocessor has no concept of scope other than `undef`
-    definitions: HashMap<InternedStr, Definition>,
     error_handler: ErrorHandler,
     /// Keeps track of current `#if` directives
     nested_ifs: Vec<IfState>,
@@ -119,36 +154,11 @@ pub struct PreProcessor<'a> {
     pending: VecDeque<Locatable<PendingToken>>,
     /// The paths to search for `#include`d files
     search_path: Vec<Cow<'a, Path>>,
-    /// The ids seen while replacing the current token.
+    /// The macro-replacer
     ///
-    /// This allows cycle detection. It should be reset after every replacement list
-    /// - _not_ after every token, since otherwise that won't catch some mutual recursion
-    /// See https://github.com/jyn514/rcc/issues/427 for examples.
-    ids_seen: HashSet<InternedStr>,
-}
-
-#[derive(Clone)]
-enum PendingToken {
-    Replacement(Token),
-    Cyclic(Token),
-}
-
-impl PendingToken {
-    fn token(&self) -> &Token {
-        match self {
-            PendingToken::Replacement(t) => t,
-            PendingToken::Cyclic(t) => t,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum Definition {
-    Object(Vec<Token>),
-    Function {
-        params: Vec<InternedStr>,
-        body: Vec<Token>,
-    },
+    /// This is separate from the preprocessor to allow replacing arbitrary streams of tokens,
+    /// not just tokens taken from a `FileProcessor`.
+    replacer: MacroReplacer<FileProcessor>,
 }
 
 impl From<Token> for CppToken {
@@ -219,7 +229,7 @@ enum IfState {
     Else,
 }
 
-type CppResult<T> = Result<Locatable<T>, CompileError>;
+pub(super) type CppResult<T> = Result<Locatable<T>, CompileError>;
 
 impl Iterator for PreProcessor<'_> {
     /// The preprocessor hides all internal complexity and returns only tokens.
@@ -235,8 +245,7 @@ impl Iterator for PreProcessor<'_> {
             } else if let Some(token) = self.pending.pop_front() {
                 self.handle_token(token.data, token.location)
             } else {
-                // Since there are no tokens in `self.pending`, we must not be in the middle of replacing a macro.
-                self.ids_seen.clear();
+                //self.replacer.finished_replacement();
                 // This function does not perform macro replacement,
                 // so if it returns None we got to EOF.
                 match self.next_cpp_token()? {
@@ -250,7 +259,7 @@ impl Iterator for PreProcessor<'_> {
                             }
                         }
                         CppToken::Token(token) => {
-                            self.handle_token(PendingToken::Replacement(token), loc.location)
+                            self.handle_token(PendingToken::NeedsReplacement(token), loc.location)
                         }
                     },
                 }
@@ -271,23 +280,16 @@ impl Iterator for PreProcessor<'_> {
 // let seen_newline = line == self.lexer.line;
 // ```
 impl<'a> PreProcessor<'a> {
-    /// Since there could potentially be multiple lexers (for multiple files),
-    /// this is a convenience function that returns the lexer for the current file.
-    fn lexer(&self) -> &Lexer {
-        self.includes.last().unwrap_or(&self.first_lexer)
-    }
-    /// Same as `lexer()` but `&mut self -> &mut Lexer`.
-    fn lexer_mut(&mut self) -> &mut Lexer {
-        self.includes.last_mut().unwrap_or(&mut self.first_lexer)
-    }
+    /*
     /// Return the next token, taking into account replacements
-    fn next_replacement_token(&mut self) -> Option<CppResult<PendingToken>> {
+    fn next_replacement_token(&mut self) -> Option<CppResult<Token>> {
+        // TODO: need to call `replace()` at some point
         if let Some(replacement) = self.pending.pop_front() {
             return Some(Ok(replacement));
         }
         match self.lexer_mut().next()? {
             Err(err) => Some(Err(err.map(Into::into))),
-            Ok(token) => Some(Ok(token.map(PendingToken::Replacement))),
+            Ok(token) => Some(Ok(token)),
         }
     }
     /// If the next token is a `token`, consume it and return its location.
@@ -297,7 +299,7 @@ impl<'a> PreProcessor<'a> {
             None => Ok(None),
             Some(Err(err)) => Err(err),
             Some(Ok(next)) => {
-                if next.data.token() == &token {
+                if next.data == token {
                     Ok(Some(next.location))
                 } else {
                     self.pending.push_front(next);
@@ -306,31 +308,7 @@ impl<'a> PreProcessor<'a> {
             }
         }
     }
-    /* Convenience functions */
-    #[inline]
-    fn line(&self) -> usize {
-        self.lexer().line
-    }
-    #[inline]
-    fn next_token(&mut self) -> Option<CppResult<Token>> {
-        Some(self.lexer_mut().next()?.map_err(CompileError::from))
-    }
-    #[inline]
-    fn span(&self, start: u32) -> Location {
-        self.lexer().span(start)
-    }
-    #[inline]
-    fn consume_whitespace(&mut self) {
-        self.lexer_mut().consume_whitespace()
-    }
-    #[inline]
-    fn seen_line_token(&self) -> bool {
-        self.lexer().seen_line_token
-    }
-    #[inline]
-    fn offset(&self) -> u32 {
-        self.lexer().location.offset
-    }
+    */
     /// Possibly recursively replace tokens. This also handles turning identifiers into keywords.
     ///
     /// If `token` was defined to an empty token list, this will return `None`.
@@ -339,32 +317,110 @@ impl<'a> PreProcessor<'a> {
         token: PendingToken,
         location: Location,
     ) -> Option<CppResult<Token>> {
-        let (token, needs_replacement) = match token {
-            PendingToken::Replacement(tok) => (tok, true),
-            PendingToken::Cyclic(tok) => (tok, false),
-        };
-        if let Token::Id(id) = token {
-            let mut token = if needs_replacement {
-                self.replace_id(id, location)
-            } else {
-                Some(Ok(Locatable::new(token, location)))
-            };
-            if let Some(Ok(Locatable {
-                data: data @ Token::Id(_),
-                ..
-            })) = &mut token
-            {
-                if let Token::Id(name) = &data {
-                    if let Some(keyword) = KEYWORDS.get(get_str!(name)) {
-                        *data = Token::Keyword(*keyword);
+        //if let Token::Id(id) = token {
+        let mut token = {
+            // if we've already replaced the token once, don't do it again
+            // avoids infinite loops on cyclic defines (#298)
+            match token {
+                PendingToken::Replaced(t) => Some(Ok(Locatable::new(t, location))),
+                PendingToken::NeedsReplacement(token) => {
+                    let mut replacement_list = self.replacer.replace(token, location).into_iter();
+                    //.map(|res| res.map(|t| Locatable::new(t, location)));
+                    let first = replacement_list.next();
+                    for remaining in replacement_list {
+                        match remaining {
+                            Err(err) => self.error_handler.push_back(err),
+                            Ok(token) => self.pending.push_back(token.map(PendingToken::Replaced)),
+                        }
                     }
+                    //self.pending.extend(replacement_list);
+                    first
                 }
             }
-            token
+            /*
+            } else {
+                Some(Ok(Locatable::new(token, location)))
+                */
+        };
+        if let Some(Ok(Locatable {
+            data: data @ Token::Id(_),
+            ..
+        })) = &mut token
+        {
+            if let Token::Id(name) = &data {
+                if let Some(keyword) = KEYWORDS.get(get_str!(name)) {
+                    *data = Token::Keyword(*keyword);
+                }
+            }
+        }
+        token
+        /*
         } else {
             Some(Ok(Locatable::new(token, location)))
         }
+        */
     }
+
+    /*
+    pub fn replace(&mut self, id: InternedStr, start: u32) -> Option<CppResult<Token>> {
+        use std::mem;
+
+        let id = match self.replacer.replace_id(id) {
+            Some(Token::Id(id)) => id,
+            Some(other) => return Some(Ok(Locatable::new(other, self.span(start)))),
+            None => return None,
+        };
+        // NOTE: this does _not_ consume whitespace
+        loop {
+            match self.match_next(Token::LeftParen) {
+                Err(err) => self.error_handler.push_back(err),
+                Ok(None) => return Some(Ok(Locatable::new(Token::Id(id), self.span(start)))),
+                Ok(Some(_)) => break,
+            }
+        }
+        let location = self.span(start);
+        let mut args = Vec::new();
+        let mut current_arg = Vec::new();
+        let mut nested_parens = 1;
+        // now, expand all arguments
+        loop {
+            let next = match self.next_replacement_token() {
+                None => return None,
+                Some(Err(err)) => return Some(Err(err)),
+                Some(Ok(token)) => token,
+            };
+            match next.data.token() {
+                Token::Comma if nested_parens == 1 => {
+                    args.push(mem::take(&mut current_arg));
+                    continue;
+                }
+                Token::RightParen => {
+                    nested_parens -= 1;
+                    if nested_parens == 0 {
+                        args.push(mem::take(&mut current_arg));
+                        break;
+                    }
+                }
+                Token::LeftParen => {
+                    nested_parens += 1;
+                }
+                _ => {}
+            }
+            // TODO: keep the location
+            current_arg.push(next.data);
+        }
+        let mut body = match self.replacer.replace_function(id, args) {
+            Ok(body) => body.into_iter(),
+            Err(err) => return Some(Err(Locatable::new(err.into(), self.span(start)))),
+        };
+        let first = body.next()?;
+        // lol let's just give them all the same span
+        let loc = self.span(start);
+        self.pending.extend(body.map(|tok| loc.with(tok)));
+        self.handle_token(first, loc)
+    }
+    */
+
     /// Create a new preprocessor for the file identified by `file`.
     ///
     /// Note that the preprocessor may add arbitrarily many `#include`d files to `files`,
@@ -405,25 +461,14 @@ impl<'a> PreProcessor<'a> {
         ];
         search_path.extend(user_search_path.into_iter());
 
-        let mut files = Files::new();
-        let chars = chars.into();
-        let filename = filename.into();
-        let source = crate::Source {
-            code: Rc::clone(&chars),
-            path: filename.clone().into(),
-        };
-        let file = files.add(filename, source);
+        let file_processor = FileProcessor::new(chars, filename, debug);
 
         Self {
-            first_lexer: Lexer::new(file, chars, debug),
-            includes: Default::default(),
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
-            ids_seen: Default::default(),
-            definitions,
-            files,
             search_path,
+            replacer: MacroReplacer::with_definitions(file_processor, definitions),
         }
     }
     /// Return the first valid token in the file,
@@ -446,55 +491,47 @@ impl<'a> PreProcessor<'a> {
     /// These warnings are consumed and will not be returned if you call
     /// `warnings()` again.
     pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
-        std::mem::take(&mut self.error_handler.warnings)
+        let mut warnings = std::mem::take(&mut self.error_handler.warnings);
+        warnings.extend(std::mem::take(
+            &mut self.replacer.inner.error_handler.warnings,
+        ));
+        warnings
     }
 
-    /// Return a `Location` representing the end of the first file.
     pub fn eof(&self) -> Location {
-        let lex = &self.first_lexer;
-        Location {
-            span: (lex.chars.len() as u32..lex.chars.len() as u32).into(),
-            file: lex.location.file,
-        }
+        self.replacer.inner.eof()
     }
 
-    /// Return all files loaded by the preprocessor, consuming it in the process.
-    ///
-    /// Files can be loaded by C source using `#include` directives.
     pub fn into_files(self) -> Files {
-        self.files
+        self.replacer.inner.into_files()
     }
 
     /* internal functions */
-    /// Return all tokens from the current position until the end of the current line.
-    ///
-    /// Note that these are _tokens_ and not bytes, so if there are invalid tokens
-    /// on the current line, this will return a lex error.
+    fn span(&self, start: u32) -> Location {
+        self.replacer.inner.span(start)
+    }
+
+    fn lexer(&mut self) -> &Lexer {
+        self.replacer.inner.lexer()
+    }
+
+    fn lexer_mut(&mut self) -> &mut Lexer {
+        self.replacer.inner.lexer_mut()
+    }
+
+    fn line(&self) -> usize {
+        self.replacer.inner.line()
+    }
+
     fn tokens_until_newline(&mut self) -> Vec<CompileResult<Locatable<Token>>> {
-        let mut tokens = Vec::new();
-        let line = self.line();
-        loop {
-            self.consume_whitespace();
-            if self.line() != line {
-                // lines should end with a newline, but in case they don't, don't crash
-                assert!(!self.lexer().seen_line_token || self.lexer_mut().peek().is_none(),
-                    "expected `tokens_until_newline()` to reset `seen_line_token`, but `lexer.peek()` is {:?}",
-                    self.lexer_mut().peek());
-                break;
-            }
-            match self.next_token() {
-                Some(token) => tokens.push(token),
-                None => break,
-            }
-        }
-        tokens
+        self.replacer.inner.tokens_until_newline()
     }
 
     /// If at the start of the line and we see `#directive`, return that directive.
     /// Otherwise, if we see a token (or error), return that error.
     /// Otherwise, return `None`.
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
-        let next_token = loop {
+        let next_token = /*loop {
             // we have to duplicate a bit of code here to avoid borrow errors
             let lexer = self.includes.last_mut().unwrap_or(&mut self.first_lexer);
             match lexer.next() {
@@ -510,20 +547,23 @@ impl<'a> PreProcessor<'a> {
                     }
                 }
             }
-        };
+        }
+            */
+            self.replacer.inner.next()?
+        ;
         let is_hash = match next_token {
             Ok(Locatable {
                 data: Token::Hash, ..
             }) => true,
             _ => false,
         };
-        Some(if is_hash && !self.seen_line_token() {
-            let line = self.line();
-            match self.next_token()? {
+        Some(if is_hash && !self.replacer.inner.seen_line_token() {
+            let line = self.replacer.inner.line();
+            match self.replacer.inner.next()? {
                 Ok(Locatable {
                     data: Token::Id(id),
                     location,
-                }) if self.line() == line => {
+                }) if self.replacer.inner.line() == line => {
                     if let Ok(directive) = DirectiveKind::try_from(get_str!(id)) {
                         Ok(Locatable::new(CppToken::Directive(directive), location))
                     } else {
@@ -531,7 +571,7 @@ impl<'a> PreProcessor<'a> {
                     }
                 }
                 Ok(other) => {
-                    if self.line() == line {
+                    if self.replacer.inner.line() == line {
                         Err(other.map(|tok| CppError::UnexpectedToken("directive", tok).into()))
                     } else {
                         Ok(other.into())
@@ -540,13 +580,13 @@ impl<'a> PreProcessor<'a> {
                 other => other.map(Locatable::from),
             }
         } else {
-            next_token.map(Locatable::from).map_err(|err| err.into())
+            next_token.map(Locatable::from)
         })
     }
     // this function does _not_ perform macro substitution
     fn expect_id(&mut self) -> CppResult<InternedStr> {
-        let location = self.span(self.offset());
-        match self.next_token() {
+        let location = self.replacer.inner.span(self.replacer.inner.offset());
+        match self.replacer.inner.next() {
             Some(Ok(Locatable {
                 data: Token::Id(name),
                 location,
@@ -573,11 +613,11 @@ impl<'a> PreProcessor<'a> {
             }
             IfNDef => {
                 let name = self.expect_id()?;
-                self.if_directive(!self.definitions.contains_key(&name.data), start)
+                self.if_directive(!self.replacer.definitions.contains_key(&name.data), start)
             }
             IfDef => {
                 let name = self.expect_id()?;
-                self.if_directive(self.definitions.contains_key(&name.data), start)
+                self.if_directive(self.replacer.definitions.contains_key(&name.data), start)
             }
             // No matter what happens here, we will not read the tokens from this `#elif`.
             // Either we have been reading an `#if` or an `#elif` or an `#else`;
@@ -623,7 +663,7 @@ impl<'a> PreProcessor<'a> {
             Define => self.define(start),
             Undef => {
                 let name = self.expect_id()?;
-                self.definitions.remove(&name.data);
+                self.replacer.definitions.remove(&name.data);
                 Ok(())
             }
             Pragma => {
@@ -664,143 +704,6 @@ impl<'a> PreProcessor<'a> {
             }
             Include => self.include(start),
         }
-    }
-    /// Recursively replace the current identifier with its definitions.
-    ///
-    /// This does cycle detection by replacing the repeating identifier at least once;
-    /// see the `recursive_macros` test for more details.
-    // TODO: this needs to have an idea of 'pending chars', not just pending tokens
-    fn replace_id(
-        &mut self,
-        mut name: InternedStr,
-        location: Location,
-    ) -> Option<CppResult<Token>> {
-        let start = self.offset();
-        // first step: perform substitution on the ID
-        while let Some(Definition::Object(def)) = self.definitions.get(&name) {
-            self.ids_seen.insert(name);
-            if def.is_empty() {
-                return None;
-            }
-            let first = &def[0];
-
-            if def.len() > 1 {
-                // prepend the new tokens to the pending tokens
-                let mut new_pending = VecDeque::new();
-                new_pending.extend(def[1..].iter().map(|token| {
-                    let pending_tok = if let Token::Id(id) = token {
-                        if self.ids_seen.contains(id) {
-                            PendingToken::Cyclic
-                        } else {
-                            PendingToken::Replacement
-                        }
-                    } else {
-                        PendingToken::Replacement
-                        // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
-                    }(token.clone());
-                    Locatable {
-                        data: pending_tok,
-                        location,
-                    }
-                }));
-                new_pending.append(&mut self.pending);
-                self.pending = new_pending;
-            }
-
-            if let Token::Id(new_name) = first {
-                name = *new_name;
-                // recursive definition, stop now and return the current name.
-                if self.ids_seen.contains(&name) {
-                    break;
-                }
-            } else {
-                return Some(Ok(Locatable::new(first.clone(), self.span(start))));
-            }
-        }
-        // second step: perform function macro replacement
-        self.replace_function(name, start)
-    }
-    fn replace_function(&mut self, name: InternedStr, start: u32) -> Option<CppResult<Token>> {
-        use std::mem;
-        let no_replacement =
-            |this: &mut PreProcessor| Some(Ok(Locatable::new(Token::Id(name), this.span(start))));
-        // check if this should be a function at all
-        if let Some(Definition::Function { .. }) = self.definitions.get(&name) {
-        } else {
-            return no_replacement(self);
-        };
-        // cyclic define, e.g. `#define f(a) f(a + 1)`
-        if self.ids_seen.contains(&name) {
-            return no_replacement(self);
-        }
-        loop {
-            match self.match_next(Token::LeftParen) {
-                Err(err) => self.error_handler.push_back(err),
-                Ok(None) => return no_replacement(self),
-                Ok(Some(_)) => break,
-            }
-        }
-
-        self.ids_seen.insert(name);
-        let location = self.span(start);
-        let mut args = Vec::new();
-        let mut current_arg = Vec::new();
-        let mut nested_parens = 1;
-        // now, expand all arguments
-        loop {
-            let next = match self.next_replacement_token() {
-                None => return None,
-                Some(Err(err)) => return Some(Err(err)),
-                Some(Ok(token)) => token,
-            };
-            match next.data.token() {
-                Token::Comma if nested_parens == 1 => {
-                    args.push(mem::take(&mut current_arg));
-                    continue;
-                }
-                Token::RightParen => {
-                    nested_parens -= 1;
-                    if nested_parens == 0 {
-                        args.push(mem::take(&mut current_arg));
-                        break;
-                    }
-                }
-                Token::LeftParen => {
-                    nested_parens += 1;
-                }
-                _ => {}
-            }
-            current_arg.push(next);
-        }
-        let (params, body) = match self.definitions.get(&name) {
-            Some(Definition::Function { params, body }) => (params, body),
-            _ => unreachable!("already checked this above"),
-        };
-        if args.len() != params.len() {
-            return Some(Err(CompileError::new(
-                CppError::TooFewArguments(args.len(), params.len()).into(),
-                self.span(start),
-            )));
-        }
-        for token in body {
-            if let Token::Id(id) = *token {
-                // #define f(a) { a + 1 } \n f(b) => b + 1
-                if let Some(index) = params.iter().position(|&param| param == id) {
-                    let replacement = args[index].clone();
-                    self.pending.extend(replacement);
-                } else {
-                    let token = PendingToken::Replacement(Token::Id(id));
-                    self.pending.push_back(location.with(token));
-                }
-            } else {
-                self.pending
-                    .push_back(location.with(PendingToken::Replacement(token.clone())));
-            }
-        }
-        // NOTE: no errors could have occurred while parsing this function body
-        // since they would have returned before getting here.
-        let first = self.pending.pop_front()?;
-        self.handle_token(first.data, first.location)
     }
     // convienience function around cpp_expr
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
@@ -894,43 +797,69 @@ impl<'a> PreProcessor<'a> {
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn cpp_expr(&mut self) -> Result<hir::Expr, CompileError> {
-        let start = self.offset();
+        let start = self.replacer.inner.offset();
         let defined = "defined".into();
 
-        let lex_tokens = self.tokens_until_newline();
+        let mut lex_tokens = self.tokens_until_newline().into_iter();
         let mut cpp_tokens = Vec::with_capacity(lex_tokens.len());
-        let mut lex_tokens = lex_tokens.into_iter();
+        //assert!(self.replacer.pending.is_empty());
+        /*
+        let mut lex_tokens = lex_tokens
+            .into_iter()
+            .map(|res| res.map(|t| replacer.replace(t.data, t.location)))
+            .flatten()
+            .flatten();
+            */
+        //.collect::<Vec<_>>()
+        //.into_iter();
         while let Some(token) = lex_tokens.next() {
             let token = match token {
+                // #if defined(a)
                 Ok(Locatable {
                     data: Token::Id(name),
                     location,
                 }) if name == defined => {
                     let def = Self::defined(&mut lex_tokens, &mut cpp_tokens, location)?;
-                    let literal = if self.definitions.contains_key(&def) {
+                    let literal = if self.replacer.definitions.contains_key(&def) {
                         Literal::Int(1)
                     } else {
                         Literal::Int(0)
                     };
                     Ok(location.with(Token::Literal(literal)))
                 }
+                /*
+                // #if a
                 Ok(Locatable {
-                    data: Token::Id(name),
+                    data: Token::Id(_),
                     location,
-                }) => match self.replace_id(name, location) {
-                    None => continue,
-                    Some(Err(err)) => Err(err),
-                    Some(Ok(mut token)) => {
-                        if let Token::Id(_) = &token.data {
-                            token.data = Token::Literal(Literal::Int(0));
-                        }
-                        Ok(token)
-                    }
-                },
+                }) => {
+                    let token = Token::Literal(Literal::Int(0));
+                    Ok(Locatable::new(token, location))
+                }
+                */
+                // #if 1
                 _ => token,
             };
             cpp_tokens.push(token);
         }
+        let mut cpp_tokens: Vec<_> = cpp_tokens
+            .into_iter()
+            .map(|res| res.map(|t| self.replacer.replace(t.data, t.location)))
+            .flatten()
+            .flatten()
+            .map(|token| {
+                if let Ok(Locatable {
+                    data: Token::Id(_),
+                    location,
+                }) = token
+                {
+                    let token = Token::Literal(Literal::Int(0));
+                    Ok(Locatable::new(token, location))
+                } else {
+                    token
+                }
+            })
+            .collect();
         if cpp_tokens.is_empty() {
             return Err(CompileError::new(
                 CppError::EmptyExpression.into(),
@@ -1033,7 +962,7 @@ impl<'a> PreProcessor<'a> {
     fn fn_args(&mut self, start: u32) -> Result<Vec<InternedStr>, Locatable<Error>> {
         let mut arguments = Vec::new();
         loop {
-            match self.next_token() {
+            match self.replacer.inner.next() {
                 None => {
                     return Err(CompileError::new(
                         CppError::EndOfFile("identifier or ')'").into(),
@@ -1049,10 +978,11 @@ impl<'a> PreProcessor<'a> {
                 Some(Ok(Locatable {
                     data: Token::Ellipsis,
                     ..
-                })) => self.error_handler.warn(
-                    crate::data::error::Warning::IgnoredVariadic,
-                    self.lexer().span(start),
-                ),
+                })) => {
+                    let location = self.lexer().span(start);
+                    self.error_handler
+                        .warn(crate::data::error::Warning::IgnoredVariadic, location);
+                }
                 Some(Ok(Locatable {
                     data: Token::Id(id),
                     ..
@@ -1073,7 +1003,7 @@ impl<'a> PreProcessor<'a> {
                 continue;
             }
             // some other token
-            match self.next_token() {
+            match self.replacer.inner.next() {
                 None => {
                     return Err(CompileError::new(
                         CppError::EndOfFile("identifier or ')'").into(),
@@ -1101,7 +1031,7 @@ impl<'a> PreProcessor<'a> {
         };
 
         let line = self.line();
-        self.consume_whitespace();
+        self.replacer.inner.consume_whitespace();
         if self.line() != line {
             return Err(self.span(start).error(CppError::EmptyDefine));
         }
@@ -1120,13 +1050,16 @@ impl<'a> PreProcessor<'a> {
                 Vec::new()
             };
             let body = body(self)?;
-            self.definitions
+            self.replacer
+                .definitions
                 .insert(id.data, Definition::Function { params, body });
             Ok(())
         } else {
             // object macro
             let tokens = body(self)?;
-            self.definitions.insert(id.data, Definition::Object(tokens));
+            self.replacer
+                .definitions
+                .insert(id.data, Definition::Object(tokens));
             Ok(())
         }
     }
@@ -1142,7 +1075,7 @@ impl<'a> PreProcessor<'a> {
         } else if lexer.match_next(b'<') {
             false
         } else {
-            let (id, location) = match self.next_token() {
+            let (id, location) = match self.replacer.inner.next() {
                 Some(Ok(Locatable {
                     data: Token::Id(id),
                     location,
@@ -1161,7 +1094,12 @@ impl<'a> PreProcessor<'a> {
                     ))
                 }
             };
-            match self.replace_id(id, location) {
+            match self
+                .replacer
+                .replace(Token::Id(id), location)
+                .into_iter()
+                .next()
+            {
                 // local
                 Some(Ok(Locatable {
                     data: Token::Literal(Literal::Str(_)),
@@ -1171,14 +1109,14 @@ impl<'a> PreProcessor<'a> {
                 Some(Ok(Locatable {
                     data: Token::Comparison(ComparisonToken::Less),
                     ..
-                })) => false,
+                })) => unimplemented!("#include for macros"),
+                Some(Err(err)) => return Err(err),
                 Some(Ok(other)) => {
                     return Err(CompileError::new(
                         CppError::UnexpectedToken("include file", other.data).into(),
                         other.location,
                     ))
                 }
-                Some(Err(err)) => return Err(err),
                 None => {
                     return Err(CompileError::new(
                         CppError::EndOfFile("include file").into(),
@@ -1226,7 +1164,7 @@ impl<'a> PreProcessor<'a> {
         }
         // local include: #include "dict.h"
         if local {
-            let current_path = &self.files.source(self.lexer().location.file).path;
+            let current_path = self.replacer.inner.path();
             let relative_path = &current_path
                 .parent()
                 .unwrap_or_else(|| std::path::Path::new(""));
@@ -1269,9 +1207,12 @@ impl<'a> PreProcessor<'a> {
             path: resolved,
             code: Rc::clone(&src),
         };
+        self.replacer.inner.add_file(filename, source);
+        /*
         let id = self.files.add(filename, source);
         self.includes
             .push(Lexer::new(id, src, self.first_lexer.debug));
+            */
         Ok(())
     }
     // Returns every byte between the current position and the next `byte`.
@@ -1279,7 +1220,7 @@ impl<'a> PreProcessor<'a> {
     fn bytes_until(&mut self, byte: u8) -> Vec<u8> {
         let mut bytes = Vec::new();
         loop {
-            match self.lexer_mut().next_char() {
+            match self.replacer.inner.lexer_mut().next_char() {
                 Some(c) if c != byte => bytes.push(c),
                 _ => return bytes,
             }

@@ -190,6 +190,8 @@ pub enum Token {
     Literal(Literal),
     Id(InternedStr),
 
+    Whitespace(String),
+
     // Misc
     Ellipsis,
     StructDeref, // ->
@@ -352,6 +354,8 @@ impl std::fmt::Display for Token {
             Literal(lit) => write!(f, "{}", lit),
             Id(id) => write!(f, "{}", id),
             Keyword(k) => write!(f, "{}", k),
+
+            Whitespace(s) => write!(f, "{}", s),
 
             Ellipsis => write!(f, "..."),
             StructDeref => write!(f, "->"),

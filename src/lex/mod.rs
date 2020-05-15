@@ -187,12 +187,15 @@ impl Lexer {
     ///
     /// Before: b"    // some comment\n /*multi comment*/hello   "
     /// After:  b"hello   "
-    fn consume_whitespace(&mut self) {
+    fn consume_whitespace(&mut self) -> String {
         // there may be comments following whitespace
+        let mut whitespace = String::new();
         loop {
             // whitespace
             while self.peek().map_or(false, |c| c.is_ascii_whitespace()) {
-                self.next_char();
+                if let Some(c) = self.next_char() {
+                    whitespace.push(c.into());
+                }
             }
             // comments
             if self.peek() == Some(b'/') {
@@ -211,6 +214,7 @@ impl Lexer {
                 break;
             }
         }
+        whitespace
     }
     /// Remove all characters between now and the next b'\n' character.
     ///
@@ -664,7 +668,17 @@ impl Iterator for Lexer {
             return None;
         }
 
-        self.consume_whitespace();
+        {
+            let span_start = self.location.offset;
+            let data = self.consume_whitespace();
+            if !data.is_empty() {
+                return Some(Ok(Locatable {
+                    data: Token::Whitespace(data),
+                    location: self.span(span_start),
+                }));
+            }
+        }
+
         let c = self.next_char().and_then(|c| {
             let span_start = self.location.offset - 1;
             // this giant switch is most of the logic

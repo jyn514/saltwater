@@ -6,6 +6,7 @@ use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use super::replace::{Definition, MacroReplacer, PendingToken};
 use super::{Lexer, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
@@ -13,7 +14,6 @@ use crate::data::lex::{Keyword, Literal};
 use crate::data::*;
 use crate::get_str;
 use crate::Files;
-use super::replace::{Definition, PendingToken, MacroReplacer};
 
 /// An easier interface for constructing a preprocessor.
 ///

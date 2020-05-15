@@ -320,7 +320,7 @@ impl<'a> PreProcessor<'a> {
         self.lexer().span(start)
     }
     #[inline]
-    fn consume_whitespace(&mut self) {
+    fn consume_whitespace(&mut self) -> String {
         self.lexer_mut().consume_whitespace()
     }
     #[inline]

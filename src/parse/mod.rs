@@ -141,6 +141,7 @@ impl<I: Lexer> Parser<I> {
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
         loop {
             match self.tokens.next() {
+                Some(Ok(Locatable {data: Token::Whitespace(_), location: _})) => continue,
                 Some(Ok(mut token)) => {
                     self.last_location = token.location;
                     // This is _such_ a hack

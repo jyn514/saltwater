@@ -648,6 +648,16 @@ impl Lexer {
         }
         Ok(Token::Id(InternedStr::get_or_intern(id)))
     }
+
+    /// Returns next token in stream which is not whitespace
+    pub fn next_non_whitespace(&mut self) -> Option<LexResult<Locatable<Token>>> {
+        loop {
+            match self.next() {
+                Some(Ok(Locatable {data: Token::Whitespace(_), location: _})) => continue,
+                other => break other,
+            }
+        }
+    }
 }
 
 impl Iterator for Lexer {

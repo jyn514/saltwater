@@ -7,11 +7,13 @@ use super::data::{error::LexError, lex::*, *};
 use super::intern::InternedStr;
 
 mod cpp;
+mod replace;
 #[cfg(test)]
 mod tests;
 // https://github.com/rust-lang/rust/issues/64762
 #[allow(unreachable_pub)]
-pub use cpp::{Definition, PreProcessor, PreProcessorBuilder};
+pub use cpp::{PreProcessor, PreProcessorBuilder};
+pub use replace::Definition;
 
 type LexResult<T = Token> = Result<T, Locatable<LexError>>;
 

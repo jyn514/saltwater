@@ -1285,6 +1285,16 @@ impl<'a> PreProcessor<'a> {
             }
         }
     }
+
+    /// Returns next token in stream which is not whitespace
+    pub fn next_non_whitespace(&mut self) -> Option<CppResult<Token>> {
+        loop {
+            match self.next() {
+                Some(Ok(Locatable {data: Token::Whitespace(_), location: _})) => continue,
+                other => break other,
+            }
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -1407,7 +1417,7 @@ mod tests {
 
     macro_rules! assert_err {
         ($src: expr, $err: pat, $description: expr $(,)?) => {
-            match cpp($src).next().unwrap().unwrap_err().data {
+            match cpp($src).next_non_whitespace().unwrap().unwrap_err().data {
                 Error::PreProcessor($err) => {}
                 Error::PreProcessor(other) => panic!("expected {}, got {}", $description, other),
                 _ => panic!("expected cpp err"),
@@ -1427,9 +1437,11 @@ mod tests {
         assert_eq!(
             cpp(src)
                 .map(|res| res.map(|token| token.data))
+                .filter(|res| !matches!(res, Ok(Token::Whitespace(_))))
                 .collect::<Vec<_>>(),
             cpp(cpp_src)
                 .map(|res| res.map(|token| token.data))
+                .filter(|res| !matches!(res, Ok(Token::Whitespace(_))))
                 .collect::<Vec<_>>(),
             "{} is not the same as {}",
             src,

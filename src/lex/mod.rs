@@ -653,7 +653,10 @@ impl Lexer {
     pub fn next_non_whitespace(&mut self) -> Option<LexResult<Locatable<Token>>> {
         loop {
             match self.next() {
-                Some(Ok(Locatable {data: Token::Whitespace(_), location: _})) => continue,
+                Some(Ok(Locatable {
+                    data: Token::Whitespace(_),
+                    location: _,
+                })) => continue,
                 other => break other,
             }
         }
@@ -885,7 +888,8 @@ impl Iterator for Lexer {
                         .with(LexError::UnknownToken(x as char))));
                 }
             };
-            self.seen_line_token |= data != Token::Hash;
+            // We've seen a token if this isn't # and this isn't whitespace
+            self.seen_line_token |= data != Token::Hash && !matches!(data, Token::Whitespace(_));
             Some(Ok(Locatable {
                 data,
                 location: self.span(span_start),

@@ -927,6 +927,10 @@ impl<'a> PreProcessor<'a> {
                         Ok(token)
                     }
                 },
+                Ok(Locatable {
+                    data: Token::Whitespace(_),
+                    ..
+                }) => continue,
                 _ => token,
             };
             cpp_tokens.push(token);
@@ -1290,7 +1294,10 @@ impl<'a> PreProcessor<'a> {
     pub fn next_non_whitespace(&mut self) -> Option<CppResult<Token>> {
         loop {
             match self.next() {
-                Some(Ok(Locatable {data: Token::Whitespace(_), location: _})) => continue,
+                Some(Ok(Locatable {
+                    data: Token::Whitespace(_),
+                    location: _,
+                })) => continue,
                 other => break other,
             }
         }

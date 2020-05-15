@@ -4,8 +4,14 @@ use std::sync::RwLock;
 use lasso::{Rodeo, Spur};
 use lazy_static::lazy_static;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct InternedStr(pub Spur);
+
+impl fmt::Debug for InternedStr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
 
 lazy_static! {
     pub static ref STRINGS: RwLock<Rodeo<Spur>> = RwLock::new(Rodeo::default());

@@ -117,6 +117,8 @@ pub struct PreProcessor<'a> {
     search_path: Vec<Cow<'a, Path>>,
     /// The tokens that have been `#define`d and are currently being substituted
     pending: VecDeque<Locatable<PendingToken>>,
+    /// The macro-replacer
+    replacer: MacroReplacer,
 }
 
 impl From<Token> for CppToken {
@@ -313,7 +315,7 @@ impl<'a> PreProcessor<'a> {
         };
         if let Token::Id(id) = token {
             let mut token = if needs_replacement {
-                self.replace_id(id, location)
+                self.replacer.replace_id(id).map(|t| Ok(Locatable::new(t, location)))
             } else {
                 Some(Ok(Locatable::new(token, location)))
             };
@@ -333,6 +335,14 @@ impl<'a> PreProcessor<'a> {
             Some(Ok(Locatable::new(token, location)))
         }
     }
+
+    /*
+    pub fn replace(&mut self, id: InternedStr) -> Option<Token> {
+        let obj_macro = self.replacer.replace_id(id)?;
+        self.replacer.replace_function(obj_macro)
+    }
+    */
+
     /// Create a new preprocessor for the file identified by `file`.
     ///
     /// Note that the preprocessor may add arbitrarily many `#include`d files to `files`,
@@ -388,10 +398,9 @@ impl<'a> PreProcessor<'a> {
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
-            definitions,
             files,
             search_path,
-            replacer: MacroReplacer::new(),
+            replacer: MacroReplacer::with_definitions(definitions),
         }
     }
     /// Return the first valid token in the file,
@@ -541,11 +550,11 @@ impl<'a> PreProcessor<'a> {
             }
             IfNDef => {
                 let name = self.expect_id()?;
-                self.if_directive(!self.definitions.contains_key(&name.data), start)
+                self.if_directive(!self.replacer.definitions.contains_key(&name.data), start)
             }
             IfDef => {
                 let name = self.expect_id()?;
-                self.if_directive(self.definitions.contains_key(&name.data), start)
+                self.if_directive(self.replacer.definitions.contains_key(&name.data), start)
             }
             // No matter what happens here, we will not read the tokens from this `#elif`.
             // Either we have been reading an `#if` or an `#elif` or an `#else`;
@@ -591,7 +600,7 @@ impl<'a> PreProcessor<'a> {
             Define => self.define(start),
             Undef => {
                 let name = self.expect_id()?;
-                self.definitions.remove(&name.data);
+                self.replacer.definitions.remove(&name.data);
                 Ok(())
             }
             Pragma => {
@@ -738,7 +747,7 @@ impl<'a> PreProcessor<'a> {
                     location,
                 }) if name == defined => {
                     let def = Self::defined(&mut lex_tokens, &mut cpp_tokens, location)?;
-                    let literal = if self.definitions.contains_key(&def) {
+                    let literal = if self.replacer.definitions.contains_key(&def) {
                         Literal::Int(1)
                     } else {
                         Literal::Int(0)
@@ -748,14 +757,13 @@ impl<'a> PreProcessor<'a> {
                 Ok(Locatable {
                     data: Token::Id(name),
                     location,
-                }) => match self.replace_id(name, location) {
+                }) => match self.replacer.replace_id(name) {
                     None => continue,
-                    Some(Err(err)) => Err(err),
-                    Some(Ok(mut token)) => {
-                        if let Token::Id(_) = &token.data {
-                            token.data = Token::Literal(Literal::Int(0));
+                    Some(mut token) => {
+                        if let Token::Id(_) = &token {
+                            token = Token::Literal(Literal::Int(0));
                         }
-                        Ok(token)
+                        Ok(Locatable::new(token, location))
                     }
                 },
                 _ => token,
@@ -951,13 +959,13 @@ impl<'a> PreProcessor<'a> {
                 Vec::new()
             };
             let body = body(self)?;
-            self.definitions
+            self.replacer.definitions
                 .insert(id.data, Definition::Function { params, body });
             Ok(())
         } else {
             // object macro
             let tokens = body(self)?;
-            self.definitions.insert(id.data, Definition::Object(tokens));
+            self.replacer.definitions.insert(id.data, Definition::Object(tokens));
             Ok(())
         }
     }
@@ -992,24 +1000,17 @@ impl<'a> PreProcessor<'a> {
                     ))
                 }
             };
-            match self.replace_id(id, location) {
+            match self.replacer.replace_id(id) {
                 // local
-                Some(Ok(Locatable {
-                    data: Token::Literal(Literal::Str(_)),
-                    ..
-                })) => unimplemented!("#include for macros"), //return self.include_path(id, true, start),
+                Some(Token::Literal(Literal::Str(_))) => unimplemented!("#include for macros"), //return self.include_path(id, true, start),
                 // system
-                Some(Ok(Locatable {
-                    data: Token::Comparison(ComparisonToken::Less),
-                    ..
-                })) => false,
-                Some(Ok(other)) => {
+                Some(Token::Comparison(ComparisonToken::Less)) => false,
+                Some(other) => {
                     return Err(CompileError::new(
-                        CppError::UnexpectedToken("include file", other.data).into(),
-                        other.location,
+                        CppError::UnexpectedToken("include file", other).into(),
+                        location,
                     ))
                 }
-                Some(Err(err)) => return Err(err),
                 None => {
                     return Err(CompileError::new(
                         CppError::EndOfFile("include file").into(),

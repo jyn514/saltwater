@@ -2,8 +2,7 @@
 //!
 //! This module does no parsing and accepts only tokens.
 
-use super::cpp::CppResult;
-use crate::{error::CppError, CompileError, InternedStr, Token};
+use crate::{error::CppError, InternedStr, Token};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Default)]
@@ -16,14 +15,14 @@ pub struct MacroReplacer {
     ids_seen: HashSet<InternedStr>,
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
-    definitions: HashMap<InternedStr, Definition>,
+    pub definitions: HashMap<InternedStr, Definition>,
     /// The tokens that have been `#define`d and are currently being substituted
     pending: VecDeque<PendingToken>,
 }
 
 // TODO: I don't think this is necessary? we can use `ids_seen` instead
 #[derive(Clone)]
-pub(super) enum PendingToken {
+pub enum PendingToken {
     Replacement(Token),
     Cyclic(Token),
 }
@@ -34,6 +33,12 @@ impl PendingToken {
             PendingToken::Replacement(t) => t,
             PendingToken::Cyclic(t) => t,
         }
+    }
+}
+
+impl From<Token> for PendingToken {
+    fn from(token: Token) -> Self {
+        PendingToken::Replacement(token)
     }
 }
 
@@ -51,6 +56,13 @@ impl MacroReplacer {
         Self::default()
     }
 
+    pub fn with_definitions(definitions: HashMap<InternedStr, Definition>) -> Self {
+        Self {
+            definitions,
+            ..Self::default()
+        }
+    }
+
     /// This function must be called after a single replacement list has finished being processed.
     pub(super) fn finished_replacement(&mut self) {
         self.ids_seen.clear();
@@ -59,17 +71,14 @@ impl MacroReplacer {
     /// Possibly recursively replace tokens. This also handles turning identifiers into keywords.
     ///
     /// If `token` was defined to an empty token list, this will return `None`.
-    fn handle_token(
-        &mut self,
-        token: PendingToken,
-    ) -> Option<Token> {
+    fn handle_token(&mut self, token: PendingToken) -> Option<Token> {
         let (token, needs_replacement) = match token {
             PendingToken::Replacement(tok) => (tok, true),
             PendingToken::Cyclic(tok) => (tok, false),
         };
         if let Token::Id(id) = token {
             if needs_replacement {
-                return self.replace_id(id)
+                return self.replace_id(id);
             }
         }
         Some(token)
@@ -80,10 +89,7 @@ impl MacroReplacer {
     /// This does cycle detection by replacing the repeating identifier at least once;
     /// see the `recursive_macros` test for more details.
     // TODO: this needs to have an idea of 'pending chars', not just pending tokens
-    fn replace_id(
-        &mut self,
-        mut name: InternedStr,
-    ) -> Option<Token> {
+    pub fn replace_id(&mut self, mut name: InternedStr) -> Option<Token> {
         // first step: perform substitution on the ID
         while let Some(Definition::Object(def)) = self.definitions.get(&name) {
             self.ids_seen.insert(name);
@@ -136,42 +142,49 @@ impl MacroReplacer {
         //self.replace_function(name, start)
     }
 
-    fn replace_function(&mut self, name: InternedStr, arguments: Vec<Vec<PendingToken>>) -> CppResult<Vec<Token>> {
-        use std::mem;
-        use crate::Locatable;
-
-        let no_replacement =
-            |this: &mut Self| Some(Ok(Locatable::new(Token::Id(name), this.span(start))));
+    pub fn replace_function(
+        &mut self,
+        name: InternedStr,
+        arguments: Vec<Vec<PendingToken>>,
+    ) -> Result<Vec<PendingToken>, CppError> {
+        let args = arguments;
+        let no_replacement = |args: Vec<Vec<PendingToken>>| {
+            let mut args = args.into_iter();
+            let mut tokens = vec![Token::Id(name).into()];
+            tokens.push(Token::LeftParen.into());
+            if let Some(mut first) = args.next() {
+                tokens.append(&mut first);
+            }
+            for mut arg in args {
+                tokens.push(Token::Comma.into());
+                tokens.append(&mut arg)
+            }
+            tokens.push(Token::RightParen.into());
+            Ok(tokens)
+        };
         // check if this should be a function at all
         if let Some(Definition::Function { .. }) = self.definitions.get(&name) {
         } else {
-            return no_replacement(self);
+            return no_replacement(args);
         };
         // cyclic define, e.g. `#define f(a) f(a + 1)`
         if self.ids_seen.contains(&name) {
-            return no_replacement(self);
-        }
-        loop {
-            match self.match_next(Token::LeftParen) {
-                Err(err) => self.error_handler.push_back(err),
-                Ok(None) => return no_replacement(self),
-                Ok(Some(_)) => break,
-            }
+            return no_replacement(args);
         }
 
         self.ids_seen.insert(name);
-        let location = self.span(start);
-        let mut args = Vec::new();
-        let mut current_arg = Vec::new();
-        let mut nested_parens = 1;
+        //let mut args = Vec::new();
+        //let mut current_arg = Vec::new();
+        //let body = unimplemented!();
+        //let mut nested_parens = 1;
         // now, expand all arguments
+        /*
         loop {
-            let next = match self.next_replacement_token() {
-                None => return None,
-                Some(Err(err)) => return Some(Err(err)),
-                Some(Ok(token)) => token,
+            let next = match arguments.next() {
+                None => return body,
+                Some(token) => token,
             };
-            match next.data.token() {
+            match next {
                 Token::Comma if nested_parens == 1 => {
                     args.push(mem::take(&mut current_arg));
                     continue;
@@ -190,16 +203,14 @@ impl MacroReplacer {
             }
             current_arg.push(next);
         }
+        */
         let (params, body) = match self.definitions.get(&name) {
             Some(Definition::Function { params, body }) => (params, body),
             _ => unreachable!("already checked this above"),
         };
         if args.len() != params.len() {
             // booo, this is the _only_ error in the whole replacer
-            return Some(Err(CompileError::new(
-                CppError::TooFewArguments(args.len(), params.len()).into(),
-                self.span(start),
-            )));
+            return Err(CppError::TooFewArguments(args.len(), params.len()).into());
         }
         for token in body {
             if let Token::Id(id) = *token {
@@ -209,17 +220,19 @@ impl MacroReplacer {
                     self.pending.extend(replacement);
                 } else {
                     let token = PendingToken::Replacement(Token::Id(id));
-                    self.pending.push_back(location.with(token));
+                    self.pending.push_back(token);
                 }
             } else {
                 self.pending
-                    .push_back(location.with(PendingToken::Replacement(token.clone())));
+                    .push_back(PendingToken::Replacement(token.clone()));
             }
         }
+        // TODO: this collect is bad
+        Ok(std::mem::take(&mut self.pending).into_iter().collect())
         // NOTE: no errors could have occurred while parsing this function body
         // since they would have returned before getting here.
-        let first = self.pending.pop_front()?;
-        self.handle_token(first.data, first.location)
+        //let first = self.pending.pop_front()?;
+        //self.handle_token(first.data, first.location)
     }
 
     /*

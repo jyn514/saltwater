@@ -210,7 +210,7 @@ impl MacroReplacer {
         };
         if args.len() != params.len() {
             // booo, this is the _only_ error in the whole replacer
-            return Err(CppError::TooFewArguments(args.len(), params.len()).into());
+            return Err(CppError::TooFewArguments(args.len(), params.len()));
         }
         for token in body {
             if let Token::Id(id) = *token {

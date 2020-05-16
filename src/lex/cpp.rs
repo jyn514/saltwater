@@ -315,7 +315,9 @@ impl<'a> PreProcessor<'a> {
         };
         if let Token::Id(id) = token {
             let mut token = if needs_replacement {
-                self.replacer.replace_id(id).map(|t| Ok(Locatable::new(t, location)))
+                self.replacer
+                    .replace_id(id)
+                    .map(|t| Ok(Locatable::new(t, location)))
             } else {
                 Some(Ok(Locatable::new(token, location)))
             };
@@ -336,12 +338,63 @@ impl<'a> PreProcessor<'a> {
         }
     }
 
-    /*
-    pub fn replace(&mut self, id: InternedStr) -> Option<Token> {
-        let obj_macro = self.replacer.replace_id(id)?;
-        self.replacer.replace_function(obj_macro)
+    pub fn replace(&mut self, id: InternedStr, start: u32) -> Option<CppResult<Token>> {
+        use std::mem;
+
+        let id = match self.replacer.replace_id(id) {
+            Some(Token::Id(id)) => id,
+            Some(other) => return Some(Ok(Locatable::new(other, self.span(start)))),
+            None => return None,
+        };
+        // NOTE: this does _not_ consume whitespace
+        loop {
+            match self.match_next(Token::LeftParen) {
+                Err(err) => self.error_handler.push_back(err),
+                Ok(None) => return Some(Ok(Locatable::new(Token::Id(id), self.span(start)))),
+                Ok(Some(_)) => break,
+            }
+        }
+        let location = self.span(start);
+        let mut args = Vec::new();
+        let mut current_arg = Vec::new();
+        let mut nested_parens = 1;
+        // now, expand all arguments
+        loop {
+            let next = match self.next_replacement_token() {
+                None => return None,
+                Some(Err(err)) => return Some(Err(err)),
+                Some(Ok(token)) => token,
+            };
+            match next.data.token() {
+                Token::Comma if nested_parens == 1 => {
+                    args.push(mem::take(&mut current_arg));
+                    continue;
+                }
+                Token::RightParen => {
+                    nested_parens -= 1;
+                    if nested_parens == 0 {
+                        args.push(mem::take(&mut current_arg));
+                        break;
+                    }
+                }
+                Token::LeftParen => {
+                    nested_parens += 1;
+                }
+                _ => {}
+            }
+            // TODO: keep the location
+            current_arg.push(next.data);
+        }
+        let mut body = match self.replacer.replace_function(id, args) {
+            Ok(body) => body.into_iter(),
+            Err(err) => return Some(Err(Locatable::new(err.into(), self.span(start)))),
+        };
+        let first = body.next()?;
+        // lol let's just give them all the same span
+        let loc = self.span(start);
+        self.pending.extend(body.map(|tok| loc.with(tok)));
+        self.handle_token(first, loc)
     }
-    */
 
     /// Create a new preprocessor for the file identified by `file`.
     ///
@@ -959,13 +1012,16 @@ impl<'a> PreProcessor<'a> {
                 Vec::new()
             };
             let body = body(self)?;
-            self.replacer.definitions
+            self.replacer
+                .definitions
                 .insert(id.data, Definition::Function { params, body });
             Ok(())
         } else {
             // object macro
             let tokens = body(self)?;
-            self.replacer.definitions.insert(id.data, Definition::Object(tokens));
+            self.replacer
+                .definitions
+                .insert(id.data, Definition::Object(tokens));
             Ok(())
         }
     }

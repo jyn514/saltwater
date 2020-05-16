@@ -3,7 +3,7 @@
 //! This module does no parsing and accepts only tokens.
 
 use super::cpp::CppResult;
-use crate::{error::CppError, CompileError, InternedStr, Locatable, Location, Token};
+use crate::{error::CppError, CompileError, InternedStr, Token};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Default)]
@@ -18,7 +18,7 @@ pub struct MacroReplacer {
     /// the preprocessor has no concept of scope other than `undef`
     definitions: HashMap<InternedStr, Definition>,
     /// The tokens that have been `#define`d and are currently being substituted
-    pending: VecDeque<Locatable<PendingToken>>,
+    pending: VecDeque<PendingToken>,
 }
 
 // TODO: I don't think this is necessary? we can use `ids_seen` instead
@@ -62,18 +62,17 @@ impl MacroReplacer {
     fn handle_token(
         &mut self,
         token: PendingToken,
-        location: Location,
-    ) -> Option<CppResult<Token>> {
+    ) -> Option<Token> {
         let (token, needs_replacement) = match token {
             PendingToken::Replacement(tok) => (tok, true),
             PendingToken::Cyclic(tok) => (tok, false),
         };
         if let Token::Id(id) = token {
             if needs_replacement {
-                return self.replace_id(id, location);
+                return self.replace_id(id)
             }
         }
-        Some(Ok(Locatable::new(token, location)))
+        Some(token)
     }
 
     /// Recursively replace the current identifier with its definitions.
@@ -84,9 +83,7 @@ impl MacroReplacer {
     fn replace_id(
         &mut self,
         mut name: InternedStr,
-        location: Location,
-    ) -> Option<CppResult<Token>> {
-        let start = self.offset();
+    ) -> Option<Token> {
         // first step: perform substitution on the ID
         while let Some(Definition::Object(def)) = self.definitions.get(&name) {
             self.ids_seen.insert(name);
@@ -97,9 +94,16 @@ impl MacroReplacer {
 
             if def.len() > 1 {
                 // prepend the new tokens to the pending tokens
+                // They need to go before, not after. For instance:
+                // ```c
+                // #define a b c d
+                // #define b 1 + 2
+                // a
+                // ```
+                // should replace to `1 + 2 c d`, not `c d 1 + 2`
                 let mut new_pending = VecDeque::new();
                 new_pending.extend(def[1..].iter().map(|token| {
-                    let pending_tok = if let Token::Id(id) = token {
+                    let func = if let Token::Id(id) = token {
                         if self.ids_seen.contains(id) {
                             PendingToken::Cyclic
                         } else {
@@ -108,32 +112,34 @@ impl MacroReplacer {
                     } else {
                         PendingToken::Replacement
                         // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
-                    }(token.clone());
-                    Locatable {
-                        data: pending_tok,
-                        location,
-                    }
+                    };
+                    func(token.clone())
                 }));
                 new_pending.append(&mut self.pending);
                 self.pending = new_pending;
             }
 
+            // #define a b
             if let Token::Id(new_name) = first {
                 name = *new_name;
                 // recursive definition, stop now and return the current name.
                 if self.ids_seen.contains(&name) {
                     break;
                 }
+            // #define a 1
             } else {
-                return Some(Ok(Locatable::new(first.clone(), self.span(start))));
+                return Some(first.clone());
             }
         }
+        Some(Token::Id(name))
         // second step: perform function macro replacement
-        self.replace_function(name, start)
+        //self.replace_function(name, start)
     }
 
-    fn replace_function(&mut self, name: InternedStr, start: u32) -> Option<CppResult<Token>> {
+    fn replace_function(&mut self, name: InternedStr, arguments: Vec<Vec<PendingToken>>) -> CppResult<Vec<Token>> {
         use std::mem;
+        use crate::Locatable;
+
         let no_replacement =
             |this: &mut Self| Some(Ok(Locatable::new(Token::Id(name), this.span(start))));
         // check if this should be a function at all

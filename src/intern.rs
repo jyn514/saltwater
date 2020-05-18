@@ -1,14 +1,14 @@
 use std::fmt;
 use std::sync::RwLock;
 
+use lasso::{Rodeo, Spur};
 use lazy_static::lazy_static;
-use string_interner::{StringInterner, Sym};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct InternedStr(pub Sym);
+pub struct InternedStr(pub Spur);
 
 lazy_static! {
-    pub static ref STRINGS: RwLock<StringInterner<Sym>> = RwLock::new(StringInterner::default());
+    pub static ref STRINGS: RwLock<Rodeo<Spur>> = RwLock::new(Rodeo::default());
     static ref EMPTY_STRING: InternedStr = InternedStr::get_or_intern("");
 }
 
@@ -19,8 +19,7 @@ macro_rules! get_str {
         $crate::intern::STRINGS
             .read()
             .expect("failed to lock String cache for reading")
-            .resolve(tmp)
-            .expect("tried to get value of non-interned string")
+            .resolve(&tmp)
     }};
 }
 

@@ -1,12 +1,14 @@
+#![allow(unreachable_pub)]
 //! Macro replacement
 //!
 //! This module does no parsing and accepts only tokens.
 
-use crate::{error::CppError, InternedStr, Token};
+use super::cpp::CppResult;
+use crate::{error::CppError, CompileError, InternedStr, Locatable, Location, Token};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::iter::Peekable;
 
-#[derive(Default)]
-pub struct MacroReplacer {
+pub struct MacroReplacer<I: Iterator<Item = CppResult<Token>>> {
     /// The ids seen while replacing the current token.
     ///
     /// This allows cycle detection. It should be reset after every replacement list
@@ -16,8 +18,14 @@ pub struct MacroReplacer {
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
     pub definitions: HashMap<InternedStr, Definition>,
-    /// The tokens that have been `#define`d and are currently being substituted
-    pending: VecDeque<PendingToken>,
+    /// The replacement list for a single token
+    pending: VecDeque<Locatable<Token>>,
+    /// The token stream to read from
+    inner: Peekable<I>,
+    /// The location for the current replacement list
+    ///
+    /// This is the location of the call site, not the definition site.
+    last_location: Option<Location>,
 }
 
 // TODO: I don't think this is necessary? we can use `ids_seen` instead
@@ -32,6 +40,12 @@ impl PendingToken {
         match self {
             PendingToken::Replacement(t) => t,
             PendingToken::Cyclic(t) => t,
+        }
+    }
+    fn as_tuple(self) -> (Token, bool) {
+        match self {
+            PendingToken::Replacement(t) => (t, true),
+            PendingToken::Cyclic(t) => (t, false),
         }
     }
 }
@@ -51,15 +65,51 @@ pub enum Definition {
     },
 }
 
-impl MacroReplacer {
-    pub fn new() -> Self {
-        Self::default()
+impl<I: Iterator<Item = CppResult<Token>>> Iterator for MacroReplacer<I> {
+    type Item = CppResult<Token>;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // We have two things we need to handle.
+            // First, we could have gotten to the end of the file;
+            // Second, the current token could be an identifier that was `#define`d to an empty token list.
+            // This loop is for the second case, not the first.
+            let (replacement, location) = if let Some(token) = self.pending.pop_front() {
+                return Some(Ok(token));
+            } else {
+                // Since there are no tokens in `self.pending`, we must not be in the middle of replacing a macro.
+                self.ids_seen.clear();
+                // `inner` does not perform macro replacement,
+                // so if it returns None we got to EOF.
+                match self.inner.next()? {
+                    Err(err) => return Some(Err(err)),
+                    Ok(t) => (self.replace(t.data), t.location),
+                }
+            };
+            let replacement = replacement.into_iter();
+            if let Some(token) = replacement.next() {
+                self.pending = replacement.map(|t| Locatable::new(t, location)).collect();
+                return Some(Ok(Locatable::new(token, location)));
+            }
+            // This token was an empty define, so continue looking for tokens
+        }
+    }
+}
+
+impl<I: Iterator<Item = CppResult<Token>>> MacroReplacer<I> {
+    pub fn new(tokens: I) -> Self {
+        Self {
+            inner: tokens.peekable(),
+            definitions: Default::default(),
+            ids_seen: Default::default(),
+            pending: Default::default(),
+            last_location: None,
+        }
     }
 
-    pub fn with_definitions(definitions: HashMap<InternedStr, Definition>) -> Self {
+    pub fn with_definitions(tokens: I, definitions: HashMap<InternedStr, Definition>) -> Self {
         Self {
             definitions,
-            ..Self::default()
+            ..Self::new(tokens)
         }
     }
 
@@ -68,20 +118,61 @@ impl MacroReplacer {
         self.ids_seen.clear();
     }
 
-    /// Possibly recursively replace tokens. This also handles turning identifiers into keywords.
+    /// Possibly recursively replace tokens.
     ///
-    /// If `token` was defined to an empty token list, this will return `None`.
-    fn handle_token(&mut self, token: PendingToken) -> Option<Token> {
-        let (token, needs_replacement) = match token {
-            PendingToken::Replacement(tok) => (tok, true),
-            PendingToken::Cyclic(tok) => (tok, false),
-        };
-        if let Token::Id(id) = token {
-            if needs_replacement {
-                return self.replace_id(id);
+    /// This first performs object-macro replacement, then function-macro replacement.
+    /// For example, consider this C program:
+    /// ```c
+    /// #define f(a, b) a + b
+    /// #define g f
+    /// #define c d
+    /// g(c, 1)
+    /// ```
+    /// First, the name of the function will be replaced: `f(c, 1)`.
+    /// Next, all arguments are replaced: `f(d, 1)`.
+    /// Finally, function-macros are replaced: `d + 1`.
+    ///
+    /// If at any point there is a cyclic replacement, no error is generated.
+    /// Instead, replacement immediately stops for the current token.
+    /// However, future tokens may still be replaced. For example, take
+    /// ```c
+    /// #define b c
+    /// #define f(a) g(a + 1)
+    /// #define g(a) f(a)
+    /// f(b)
+    /// ```
+    /// The cycle f -> g will be detected after the first time through: `f(b)` -> `g(b + 1)` -> `f(b + 1)`.
+    /// Then, replacements of later tokens occur: `f(c + 1)`.
+    fn replace(&mut self, token: Token) -> Vec<Token> {
+        //self._replace(PendingToken::Replacement(token))
+        self._replace(token)
+    }
+
+    fn _replace(&mut self, token: Token) -> Vec<Token> {
+        let mut tokens = vec_deque![token];
+        //let (mut token, mut needs_replacement) = token.as_tuple();
+        while let Some(token) = tokens.pop_front() {
+            if let Token::Id(id) = token {
+                if !self.ids_seen.contains(&id) {
+                    tokens.extend(self.replace_id(id));
+                    //token = tokens.pop_front();
+                    /*
+                    for replacement in self.replace_id(id) {
+                        // TODO: try to reuse the same allocation for all tokens?
+                        tokens.extend(self._replace(replacement));
+                        let (t, r) = match tokens.pop_front() {
+                            Some(t) => t.as_struct(),
+                            None => break,
+                        };
+                        token = t;
+                        //needs_replacement = r;
+                    }
+                    */
+                }
             }
         }
-        Some(token)
+        // TODO: this is bad and I should feel bad
+        tokens.into_iter().collect()
     }
 
     /// Recursively replace the current identifier with its definitions.
@@ -89,55 +180,39 @@ impl MacroReplacer {
     /// This does cycle detection by replacing the repeating identifier at least once;
     /// see the `recursive_macros` test for more details.
     // TODO: this needs to have an idea of 'pending chars', not just pending tokens
-    pub fn replace_id(&mut self, mut name: InternedStr) -> Option<Token> {
+    fn replace_id(&mut self, name: InternedStr) -> impl Iterator<Item = Token> {
+        let mut pending = VecDeque::new();
         // first step: perform substitution on the ID
-        while let Some(Definition::Object(def)) = self.definitions.get(&name) {
+        if let Some(Definition::Object(def)) = self.definitions.get(&name) {
             self.ids_seen.insert(name);
-            if def.is_empty() {
-                return None;
-            }
-            let first = &def[0];
-
-            if def.len() > 1 {
-                // prepend the new tokens to the pending tokens
-                // They need to go before, not after. For instance:
-                // ```c
-                // #define a b c d
-                // #define b 1 + 2
-                // a
-                // ```
-                // should replace to `1 + 2 c d`, not `c d 1 + 2`
-                let mut new_pending = VecDeque::new();
-                new_pending.extend(def[1..].iter().map(|token| {
-                    let func = if let Token::Id(id) = token {
-                        if self.ids_seen.contains(id) {
-                            PendingToken::Cyclic
-                        } else {
-                            PendingToken::Replacement
-                        }
+            // prepend the new tokens to the pending tokens
+            // They need to go before, not after. For instance:
+            // ```c
+            // #define a b c d
+            // #define b 1 + 2
+            // a
+            // ```
+            // should replace to `1 + 2 c d`, not `c d 1 + 2`
+            let mut new_pending = VecDeque::new();
+            new_pending.extend(def.iter().map(|token| {
+                /*
+                let func = if let Token::Id(id) = token {
+                    if self.ids_seen.contains(id) {
+                        PendingToken::Cyclic
                     } else {
                         PendingToken::Replacement
-                        // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
-                    };
-                    func(token.clone())
-                }));
-                new_pending.append(&mut self.pending);
-                self.pending = new_pending;
-            }
-
-            // #define a b
-            if let Token::Id(new_name) = first {
-                name = *new_name;
-                // recursive definition, stop now and return the current name.
-                if self.ids_seen.contains(&name) {
-                    break;
-                }
-            // #define a 1
-            } else {
-                return Some(first.clone());
-            }
+                    }
+                } else {
+                    PendingToken::Replacement
+                };
+                */
+                // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
+                token.clone()
+            }));
+            new_pending.append(&mut pending);
+            pending = new_pending;
         }
-        Some(Token::Id(name))
+        pending.into_iter()
         // second step: perform function macro replacement
         //self.replace_function(name, start)
     }
@@ -145,31 +220,83 @@ impl MacroReplacer {
     pub fn replace_function(
         &mut self,
         name: InternedStr,
-        arguments: Vec<Vec<PendingToken>>,
-    ) -> Result<Vec<PendingToken>, CppError> {
-        let args = arguments;
-        let no_replacement = |args: Vec<Vec<PendingToken>>| {
-            let mut args = args.into_iter();
-            let mut tokens = vec![Token::Id(name).into()];
-            tokens.push(Token::LeftParen.into());
-            if let Some(mut first) = args.next() {
-                tokens.append(&mut first);
-            }
-            for mut arg in args {
-                tokens.push(Token::Comma.into());
-                tokens.append(&mut arg)
-            }
-            tokens.push(Token::RightParen.into());
-            Ok(tokens)
-        };
+        location: Location,
+    ) -> Vec<Result<PendingToken, CompileError>> {
+        let mut no_replacement = Vec::new();
+        // TODO: is this right? we need to be sure not to return this if `name` is replaced.
+        no_replacement.push(Ok(PendingToken::Cyclic(Token::Id(name))));
+
         // check if this should be a function at all
         if let Some(Definition::Function { .. }) = self.definitions.get(&name) {
         } else {
-            return no_replacement(args);
+            return no_replacement;
         };
+
+        loop {
+            match self.inner.peek() {
+                // handle `f @ ( 1 )`, with arbitrarly many token errors
+                Some(Err(err)) => {
+                    // TODO: need to figure out what should happen if an error token happens during replacement
+                    no_replacement.push(Err(self.inner.next().unwrap().unwrap_err()));
+                }
+                // f (
+                Some(Ok(Locatable {
+                    data: Token::LeftParen,
+                    ..
+                })) => break,
+                // `f ;` or `f <EOF>`
+                Some(Ok(_)) | None => return no_replacement,
+            }
+        }
+
+        // now, expand all arguments
+        let mut args = Vec::new();
+        let mut current_arg = Vec::new();
+        let mut nested_parens = 1;
+
+        loop {
+            let next = match self.inner.next() {
+                // f ( <EOF>
+                // TODO: this should be an error instead
+                None => return no_replacement,
+                // f ( @
+                Some(Err(err)) => {
+                    no_replacement.push(Err(err));
+                    continue;
+                }
+                // f ( +
+                Some(Ok(token)) => token,
+            };
+            match next.data {
+                // f ( a,
+                // NOTE: `f(,)` is _legal_ and means to replace f with two arguments, each an empty token lists
+                // on the bright side, we don't have to check if `current_arg` is empty or not
+                Token::Comma if nested_parens == 1 => {
+                    args.push(mem::take(&mut current_arg));
+                    continue;
+                }
+                // f ( (a + 1)
+                Token::RightParen => {
+                    nested_parens -= 1;
+                    // f ( )
+                    if nested_parens == 0 {
+                        args.push(mem::take(&mut current_arg));
+                        break;
+                    }
+                }
+                // f ( (
+                Token::LeftParen => {
+                    nested_parens += 1;
+                }
+                // f( + )
+                _ => {}
+            }
+            // TODO: keep the location
+            current_arg.push(PendingToken::Replacement(next.data));
+        }
         // cyclic define, e.g. `#define f(a) f(a + 1)`
         if self.ids_seen.contains(&name) {
-            return no_replacement(args);
+            return no_replacement;
         }
 
         self.ids_seen.insert(name);
@@ -204,31 +331,35 @@ impl MacroReplacer {
             current_arg.push(next);
         }
         */
+        use std::mem;
+
+        let mut replacements = Vec::new();
         let (params, body) = match self.definitions.get(&name) {
             Some(Definition::Function { params, body }) => (params, body),
             _ => unreachable!("already checked this above"),
         };
         if args.len() != params.len() {
             // booo, this is the _only_ error in the whole replacer
-            return Err(CppError::TooFewArguments(args.len(), params.len()));
+            return vec![Err(
+                location.with(CppError::TooFewArguments(args.len(), params.len()).into())
+            )];
         }
         for token in body {
             if let Token::Id(id) = *token {
                 // #define f(a) { a + 1 } \n f(b) => b + 1
                 if let Some(index) = params.iter().position(|&param| param == id) {
                     let replacement = args[index].clone();
-                    self.pending.extend(replacement);
+                    replacements.extend(replacement);
                 } else {
                     let token = PendingToken::Replacement(Token::Id(id));
-                    self.pending.push_back(token);
+                    replacements.push(token);
                 }
             } else {
-                self.pending
-                    .push_back(PendingToken::Replacement(token.clone()));
+                replacements.push(PendingToken::Replacement(token.clone()));
             }
         }
-        // TODO: this collect is bad
-        Ok(std::mem::take(&mut self.pending).into_iter().collect())
+        // TODO: this collect is useless
+        replacements.into_iter().map(Ok).collect()
         // NOTE: no errors could have occurred while parsing this function body
         // since they would have returned before getting here.
         //let first = self.pending.pop_front()?;

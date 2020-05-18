@@ -76,6 +76,20 @@ impl<'a> PreProcessorBuilder<'a> {
     }
 }
 
+enum Unimplemented {}
+impl Iterator for Unimplemented {
+    type Item = CppResult<Token>;
+    fn next(&mut self) -> Option<Self::Item> {
+        None
+    }
+}
+
+impl Default for Unimplemented {
+    fn default() -> Self {
+        unimplemented!()
+    }
+}
+
 /// A preprocessor does textual substitution and deletion on a C source file.
 ///
 /// The C preprocessor, or `cpp`, is tightly tied to C tokenization.
@@ -118,7 +132,8 @@ pub struct PreProcessor<'a> {
     /// The tokens that have been `#define`d and are currently being substituted
     pending: VecDeque<Locatable<PendingToken>>,
     /// The macro-replacer
-    replacer: MacroReplacer,
+    // TODO: ! is wrong
+    replacer: MacroReplacer<Unimplemented>,
 }
 
 impl From<Token> for CppToken {
@@ -316,7 +331,7 @@ impl<'a> PreProcessor<'a> {
         if let Token::Id(id) = token {
             let mut token = if needs_replacement {
                 self.replacer
-                    .replace_id(id)
+                    .replace(id)
                     .map(|t| Ok(Locatable::new(t, location)))
             } else {
                 Some(Ok(Locatable::new(token, location)))

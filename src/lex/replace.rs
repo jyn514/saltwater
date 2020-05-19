@@ -3,12 +3,10 @@
 //!
 //! This module does no parsing and accepts only tokens.
 
-use super::cpp::CppResult;
 use crate::{
     error::CppError, CompileError, CompileResult, InternedStr, Locatable, Location, Token,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::iter::Peekable;
 
 pub struct MacroReplacer /*<I: Iterator<Item = CppResult<Token>>>*/ {
     /// The ids seen while replacing the current token.
@@ -20,18 +18,19 @@ pub struct MacroReplacer /*<I: Iterator<Item = CppResult<Token>>>*/ {
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
     pub definitions: HashMap<InternedStr, Definition>,
+    /*
     /// The replacement list for a single token
     pending: VecDeque<Locatable<Token>>,
-    /*
     /// The token stream to read from
     inner: Peekable<I>,
-    */
     /// The location for the current replacement list
     ///
     /// This is the location of the call site, not the definition site.
     last_location: Option<Location>,
+    */
 }
 
+/*
 // TODO: I don't think this is necessary? we can use `ids_seen` instead
 #[derive(Clone)]
 pub enum PendingToken {
@@ -59,6 +58,7 @@ impl From<Token> for PendingToken {
         PendingToken::Replacement(token)
     }
 }
+*/
 
 #[derive(Debug)]
 pub enum Definition {
@@ -107,8 +107,8 @@ impl MacroReplacer {
             //inner: tokens.peekable(),
             definitions: Default::default(),
             ids_seen: Default::default(),
-            pending: Default::default(),
-            last_location: None,
+            //pending: Default::default(),
+            //last_location: None,
         }
     }
 
@@ -168,7 +168,7 @@ impl MacroReplacer {
         //let mut tokens = vec_deque![token];
 
         // outer loop: replace all tokens in the replacement list
-        while let Some(mut token) = pending.pop_front() {
+        while let Some(token) = pending.pop_front() {
             // first step: perform (recursive) substitution on the ID
             if let Token::Id(id) = token.data {
                 if !self.ids_seen.contains(&id) {
@@ -225,6 +225,7 @@ impl MacroReplacer {
         replacements
     }
 
+    /*
     /// Recursively replace the current identifier with its definitions.
     ///
     /// This does cycle detection by replacing the repeating identifier at least once;
@@ -255,6 +256,7 @@ impl MacroReplacer {
         pending
         //self.replace_function(name, start)
     }
+    */
 
     // TODO: this should probably return Result<VecDeque, CompileError> instead
     pub fn replace_function(
@@ -286,7 +288,7 @@ impl MacroReplacer {
             _ => return no_replacement,
         };
         */
-        let mut errors = Vec::new();
+        let errors = Vec::new();
 
         loop {
             match incoming.front() {

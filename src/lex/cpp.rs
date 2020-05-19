@@ -6,7 +6,7 @@ use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use super::replace::{Definition, MacroReplacer, PendingToken};
+use super::replace::{Definition, MacroReplacer};
 use super::{Lexer, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
@@ -261,6 +261,7 @@ impl<'a> PreProcessor<'a> {
     fn lexer_mut(&mut self) -> &mut Lexer {
         self.includes.last_mut().unwrap_or(&mut self.first_lexer)
     }
+    /*
     /// Return the next token, taking into account replacements
     fn next_replacement_token(&mut self) -> Option<CppResult<Token>> {
         // TODO: need to call `replace()` at some point
@@ -288,6 +289,7 @@ impl<'a> PreProcessor<'a> {
             }
         }
     }
+    */
     /* Convenience functions */
     #[inline]
     fn line(&self) -> usize {
@@ -835,7 +837,7 @@ impl<'a> PreProcessor<'a> {
                 }
                 // #if a
                 Ok(Locatable {
-                    data: Token::Id(name),
+                    data: Token::Id(_),
                     location,
                 }) => {
                     let token = Token::Literal(Literal::Int(0));

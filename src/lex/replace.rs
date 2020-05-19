@@ -6,9 +6,11 @@
 use crate::{
     error::CppError, CompileError, CompileResult, InternedStr, Locatable, Location, Token,
 };
+use super::cpp::CppResult;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::iter::Peekable;
 
-pub struct MacroReplacer /*<I: Iterator<Item = CppResult<Token>>>*/ {
+pub struct MacroReplacer <I: Iterator<Item = CppResult<Token>>> {
     /// The ids seen while replacing the current token.
     ///
     /// This allows cycle detection. It should be reset after every replacement list
@@ -18,11 +20,11 @@ pub struct MacroReplacer /*<I: Iterator<Item = CppResult<Token>>>*/ {
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
     pub definitions: HashMap<InternedStr, Definition>,
+    /// The token stream to read from
+    pub(crate) inner: Peekable<I>,
     /*
     /// The replacement list for a single token
     pending: VecDeque<Locatable<Token>>,
-    /// The token stream to read from
-    inner: Peekable<I>,
     /// The location for the current replacement list
     ///
     /// This is the location of the call site, not the definition site.
@@ -101,10 +103,10 @@ impl<I: Iterator<Item = CppResult<Token>>> Iterator for MacroReplacer<I> {
 }
 */
 
-impl MacroReplacer {
-    pub fn new(/*tokens: I*/) -> Self {
+impl<I: Iterator<Item = CppResult<Token>>> MacroReplacer<I> {
+    pub fn new(tokens: I) -> Self {
         Self {
-            //inner: tokens.peekable(),
+            inner: tokens.peekable(),
             definitions: Default::default(),
             ids_seen: Default::default(),
             //pending: Default::default(),
@@ -112,10 +114,10 @@ impl MacroReplacer {
         }
     }
 
-    pub fn with_definitions(/*tokens: I,*/ definitions: HashMap<InternedStr, Definition>,) -> Self {
+    pub fn with_definitions(tokens: I, definitions: HashMap<InternedStr, Definition>,) -> Self {
         Self {
             definitions,
-            ..Self::new() //..Self::new(tokens)
+            ..Self::new(tokens)
         }
     }
 

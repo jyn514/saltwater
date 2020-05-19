@@ -7,6 +7,7 @@ use super::data::{error::LexError, lex::*, *};
 use super::intern::InternedStr;
 
 mod cpp;
+mod files;
 mod replace;
 #[cfg(test)]
 mod tests;

@@ -290,24 +290,24 @@ impl MacroReplacer {
         */
         let errors = Vec::new();
 
-        loop {
-            match incoming.front() {
-                // handle `f @ ( 1 )`, with arbitrarly many token errors
-                /*
-                Some(Err(err)) => {
-                    // TODO: need to figure out what should happen if an error token happens during replacement
-                    errors.push(Err(self.inner.next().unwrap().unwrap_err()));
-                }
-                */
-                // f (
-                Some(Locatable {
-                    data: Token::LeftParen,
-                    ..
-                }) => break,
-                // `f ;` or `f <EOF>`
-                Some(_) | None => return errors,
+        //loop {
+        match incoming.front() {
+            // handle `f @ ( 1 )`, with arbitrarly many token errors
+            /*
+            Some(Err(err)) => {
+                // TODO: need to figure out what should happen if an error token happens during replacement
+                errors.push(Err(self.inner.next().unwrap().unwrap_err()));
             }
+            */
+            // f (
+            Some(Locatable {
+                data: Token::LeftParen,
+                ..
+            }) => {}
+            // `f ;` or `f <EOF>`
+            Some(_) | None => return errors,
         }
+        //}
 
         // now, expand all arguments
         let mut args = Vec::new();

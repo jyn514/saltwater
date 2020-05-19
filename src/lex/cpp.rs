@@ -232,9 +232,7 @@ impl Iterator for PreProcessor<'_> {
                                 Ok(()) => continue,
                             }
                         }
-                        CppToken::Token(token) => {
-                            self.handle_token(token, loc.location)
-                        }
+                        CppToken::Token(token) => self.handle_token(token, loc.location),
                     },
                 }
             };
@@ -318,44 +316,38 @@ impl<'a> PreProcessor<'a> {
     /// Possibly recursively replace tokens. This also handles turning identifiers into keywords.
     ///
     /// If `token` was defined to an empty token list, this will return `None`.
-    fn handle_token(
-        &mut self,
-        token: Token,
-        location: Location,
-    ) -> Option<CppResult<Token>> {
+    fn handle_token(&mut self, token: Token, location: Location) -> Option<CppResult<Token>> {
         //if let Token::Id(id) = token {
-            let mut token = {
-                let mut replacement_list = self.replacer
-                    .replace(token, location)
-                    .into_iter();
-                    //.map(|res| res.map(|t| Locatable::new(t, location)));
-                let first = replacement_list.next();
-                for remaining in replacement_list {
-                    match remaining {
-                        Err(err) => self.error_handler.push_back(err),
-                        Ok(token) => self.pending.push_back(token),
-                    }
+        let mut token = {
+            let mut replacement_list = self.replacer.replace(token, location).into_iter();
+            //.map(|res| res.map(|t| Locatable::new(t, location)));
+            let first = replacement_list.next();
+            for remaining in replacement_list {
+                match remaining {
+                    Err(err) => self.error_handler.push_back(err),
+                    Ok(token) => self.pending.push_back(token),
                 }
-                //self.pending.extend(replacement_list);
-                first
-                /*
+            }
+            //self.pending.extend(replacement_list);
+            first
+            /*
             } else {
                 Some(Ok(Locatable::new(token, location)))
                 */
-            };
-            if let Some(Ok(Locatable {
-                data: data @ Token::Id(_),
-                ..
-            })) = &mut token
-            {
-                if let Token::Id(name) = &data {
-                    if let Some(keyword) = KEYWORDS.get(get_str!(name)) {
-                        *data = Token::Keyword(*keyword);
-                    }
+        };
+        if let Some(Ok(Locatable {
+            data: data @ Token::Id(_),
+            ..
+        })) = &mut token
+        {
+            if let Token::Id(name) = &data {
+                if let Some(keyword) = KEYWORDS.get(get_str!(name)) {
+                    *data = Token::Keyword(*keyword);
                 }
             }
-            token
-            /*
+        }
+        token
+        /*
         } else {
             Some(Ok(Locatable::new(token, location)))
         }
@@ -819,9 +811,13 @@ impl<'a> PreProcessor<'a> {
         let lex_tokens = self.tokens_until_newline();
         let mut cpp_tokens = Vec::with_capacity(lex_tokens.len());
         //assert!(self.replacer.pending.is_empty());
-        let mut lex_tokens = lex_tokens.into_iter().map(|res| res.map(|t| {
-            self.replacer.replace(t.data, t.location)
-        })).flatten().flatten().collect().into_iter();
+        let mut lex_tokens = lex_tokens
+            .into_iter()
+            .map(|res| res.map(|t| self.replacer.replace(t.data, t.location)))
+            .flatten()
+            .flatten()
+            .collect::<Vec<_>>()
+            .into_iter();
         while let Some(token) = lex_tokens.next() {
             let token = match token {
                 // #if defined(a)
@@ -1083,7 +1079,12 @@ impl<'a> PreProcessor<'a> {
                     ))
                 }
             };
-            match self.replacer.replace(Token::Id(id), location).into_iter().next() {
+            match self
+                .replacer
+                .replace(Token::Id(id), location)
+                .into_iter()
+                .next()
+            {
                 // local
                 Some(Ok(Locatable {
                     data: Token::Literal(Literal::Str(_)),

@@ -4,11 +4,13 @@
 //! This module does no parsing and accepts only tokens.
 
 use super::cpp::CppResult;
-use crate::{error::CppError, CompileError, CompileResult, InternedStr, Locatable, Location, Token};
+use crate::{
+    error::CppError, CompileError, CompileResult, InternedStr, Locatable, Location, Token,
+};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::iter::Peekable;
 
-pub struct MacroReplacer/*<I: Iterator<Item = CppResult<Token>>>*/ {
+pub struct MacroReplacer /*<I: Iterator<Item = CppResult<Token>>>*/ {
     /// The ids seen while replacing the current token.
     ///
     /// This allows cycle detection. It should be reset after every replacement list
@@ -99,7 +101,7 @@ impl<I: Iterator<Item = CppResult<Token>>> Iterator for MacroReplacer<I> {
 }
 */
 
-impl/*<I: Iterator<Item = CppResult<Token>>>*/ MacroReplacer {
+impl MacroReplacer {
     pub fn new(/*tokens: I*/) -> Self {
         Self {
             //inner: tokens.peekable(),
@@ -110,11 +112,10 @@ impl/*<I: Iterator<Item = CppResult<Token>>>*/ MacroReplacer {
         }
     }
 
-    pub fn with_definitions(/*tokens: I,*/ definitions: HashMap<InternedStr, Definition>) -> Self {
+    pub fn with_definitions(/*tokens: I,*/ definitions: HashMap<InternedStr, Definition>,) -> Self {
         Self {
             definitions,
-            ..Self::new()
-            //..Self::new(tokens)
+            ..Self::new() //..Self::new(tokens)
         }
     }
 
@@ -155,7 +156,11 @@ impl/*<I: Iterator<Item = CppResult<Token>>>*/ MacroReplacer {
     /// This means that very long cycles will be recalculated on each call.
     // TODO: if you call replace() the wrong way, could you induce infinite recursion somehow?
     // It doesn't seem so ... but the call to `ids_seen.clear()` makes me nervous.
-    pub fn replace(&mut self, token: Token, location: Location) -> Vec<CompileResult<Locatable<Token>>> {
+    pub fn replace(
+        &mut self,
+        token: Token,
+        location: Location,
+    ) -> Vec<CompileResult<Locatable<Token>>> {
         let mut replacements = Vec::new();
         let mut pending = VecDeque::new();
         //assert!(self.pending.is_empty());
@@ -180,7 +185,8 @@ impl/*<I: Iterator<Item = CppResult<Token>>>*/ MacroReplacer {
                             // should replace to `1 + 2 c d`, not `c d 1 + 2`
                             let mut new_pending = VecDeque::new();
                             // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
-                            new_pending.extend(replacement_list.iter().cloned().map(|t| location.with(t)));
+                            new_pending
+                                .extend(replacement_list.iter().cloned().map(|t| location.with(t)));
                             new_pending.append(&mut pending);
                             pending = new_pending;
                             //self.replace_object(replacement_list),
@@ -252,7 +258,7 @@ impl/*<I: Iterator<Item = CppResult<Token>>>*/ MacroReplacer {
 
     // TODO: this should probably return Result<VecDeque, CompileError> instead
     pub fn replace_function(
-        &mut self,
+        &self,
         params: &[InternedStr],
         body: &[Token],
         location: Location,
@@ -312,7 +318,7 @@ impl/*<I: Iterator<Item = CppResult<Token>>>*/ MacroReplacer {
                 // TODO: this should give an error
                 None => return errors,
                 // f ( @
-                    /*
+                /*
                 Some(Err(err)) => {
                     errors.push(Err(err));
                     continue;
@@ -352,7 +358,9 @@ impl/*<I: Iterator<Item = CppResult<Token>>>*/ MacroReplacer {
         let mut replacements = Vec::new();
         if args.len() != params.len() {
             // booo, this is the _only_ error in the whole replacer
-            return vec![Err(location.with(CppError::TooFewArguments(args.len(), params.len()).into()))];
+            return vec![Err(
+                location.with(CppError::TooFewArguments(args.len(), params.len()).into())
+            )];
         }
         for token in body {
             if let Token::Id(id) = *token {

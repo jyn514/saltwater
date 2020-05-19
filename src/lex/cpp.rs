@@ -807,9 +807,13 @@ impl<'a> PreProcessor<'a> {
 
         let lex_tokens = self.tokens_until_newline();
         let mut cpp_tokens = Vec::with_capacity(lex_tokens.len());
-        let mut lex_tokens = lex_tokens.into_iter();
+        //assert!(self.replacer.pending.is_empty());
+        let mut lex_tokens = lex_tokens.into_iter().map(|res| res.map(|t| {
+            self.replacer.replace(t.data, t.location)
+        })).flatten().flatten();
         while let Some(token) = lex_tokens.next() {
             let token = match token {
+                // #if defined(a)
                 Ok(Locatable {
                     data: Token::Id(name),
                     location,
@@ -822,18 +826,15 @@ impl<'a> PreProcessor<'a> {
                     };
                     Ok(location.with(Token::Literal(literal)))
                 }
+                // #if a
                 Ok(Locatable {
                     data: Token::Id(name),
                     location,
-                }) => match self.replacer.replace_id(name) {
-                    None => continue,
-                    Some(mut token) => {
-                        if let Token::Id(_) = &token {
-                            token = Token::Literal(Literal::Int(0));
-                        }
-                        Ok(Locatable::new(token, location))
-                    }
-                },
+                }) => {
+                    let token = Token::Literal(Literal::Int(0));
+                    Ok(Locatable::new(token, location))
+                }
+                // #if 1
                 _ => token,
             };
             cpp_tokens.push(token);

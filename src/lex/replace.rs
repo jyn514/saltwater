@@ -8,7 +8,7 @@ use crate::{error::CppError, CompileError, CompileResult, InternedStr, Locatable
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::iter::Peekable;
 
-pub struct MacroReplacer<I: Iterator<Item = CppResult<Token>>> {
+pub struct MacroReplacer/*<I: Iterator<Item = CppResult<Token>>>*/ {
     /// The ids seen while replacing the current token.
     ///
     /// This allows cycle detection. It should be reset after every replacement list
@@ -20,8 +20,10 @@ pub struct MacroReplacer<I: Iterator<Item = CppResult<Token>>> {
     pub definitions: HashMap<InternedStr, Definition>,
     /// The replacement list for a single token
     pending: VecDeque<Locatable<Token>>,
+    /*
     /// The token stream to read from
     inner: Peekable<I>,
+    */
     /// The location for the current replacement list
     ///
     /// This is the location of the call site, not the definition site.
@@ -97,10 +99,10 @@ impl<I: Iterator<Item = CppResult<Token>>> Iterator for MacroReplacer<I> {
 }
 */
 
-impl<I: Iterator<Item = CppResult<Token>>> MacroReplacer<I> {
-    pub fn new(tokens: I) -> Self {
+impl/*<I: Iterator<Item = CppResult<Token>>>*/ MacroReplacer {
+    pub fn new(/*tokens: I*/) -> Self {
         Self {
-            inner: tokens.peekable(),
+            //inner: tokens.peekable(),
             definitions: Default::default(),
             ids_seen: Default::default(),
             pending: Default::default(),
@@ -108,10 +110,11 @@ impl<I: Iterator<Item = CppResult<Token>>> MacroReplacer<I> {
         }
     }
 
-    pub fn with_definitions(tokens: I, definitions: HashMap<InternedStr, Definition>) -> Self {
+    pub fn with_definitions(/*tokens: I,*/ definitions: HashMap<InternedStr, Definition>) -> Self {
         Self {
             definitions,
-            ..Self::new(tokens)
+            ..Self::new()
+            //..Self::new(tokens)
         }
     }
 
@@ -154,12 +157,13 @@ impl<I: Iterator<Item = CppResult<Token>>> MacroReplacer<I> {
     // It doesn't seem so ... but the call to `ids_seen.clear()` makes me nervous.
     pub fn replace(&mut self, token: Token, location: Location) -> Vec<CompileResult<Locatable<Token>>> {
         let mut replacements = Vec::new();
-        assert!(self.pending.is_empty());
-        self.pending.push_back(location.with(token));
+        let mut pending = VecDeque::new();
+        //assert!(self.pending.is_empty());
+        pending.push_back(location.with(token));
         //let mut tokens = vec_deque![token];
 
         // outer loop: replace all tokens in the replacement list
-        while let Some(mut token) = self.pending.pop_front() {
+        while let Some(mut token) = pending.pop_front() {
             // first step: perform (recursive) substitution on the ID
             if let Token::Id(id) = token.data {
                 if !self.ids_seen.contains(&id) {
@@ -177,14 +181,14 @@ impl<I: Iterator<Item = CppResult<Token>>> MacroReplacer<I> {
                             let mut new_pending = VecDeque::new();
                             // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
                             new_pending.extend(replacement_list.iter().cloned().map(|t| location.with(t)));
-                            new_pending.append(&mut self.pending);
-                            self.pending = new_pending;
+                            new_pending.append(&mut pending);
+                            pending = new_pending;
                             //self.replace_object(replacement_list),
                             continue;
                         }
                         Some(Definition::Function { params, body }) => {
                             self.ids_seen.insert(id);
-                            self.replace_function(params, body, location);
+                            self.replace_function(params, body, location, &mut pending);
                             continue;
                         }
                         None => {}
@@ -210,6 +214,7 @@ impl<I: Iterator<Item = CppResult<Token>>> MacroReplacer<I> {
             replacements.push(Ok(token));
         }
 
+        // Since there are no tokens in `self.pending`, we have finished replacing this macro.
         self.ids_seen.clear();
         replacements
     }
@@ -251,9 +256,11 @@ impl<I: Iterator<Item = CppResult<Token>>> MacroReplacer<I> {
         params: &[InternedStr],
         body: &[Token],
         location: Location,
+        incoming: &mut VecDeque<Locatable<Token>>,
     ) -> Vec<Result<Token, CompileError>> {
         use std::mem;
 
+        //let incoming = incoming.peekable();
         /*
         let mut no_replacement = VecDeque::new();
         // TODO: is this right? we need to be sure not to return this if `name` is replaced.
@@ -276,19 +283,21 @@ impl<I: Iterator<Item = CppResult<Token>>> MacroReplacer<I> {
         let mut errors = Vec::new();
 
         loop {
-            match self.inner.peek() {
+            match incoming.front() {
                 // handle `f @ ( 1 )`, with arbitrarly many token errors
+                /*
                 Some(Err(err)) => {
                     // TODO: need to figure out what should happen if an error token happens during replacement
                     errors.push(Err(self.inner.next().unwrap().unwrap_err()));
                 }
+                */
                 // f (
-                Some(Ok(Locatable {
+                Some(Locatable {
                     data: Token::LeftParen,
                     ..
-                })) => break,
+                }) => break,
                 // `f ;` or `f <EOF>`
-                Some(Ok(_)) | None => return errors,
+                Some(_) | None => return errors,
             }
         }
 
@@ -298,17 +307,19 @@ impl<I: Iterator<Item = CppResult<Token>>> MacroReplacer<I> {
         let mut nested_parens = 1;
 
         loop {
-            let next = match self.inner.next() {
+            let next = match incoming.pop_front() {
                 // f ( <EOF>
                 // TODO: this should give an error
                 None => return errors,
                 // f ( @
+                    /*
                 Some(Err(err)) => {
                     errors.push(Err(err));
                     continue;
                 }
+                */
                 // f ( +
-                Some(Ok(token)) => token,
+                Some(token) => token,
             };
             match next.data {
                 // f ( a,

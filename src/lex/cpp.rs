@@ -130,10 +130,9 @@ pub struct PreProcessor<'a> {
     /// The paths to search for `#include`d files
     search_path: Vec<Cow<'a, Path>>,
     /// The tokens that have been `#define`d and are currently being substituted
-    pending: VecDeque<Locatable<PendingToken>>,
+    pending: VecDeque<Locatable<Token>>,
     /// The macro-replacer
-    // TODO: ! is wrong
-    replacer: MacroReplacer<Unimplemented>,
+    replacer: MacroReplacer,
 }
 
 impl From<Token> for CppToken {
@@ -220,8 +219,7 @@ impl Iterator for PreProcessor<'_> {
             } else if let Some(token) = self.pending.pop_front() {
                 self.handle_token(token.data, token.location)
             } else {
-                // Since there are no tokens in `self.pending`, we must not be in the middle of replacing a macro.
-                self.replacer.finished_replacement();
+                //self.replacer.finished_replacement();
                 // This function does not perform macro replacement,
                 // so if it returns None we got to EOF.
                 match self.next_cpp_token()? {
@@ -235,7 +233,7 @@ impl Iterator for PreProcessor<'_> {
                             }
                         }
                         CppToken::Token(token) => {
-                            self.handle_token(PendingToken::Replacement(token), loc.location)
+                            self.handle_token(token, loc.location)
                         }
                     },
                 }
@@ -266,13 +264,14 @@ impl<'a> PreProcessor<'a> {
         self.includes.last_mut().unwrap_or(&mut self.first_lexer)
     }
     /// Return the next token, taking into account replacements
-    fn next_replacement_token(&mut self) -> Option<CppResult<PendingToken>> {
+    fn next_replacement_token(&mut self) -> Option<CppResult<Token>> {
+        // TODO: need to call `replace()` at some point
         if let Some(replacement) = self.pending.pop_front() {
             return Some(Ok(replacement));
         }
         match self.lexer_mut().next()? {
             Err(err) => Some(Err(err.map(Into::into))),
-            Ok(token) => Some(Ok(token.map(PendingToken::Replacement))),
+            Ok(token) => Some(Ok(token)),
         }
     }
     /// If the next token is a `token`, consume it and return its location.
@@ -282,7 +281,7 @@ impl<'a> PreProcessor<'a> {
             None => Ok(None),
             Some(Err(err)) => Err(err),
             Some(Ok(next)) => {
-                if next.data.token() == &token {
+                if next.data == token {
                     Ok(Some(next.location))
                 } else {
                     self.pending.push_front(next);
@@ -321,20 +320,28 @@ impl<'a> PreProcessor<'a> {
     /// If `token` was defined to an empty token list, this will return `None`.
     fn handle_token(
         &mut self,
-        token: PendingToken,
+        token: Token,
         location: Location,
     ) -> Option<CppResult<Token>> {
-        let (token, needs_replacement) = match token {
-            PendingToken::Replacement(tok) => (tok, true),
-            PendingToken::Cyclic(tok) => (tok, false),
-        };
-        if let Token::Id(id) = token {
-            let mut token = if needs_replacement {
-                self.replacer
-                    .replace(id)
-                    .map(|t| Ok(Locatable::new(t, location)))
+        //if let Token::Id(id) = token {
+            let mut token = {
+                let mut replacement_list = self.replacer
+                    .replace(token, location)
+                    .into_iter();
+                    //.map(|res| res.map(|t| Locatable::new(t, location)));
+                let first = replacement_list.next();
+                for remaining in replacement_list {
+                    match remaining {
+                        Err(err) => self.error_handler.push_back(err),
+                        Ok(token) => self.pending.push_back(token),
+                    }
+                }
+                //self.pending.extend(replacement_list);
+                first
+                /*
             } else {
                 Some(Ok(Locatable::new(token, location)))
+                */
             };
             if let Some(Ok(Locatable {
                 data: data @ Token::Id(_),
@@ -348,11 +355,14 @@ impl<'a> PreProcessor<'a> {
                 }
             }
             token
+            /*
         } else {
             Some(Ok(Locatable::new(token, location)))
         }
+        */
     }
 
+    /*
     pub fn replace(&mut self, id: InternedStr, start: u32) -> Option<CppResult<Token>> {
         use std::mem;
 
@@ -410,6 +420,7 @@ impl<'a> PreProcessor<'a> {
         self.pending.extend(body.map(|tok| loc.with(tok)));
         self.handle_token(first, loc)
     }
+    */
 
     /// Create a new preprocessor for the file identified by `file`.
     ///
@@ -810,7 +821,7 @@ impl<'a> PreProcessor<'a> {
         //assert!(self.replacer.pending.is_empty());
         let mut lex_tokens = lex_tokens.into_iter().map(|res| res.map(|t| {
             self.replacer.replace(t.data, t.location)
-        })).flatten().flatten();
+        })).flatten().flatten().collect().into_iter();
         while let Some(token) = lex_tokens.next() {
             let token = match token {
                 // #if defined(a)
@@ -1072,15 +1083,22 @@ impl<'a> PreProcessor<'a> {
                     ))
                 }
             };
-            match self.replacer.replace_id(id) {
+            match self.replacer.replace(Token::Id(id), location).into_iter().next() {
                 // local
-                Some(Token::Literal(Literal::Str(_))) => unimplemented!("#include for macros"), //return self.include_path(id, true, start),
+                Some(Ok(Locatable {
+                    data: Token::Literal(Literal::Str(_)),
+                    ..
+                })) => unimplemented!("#include for macros"), //return self.include_path(id, true, start),
                 // system
-                Some(Token::Comparison(ComparisonToken::Less)) => false,
-                Some(other) => {
+                Some(Ok(Locatable {
+                    data: Token::Comparison(ComparisonToken::Less),
+                    ..
+                })) => unimplemented!("#include for macros"),
+                Some(Err(err)) => return Err(err),
+                Some(Ok(other)) => {
                     return Err(CompileError::new(
-                        CppError::UnexpectedToken("include file", other).into(),
-                        location,
+                        CppError::UnexpectedToken("include file", other.data).into(),
+                        other.location,
                     ))
                 }
                 None => {

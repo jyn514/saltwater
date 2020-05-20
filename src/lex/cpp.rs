@@ -667,16 +667,7 @@ impl<'a> PreProcessor<'a> {
 
         let mut lex_tokens = self.tokens_until_newline().into_iter();
         let mut cpp_tokens = Vec::with_capacity(lex_tokens.len());
-        //assert!(self.replacer.pending.is_empty());
-        /*
-        let mut lex_tokens = lex_tokens
-            .into_iter()
-            .map(|res| res.map(|t| replacer.replace(t.data, t.location)))
-            .flatten()
-            .flatten();
-            */
-        //.collect::<Vec<_>>()
-        //.into_iter();
+
         while let Some(token) = lex_tokens.next() {
             let token = match token {
                 // #if defined(a)
@@ -692,17 +683,6 @@ impl<'a> PreProcessor<'a> {
                     };
                     Ok(location.with(Token::Literal(literal)))
                 }
-                /*
-                // #if a
-                Ok(Locatable {
-                    data: Token::Id(_),
-                    location,
-                }) => {
-                    let token = Token::Literal(Literal::Int(0));
-                    Ok(Locatable::new(token, location))
-                }
-                */
-                // #if 1
                 _ => token,
             };
             cpp_tokens.push(token);
@@ -1073,11 +1053,6 @@ impl<'a> PreProcessor<'a> {
             code: Rc::clone(&src),
         };
         self.replacer.inner.add_file(filename, source);
-        /*
-        let id = self.files.add(filename, source);
-        self.includes
-            .push(Lexer::new(id, src, self.first_lexer.debug));
-            */
         Ok(())
     }
     // Returns every byte between the current position and the next `byte`.

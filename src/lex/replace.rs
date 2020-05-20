@@ -24,12 +24,26 @@ impl<T: Iterator> Peekable for std::iter::Peekable<T> {
     }
 }
 
-pub struct MacroReplacer<I: Iterator<Item = CppResult<Token>>> {
+impl<T> Peekable for std::iter::Empty<T> {
+    fn peek(&mut self) -> Option<&Self::Item> {
+        None
+    }
+}
+
+impl<I: Peekable + ?Sized> Peekable for &mut I {
+    fn peek(&mut self) -> Option<&Self::Item> {
+        (**self).peek()
+    }
+}
+
+pub struct MacroReplacer /*<I: Iterator<Item = CppResult<Token>>>*/ {
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
     pub definitions: HashMap<InternedStr, Definition>,
+    /*
     /// The token stream to read from
     pub(crate) inner: I,
+    */
 }
 
 #[derive(Debug)]
@@ -41,21 +55,21 @@ pub enum Definition {
     },
 }
 
-impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
-    pub(super) fn new(tokens: I) -> Self {
+impl MacroReplacer {
+    pub(super) fn new(/*tokens: I*/) -> Self {
         Self {
-            inner: tokens,
+            //inner: tokens,
             definitions: Default::default(),
         }
     }
 
     pub(super) fn with_definitions(
-        tokens: I,
+        //tokens: I,
         definitions: HashMap<InternedStr, Definition>,
     ) -> Self {
         Self {
             definitions,
-            ..Self::new(tokens)
+            //..Self::new(tokens)
         }
     }
 
@@ -106,8 +120,10 @@ impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
     pub fn replace(
         &mut self,
         token: Token,
+        mut inner: impl Iterator<Item = CppResult<Token>> + Peekable,
         location: Location,
     ) -> Vec<CompileResult<Locatable<Token>>> {
+        //let inner = inner.unwrap_or(std::iter::empty());
         // The ids seen while replacing the current token.
         //
         // This allows cycle detection. It should be reset after every replacement list
@@ -154,7 +170,7 @@ impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
                         Some(Definition::Function { .. }) => {
                             ids_seen.insert(id);
                             let func_replacements =
-                                self.replace_function(id, location, &mut pending);
+                                self.replace_function(id, location, &mut pending, &mut inner);
                             let mut func_replacements: VecDeque<_> =
                                 func_replacements.into_iter().collect();
                             func_replacements.append(&mut pending);
@@ -178,16 +194,17 @@ impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
         id: InternedStr,
         location: Location,
         incoming: &mut VecDeque<CompileResult<Locatable<Token>>>,
+        mut inner: impl Iterator<Item = CppResult<Token>> + Peekable,
     ) -> Vec<Result<Locatable<Token>, CompileError>> {
         use std::mem;
 
         let mut errors = Vec::new();
 
         loop {
-            match incoming.front().or_else(|| self.inner.peek()) {
+            match incoming.front().or_else(|| inner.peek()) {
                 // handle `f @ ( 1 )`, with arbitrarly many token errors
                 Some(Err(_)) => {
-                    let next = incoming.pop_front().or_else(|| self.inner.next());
+                    let next = incoming.pop_front().or_else(|| inner.next());
                     // TODO: need to figure out what should happen if an error token happens during replacement
                     errors.push(Err(next.unwrap().unwrap_err()));
                 }
@@ -198,7 +215,7 @@ impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
                 })) => {
                     // pop off the `(` so it isn't counted as part of the first argument
                     if incoming.pop_front().is_none() {
-                        self.inner.next();
+                        inner.next();
                     }
                     break;
                 }
@@ -213,7 +230,7 @@ impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
         let mut nested_parens = 1;
 
         loop {
-            let next = match incoming.pop_front().or_else(|| self.inner.next()) {
+            let next = match incoming.pop_front().or_else(|| inner.next()) {
                 // f ( <EOF>
                 // TODO: this should give an error
                 None => return errors,

@@ -265,35 +265,6 @@ impl Iterator for PreProcessor<'_> {
 // let seen_newline = line == self.lexer.line;
 // ```
 impl<'a> PreProcessor<'a> {
-    /*
-    /// Return the next token, taking into account replacements
-    fn next_replacement_token(&mut self) -> Option<CppResult<Token>> {
-        // TODO: need to call `replace()` at some point
-        if let Some(replacement) = self.pending.pop_front() {
-            return Some(Ok(replacement));
-        }
-        match self.lexer_mut().next()? {
-            Err(err) => Some(Err(err.map(Into::into))),
-            Ok(token) => Some(Ok(token)),
-        }
-    }
-    /// If the next token is a `token`, consume it and return its location.
-    /// Note: this takes into account token replacement.
-    fn match_next(&mut self, token: Token) -> Result<Option<Location>, CompileError> {
-        match self.next_replacement_token() {
-            None => Ok(None),
-            Some(Err(err)) => Err(err),
-            Some(Ok(next)) => {
-                if next.data == token {
-                    Ok(Some(next.location))
-                } else {
-                    self.pending.push_front(next);
-                    Ok(None)
-                }
-            }
-        }
-    }
-    */
     /// Possibly recursively replace tokens. This also handles turning identifiers into keywords.
     ///
     /// If `token` was defined to an empty token list, this will return `None`.
@@ -302,7 +273,6 @@ impl<'a> PreProcessor<'a> {
         token: PendingToken,
         location: Location,
     ) -> Option<CppResult<Token>> {
-        //if let Token::Id(id) = token {
         let mut token = {
             // if we've already replaced the token once, don't do it again
             // avoids infinite loops on cyclic defines (#298)
@@ -310,7 +280,6 @@ impl<'a> PreProcessor<'a> {
                 PendingToken::Replaced(t) => Some(Ok(Locatable::new(t, location))),
                 PendingToken::NeedsReplacement(token) => {
                     let mut replacement_list = self.replacer.replace(token, location).into_iter();
-                    //.map(|res| res.map(|t| Locatable::new(t, location)));
                     let first = replacement_list.next();
                     for remaining in replacement_list {
                         match remaining {
@@ -318,14 +287,9 @@ impl<'a> PreProcessor<'a> {
                             Ok(token) => self.pending.push_back(token.map(PendingToken::Replaced)),
                         }
                     }
-                    //self.pending.extend(replacement_list);
                     first
                 }
             }
-            /*
-            } else {
-                Some(Ok(Locatable::new(token, location)))
-                */
         };
         if let Some(Ok(Locatable {
             data: data @ Token::Id(_),
@@ -339,72 +303,7 @@ impl<'a> PreProcessor<'a> {
             }
         }
         token
-        /*
-        } else {
-            Some(Ok(Locatable::new(token, location)))
-        }
-        */
     }
-
-    /*
-    pub fn replace(&mut self, id: InternedStr, start: u32) -> Option<CppResult<Token>> {
-        use std::mem;
-
-        let id = match self.replacer.replace_id(id) {
-            Some(Token::Id(id)) => id,
-            Some(other) => return Some(Ok(Locatable::new(other, self.span(start)))),
-            None => return None,
-        };
-        // NOTE: this does _not_ consume whitespace
-        loop {
-            match self.match_next(Token::LeftParen) {
-                Err(err) => self.error_handler.push_back(err),
-                Ok(None) => return Some(Ok(Locatable::new(Token::Id(id), self.span(start)))),
-                Ok(Some(_)) => break,
-            }
-        }
-        let location = self.span(start);
-        let mut args = Vec::new();
-        let mut current_arg = Vec::new();
-        let mut nested_parens = 1;
-        // now, expand all arguments
-        loop {
-            let next = match self.next_replacement_token() {
-                None => return None,
-                Some(Err(err)) => return Some(Err(err)),
-                Some(Ok(token)) => token,
-            };
-            match next.data.token() {
-                Token::Comma if nested_parens == 1 => {
-                    args.push(mem::take(&mut current_arg));
-                    continue;
-                }
-                Token::RightParen => {
-                    nested_parens -= 1;
-                    if nested_parens == 0 {
-                        args.push(mem::take(&mut current_arg));
-                        break;
-                    }
-                }
-                Token::LeftParen => {
-                    nested_parens += 1;
-                }
-                _ => {}
-            }
-            // TODO: keep the location
-            current_arg.push(next.data);
-        }
-        let mut body = match self.replacer.replace_function(id, args) {
-            Ok(body) => body.into_iter(),
-            Err(err) => return Some(Err(Locatable::new(err.into(), self.span(start)))),
-        };
-        let first = body.next()?;
-        // lol let's just give them all the same span
-        let loc = self.span(start);
-        self.pending.extend(body.map(|tok| loc.with(tok)));
-        self.handle_token(first, loc)
-    }
-    */
 
     /// Create a new preprocessor for the file identified by `file`.
     ///
@@ -516,26 +415,7 @@ impl<'a> PreProcessor<'a> {
     /// Otherwise, if we see a token (or error), return that error.
     /// Otherwise, return `None`.
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
-        let next_token = /*loop {
-            // we have to duplicate a bit of code here to avoid borrow errors
-            let lexer = self.includes.last_mut().unwrap_or(&mut self.first_lexer);
-            match lexer.next() {
-                Some(token) => break token,
-                // finished this file, go on to the next one
-                None => {
-                    self.error_handler.append(&mut lexer.error_handler);
-                    // this is the original source file
-                    if self.includes.is_empty() {
-                        return None;
-                    } else {
-                        self.includes.pop();
-                    }
-                }
-            }
-        }
-            */
-            self.replacer.inner.next()?
-        ;
+        let next_token = self.replacer.inner.next()?;
         let is_hash = match next_token {
             Ok(Locatable {
                 data: Token::Hash, ..

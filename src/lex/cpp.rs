@@ -40,11 +40,6 @@ use crate::data::*;
 use crate::get_str;
 use crate::Files;
 
-enum PendingToken {
-    Replaced(Token),
-    NeedsReplacement(Token),
-}
-
 /// An easier interface for constructing a preprocessor.
 ///
 /// Here is the example for `PreProcessor::new()` using the builder:
@@ -147,6 +142,11 @@ pub struct PreProcessor<'a> {
     replacer: MacroReplacer<FileProcessor>,
 }
 
+enum PendingToken {
+    Replaced(Token),
+    NeedsReplacement(Token),
+}
+
 impl From<Token> for CppToken {
     fn from(t: Token) -> CppToken {
         CppToken::Token(t)
@@ -231,7 +231,6 @@ impl Iterator for PreProcessor<'_> {
             } else if let Some(token) = self.pending.pop_front() {
                 self.handle_token(token.data, token.location)
             } else {
-                //self.replacer.finished_replacement();
                 // This function does not perform macro replacement,
                 // so if it returns None we got to EOF.
                 match self.next_cpp_token()? {

@@ -25,12 +25,6 @@ impl<T: Iterator> Peekable for std::iter::Peekable<T> {
 }
 
 pub struct MacroReplacer<I: Iterator<Item = CppResult<Token>>> {
-    /// The ids seen while replacing the current token.
-    ///
-    /// This allows cycle detection. It should be reset after every replacement list
-    /// - _not_ after every token, since otherwise that won't catch some mutual recursion
-    /// See https://github.com/jyn514/rcc/issues/427 for examples.
-    ids_seen: HashSet<InternedStr>,
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
     pub definitions: HashMap<InternedStr, Definition>,
@@ -52,7 +46,6 @@ impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
         Self {
             inner: tokens,
             definitions: Default::default(),
-            ids_seen: Default::default(),
         }
     }
 
@@ -115,6 +108,12 @@ impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
         token: Token,
         location: Location,
     ) -> Vec<CompileResult<Locatable<Token>>> {
+        // The ids seen while replacing the current token.
+        //
+        // This allows cycle detection. It should be reset after every replacement list
+        // - _not_ after every token, since otherwise that won't catch some mutual recursion
+        // See https://github.com/jyn514/rcc/issues/427 for examples.
+        let mut ids_seen = HashSet::new();
         let mut replacements = Vec::new();
         let mut pending = VecDeque::new();
         pending.push_back(Ok(location.with(token)));
@@ -127,10 +126,10 @@ impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
                 ..
             }) = token
             {
-                if !self.ids_seen.contains(&id) {
+                if !ids_seen.contains(&id) {
                     match self.definitions.get(&id) {
                         Some(Definition::Object(replacement_list)) => {
-                            self.ids_seen.insert(id);
+                            ids_seen.insert(id);
                             // prepend the new tokens to the pending tokens
                             // They need to go before, not after. For instance:
                             // ```c
@@ -153,7 +152,7 @@ impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
                         }
                         // TODO: so many allocations :(
                         Some(Definition::Function { .. }) => {
-                            self.ids_seen.insert(id);
+                            ids_seen.insert(id);
                             let func_replacements =
                                 self.replace_function(id, location, &mut pending);
                             let mut func_replacements: VecDeque<_> =
@@ -169,8 +168,6 @@ impl<I: Peekable<Item = CppResult<Token>>> MacroReplacer<I> {
             replacements.push(token);
         }
 
-        // Since there are no tokens in `self.pending`, we have finished replacing this macro.
-        self.ids_seen.clear();
         replacements
     }
 

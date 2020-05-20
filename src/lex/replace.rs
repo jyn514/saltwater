@@ -53,23 +53,6 @@ pub enum Definition {
     },
 }
 
-//impl MacroReplacer<'_> {
-/*
-pub fn new() -> Self {
-    Self {
-        definitions: Default::default(),
-    }
-}
-
-pub fn with_definitions(
-    definitions: &HashMap<InternedStr, Definition>,
-) -> Self {
-    Self {
-        definitions,
-    }
-}
-*/
-
 /// Possibly recursively replace tokens.
 ///
 /// This first performs object-macro replacement, then function-macro replacement.
@@ -120,7 +103,6 @@ pub fn replace(
     mut inner: impl Iterator<Item = CppResult<Token>> + Peekable,
     location: Location,
 ) -> Vec<CompileResult<Locatable<Token>>> {
-    //let inner = inner.unwrap_or(std::iter::empty());
     // The ids seen while replacing the current token.
     //
     // This allows cycle detection. It should be reset after every replacement list
@@ -301,4 +283,3 @@ fn replace_function(
         .chain(replacements.into_iter().map(|t| Ok(location.with(t))))
         .collect()
 }
-//}

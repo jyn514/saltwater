@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use super::files::FileProcessor;
-use super::replace::{Definition, MacroReplacer};
+use super::replace::{Definition, MacroReplacer, Peekable};
 use super::{Lexer, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
@@ -572,9 +572,15 @@ impl<'a> PreProcessor<'a> {
     }
     // convienience function around cpp_expr
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
+        let start = self.replacer.inner.offset();
+        let lex_tokens: Vec<_> = self
+            .tokens_until_newline()
+            .into_iter()
+            .collect::<Result<_, CompileError>>()?;
+        let location = self.span(start);
+
         // TODO: is this unwrap safe? there should only be scalar types in a cpp directive...
-        match self
-            .cpp_expr()?
+        match Self::cpp_expr(&mut self.replacer, lex_tokens.into_iter(), location)?
             .truthy(&mut self.error_handler)
             .constexpr()?
             .data
@@ -586,8 +592,7 @@ impl<'a> PreProcessor<'a> {
     // `#if defined(a)` or `#if defined a`
     // http://port70.net/~nsz/c/c11/n1570.html#6.10.1p1
     fn defined(
-        lex_tokens: &mut impl Iterator<Item = Result<Locatable<Token>, CompileError>>,
-        cpp_tokens: &mut Vec<Result<Locatable<Token>, CompileError>>,
+        mut lex_tokens: impl Iterator<Item = Locatable<Token>>,
         location: Location,
     ) -> Result<InternedStr, CompileError> {
         enum State {
@@ -603,14 +608,10 @@ impl<'a> PreProcessor<'a> {
                     CppError::EndOfFile("defined(identifier)").into(),
                     location,
                 )),
-                Some(Err(err)) => {
-                    cpp_tokens.push(Err(err));
-                    continue;
-                }
-                Some(Ok(Locatable {
+                Some(Locatable {
                     data: Token::Id(def),
                     location,
-                })) => match state {
+                }) => match state {
                     Start => Ok(def),
                     SawParen => {
                         state = SawId(def);
@@ -621,10 +622,10 @@ impl<'a> PreProcessor<'a> {
                         location,
                     )),
                 },
-                Some(Ok(Locatable {
+                Some(Locatable {
                     data: Token::LeftParen,
                     location,
-                })) => match state {
+                }) => match state {
                     Start => {
                         state = SawParen;
                         continue;
@@ -635,10 +636,10 @@ impl<'a> PreProcessor<'a> {
                         location,
                     )),
                 },
-                Some(Ok(Locatable {
+                Some(Locatable {
                     data: Token::RightParen,
                     location,
-                })) => match state {
+                }) => match state {
                     Start => Err(CompileError::new(
                         CppError::UnexpectedToken("identifier or left paren", Token::RightParen)
                             .into(),
@@ -650,7 +651,7 @@ impl<'a> PreProcessor<'a> {
                     )),
                     SawId(def) => Ok(def),
                 },
-                Some(Ok(other)) => Err(CompileError::new(
+                Some(other) => Err(CompileError::new(
                     CppError::UnexpectedToken("identifier", other.data).into(),
                     other.location,
                 )),
@@ -661,27 +662,32 @@ impl<'a> PreProcessor<'a> {
     ///
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
-    fn cpp_expr(&mut self) -> Result<hir::Expr, CompileError> {
-        let start = self.replacer.inner.offset();
+    fn cpp_expr<T, L>(
+        replacer: &mut MacroReplacer<T>,
+        mut lex_tokens: L,
+        location: Location,
+    ) -> CompileResult<hir::Expr>
+    where
+        T: Iterator<Item = CompileResult<Locatable<Token>>> + Peekable,
+        L: Iterator<Item = Locatable<Token>>,
+    {
+        let mut cpp_tokens = Vec::with_capacity(lex_tokens.size_hint().1.unwrap_or_default());
         let defined = "defined".into();
-
-        let mut lex_tokens = self.tokens_until_newline().into_iter();
-        let mut cpp_tokens = Vec::with_capacity(lex_tokens.len());
 
         while let Some(token) = lex_tokens.next() {
             let token = match token {
                 // #if defined(a)
-                Ok(Locatable {
+                Locatable {
                     data: Token::Id(name),
                     location,
-                }) if name == defined => {
-                    let def = Self::defined(&mut lex_tokens, &mut cpp_tokens, location)?;
-                    let literal = if self.replacer.definitions.contains_key(&def) {
+                } if name == defined => {
+                    let def = Self::defined(&mut lex_tokens, location)?;
+                    let literal = if replacer.definitions.contains_key(&def) {
                         Literal::Int(1)
                     } else {
                         Literal::Int(0)
                     };
-                    Ok(location.with(Token::Literal(literal)))
+                    location.with(Token::Literal(literal))
                 }
                 _ => token,
             };
@@ -689,8 +695,7 @@ impl<'a> PreProcessor<'a> {
         }
         let mut cpp_tokens: Vec<_> = cpp_tokens
             .into_iter()
-            .map(|res| res.map(|t| self.replacer.replace(t.data, t.location)))
-            .flatten()
+            .map(|t| replacer.replace(t.data, t.location))
             .flatten()
             .map(|token| {
                 if let Ok(Locatable {
@@ -708,7 +713,7 @@ impl<'a> PreProcessor<'a> {
         if cpp_tokens.is_empty() {
             return Err(CompileError::new(
                 CppError::EmptyExpression.into(),
-                self.span(start),
+                location,
             ));
         }
         // TODO: remove(0) is bad and I should feel bad

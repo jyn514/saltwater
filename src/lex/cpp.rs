@@ -106,20 +106,6 @@ impl<'a> PreProcessorBuilder<'a> {
     }
 }
 
-enum Unimplemented {}
-impl Iterator for Unimplemented {
-    type Item = CppResult<Token>;
-    fn next(&mut self) -> Option<Self::Item> {
-        None
-    }
-}
-
-impl Default for Unimplemented {
-    fn default() -> Self {
-        unimplemented!()
-    }
-}
-
 /// A preprocessor does textual substitution and deletion on a C source file.
 ///
 /// The C preprocessor, or `cpp`, is tightly tied to C tokenization.

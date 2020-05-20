@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use super::files::FileProcessor;
-use super::replace::{Definition, MacroReplacer, Peekable};
+use super::replace::{Definition, MacroReplacer};
 use super::{Lexer, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
@@ -139,7 +139,9 @@ pub struct PreProcessor<'a> {
     ///
     /// This is separate from the preprocessor to allow replacing arbitrary streams of tokens,
     /// not just tokens taken from a `FileProcessor`.
-    replacer: MacroReplacer<FileProcessor>,
+    replacer: MacroReplacer,
+    /// Handles reading from files
+    file_processor: FileProcessor,
 }
 
 enum PendingToken {
@@ -279,7 +281,10 @@ impl<'a> PreProcessor<'a> {
             match token {
                 PendingToken::Replaced(t) => Some(Ok(Locatable::new(t, location))),
                 PendingToken::NeedsReplacement(token) => {
-                    let mut replacement_list = self.replacer.replace(token, location).into_iter();
+                    let mut replacement_list = self
+                        .replacer
+                        .replace(token, &mut self.file_processor, location)
+                        .into_iter();
                     let first = replacement_list.next();
                     for remaining in replacement_list {
                         match remaining {
@@ -352,7 +357,8 @@ impl<'a> PreProcessor<'a> {
             nested_ifs: Default::default(),
             pending: Default::default(),
             search_path,
-            replacer: MacroReplacer::with_definitions(file_processor, definitions),
+            replacer: MacroReplacer::with_definitions(definitions),
+            file_processor,
         }
     }
     /// Return the first valid token in the file,
@@ -377,58 +383,58 @@ impl<'a> PreProcessor<'a> {
     pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
         let mut warnings = std::mem::take(&mut self.error_handler.warnings);
         warnings.extend(std::mem::take(
-            &mut self.replacer.inner.error_handler.warnings,
+            &mut self.file_processor.error_handler.warnings,
         ));
         warnings
     }
 
     pub fn eof(&self) -> Location {
-        self.replacer.inner.eof()
+        self.file_processor.eof()
     }
 
     pub fn into_files(self) -> Files {
-        self.replacer.inner.into_files()
+        self.file_processor.into_files()
     }
 
     /* internal functions */
     fn span(&self, start: u32) -> Location {
-        self.replacer.inner.span(start)
+        self.file_processor.span(start)
     }
 
     fn lexer(&mut self) -> &Lexer {
-        self.replacer.inner.lexer()
+        self.file_processor.lexer()
     }
 
     fn lexer_mut(&mut self) -> &mut Lexer {
-        self.replacer.inner.lexer_mut()
+        self.file_processor.lexer_mut()
     }
 
     fn line(&self) -> usize {
-        self.replacer.inner.line()
+        self.file_processor.line()
     }
 
     fn tokens_until_newline(&mut self) -> Vec<CompileResult<Locatable<Token>>> {
-        self.replacer.inner.tokens_until_newline()
+        self.file_processor.tokens_until_newline()
     }
 
     /// If at the start of the line and we see `#directive`, return that directive.
     /// Otherwise, if we see a token (or error), return that error.
     /// Otherwise, return `None`.
     fn next_cpp_token(&mut self) -> Option<CppResult<CppToken>> {
-        let next_token = self.replacer.inner.next()?;
+        let next_token = self.file_processor.next()?;
         let is_hash = match next_token {
             Ok(Locatable {
                 data: Token::Hash, ..
             }) => true,
             _ => false,
         };
-        Some(if is_hash && !self.replacer.inner.seen_line_token() {
-            let line = self.replacer.inner.line();
-            match self.replacer.inner.next()? {
+        Some(if is_hash && !self.file_processor.seen_line_token() {
+            let line = self.file_processor.line();
+            match self.file_processor.next()? {
                 Ok(Locatable {
                     data: Token::Id(id),
                     location,
-                }) if self.replacer.inner.line() == line => {
+                }) if self.file_processor.line() == line => {
                     if let Ok(directive) = DirectiveKind::try_from(get_str!(id)) {
                         Ok(Locatable::new(CppToken::Directive(directive), location))
                     } else {
@@ -436,7 +442,7 @@ impl<'a> PreProcessor<'a> {
                     }
                 }
                 Ok(other) => {
-                    if self.replacer.inner.line() == line {
+                    if self.file_processor.line() == line {
                         Err(other.map(|tok| CppError::UnexpectedToken("directive", tok).into()))
                     } else {
                         Ok(other.into())
@@ -450,8 +456,8 @@ impl<'a> PreProcessor<'a> {
     }
     // this function does _not_ perform macro substitution
     fn expect_id(&mut self) -> CppResult<InternedStr> {
-        let location = self.replacer.inner.span(self.replacer.inner.offset());
-        match self.replacer.inner.next() {
+        let location = self.file_processor.span(self.file_processor.offset());
+        match self.file_processor.next() {
             Some(Ok(Locatable {
                 data: Token::Id(name),
                 location,
@@ -572,7 +578,7 @@ impl<'a> PreProcessor<'a> {
     }
     // convienience function around cpp_expr
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
-        let start = self.replacer.inner.offset();
+        let start = self.file_processor.offset();
         let lex_tokens: Vec<_> = self
             .tokens_until_newline()
             .into_iter()
@@ -662,13 +668,13 @@ impl<'a> PreProcessor<'a> {
     ///
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
-    fn cpp_expr<T, L>(
-        replacer: &mut MacroReplacer<T>,
+    fn cpp_expr<L>(
+        replacer: &mut MacroReplacer,
         mut lex_tokens: L,
         location: Location,
     ) -> CompileResult<hir::Expr>
     where
-        T: Iterator<Item = CompileResult<Locatable<Token>>> + Peekable,
+        //T: Iterator<Item = CompileResult<Locatable<Token>>> + Peekable,
         L: Iterator<Item = Locatable<Token>>,
     {
         let mut cpp_tokens = Vec::with_capacity(lex_tokens.size_hint().1.unwrap_or_default());
@@ -695,7 +701,7 @@ impl<'a> PreProcessor<'a> {
         }
         let mut cpp_tokens: Vec<_> = cpp_tokens
             .into_iter()
-            .map(|t| replacer.replace(t.data, t.location))
+            .map(|t| replacer.replace(t.data, std::iter::empty(), t.location))
             .flatten()
             .map(|token| {
                 if let Ok(Locatable {
@@ -812,7 +818,7 @@ impl<'a> PreProcessor<'a> {
     fn fn_args(&mut self, start: u32) -> Result<Vec<InternedStr>, Locatable<Error>> {
         let mut arguments = Vec::new();
         loop {
-            match self.replacer.inner.next() {
+            match self.file_processor.next() {
                 None => {
                     return Err(CompileError::new(
                         CppError::EndOfFile("identifier or ')'").into(),
@@ -853,7 +859,7 @@ impl<'a> PreProcessor<'a> {
                 continue;
             }
             // some other token
-            match self.replacer.inner.next() {
+            match self.file_processor.next() {
                 None => {
                     return Err(CompileError::new(
                         CppError::EndOfFile("identifier or ')'").into(),
@@ -881,7 +887,7 @@ impl<'a> PreProcessor<'a> {
         };
 
         let line = self.line();
-        self.replacer.inner.consume_whitespace();
+        self.file_processor.consume_whitespace();
         if self.line() != line {
             return Err(self.span(start).error(CppError::EmptyDefine));
         }
@@ -925,7 +931,7 @@ impl<'a> PreProcessor<'a> {
         } else if lexer.match_next(b'<') {
             false
         } else {
-            let (id, location) = match self.replacer.inner.next() {
+            let (id, location) = match self.file_processor.next() {
                 Some(Ok(Locatable {
                     data: Token::Id(id),
                     location,
@@ -946,7 +952,7 @@ impl<'a> PreProcessor<'a> {
             };
             match self
                 .replacer
-                .replace(Token::Id(id), location)
+                .replace(Token::Id(id), &mut self.file_processor, location)
                 .into_iter()
                 .next()
             {
@@ -1014,7 +1020,7 @@ impl<'a> PreProcessor<'a> {
         }
         // local include: #include "dict.h"
         if local {
-            let current_path = self.replacer.inner.path();
+            let current_path = self.file_processor.path();
             let relative_path = &current_path
                 .parent()
                 .unwrap_or_else(|| std::path::Path::new(""));
@@ -1057,7 +1063,7 @@ impl<'a> PreProcessor<'a> {
             path: resolved,
             code: Rc::clone(&src),
         };
-        self.replacer.inner.add_file(filename, source);
+        self.file_processor.add_file(filename, source);
         Ok(())
     }
     // Returns every byte between the current position and the next `byte`.
@@ -1065,7 +1071,7 @@ impl<'a> PreProcessor<'a> {
     fn bytes_until(&mut self, byte: u8) -> Vec<u8> {
         let mut bytes = Vec::new();
         loop {
-            match self.replacer.inner.lexer_mut().next_char() {
+            match self.file_processor.lexer_mut().next_char() {
                 Some(c) if c != byte => bytes.push(c),
                 _ => return bytes,
             }

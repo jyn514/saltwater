@@ -138,13 +138,6 @@ pub struct PreProcessor<'a> {
     /// Note that this is a simple HashMap and not a Scope, because
     /// the preprocessor has no concept of scope other than `undef`
     definitions: HashMap<InternedStr, Definition>,
-    /*
-    /// The macro-replacer
-    ///
-    /// This is separate from the preprocessor to allow replacing arbitrary streams of tokens,
-    /// not just tokens taken from a `FileProcessor`.
-    replacer: MacroReplacer<'a>,
-    */
     /// Handles reading from files
     file_processor: FileProcessor,
 }
@@ -362,7 +355,6 @@ impl<'a> PreProcessor<'a> {
             pending: Default::default(),
             search_path,
             definitions,
-            //replacer: MacroReplacer::with_definitions(definitions),
             file_processor,
         }
     }
@@ -675,12 +667,10 @@ impl<'a> PreProcessor<'a> {
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     pub fn cpp_expr<L>(
         definitions: &Definitions,
-        //replacer: &mut MacroReplacer,
         mut lex_tokens: L,
         location: Location,
     ) -> CompileResult<hir::Expr>
     where
-        //T: Iterator<Item = CompileResult<Locatable<Token>>> + Peekable,
         L: Iterator<Item = Locatable<Token>>,
     {
         let mut cpp_tokens = Vec::with_capacity(lex_tokens.size_hint().1.unwrap_or_default());

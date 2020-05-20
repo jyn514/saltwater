@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use super::files::FileProcessor;
-use super::replace::{Definition, MacroReplacer};
+use super::replace::{replace, Definition, Definitions};
 use super::{Lexer, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
@@ -135,11 +135,16 @@ pub struct PreProcessor<'a> {
     pending: VecDeque<Locatable<PendingToken>>,
     /// The paths to search for `#include`d files
     search_path: Vec<Cow<'a, Path>>,
+    /// Note that this is a simple HashMap and not a Scope, because
+    /// the preprocessor has no concept of scope other than `undef`
+    definitions: HashMap<InternedStr, Definition>,
+    /*
     /// The macro-replacer
     ///
     /// This is separate from the preprocessor to allow replacing arbitrary streams of tokens,
     /// not just tokens taken from a `FileProcessor`.
-    replacer: MacroReplacer,
+    replacer: MacroReplacer<'a>,
+    */
     /// Handles reading from files
     file_processor: FileProcessor,
 }
@@ -281,10 +286,9 @@ impl<'a> PreProcessor<'a> {
             match token {
                 PendingToken::Replaced(t) => Some(Ok(Locatable::new(t, location))),
                 PendingToken::NeedsReplacement(token) => {
-                    let mut replacement_list = self
-                        .replacer
-                        .replace(token, &mut self.file_processor, location)
-                        .into_iter();
+                    let mut replacement_list =
+                        replace(&self.definitions, token, &mut self.file_processor, location)
+                            .into_iter();
                     let first = replacement_list.next();
                     for remaining in replacement_list {
                         match remaining {
@@ -357,7 +361,8 @@ impl<'a> PreProcessor<'a> {
             nested_ifs: Default::default(),
             pending: Default::default(),
             search_path,
-            replacer: MacroReplacer::with_definitions(definitions),
+            definitions,
+            //replacer: MacroReplacer::with_definitions(definitions),
             file_processor,
         }
     }
@@ -484,11 +489,11 @@ impl<'a> PreProcessor<'a> {
             }
             IfNDef => {
                 let name = self.expect_id()?;
-                self.if_directive(!self.replacer.definitions.contains_key(&name.data), start)
+                self.if_directive(!self.definitions.contains_key(&name.data), start)
             }
             IfDef => {
                 let name = self.expect_id()?;
-                self.if_directive(self.replacer.definitions.contains_key(&name.data), start)
+                self.if_directive(self.definitions.contains_key(&name.data), start)
             }
             // No matter what happens here, we will not read the tokens from this `#elif`.
             // Either we have been reading an `#if` or an `#elif` or an `#else`;
@@ -534,7 +539,7 @@ impl<'a> PreProcessor<'a> {
             Define => self.define(start),
             Undef => {
                 let name = self.expect_id()?;
-                self.replacer.definitions.remove(&name.data);
+                self.definitions.remove(&name.data);
                 Ok(())
             }
             Pragma => {
@@ -586,7 +591,7 @@ impl<'a> PreProcessor<'a> {
         let location = self.span(start);
 
         // TODO: is this unwrap safe? there should only be scalar types in a cpp directive...
-        match Self::cpp_expr(&mut self.replacer, lex_tokens.into_iter(), location)?
+        match Self::cpp_expr(&self.definitions, lex_tokens.into_iter(), location)?
             .truthy(&mut self.error_handler)
             .constexpr()?
             .data
@@ -669,7 +674,8 @@ impl<'a> PreProcessor<'a> {
     /// Note that identifiers are replaced with a constant 0,
     /// as per [6.10.1](http://port70.net/~nsz/c/c11/n1570.html#6.10.1p4).
     fn cpp_expr<L>(
-        replacer: &mut MacroReplacer,
+        definitions: &Definitions,
+        //replacer: &mut MacroReplacer,
         mut lex_tokens: L,
         location: Location,
     ) -> CompileResult<hir::Expr>
@@ -688,7 +694,7 @@ impl<'a> PreProcessor<'a> {
                     location,
                 } if name == defined => {
                     let def = Self::defined(&mut lex_tokens, location)?;
-                    let literal = if replacer.definitions.contains_key(&def) {
+                    let literal = if definitions.contains_key(&def) {
                         Literal::Int(1)
                     } else {
                         Literal::Int(0)
@@ -701,7 +707,7 @@ impl<'a> PreProcessor<'a> {
         }
         let mut cpp_tokens: Vec<_> = cpp_tokens
             .into_iter()
-            .map(|t| replacer.replace(t.data, std::iter::empty(), t.location))
+            .map(|t| replace(definitions, t.data, std::iter::empty(), t.location))
             .flatten()
             .map(|token| {
                 if let Ok(Locatable {
@@ -906,16 +912,13 @@ impl<'a> PreProcessor<'a> {
                 Vec::new()
             };
             let body = body(self)?;
-            self.replacer
-                .definitions
+            self.definitions
                 .insert(id.data, Definition::Function { params, body });
             Ok(())
         } else {
             // object macro
             let tokens = body(self)?;
-            self.replacer
-                .definitions
-                .insert(id.data, Definition::Object(tokens));
+            self.definitions.insert(id.data, Definition::Object(tokens));
             Ok(())
         }
     }
@@ -950,11 +953,14 @@ impl<'a> PreProcessor<'a> {
                     ))
                 }
             };
-            match self
-                .replacer
-                .replace(Token::Id(id), &mut self.file_processor, location)
-                .into_iter()
-                .next()
+            match replace(
+                &self.definitions,
+                Token::Id(id),
+                &mut self.file_processor,
+                location,
+            )
+            .into_iter()
+            .next()
             {
                 // local
                 Some(Ok(Locatable {

@@ -24,6 +24,9 @@ macro_rules! get_str {
 }
 
 impl InternedStr {
+    pub fn is_empty(self) -> bool {
+        self == *EMPTY_STRING
+    }
     pub fn resolve_and_clone(self) -> String {
         get_str!(self).to_string()
     }

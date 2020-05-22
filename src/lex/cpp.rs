@@ -1,16 +1,17 @@
-//! The preprocessor is made of 3 separate, nested iterators:
+//! The preprocessor is made of 2 nested iterators:
 //!
 //! 1. The innermost iterator (`FileProcessor`) deals with multiple files/lexers.
 //!    If one included file runs out of tokens, it seamlessly goes on to the next one.
-//! 2. The middle iterator (`MacroReplacer`) performs macro replacement.
-//! 3. The outermost iterator (`PreProcessor`) deals with preprocessing directives.
+//! 2. The outermost iterator (`PreProcessor`) deals with preprocessing directives.
 //!    Additionally, because of the weird way I lumped the lexer and preprocessor together,
 //!    it recognizes keywords and turns `Token::Id` into `Token::Keyword` as necessary.
 //!
+//! There is also a step in the middle to preform macro replacement.
 //! The `PreProcessor` sometimes does not want to replace its tokens (e.g. for `#if defined(a)`).
-//! In this case, it reaches through the replacer into the `FileProcessor` to drag out those tokens.
-//! Because of this, the `MacroReplacer` cannot have any idea of pending tokens,
+//! In this case, it reaches directly into the `FileProcessor` to drag out those tokens.
+//! Because of this, the macro processor cannot have any idea of pending tokens,
 //! or its `pending` will conflict with the `PreProcessor`'s `pending`.
+//! This is the origin of the `inner` argument to `replace()`.
 //!
 //! This supports inputs other than `FileProcessor`,
 //! but at the same time the `MacroReplacer` needs to be able to peek ahead in the input

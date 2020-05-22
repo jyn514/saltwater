@@ -4,6 +4,9 @@ use std::sync::RwLock;
 use lasso::{Rodeo, Spur};
 use lazy_static::lazy_static;
 
+/// A opaque identifier for a string which has been [interned].
+///
+/// [interned]: https://en.wikipedia.org/wiki/String_interning
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct InternedStr(pub Spur);
 
@@ -18,6 +21,18 @@ lazy_static! {
     static ref EMPTY_STRING: InternedStr = InternedStr::get_or_intern("");
 }
 
+/// Return a `&str` corresponding to this identifier.
+///
+/// This `&str` can only be used in expression position;
+/// attempting to assign it to a variable will give a lifetime error.
+/// If you need it to live longer than a single expression, see instead
+/// [`InternedStr::resolve_and_clone`] or [`intern::STRINGS`].
+///
+/// # Panics
+/// This function will panic if another thread panicked while accessing the global string pool.
+///
+/// [`InternedStr::resolve_and_clone`]: intern/struct.InternedStr.html#method.resolve_and_clone
+/// [`intern::STRINGS`]: intern/struct.STRINGS.html
 #[macro_export]
 macro_rules! get_str {
     ($self: expr) => {{
@@ -30,12 +45,28 @@ macro_rules! get_str {
 }
 
 impl InternedStr {
+    /// Return whether `self` is the empty string.
     pub fn is_empty(self) -> bool {
         self == *EMPTY_STRING
     }
+    /// Convert this identifier back into the original `String`, cloning it along the way.
+    ///
+    /// # See also
+    /// [`get_str!`](../macro.get_str.html)
+    ///
+    /// # Panics
+    /// This function will panic if another thread panicked while accessing the global string pool.
+    ///
     pub fn resolve_and_clone(self) -> String {
         get_str!(self).to_string()
     }
+    /// Intern this string into the string pool and return an opaque identifier.
+    ///
+    /// If `val` is already present, it will not be duplicated (i.e. this method is idempotent).
+    ///
+    /// # Panics
+    /// This function will panic if another thread panicked while accessing the global string pool.
+    ///
     pub fn get_or_intern<T: AsRef<str> + Into<String>>(val: T) -> InternedStr {
         InternedStr(
             STRINGS

@@ -38,12 +38,6 @@ impl<I: Peekable + ?Sized> Peekable for &mut I {
     }
 }
 
-pub struct MacroReplacer<'a> {
-    /// Note that this is a simple HashMap and not a Scope, because
-    /// the preprocessor has no concept of scope other than `undef`
-    pub definitions: &'a Definitions,
-}
-
 #[derive(Debug)]
 pub enum Definition {
     Object(Vec<Token>),

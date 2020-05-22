@@ -695,21 +695,19 @@ impl<'a> PreProcessor<'a> {
             };
             cpp_tokens.push(token);
         }
+        let mut expr_location = None;
         let mut cpp_tokens: Vec<_> = cpp_tokens
             .into_iter()
             .map(|t| replace(definitions, t.data, std::iter::empty(), t.location))
             .flatten()
-            .map(|token| {
-                if let Ok(Locatable {
-                    data: Token::Id(_),
-                    location,
-                }) = token
-                {
-                    let token = Token::Literal(Literal::Int(0));
-                    Ok(Locatable::new(token, location))
-                } else {
-                    token
+            .map(|mut token| {
+                if let Ok(tok) = &mut token {
+                    expr_location = Some(location.maybe_merge(expr_location));
+                    if let Token::Id(_) = tok.data {
+                        tok.data = Token::Literal(Literal::Int(0));
+                    }
                 }
+                token
             })
             .collect();
         if cpp_tokens.is_empty() {
@@ -724,6 +722,12 @@ impl<'a> PreProcessor<'a> {
         use crate::{analyze::PureAnalyzer, Parser};
         let mut parser = Parser::new(first, cpp_tokens.into_iter(), false);
         let expr = parser.expr()?;
+        if !parser.is_empty() {
+            return Err(CompileError::new(
+                CppError::TooManyTokens.into(),
+                expr_location.unwrap(),
+            ));
+        }
         // TODO: catch expressions that aren't allowed
         // (see https://github.com/jyn514/rcc/issues/5#issuecomment-575339427)
         // TODO: can semantic errors happen here? should we check?

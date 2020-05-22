@@ -6,6 +6,11 @@ use lazy_static::lazy_static;
 
 /// A opaque identifier for a string which has been [interned].
 ///
+/// Interning strings means they are cheap to copy and compare,
+/// at the cost of taking an O(n) hash comparison to intern.
+/// Interning also reduces memory usage for programs
+/// with many identifiers which are repeated often (i.e. C headers).
+///
 /// [interned]: https://en.wikipedia.org/wiki/String_interning
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct InternedStr(pub Spur);

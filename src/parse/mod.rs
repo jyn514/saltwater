@@ -72,6 +72,13 @@ impl<I: Lexer> Parser<I> {
             recursion_guard: Default::default(),
         }
     }
+    /// Return whether this parser has fully finished parsing.
+    ///
+    /// This can be used if, for example, you call `parser.expr()`
+    /// and want to see if there are any left-over tokens.
+    pub fn is_empty(&mut self) -> bool {
+        self.peek_token().is_none()
+    }
 }
 
 impl<I: Lexer> Iterator for Parser<I> {

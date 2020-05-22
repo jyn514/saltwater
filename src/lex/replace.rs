@@ -9,6 +9,9 @@ use crate::{
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// All known macro definitions.
+///
+/// Note that this is a simple HashMap and not a `Scope`, because
+/// the preprocessor has no concept of scope other than `undef`.
 pub type Definitions = HashMap<InternedStr, Definition>;
 
 /// An iterator which allows you to `peek()` at the next token.

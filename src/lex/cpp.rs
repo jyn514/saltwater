@@ -61,7 +61,7 @@ pub struct PreProcessorBuilder<'a> {
     /// The paths to search for `#include`d files
     search_path: Vec<Cow<'a, Path>>,
     /// The user-defined macros that should be defined at startup
-    definitions: HashMap<InternedStr, Definition>,
+    definitions: Definitions,
 }
 
 impl<'a> PreProcessorBuilder<'a> {
@@ -71,7 +71,7 @@ impl<'a> PreProcessorBuilder<'a> {
             filename: PathBuf::default(),
             buf: buf.into(),
             search_path: Vec::new(),
-            definitions: HashMap::new(),
+            definitions: Definitions::new(),
         }
     }
     pub fn filename<P: Into<PathBuf>>(mut self, name: P) -> Self {
@@ -135,9 +135,8 @@ pub struct PreProcessor<'a> {
     pending: VecDeque<Locatable<PendingToken>>,
     /// The paths to search for `#include`d files
     search_path: Vec<Cow<'a, Path>>,
-    /// Note that this is a simple HashMap and not a Scope, because
-    /// the preprocessor has no concept of scope other than `undef`
-    definitions: HashMap<InternedStr, Definition>,
+    /// The current macro definitions
+    definitions: Definitions,
     /// Handles reading from files
     file_processor: FileProcessor,
 }

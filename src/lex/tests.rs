@@ -16,16 +16,18 @@ fn lex(input: &str) -> Option<LexType> {
 }
 fn lex_all(input: &str) -> Vec<LexType> {
     cpp(input)
-        .filter(|res| {
-            !matches!(
-                res,
-                Ok(Locatable {
-                    data: Token::Whitespace(_),
-                    ..
-                })
-            )
-        })
+        .filter(is_not_whitespace)
         .collect()
+}
+
+pub(crate) fn is_not_whitespace(res: &LexType) -> bool {
+    !matches!(
+        res,
+        Ok(Locatable {
+            data: Token::Whitespace(_),
+            ..
+        })
+    )
 }
 
 fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool
@@ -305,7 +307,7 @@ fn test_strings() {
 #[test]
 fn test_no_newline() {
     assert!(cpp_no_newline("").next().is_none());
-    let mut tokens: Vec<_> = cpp_no_newline(" ").collect();
+    let mut tokens: Vec<_> = cpp_no_newline(" ").filter(is_not_whitespace).collect();
     assert_eq!(tokens.len(), 1);
     assert!(tokens.remove(0).unwrap_err().is_lex_err());
 

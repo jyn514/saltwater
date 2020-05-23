@@ -136,7 +136,6 @@ fn real_main(buf: Rc<str>, bin_opt: BinOpt, output: &Path) -> Result<(), (Error,
         for token in rcc_try!(tokens, files) {
             write!(stdout_buf, "{}", token.data).expect("failed to write to stdout");
         }
-        writeln!(stdout_buf).expect("failed to write to stdout");
 
         return Ok(());
     } else {

@@ -8,7 +8,6 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ansi_term::{ANSIString, Colour};
-use git_testament::git_testament_macros;
 use pico_args::Arguments;
 use saltwater::{
     assemble, compile,
@@ -20,8 +19,6 @@ use tempfile::NamedTempFile;
 
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
-
-git_testament_macros!(version);
 
 const HELP: &str = concat!(
     env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"), "\n",
@@ -286,6 +283,10 @@ macro_rules! type_sizes {
         $(println!("{}: {}", stringify!($type), std::mem::size_of::<$type>());)*
     };
 }
+
+#[cfg(feature = "git-testament")]
+git_testament::git_testament_macros!(version);
+
 fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
     use std::collections::HashMap;
 
@@ -298,7 +299,10 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         std::process::exit(1);
     }
     if input.contains(["-V", "--version"]) {
+        #[cfg(feature = "git-testament")]
         println!("{} {}", env!("CARGO_PKG_NAME"), version_testament!());
+        #[cfg(not(feature = "git-testament"))]
+        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
         std::process::exit(0);
     }
     if input.contains("--print-type-sizes") {

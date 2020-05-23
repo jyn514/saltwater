@@ -15,9 +15,7 @@ fn lex(input: &str) -> Option<LexType> {
     lexed.pop()
 }
 fn lex_all(input: &str) -> Vec<LexType> {
-    cpp(input)
-        .filter(is_not_whitespace)
-        .collect()
+    cpp(input).filter(is_not_whitespace).collect()
 }
 
 pub(crate) fn is_not_whitespace(res: &LexType) -> bool {

@@ -427,7 +427,7 @@ impl<'a> PreProcessor<'a> {
         };
         Some(if is_hash && !self.file_processor.seen_line_token() {
             let line = self.file_processor.line();
-            match self.file_processor.next()? {
+            match self.file_processor.next_non_whitespace()? {
                 Ok(Locatable {
                     data: Token::Id(id),
                     location,

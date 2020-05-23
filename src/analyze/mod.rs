@@ -1925,8 +1925,7 @@ pub(crate) mod test {
     }
     #[test]
     fn lol() {
-        let lol = "
-int *jynelson(int(*fp)(int)) {
+        let lol = "int *jynelson(int(*fp)(int)) {
     return 0;
 }
 int f(int i) {

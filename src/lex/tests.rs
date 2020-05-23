@@ -15,7 +15,17 @@ fn lex(input: &str) -> Option<LexType> {
     lexed.pop()
 }
 fn lex_all(input: &str) -> Vec<LexType> {
-    cpp(input).collect()
+    cpp(input)
+        .filter(|res| {
+            !matches!(
+                res,
+                Ok(Locatable {
+                    data: Token::Whitespace(_),
+                    ..
+                })
+            )
+        })
+        .collect()
 }
 
 fn match_data<T>(lexed: Option<LexType>, closure: T) -> bool

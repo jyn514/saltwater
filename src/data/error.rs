@@ -478,6 +478,10 @@ pub enum CppError {
     /// b) an `#else` has already been seen.
     #[error("{}", if *early { "#elif without #if" } else { "#elif after #else " })]
     UnexpectedElif { early: bool },
+
+    /// After parsing an `#if` expression, there were tokens left over.
+    #[error("trailing tokens in `#if` expression")]
+    TooManyTokens,
 }
 
 /// Lex errors are non-exhaustive and may have new variants added at any time

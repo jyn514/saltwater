@@ -323,7 +323,7 @@ fn fold_binary(
             Mul,
         ),
         Div => {
-            if right.is_zero() {
+            if right.ctype.is_integral() && right.is_zero() {
                 return Err(location.error(SemanticError::DivideByZero));
             }
             left.literal_bin_op(

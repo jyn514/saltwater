@@ -31,7 +31,7 @@ thiserror = "^1.0.10"
 target-lexicon = "0.10"
 tempfile = { version = "3", optional = true }
 pico-args = { version = "0.3", optional = true }
-string-interner = { version = "0.7", default-features = false }
+lasso = "0.2"
 codespan = "0.9"
 color-backtrace = { version = "0.4", default-features = false, optional = true }
 counter = "0.4"

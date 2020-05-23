@@ -88,6 +88,8 @@ mod ir;
 mod lex;
 mod parse;
 
+pub use lex::replace;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{}", .0.iter().map(|err| err.data.to_string()).collect::<Vec<_>>().join("\n"))]

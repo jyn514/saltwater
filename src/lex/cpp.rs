@@ -1242,16 +1242,20 @@ mod tests {
             _ => panic!("not a keyword: {:?}", token),
         }
     }
+    fn is_same_preprocessed(xs: PreProcessor, ys: PreProcessor) -> bool {
+        let xs = xs
+            .map(|res| res.map(|token| token.data))
+            .filter(|res| !matches!(res, Ok(Token::Whitespace(_))))
+            .collect::<Vec<_>>();
+        let ys = ys
+            .map(|res| res.map(|token| token.data))
+            .filter(|res| !matches!(res, Ok(Token::Whitespace(_))))
+            .collect::<Vec<_>>();
+        xs == ys
+    }
     fn assert_same(src: &str, cpp_src: &str) {
-        assert_eq!(
-            cpp(src)
-                .map(|res| res.map(|token| token.data))
-                .filter(|res| !matches!(res, Ok(Token::Whitespace(_))))
-                .collect::<Vec<_>>(),
-            cpp(cpp_src)
-                .map(|res| res.map(|token| token.data))
-                .filter(|res| !matches!(res, Ok(Token::Whitespace(_))))
-                .collect::<Vec<_>>(),
+        assert!(
+            is_same_preprocessed(cpp(src), cpp(cpp_src)),
             "{} is not the same as {}",
             src,
             cpp_src,
@@ -1508,15 +1512,14 @@ c
     }
     #[test]
     fn test_comment_newline() {
-        let tokens: Vec<_> = cpp_no_newline(
+        let tokens = cpp_no_newline(
             "
 #if 1 //
 int main() {}
 #endif
 ",
-        )
-        .collect();
-        assert_eq!(tokens, cpp("int main() {}").collect::<Vec<_>>());
+        );
+        assert!(is_same_preprocessed(tokens, cpp("int main() {}")));
         assert_same(
             "
 #if 1 /**//**/

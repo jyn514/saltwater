@@ -480,10 +480,12 @@ impl<'a> PreProcessor<'a> {
                 self.if_directive(condition, start)
             }
             IfNDef => {
+                self.consume_whitespace_oneline(start, CppError::EmptyExpression)?;
                 let name = self.expect_id()?;
                 self.if_directive(!self.definitions.contains_key(&name.data), start)
             }
             IfDef => {
+                self.consume_whitespace_oneline(start, CppError::EmptyExpression)?;
                 let name = self.expect_id()?;
                 self.if_directive(self.definitions.contains_key(&name.data), start)
             }
@@ -530,6 +532,7 @@ impl<'a> PreProcessor<'a> {
             }
             Define => self.define(start),
             Undef => {
+                self.consume_whitespace_oneline(start, CppError::EmptyExpression)?;
                 let name = self.expect_id()?;
                 self.definitions.remove(&name.data);
                 Ok(())
@@ -886,11 +889,7 @@ impl<'a> PreProcessor<'a> {
                 .collect::<Result<Vec<_>, Locatable<Error>>>()
         };
 
-        let line = self.line();
-        self.file_processor.consume_whitespace();
-        if self.line() != line {
-            return Err(self.span(start).error(CppError::EmptyDefine));
-        }
+        self.consume_whitespace_oneline(start, CppError::EmptyDefine)?;
         let id = self.expect_id()?;
         // NOTE: does _not_ discard whitespace
         if self.lexer_mut().match_next(b'(') {
@@ -1090,6 +1089,20 @@ impl<'a> PreProcessor<'a> {
             }
         }
     }
+
+    /// Consumes whitespace but returns error if it includes a newline
+    fn consume_whitespace_oneline(
+        &mut self,
+        start: u32,
+        error: CppError,
+    ) -> Result<String, CompileError> {
+        let line = self.line();
+        let ret = self.lexer_mut().consume_whitespace();
+        if self.line() != line {
+            return Err(self.span(start).error(error));
+        }
+        Ok(ret)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -1285,12 +1298,12 @@ mod tests {
         let code = "#ifdef a
         whatever, doesn't matter
         #endif";
-        assert_eq!(cpp(code).next(), None);
+        assert_eq!(cpp(code).next_non_whitespace(), None);
 
         let code = "#ifdef a\n#endif";
-        assert_eq!(cpp(code).next(), None);
+        assert_eq!(cpp(code).next_non_whitespace(), None);
 
-        assert!(cpp("#ifdef").next().unwrap().is_err());
+        assert!(cpp("#ifdef").next_non_whitespace().unwrap().is_err());
 
         let nested = "#ifdef a
         #ifdef b
@@ -1299,14 +1312,14 @@ mod tests {
         #endif
         char;";
         assert_eq!(
-            cpp(nested).next().unwrap().unwrap().data,
+            cpp(nested).next_non_whitespace().unwrap().unwrap().data,
             Token::Keyword(Keyword::Char)
         );
 
-        assert!(cpp("#endif").next().unwrap().is_err());
+        assert!(cpp("#endif").next_non_whitespace().unwrap().is_err());
 
         let same_line = "#ifdef a #endif\nint main() {}";
-        assert!(cpp(same_line).next().unwrap().is_err());
+        assert!(cpp(same_line).next_non_whitespace().unwrap().is_err());
     }
     #[test]
     fn ifndef() {
@@ -1315,7 +1328,7 @@ mod tests {
 #define A
 #endif
 A";
-        assert!(cpp(src).next().is_none());
+        assert!(cpp(src).next_non_whitespace().is_none());
     }
     #[test]
     fn object_macros() {

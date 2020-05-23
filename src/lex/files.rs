@@ -159,4 +159,17 @@ impl FileProcessor {
         }
         tokens
     }
+
+    /// Returns next token in stream which is not whitespace
+    pub(super) fn next_non_whitespace(&mut self) -> Option<CompileResult<Locatable<Token>>> {
+        loop {
+            match self.next() {
+                Some(Ok(Locatable {
+                    data: Token::Whitespace(_),
+                    location: _,
+                })) => continue,
+                other => break other,
+            }
+        }
+    }
 }

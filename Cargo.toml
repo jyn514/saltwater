@@ -52,7 +52,7 @@ proptest-derive = "0.1"
 [features]
 default = ["cc", "codegen", "color-backtrace"]
 # The `swcc` binary
-cc = ["ansi_term", "git-testament", "tempfile", "pico-args", "codegen", "atty"]
+cc = ["ansi_term", "tempfile", "pico-args", "codegen", "atty"]
 codegen = ["cranelift", "cranelift-module", "cranelift-object"]
 jit = ["codegen", "cranelift-simplejit"]
 salty = ["rand", "rodio"]

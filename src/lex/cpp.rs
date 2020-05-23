@@ -821,7 +821,7 @@ impl<'a> PreProcessor<'a> {
     fn fn_args(&mut self, start: u32) -> Result<Vec<InternedStr>, Locatable<Error>> {
         let mut arguments = Vec::new();
         loop {
-            match self.file_processor.next() {
+            match self.file_processor.next_non_whitespace() {
                 None => {
                     return Err(CompileError::new(
                         CppError::EndOfFile("identifier or ')'").into(),
@@ -1091,13 +1091,14 @@ impl<'a> PreProcessor<'a> {
     }
 
     /// Consumes whitespace but returns error if it includes a newline
+    #[inline]
     fn consume_whitespace_oneline(
         &mut self,
         start: u32,
         error: CppError,
     ) -> Result<String, CompileError> {
         let line = self.line();
-        let ret = self.lexer_mut().consume_whitespace();
+        let ret = self.file_processor.consume_whitespace();
         if self.line() != line {
             return Err(self.span(start).error(error));
         }

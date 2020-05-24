@@ -310,7 +310,7 @@ fn test_no_newline() {
     assert!(tokens.remove(0).unwrap_err().is_lex_err());
 
     // regression test for https://github.com/jyn514/rcc/issues/323
-    let tokens: Vec<_> = cpp_no_newline("//").collect();
+    let tokens: Vec<_> = cpp_no_newline("//").filter(is_not_whitespace).collect();
     assert_eq!(tokens.len(), 1);
     assert!(tokens[0].as_ref().unwrap_err().is_lex_err());
 }

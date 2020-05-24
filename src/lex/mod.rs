@@ -905,8 +905,8 @@ impl Iterator for Lexer {
                         .with(LexError::UnknownToken(x as char))));
                 }
             };
-            // We've seen a token if this isn't # and this isn't whitespace
-            self.seen_line_token |= data != Token::Hash && !matches!(data, Token::Whitespace(_));
+            // We've seen a token if this isn't # or whitespace
+            self.seen_line_token |= !(data == Token::Hash || matches!(data, Token::Whitespace(_)));
             Some(Ok(Locatable {
                 data,
                 location: self.span(span_start),

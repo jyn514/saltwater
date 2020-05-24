@@ -415,10 +415,13 @@ impl<'a> PreProcessor<'a> {
     }
 
     fn is_not_whitespace(res: &CppResult<Token>) -> bool {
-        !matches!(res, Ok(Locatable {
-            data: Token::Whitespace(_),
-            ..
-        }))
+        !matches!(
+            res,
+            Ok(Locatable {
+                data: Token::Whitespace(_),
+                ..
+            })
+        )
     }
 
     /// If at the start of the line and we see `#directive`, return that directive.
@@ -1257,10 +1260,11 @@ mod tests {
         !matches!(res, Ok(Token::Whitespace(_)))
     }
     fn is_same_preprocessed(xs: PreProcessor, ys: PreProcessor) -> bool {
-        let to_vec = |xs: PreProcessor| xs
-            .map(|res| res.map(|token| token.data))
-            .filter(_is_not_whitespace)
-            .collect::<Vec<_>>();
+        let to_vec = |xs: PreProcessor| {
+            xs.map(|res| res.map(|token| token.data))
+                .filter(_is_not_whitespace)
+                .collect::<Vec<_>>()
+        };
         to_vec(xs) == to_vec(ys)
     }
     fn assert_same(src: &str, cpp_src: &str) {

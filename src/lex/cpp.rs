@@ -1275,6 +1275,15 @@ mod tests {
             cpp_src,
         );
     }
+    fn assert_same_exact(src: &str, cpp_src: &str) {
+        // NOTE make sure `cpp_src` has a trailing newline
+        let pprint = cpp(src)
+            .filter_map(|res| res.ok().map(|token| token.data))
+            .map(|res| format!("{}", res))
+            .collect::<Vec<_>>()
+            .join("");
+        assert_eq!(pprint, format!("{}\n", cpp_src)); // Because `cpp` adds newline, do it here too
+    }
     #[test]
     fn keywords() {
         for keyword in KEYWORDS.values() {
@@ -1579,5 +1588,13 @@ int main(){}
             a(1)
         ";
         assert_same(original, "a(1)");
+    }
+    #[test]
+    // https://github.com/jyn514/rcc/issues/356
+    fn preprocess_only() {
+        assert_same_exact("int \t\n\r     main() {}", "int \t\n\r     main() {}");
+        assert_same_exact("int/* */main() {}", "int main() {}");
+        assert_same_exact("int/*\n\n\n*/main() {}", "int\n\n\nmain() {}");
+        // TODO add tests for `assert_same_exact` with preprocessor macros
     }
 }

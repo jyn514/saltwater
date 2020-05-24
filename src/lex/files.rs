@@ -138,19 +138,32 @@ impl FileProcessor {
 
     /// Return all tokens from the current position until the end of the current line.
     ///
+    /// * `whitespace` - whether or not to include whitespace tokens
+    ///
     /// Note that these are _tokens_ and not bytes, so if there are invalid tokens
     /// on the current line, this will return a lex error.
-    pub(super) fn tokens_until_newline(&mut self) -> Vec<CompileResult<Locatable<Token>>> {
+    pub(super) fn tokens_until_newline(
+        &mut self,
+        whitespace: bool,
+    ) -> Vec<CompileResult<Locatable<Token>>> {
         let mut tokens = Vec::new();
         let line = self.line();
         loop {
-            self.consume_whitespace();
+            let ws_start = self.offset();
+            let ws = self.consume_whitespace();
+            let ws_span = self.span(ws_start);
             if self.line() != line {
                 // lines should end with a newline, but in case they don't, don't crash
                 assert!(!self.lexer().seen_line_token || self.lexer_mut().peek().is_none(),
                     "expected `tokens_until_newline()` to reset `seen_line_token`, but `lexer.peek()` is {:?}",
                     self.lexer_mut().peek());
                 break;
+            }
+            if whitespace && !ws.is_empty() {
+                tokens.push(Ok(Locatable {
+                    data: Token::Whitespace(ws), // NOTE: in clang, this is one space
+                    location: ws_span,
+                }));
             }
             match self.next() {
                 Some(token) => tokens.push(token),

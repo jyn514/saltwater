@@ -410,8 +410,15 @@ impl<'a> PreProcessor<'a> {
         self.file_processor.line()
     }
 
-    fn tokens_until_newline(&mut self) -> Vec<CompileResult<Locatable<Token>>> {
-        self.file_processor.tokens_until_newline()
+    fn tokens_until_newline(&mut self, whitespace: bool) -> Vec<CompileResult<Locatable<Token>>> {
+        self.file_processor.tokens_until_newline(whitespace)
+    }
+
+    fn is_not_whitespace(res: &CppResult<Token>) -> bool {
+        !matches!(res, Ok(Locatable {
+            data: Token::Whitespace(_),
+            ..
+        }))
     }
 
     /// If at the start of the line and we see `#directive`, return that directive.
@@ -540,14 +547,14 @@ impl<'a> PreProcessor<'a> {
             Pragma => {
                 self.error_handler
                     .warn(WarningDiagnostic::IgnoredPragma, self.span(start));
-                drop(self.tokens_until_newline());
+                drop(self.tokens_until_newline(false));
                 Ok(())
             }
             // NOTE: #warning is a non-standard extension, but is implemented
             // by most major compilers including clang and gcc.
             Warning => {
                 let tokens: Vec<_> = self
-                    .tokens_until_newline()
+                    .tokens_until_newline(false)
                     .into_iter()
                     .map(|res| res.map(|l| l.data))
                     .collect::<Result<_, _>>()?;
@@ -557,7 +564,7 @@ impl<'a> PreProcessor<'a> {
             }
             Error => {
                 let tokens: Vec<_> = self
-                    .tokens_until_newline()
+                    .tokens_until_newline(false)
                     .into_iter()
                     .map(|res| res.map(|l| l.data))
                     .collect::<Result<_, _>>()?;
@@ -570,7 +577,7 @@ impl<'a> PreProcessor<'a> {
                     WarningDiagnostic::Generic("#line is not yet implemented".into()),
                     self.span(start),
                 );
-                drop(self.tokens_until_newline());
+                drop(self.tokens_until_newline(false));
                 Ok(())
             }
             Include => self.include(start),
@@ -580,7 +587,7 @@ impl<'a> PreProcessor<'a> {
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
         let start = self.file_processor.offset();
         let lex_tokens: Vec<_> = self
-            .tokens_until_newline()
+            .tokens_until_newline(false)
             .into_iter()
             .collect::<Result<_, CompileError>>()?;
         let location = self.span(start);
@@ -703,6 +710,7 @@ impl<'a> PreProcessor<'a> {
             .into_iter()
             .map(|t| replace(definitions, t.data, std::iter::empty(), t.location))
             .flatten()
+            .filter(PreProcessor::is_not_whitespace)
             .map(|mut token| {
                 if let Ok(tok) = &mut token {
                     expr_location = Some(location.maybe_merge(expr_location));
@@ -883,18 +891,9 @@ impl<'a> PreProcessor<'a> {
     // `#define f (a) - object macro
     fn define(&mut self, start: u32) -> Result<(), Locatable<Error>> {
         let body = |this: &mut PreProcessor| {
-            this.tokens_until_newline()
+            this.tokens_until_newline(true)
                 .into_iter()
                 .map(|res| res.map(|loc| loc.data))
-                .enumerate()
-                .map(|(i, x)| {
-                    if i == 0 {
-                        vec![x]
-                    } else {
-                        vec![x, Ok(Token::Whitespace(String::from(" ")))]
-                    }
-                })
-                .flatten()
                 .collect::<Result<Vec<_>, Locatable<Error>>>()
         };
 
@@ -1254,16 +1253,15 @@ mod tests {
             _ => panic!("not a keyword: {:?}", token),
         }
     }
+    fn _is_not_whitespace(res: &CompileResult<Token>) -> bool {
+        !matches!(res, Ok(Token::Whitespace(_)))
+    }
     fn is_same_preprocessed(xs: PreProcessor, ys: PreProcessor) -> bool {
-        let xs = xs
+        let to_vec = |xs: PreProcessor| xs
             .map(|res| res.map(|token| token.data))
-            .filter(|res| !matches!(res, Ok(Token::Whitespace(_))))
+            .filter(_is_not_whitespace)
             .collect::<Vec<_>>();
-        let ys = ys
-            .map(|res| res.map(|token| token.data))
-            .filter(|res| !matches!(res, Ok(Token::Whitespace(_))))
-            .collect::<Vec<_>>();
-        xs == ys
+        to_vec(xs) == to_vec(ys)
     }
     fn assert_same(src: &str, cpp_src: &str) {
         assert!(

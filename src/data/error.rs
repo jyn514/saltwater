@@ -455,6 +455,12 @@ pub enum CppError {
     #[error("expected expression for #if")]
     EmptyExpression,
 
+    #[error("macro name missing")]
+    ExpectedMacroId,
+
+    #[error("missing {0} in {1}")]
+    Expected(&'static str, &'static str),
+
     /// A `#define` occured without an identifier following.
     #[error("macro name missing")]
     EmptyDefine,

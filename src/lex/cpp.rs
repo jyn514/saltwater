@@ -480,12 +480,12 @@ impl<'a> PreProcessor<'a> {
                 self.if_directive(condition, start)
             }
             IfNDef => {
-                self.consume_whitespace_oneline(start, CppError::EmptyExpression)?;
+                self.consume_whitespace_oneline(start, CppError::ExpectedMacroId)?;
                 let name = self.expect_id()?;
                 self.if_directive(!self.definitions.contains_key(&name.data), start)
             }
             IfDef => {
-                self.consume_whitespace_oneline(start, CppError::EmptyExpression)?;
+                self.consume_whitespace_oneline(start, CppError::ExpectedMacroId)?;
                 let name = self.expect_id()?;
                 self.if_directive(self.definitions.contains_key(&name.data), start)
             }
@@ -907,7 +907,10 @@ impl<'a> PreProcessor<'a> {
             // # define identifier lparen identifier-listopt ) replacement-list new-line
             // # define identifier lparen ... ) replacement-list new-line
             // # define identifier lparen identifier-list , ... ) replacement-list new-line
-            self.lexer_mut().consume_whitespace();
+            self.consume_whitespace_oneline(
+                self.file_processor.offset(),
+                CppError::Expected(")", "macro parameter list"),
+            )?;
             let params = if !self.lexer_mut().match_next(b')') {
                 self.fn_args(start)?
             } else {

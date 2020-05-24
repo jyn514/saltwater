@@ -282,10 +282,14 @@ fn replace_function(
 
     let mut replacements = Vec::new();
     if args.len() != params.len() {
-        // booo, this is the _only_ error in the whole replacer
-        return vec![Err(
-            location.with(CppError::TooFewArguments(args.len(), params.len()).into())
-        )];
+        // There is no way to distinguish between a macro-function taking one empty argument
+        // and taking no arguments other than knowing the number of parameters.
+        if !(args.len() == 1 && params.is_empty() && args[0].is_empty()) {
+            // booo, this is the _only_ error in the whole replacer
+            return vec![Err(
+                location.with(CppError::TooFewArguments(params.len(), args.len()).into())
+            )];
+        }
     }
 
     for token in body {

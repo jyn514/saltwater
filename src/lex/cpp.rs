@@ -886,6 +886,15 @@ impl<'a> PreProcessor<'a> {
             this.tokens_until_newline()
                 .into_iter()
                 .map(|res| res.map(|loc| loc.data))
+                .enumerate()
+                .map(|(i, x)| {
+                    if i == 0 {
+                        vec![x]
+                    } else {
+                        vec![x, Ok(Token::Whitespace(String::from(" ")))]
+                    }
+                })
+                .flatten()
                 .collect::<Result<Vec<_>, Locatable<Error>>>()
         };
 

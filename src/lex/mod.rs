@@ -204,12 +204,16 @@ impl Lexer {
             // comments
             if self.peek() == Some(b'/') {
                 match self.peek_next() {
-                    Some(b'/') => self.consume_line_comment(),
+                    Some(b'/') => {
+                        self.consume_line_comment();
+                        whitespace.push('\n');
+                    }
                     Some(b'*') => {
                         self.next_char();
                         self.next_char();
-                        if let Err(err) = self.consume_multi_comment() {
-                            self.error_handler.push_back(err);
+                        match self.consume_multi_comment() {
+                            Ok(ws) => whitespace.push_str(&ws),
+                            Err(err) => self.error_handler.push_back(err),
                         }
                     }
                     _ => break,
@@ -236,12 +240,21 @@ impl Lexer {
     ///
     /// Before: u8s{"hello this is a lot of text */ int main(){}"}
     /// After:  chars{" int main(){}"}
-    fn consume_multi_comment(&mut self) -> LexResult<()> {
+    ///
+    /// Return newlines occupied by the comment or a space if no newlines
+    fn consume_multi_comment(&mut self) -> LexResult<String> {
+        let mut whitespace = String::new();
         let start = self.location.offset - 2;
         while let Some(c) = self.next_char() {
             if c == b'*' && self.peek() == Some(b'/') {
                 self.next_char();
-                return Ok(());
+                if whitespace.is_empty() {
+                    whitespace.push(' '); // For the case `a/* */b`
+                }
+                return Ok(whitespace);
+            }
+            if c == b'\n' {
+                whitespace.push(c.into());
             }
         }
         Err(Locatable {

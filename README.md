@@ -20,12 +20,14 @@ Use `rcc --help` for all options (or see [below](#all-options)).
 You need to have `cc` on your PATH. You can either install mingw + gcc or MSVC.
 Other than that, it should work exactly the same as on Linux.
 
-## TODO
+## Unimplemented features
 
+- Defining functions taking variadic arguments. Note that calling variadic functions (like `printf`) is already supported.
+- Variable-length arrays (`int a[n]`)
 - Multiple translation units (files)
-- Bitfields?
-- Compile on non-x86 platforms
-- Cross-compile
+- Bitfields
+- Compiling on non-x86 platforms
+- Cross-compilation
 
 ## Examples
 
@@ -92,8 +94,8 @@ int i = 2 ; int main ( ) { return i ; }
 
 ```c
 $ echo 'int i = 1 + 2 ^ 3 % 5 / 2 & 1; int main(){}' | rcc --debug-ast
-auto int i = (int)(((1) + (2)) ^ ((((3) % (5)) / (2)) & (1)));
-extern int main() {
+ast: int i = ((1) + (2)) ^ ((((3) % (5)) / (2)) & (1));
+ast: int main(){
 }
 ```
 
@@ -103,7 +105,7 @@ $ cat tests/runner-tests/hello_world.c
 int main() {
     puts("Hello, world!");
 }
-$ rcc --debug-asm tests/runner-tests/hello_world.c
+$ rcc --debug-ir tests/runner-tests/hello_world.c
 function u0:0() -> i32 system_v {
     gv0 = symbol colocated u1:3
     sig0 = (i64) -> i32 system_v
@@ -123,17 +125,22 @@ Hello, world!
 
 ```txt
 $ rcc --help
-rcc 0.5.0
-Joshua Nelson <jyn514@gmail.com>:Graham Scheaffer <me@gisch.dev>
+rcc 0.9.0
+Joshua Nelson <jyn514@gmail.com>
 A C compiler written in Rust, with a focus on good error messages.
 Homepage: https://github.com/jyn514/rcc/
 
 usage: rcc [FLAGS] [OPTIONS] [<file>]
 
 FLAGS:
-        --debug-asm        If set, print the intermediate representation of the program in addition to compiling
-    -a, --debug-ast        If set, print the parsed abstract syntax tree in addition to compiling
+        --debug-ast        If set, print the parsed abstract syntax tree (AST) in addition to compiling.
+                            The AST does no type checking or validation, it only parses.
+        --debug-hir        If set, print the high intermediate representation (HIR) in addition to compiling.
+                            This does type checking and validation and also desugars various expressions.
+        --debug-ir         If set, print the intermediate representation (IR) of the program in addition to compiling.
         --debug-lex        If set, print all tokens found by the lexer in addition to compiling.
+        --jit              If set, will use JIT compilation for C code and instantly run compiled code (No files produced).
+                            NOTE: this option only works if rcc was compiled with the `jit` feature.
     -h, --help             Prints help information
     -c, --no-link          If set, compile and assemble but do not link. Object file is machine-dependent.
     -E, --preprocess-only  If set, preprocess only, but do not do anything else.
@@ -142,9 +149,15 @@ FLAGS:
     -V, --version          Prints version information
 
 OPTIONS:
+        --color <when>       When to use color. May be "never", "auto", or "always". [default: auto]
     -o, --output <output>    The output file to use. [default: a.out]
         --max-errors <max>   The maximum number of errors to allow before giving up.
                              Use 0 to allow unlimited errors. [default: 10]
+    -I, --include <dir>      Add a directory to the local include path (`#include "file.h"`).
+                              Can be specified multiple times to add multiple directories.
+    -D, --define <id[=val]>  Define an object-like macro.
+                              Can be specified multiple times to add multiple macros.
+                              `val` defaults to `1`.
 
 ARGS:
     <file>    The file to read C source from. "-" means stdin (use ./- to read a file called '-').

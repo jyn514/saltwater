@@ -410,8 +410,21 @@ impl<'a> PreProcessor<'a> {
         self.file_processor.line()
     }
 
-    fn tokens_until_newline(&mut self) -> Vec<CompileResult<Locatable<Token>>> {
-        self.file_processor.tokens_until_newline()
+    fn tokens_until_newline(&mut self, whitespace: bool) -> Vec<CompileResult<Locatable<Token>>> {
+        self.file_processor.tokens_until_newline(whitespace)
+    }
+
+    fn is_whitespace(res: &CppResult<Token>) -> bool {
+        matches!(
+            res,
+            Ok(Locatable {
+                data: Token::Whitespace(_),
+                ..
+            })
+        )
+    }
+    fn is_not_whitespace(res: &CppResult<Token>) -> bool {
+        !PreProcessor::is_whitespace(res)
     }
 
     /// If at the start of the line and we see `#directive`, return that directive.
@@ -427,7 +440,7 @@ impl<'a> PreProcessor<'a> {
         };
         Some(if is_hash && !self.file_processor.seen_line_token() {
             let line = self.file_processor.line();
-            match self.file_processor.next()? {
+            match self.file_processor.next_non_whitespace()? {
                 Ok(Locatable {
                     data: Token::Id(id),
                     location,
@@ -480,10 +493,12 @@ impl<'a> PreProcessor<'a> {
                 self.if_directive(condition, start)
             }
             IfNDef => {
+                self.consume_whitespace_oneline(start, CppError::ExpectedMacroId)?;
                 let name = self.expect_id()?;
                 self.if_directive(!self.definitions.contains_key(&name.data), start)
             }
             IfDef => {
+                self.consume_whitespace_oneline(start, CppError::ExpectedMacroId)?;
                 let name = self.expect_id()?;
                 self.if_directive(self.definitions.contains_key(&name.data), start)
             }
@@ -530,6 +545,7 @@ impl<'a> PreProcessor<'a> {
             }
             Define => self.define(start),
             Undef => {
+                self.consume_whitespace_oneline(start, CppError::EmptyExpression)?;
                 let name = self.expect_id()?;
                 self.definitions.remove(&name.data);
                 Ok(())
@@ -537,14 +553,14 @@ impl<'a> PreProcessor<'a> {
             Pragma => {
                 self.error_handler
                     .warn(WarningDiagnostic::IgnoredPragma, self.span(start));
-                drop(self.tokens_until_newline());
+                drop(self.tokens_until_newline(false));
                 Ok(())
             }
             // NOTE: #warning is a non-standard extension, but is implemented
             // by most major compilers including clang and gcc.
             Warning => {
                 let tokens: Vec<_> = self
-                    .tokens_until_newline()
+                    .tokens_until_newline(false)
                     .into_iter()
                     .map(|res| res.map(|l| l.data))
                     .collect::<Result<_, _>>()?;
@@ -554,7 +570,7 @@ impl<'a> PreProcessor<'a> {
             }
             Error => {
                 let tokens: Vec<_> = self
-                    .tokens_until_newline()
+                    .tokens_until_newline(false)
                     .into_iter()
                     .map(|res| res.map(|l| l.data))
                     .collect::<Result<_, _>>()?;
@@ -567,7 +583,7 @@ impl<'a> PreProcessor<'a> {
                     WarningDiagnostic::Generic("#line is not yet implemented".into()),
                     self.span(start),
                 );
-                drop(self.tokens_until_newline());
+                drop(self.tokens_until_newline(false));
                 Ok(())
             }
             Include => self.include(start),
@@ -577,7 +593,7 @@ impl<'a> PreProcessor<'a> {
     fn boolean_expr(&mut self) -> Result<bool, CompileError> {
         let start = self.file_processor.offset();
         let lex_tokens: Vec<_> = self
-            .tokens_until_newline()
+            .tokens_until_newline(false)
             .into_iter()
             .collect::<Result<_, CompileError>>()?;
         let location = self.span(start);
@@ -700,6 +716,7 @@ impl<'a> PreProcessor<'a> {
             .into_iter()
             .map(|t| replace(definitions, t.data, std::iter::empty(), t.location))
             .flatten()
+            .filter(PreProcessor::is_not_whitespace)
             .map(|mut token| {
                 if let Ok(tok) = &mut token {
                     expr_location = Some(location.maybe_merge(expr_location));
@@ -818,7 +835,7 @@ impl<'a> PreProcessor<'a> {
     fn fn_args(&mut self, start: u32) -> Result<Vec<InternedStr>, Locatable<Error>> {
         let mut arguments = Vec::new();
         loop {
-            match self.file_processor.next() {
+            match self.file_processor.next_non_whitespace() {
                 None => {
                     return Err(CompileError::new(
                         CppError::EndOfFile("identifier or ')'").into(),
@@ -880,17 +897,14 @@ impl<'a> PreProcessor<'a> {
     // `#define f (a) - object macro
     fn define(&mut self, start: u32) -> Result<(), Locatable<Error>> {
         let body = |this: &mut PreProcessor| {
-            this.tokens_until_newline()
+            this.tokens_until_newline(true)
                 .into_iter()
+                .skip_while(PreProcessor::is_whitespace)  // TODO warning if nothing skips
                 .map(|res| res.map(|loc| loc.data))
                 .collect::<Result<Vec<_>, Locatable<Error>>>()
         };
 
-        let line = self.line();
-        self.file_processor.consume_whitespace();
-        if self.line() != line {
-            return Err(self.span(start).error(CppError::EmptyDefine));
-        }
+        self.consume_whitespace_oneline(start, CppError::EmptyDefine)?;
         let id = self.expect_id()?;
         // NOTE: does _not_ discard whitespace
         if self.lexer_mut().match_next(b'(') {
@@ -899,7 +913,10 @@ impl<'a> PreProcessor<'a> {
             // # define identifier lparen identifier-listopt ) replacement-list new-line
             // # define identifier lparen ... ) replacement-list new-line
             // # define identifier lparen identifier-list , ... ) replacement-list new-line
-            self.lexer_mut().consume_whitespace();
+            self.consume_whitespace_oneline(
+                self.file_processor.offset(),
+                CppError::Expected(")", "macro parameter list"),
+            )?;
             let params = if !self.lexer_mut().match_next(b')') {
                 self.fn_args(start)?
             } else {
@@ -921,8 +938,8 @@ impl<'a> PreProcessor<'a> {
     // `#include "file"` - local include, but falls back to system include if `file` is not found.
     fn include(&mut self, start: u32) -> Result<(), Locatable<Error>> {
         use crate::data::lex::ComparisonToken;
+        self.consume_whitespace_oneline(start, CppError::EmptyInclude)?;
         let lexer = self.lexer_mut();
-        lexer.consume_whitespace();
         let local = if lexer.match_next(b'"') {
             true
         } else if lexer.match_next(b'<') {
@@ -1077,6 +1094,34 @@ impl<'a> PreProcessor<'a> {
             }
         }
     }
+
+    /// Returns next token in stream which is not whitespace
+    pub fn next_non_whitespace(&mut self) -> Option<CppResult<Token>> {
+        loop {
+            match self.next() {
+                Some(Ok(Locatable {
+                    data: Token::Whitespace(_),
+                    ..
+                })) => continue,
+                other => break other,
+            }
+        }
+    }
+
+    /// Consumes whitespace but returns error if it includes a newline
+    #[inline]
+    fn consume_whitespace_oneline(
+        &mut self,
+        start: u32,
+        error: CppError,
+    ) -> Result<String, CompileError> {
+        let line = self.line();
+        let ret = self.file_processor.consume_whitespace();
+        if self.line() != line {
+            return Err(self.span(start).error(error));
+        }
+        Ok(ret)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -1199,7 +1244,7 @@ mod tests {
 
     macro_rules! assert_err {
         ($src: expr, $err: pat, $description: expr $(,)?) => {
-            match cpp($src).next().unwrap().unwrap_err().data {
+            match cpp($src).next_non_whitespace().unwrap().unwrap_err().data {
                 Error::PreProcessor($err) => {}
                 Error::PreProcessor(other) => panic!("expected {}, got {}", $description, other),
                 _ => panic!("expected cpp err"),
@@ -1215,18 +1260,29 @@ mod tests {
             _ => panic!("not a keyword: {:?}", token),
         }
     }
+    fn is_same_preprocessed(xs: PreProcessor, ys: PreProcessor) -> bool {
+        let to_vec = |xs: PreProcessor| {
+            xs.filter(PreProcessor::is_not_whitespace)
+                .map(|res| res.map(|token| token.data))
+                .collect::<Vec<_>>()
+        };
+        to_vec(xs) == to_vec(ys)
+    }
     fn assert_same(src: &str, cpp_src: &str) {
-        assert_eq!(
-            cpp(src)
-                .map(|res| res.map(|token| token.data))
-                .collect::<Vec<_>>(),
-            cpp(cpp_src)
-                .map(|res| res.map(|token| token.data))
-                .collect::<Vec<_>>(),
+        assert!(
+            is_same_preprocessed(cpp(src), cpp(cpp_src)),
             "{} is not the same as {}",
             src,
             cpp_src,
         );
+    }
+    fn assert_same_exact(src: &str, cpp_src: &str) {
+        // NOTE make sure `cpp_src` has a trailing newline
+        let pprint = cpp(src)
+            .filter_map(|res| res.ok().map(|token| token.data.to_string()))
+            .collect::<Vec<_>>()
+            .join("");
+        assert_eq!(pprint, format!("{}\n", cpp_src)); // Because `cpp` adds newline, do it here too
     }
     #[test]
     fn keywords() {
@@ -1270,12 +1326,12 @@ mod tests {
         let code = "#ifdef a
         whatever, doesn't matter
         #endif";
-        assert_eq!(cpp(code).next(), None);
+        assert_eq!(cpp(code).next_non_whitespace(), None);
 
         let code = "#ifdef a\n#endif";
-        assert_eq!(cpp(code).next(), None);
+        assert_eq!(cpp(code).next_non_whitespace(), None);
 
-        assert!(cpp("#ifdef").next().unwrap().is_err());
+        assert!(cpp("#ifdef").next_non_whitespace().unwrap().is_err());
 
         let nested = "#ifdef a
         #ifdef b
@@ -1284,14 +1340,14 @@ mod tests {
         #endif
         char;";
         assert_eq!(
-            cpp(nested).next().unwrap().unwrap().data,
+            cpp(nested).next_non_whitespace().unwrap().unwrap().data,
             Token::Keyword(Keyword::Char)
         );
 
-        assert!(cpp("#endif").next().unwrap().is_err());
+        assert!(cpp("#endif").next_non_whitespace().unwrap().is_err());
 
         let same_line = "#ifdef a #endif\nint main() {}";
-        assert!(cpp(same_line).next().unwrap().is_err());
+        assert!(cpp(same_line).next_non_whitespace().unwrap().is_err());
     }
     #[test]
     fn ifndef() {
@@ -1300,7 +1356,7 @@ mod tests {
 #define A
 #endif
 A";
-        assert!(cpp(src).next().is_none());
+        assert!(cpp(src).next_non_whitespace().is_none());
     }
     #[test]
     fn object_macros() {
@@ -1429,20 +1485,20 @@ d
     #[test]
     fn pragma() {
         let src = "#pragma gcc __attribute__((inline))";
-        assert!(cpp(src).next().is_none());
+        assert!(cpp(src).next_non_whitespace().is_none());
     }
     #[test]
     fn line() {
         let src = "#line 1";
         let mut cpp = cpp(src);
-        assert!(cpp.next().is_none());
+        assert!(cpp.next_non_whitespace().is_none());
         assert!(cpp.warnings().pop_front().is_some());
     }
     #[test]
     fn warning() {
         let src = "#warning your pants are on file";
         let mut cpp = cpp(src);
-        assert!(cpp.next().is_none());
+        assert!(cpp.next_non_whitespace().is_none());
         assert!(cpp.warnings().pop_front().is_some());
     }
     #[test]
@@ -1453,8 +1509,8 @@ d
     fn invalid_directive() {
         assert_err!("#wrong", CppError::InvalidDirective, "invalid directive",);
         assert_err!("#1", CppError::UnexpectedToken(_, _), "unexpected token",);
-        assert_err!("#include", CppError::EndOfFile(_), "end of file");
-        assert_err!("#if defined", CppError::EndOfFile(_), "end of file");
+        assert_err!("#include", CppError::EmptyInclude, "empty include");
+        assert_err!("#if defined", CppError::EndOfFile(_), "unexpected eof");
         for s in &[
             "#if defined()",
             "#if defined(+)",
@@ -1479,15 +1535,14 @@ c
     }
     #[test]
     fn test_comment_newline() {
-        let tokens: Vec<_> = cpp_no_newline(
+        let tokens = cpp_no_newline(
             "
 #if 1 //
 int main() {}
 #endif
 ",
-        )
-        .collect();
-        assert_eq!(tokens, cpp("int main() {}").collect::<Vec<_>>());
+        );
+        assert!(is_same_preprocessed(tokens, cpp("int main() {}")));
         assert_same(
             "
 #if 1 /**//**/
@@ -1533,5 +1588,60 @@ int main(){}
             a(1)
         ";
         assert_same(original, "a(1)");
+    }
+    #[test]
+    // https://github.com/jyn514/rcc/issues/356
+    fn preprocess_only() {
+        assert_same_exact("int \t\n\r     main() {}", "int \t\n\r     main() {}");
+        assert_same_exact("int/* */main() {}", "int main() {}");
+        assert_same_exact("int/*\n\n\n*/main() {}", "int\n\n\nmain() {}");
+        assert_same_exact("#define a(c) c\tc\na(1);a(2)", "\n1\t1;2\t2");
+        assert_same_exact("#define a //\n#if defined a\n  x\n#endif", "\n\n  x\n");
+        assert_same_exact("#define x\n#undef x\n  x", "\n\n  x");
+        assert_same_exact("#pragma once\n  x", "\n  x");
+        assert_same_exact("#warning dont panic\n  x", "\n  x");
+        assert_same_exact("#error dont panic\n  x", "\n  x");
+        assert_same_exact("#line 1\n  x", "\n  x");
+        assert_same_exact(
+            "---
+#define a
+---
+#if 1
+  x
+  y
+  z
+#endif
+---
+#if 0
+  x
+#endif
+---
+#ifdef a
+  x
+#endif
+---
+#ifndef a
+  x
+#endif
+---",
+            "---
+
+---
+
+  x
+  y
+  z
+
+---
+
+---
+
+  x
+
+---
+
+---",
+        );
+        // TODO test for #includes
     }
 }

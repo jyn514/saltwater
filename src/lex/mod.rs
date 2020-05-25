@@ -186,17 +186,38 @@ impl Lexer {
             file: self.location.file,
         }
     }
+
+    #[inline]
+    fn consume_whitespace(&mut self) -> String {
+        self.consume_whitespace_full(false, true)
+    }
+    #[inline]
+    fn consume_whitespace_preprocessor(&mut self) -> String {
+        self.consume_whitespace_full(true, false)
+    }
     /// Remove all consecutive whitespace pending in the stream.
     /// This includes comments.
     ///
+    /// If `stop_at_newline` this stops at the end of the line (unless there's a comment)
+    /// If `comments_newlines` then multiline comments are replaced with their newlines else space
+    ///
     /// Before: b"    // some comment\n /*multi comment*/hello   "
     /// After:  b"hello   "
-    fn consume_whitespace(&mut self) {
+    fn consume_whitespace_full(
+        &mut self,
+        stop_at_newline: bool,
+        comments_newlines: bool,
+    ) -> String {
         // there may be comments following whitespace
+        let mut whitespace = String::new();
         loop {
             // whitespace
-            while self.peek().map_or(false, |c| c.is_ascii_whitespace()) {
-                self.next_char();
+            while self.peek().map_or(false, |c| {
+                c.is_ascii_whitespace() && !(stop_at_newline && c == b'\n')
+            }) {
+                if let Some(c) = self.next_char() {
+                    whitespace.push(c.into());
+                }
             }
             // comments
             if self.peek() == Some(b'/') {
@@ -205,8 +226,12 @@ impl Lexer {
                     Some(b'*') => {
                         self.next_char();
                         self.next_char();
-                        if let Err(err) = self.consume_multi_comment() {
-                            self.error_handler.push_back(err);
+                        match self.consume_multi_comment() {
+                            Ok(ws) => {
+                                let ws = if comments_newlines { &ws } else { " " };
+                                whitespace.push_str(ws)
+                            }
+                            Err(err) => self.error_handler.push_back(err),
                         }
                     }
                     _ => break,
@@ -215,6 +240,7 @@ impl Lexer {
                 break;
             }
         }
+        whitespace
     }
     /// Remove all characters between now and the next b'\n' character.
     ///
@@ -222,9 +248,11 @@ impl Lexer {
     /// After:  chars{"hello // blah"}
     fn consume_line_comment(&mut self) {
         loop {
-            match self.next_char() {
+            match self.peek() {
                 None | Some(b'\n') => return,
-                _ => {}
+                _ => {
+                    self.next_char();
+                }
             }
         }
     }
@@ -232,12 +260,21 @@ impl Lexer {
     ///
     /// Before: u8s{"hello this is a lot of text */ int main(){}"}
     /// After:  chars{" int main(){}"}
-    fn consume_multi_comment(&mut self) -> LexResult<()> {
+    ///
+    /// Return newlines occupied by the comment or a space if no newlines
+    fn consume_multi_comment(&mut self) -> LexResult<String> {
+        let mut whitespace = String::new();
         let start = self.location.offset - 2;
         while let Some(c) = self.next_char() {
             if c == b'*' && self.peek() == Some(b'/') {
                 self.next_char();
-                return Ok(());
+                if whitespace.is_empty() {
+                    whitespace.push(' '); // For the case `a/* */b`
+                }
+                return Ok(whitespace);
+            }
+            if c == b'\n' {
+                whitespace.push(c.into());
             }
         }
         Err(Locatable {
@@ -648,6 +685,19 @@ impl Lexer {
         }
         Ok(Token::Id(InternedStr::get_or_intern(id)))
     }
+
+    /// Returns next token in stream which is not whitespace
+    pub fn next_non_whitespace(&mut self) -> Option<LexResult<Locatable<Token>>> {
+        loop {
+            match self.next() {
+                Some(Ok(Locatable {
+                    data: Token::Whitespace(_),
+                    ..
+                })) => continue,
+                other => break other,
+            }
+        }
+    }
 }
 
 impl Iterator for Lexer {
@@ -668,7 +718,17 @@ impl Iterator for Lexer {
             return None;
         }
 
-        self.consume_whitespace();
+        {
+            let span_start = self.location.offset;
+            let data = self.consume_whitespace();
+            if !data.is_empty() {
+                return Some(Ok(Locatable {
+                    data: Token::Whitespace(data),
+                    location: self.span(span_start),
+                }));
+            }
+        }
+
         let c = self.next_char().and_then(|c| {
             let span_start = self.location.offset - 1;
             // this giant switch is most of the logic
@@ -865,7 +925,8 @@ impl Iterator for Lexer {
                         .with(LexError::UnknownToken(x as char))));
                 }
             };
-            self.seen_line_token |= data != Token::Hash;
+            // We've seen a token if this isn't # or whitespace
+            self.seen_line_token |= !(data == Token::Hash || matches!(data, Token::Whitespace(_)));
             Some(Ok(Locatable {
                 data,
                 location: self.span(span_start),

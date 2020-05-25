@@ -1596,7 +1596,52 @@ int main(){}
         assert_same_exact("int/* */main() {}", "int main() {}");
         assert_same_exact("int/*\n\n\n*/main() {}", "int\n\n\nmain() {}");
         assert_same_exact("#define a(c) c\tc\na(1);a(2)", "\n1\t1;2\t2");
-        // assert_same_exact("#define a //\n#if defined a\n  x\n#endif", "\n\n  x");
-        // TODO add mote tests for `assert_same_exact` with preprocessor macros
+        assert_same_exact("#define a //\n#if defined a\n  x\n#endif", "\n\n  x\n");
+        assert_same_exact("#define x\n#undef x\n  x", "\n\n  x");
+        assert_same_exact("#pragma once\n  x", "\n  x");
+        assert_same_exact("#warning dont panic\n  x", "\n  x");
+        assert_same_exact("#error dont panic\n  x", "\n  x");
+        assert_same_exact("#line 1\n  x", "\n  x");
+        assert_same_exact(
+            "---
+#define a
+---
+#if 1
+  x
+  y
+  z
+#endif
+---
+#if 0
+  x
+#endif
+---
+#ifdef a
+  x
+#endif
+---
+#ifndef a
+  x
+#endif
+---",
+            "---
+
+---
+
+  x
+  y
+  z
+
+---
+
+---
+
+  x
+
+---
+
+---",
+        );
+        // TODO test for #includes
     }
 }

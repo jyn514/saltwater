@@ -46,7 +46,7 @@ FLAGS:
                             Note that preprocessing discards whitespace and comments.
                             There is not currently a way to disable this behavior.
     -V, --version          Prints version information
-    
+
 OPTIONS:
         --color <when>       When to use color. May be \"never\", \"auto\", or \"always\". [default: auto]
     -o, --output <output>    The output file to use. [default: a.out]
@@ -134,9 +134,8 @@ fn real_main(buf: Rc<str>, bin_opt: BinOpt, output: &Path) -> Result<(), (Error,
         let stdout = io::stdout();
         let mut stdout_buf = BufWriter::new(stdout.lock());
         for token in rcc_try!(tokens, files) {
-            write!(stdout_buf, "{} ", token.data).expect("failed to write to stdout");
+            write!(stdout_buf, "{}", token.data).expect("failed to write to stdout");
         }
-        writeln!(stdout_buf).expect("failed to write to stdout");
 
         return Ok(());
     } else {

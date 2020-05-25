@@ -148,6 +148,10 @@ impl<I: Lexer> Parser<I> {
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
         loop {
             match self.tokens.next() {
+                Some(Ok(Locatable {
+                    data: Token::Whitespace(_),
+                    ..
+                })) => continue,
                 Some(Ok(mut token)) => {
                     self.last_location = token.location;
                     // This is _such_ a hack
@@ -359,7 +363,7 @@ pub(crate) mod test {
     pub(crate) fn parser(input: &str) -> Parser<PreProcessor> {
         //let mut lexer = Lexer::new((), format!("{}\n", input), false);
         let mut lexer = cpp(input);
-        let first: Locatable<Token> = lexer.next().unwrap().unwrap();
+        let first: Locatable<Token> = lexer.next_non_whitespace().unwrap().unwrap();
         Parser::new(first, lexer, false)
     }
 

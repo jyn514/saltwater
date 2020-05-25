@@ -119,8 +119,12 @@ impl FileProcessor {
         self.lexer().span(start)
     }
     #[inline]
-    pub(super) fn consume_whitespace(&mut self) {
+    pub(super) fn consume_whitespace(&mut self) -> String {
         self.lexer_mut().consume_whitespace()
+    }
+    #[inline]
+    pub(super) fn consume_whitespace_preprocessor(&mut self) -> String {
+        self.lexer_mut().consume_whitespace_preprocessor()
     }
     #[inline]
     pub(super) fn seen_line_token(&self) -> bool {
@@ -138,18 +142,26 @@ impl FileProcessor {
 
     /// Return all tokens from the current position until the end of the current line.
     ///
+    /// * `whitespace` - whether or not to include whitespace tokens
+    ///
     /// Note that these are _tokens_ and not bytes, so if there are invalid tokens
     /// on the current line, this will return a lex error.
-    pub(super) fn tokens_until_newline(&mut self) -> Vec<CompileResult<Locatable<Token>>> {
+    pub(super) fn tokens_until_newline(
+        &mut self,
+        whitespace: bool,
+    ) -> Vec<CompileResult<Locatable<Token>>> {
         let mut tokens = Vec::new();
-        let line = self.line();
         loop {
-            self.consume_whitespace();
-            if self.line() != line {
-                // lines should end with a newline, but in case they don't, don't crash
-                assert!(!self.lexer().seen_line_token || self.lexer_mut().peek().is_none(),
-                    "expected `tokens_until_newline()` to reset `seen_line_token`, but `lexer.peek()` is {:?}",
-                    self.lexer_mut().peek());
+            let ws_start = self.offset();
+            let ws = self.consume_whitespace_preprocessor();
+            let ws_span = self.span(ws_start);
+            if whitespace && !ws.is_empty() {
+                tokens.push(Ok(Locatable {
+                    data: Token::Whitespace(ws), // NOTE: in clang, this is one space
+                    location: ws_span,
+                }));
+            }
+            if self.lexer_mut().peek().unwrap_or(b'\n') == b'\n' {
                 break;
             }
             match self.next() {
@@ -158,5 +170,18 @@ impl FileProcessor {
             }
         }
         tokens
+    }
+
+    /// Returns next token in stream which is not whitespace
+    pub(super) fn next_non_whitespace(&mut self) -> Option<CompileResult<Locatable<Token>>> {
+        loop {
+            match self.next() {
+                Some(Ok(Locatable {
+                    data: Token::Whitespace(_),
+                    ..
+                })) => continue,
+                other => break other,
+            }
+        }
     }
 }

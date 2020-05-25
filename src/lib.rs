@@ -242,7 +242,7 @@ pub fn check_semantics(buf: &str, opt: Opt) -> Program<Vec<Locatable<hir::Declar
         }};
     }
     let first = loop {
-        match cpp.next() {
+        match cpp.next_non_whitespace() {
             Some(Ok(token)) => break Some(token),
             Some(Err(err)) => handle_err!(err),
             None => break None,

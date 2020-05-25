@@ -1257,13 +1257,10 @@ mod tests {
             _ => panic!("not a keyword: {:?}", token),
         }
     }
-    fn _is_not_whitespace(res: &CompileResult<Token>) -> bool {
-        !matches!(res, Ok(Token::Whitespace(_)))
-    }
     fn is_same_preprocessed(xs: PreProcessor, ys: PreProcessor) -> bool {
         let to_vec = |xs: PreProcessor| {
-            xs.map(|res| res.map(|token| token.data))
-                .filter(_is_not_whitespace)
+            xs.filter(PreProcessor::is_not_whitespace)
+                .map(|res| res.map(|token| token.data))
                 .collect::<Vec<_>>()
         };
         to_vec(xs) == to_vec(ys)

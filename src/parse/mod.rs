@@ -150,7 +150,7 @@ impl<I: Lexer> Parser<I> {
             match self.tokens.next() {
                 Some(Ok(Locatable {
                     data: Token::Whitespace(_),
-                    location: _,
+                    ..
                 })) => continue,
                 Some(Ok(mut token)) => {
                     self.last_location = token.location;

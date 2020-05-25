@@ -414,14 +414,17 @@ impl<'a> PreProcessor<'a> {
         self.file_processor.tokens_until_newline(whitespace)
     }
 
-    fn is_not_whitespace(res: &CppResult<Token>) -> bool {
-        !matches!(
+    fn is_whitespace(res: &CppResult<Token>) -> bool {
+        matches!(
             res,
             Ok(Locatable {
                 data: Token::Whitespace(_),
                 ..
             })
         )
+    }
+    fn is_not_whitespace(res: &CppResult<Token>) -> bool {
+        !PreProcessor::is_whitespace(res)
     }
 
     /// If at the start of the line and we see `#directive`, return that directive.
@@ -896,7 +899,7 @@ impl<'a> PreProcessor<'a> {
         let body = |this: &mut PreProcessor| {
             this.tokens_until_newline(true)
                 .into_iter()
-                .skip(1)  // First is always unwanted whitespace
+                .skip_while(PreProcessor::is_whitespace)  // TODO warning if nothing skips
                 .map(|res| res.map(|loc| loc.data))
                 .collect::<Result<Vec<_>, Locatable<Error>>>()
         };

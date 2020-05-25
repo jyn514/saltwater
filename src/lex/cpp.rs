@@ -1097,7 +1097,7 @@ impl<'a> PreProcessor<'a> {
             match self.next() {
                 Some(Ok(Locatable {
                     data: Token::Whitespace(_),
-                    location: _,
+                    ..
                 })) => continue,
                 other => break other,
             }

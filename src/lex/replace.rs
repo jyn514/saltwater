@@ -4,7 +4,7 @@
 
 use super::{cpp::CppResult, files::FileProcessor};
 use crate::{
-    error::CppError, CompileError, CompileResult, InternedStr, Locatable, Location, Token,
+    error::CppError, CompileError, CompileResult, InternedStr, Literal, Locatable, Location, Token,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -329,18 +329,31 @@ fn replace_function(
         }
     }
 
+    let mut next_stringify = false; // Set to true after # to stringify next arg
     for token in body {
-        if let Token::Id(id) = *token {
-            // #define f(a) { a + 1 } \n f(b) => b + 1
-            if let Some(index) = params.iter().position(|&param| param == id) {
-                let replacement = args[index].clone();
-                replacements.extend(replacement);
-            } else {
-                let token = Token::Id(id);
-                replacements.push(token);
+        match *token {
+            Token::Id(id) => {
+                // #define f(a) { a + 1 } \n f(b) => b + 1
+                if let Some(index) = params.iter().position(|&param| param == id) {
+                    let replacement = args[index].clone();
+                    if next_stringify {
+                        replacements.push(stringify(replacement));
+                    } else {
+                        replacements.extend(replacement);
+                    }
+                } else {
+                    let token = Token::Id(id);
+                    replacements.push(token);
+                }
+                next_stringify = true;
             }
-        } else {
-            replacements.push(token.clone());
+            Token::Hash => {
+                next_stringify = true;
+            }
+            _ => {
+                replacements.push(token.clone());
+                next_stringify = false;
+            }
         }
     }
     // TODO: this collect is useless
@@ -348,4 +361,29 @@ fn replace_function(
         .into_iter()
         .chain(replacements.into_iter().map(|t| Ok(location.with(t))))
         .collect()
+}
+
+fn stringify(args: Vec<Token>) -> Token {
+    let ret: String = args
+        .into_iter()
+        .map(|arg| {
+            match arg {
+                Token::Whitespace(_) => String::from(" "), // Single space in replacement
+                Token::Literal(Literal::Str(s)) => {
+                    // TODO can we unwrap safely?
+                    let new_s = std::str::from_utf8(&s)
+                        .unwrap()
+                        .trim_end_matches('\u{0}')  // remove null terminator
+                        .escape_default();
+                    "\\\"" // Wrap with escaped quotation marks
+                        .chars()
+                        .chain(new_s)
+                        .chain("\\\"".chars())
+                        .collect::<String>()
+                }
+                other => other.to_string(),
+            }
+        })
+        .collect();
+    Token::Literal(Literal::Str(ret.into()))
 }

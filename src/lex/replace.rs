@@ -374,7 +374,8 @@ fn stringify(args: Vec<Token>) -> Token {
                     let new_s = std::str::from_utf8(&s)
                         .unwrap()
                         .trim_end_matches('\u{0}')  // remove null terminator
-                        .escape_default();
+                        .escape_default()  // Escape whitespace, etc
+                        .flat_map(char::escape_default); // Escape a second time
                     "\\\"" // Wrap with escaped quotation marks
                         .chars()
                         .chain(new_s)

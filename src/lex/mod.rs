@@ -186,17 +186,35 @@ impl Lexer {
             file: self.location.file,
         }
     }
+
+    #[inline]
+    fn consume_whitespace(&mut self) -> String {
+        self.consume_whitespace_full(false, true)
+    }
+    #[inline]
+    fn consume_whitespace_preprocessor(&mut self) -> String {
+        self.consume_whitespace_full(true, false)
+    }
     /// Remove all consecutive whitespace pending in the stream.
     /// This includes comments.
     ///
+    /// If `stop_at_newline` this stops at the end of the line (unless there's a comment)
+    /// If `comments_newlines` then multiline comments are replaced with their newlines else space
+    ///
     /// Before: b"    // some comment\n /*multi comment*/hello   "
     /// After:  b"hello   "
-    fn consume_whitespace(&mut self) -> String {
+    fn consume_whitespace_full(
+        &mut self,
+        stop_at_newline: bool,
+        comments_newlines: bool,
+    ) -> String {
         // there may be comments following whitespace
         let mut whitespace = String::new();
         loop {
             // whitespace
-            while self.peek().map_or(false, |c| c.is_ascii_whitespace()) {
+            while self.peek().map_or(false, |c| {
+                c.is_ascii_whitespace() && !(stop_at_newline && c == b'\n')
+            }) {
                 if let Some(c) = self.next_char() {
                     whitespace.push(c.into());
                 }
@@ -204,15 +222,15 @@ impl Lexer {
             // comments
             if self.peek() == Some(b'/') {
                 match self.peek_next() {
-                    Some(b'/') => {
-                        self.consume_line_comment();
-                        whitespace.push('\n');
-                    }
+                    Some(b'/') => self.consume_line_comment(),
                     Some(b'*') => {
                         self.next_char();
                         self.next_char();
                         match self.consume_multi_comment() {
-                            Ok(ws) => whitespace.push_str(&ws),
+                            Ok(ws) => {
+                                let ws = if comments_newlines { &ws } else { " " };
+                                whitespace.push_str(ws)
+                            }
                             Err(err) => self.error_handler.push_back(err),
                         }
                     }
@@ -230,9 +248,11 @@ impl Lexer {
     /// After:  chars{"hello // blah"}
     fn consume_line_comment(&mut self) {
         loop {
-            match self.next_char() {
+            match self.peek() {
                 None | Some(b'\n') => return,
-                _ => {}
+                _ => {
+                    self.next_char();
+                }
             }
         }
     }

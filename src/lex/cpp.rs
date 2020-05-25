@@ -1278,8 +1278,7 @@ mod tests {
     fn assert_same_exact(src: &str, cpp_src: &str) {
         // NOTE make sure `cpp_src` has a trailing newline
         let pprint = cpp(src)
-            .filter_map(|res| res.ok().map(|token| token.data))
-            .map(|res| format!("{}", res))
+            .filter_map(|res| res.ok().map(|token| token.data.to_string()))
             .collect::<Vec<_>>()
             .join("");
         assert_eq!(pprint, format!("{}\n", cpp_src)); // Because `cpp` adds newline, do it here too

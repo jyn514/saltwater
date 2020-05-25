@@ -22,7 +22,6 @@ Other than that, it should work exactly the same as on Linux.
 
 ## TODO
 
-- Complex assignment (`a /= 5`)
 - Multiple translation units (files)
 - Bitfields?
 - Compile on non-x86 platforms

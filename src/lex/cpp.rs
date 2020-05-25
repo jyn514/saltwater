@@ -896,6 +896,7 @@ impl<'a> PreProcessor<'a> {
         let body = |this: &mut PreProcessor| {
             this.tokens_until_newline(true)
                 .into_iter()
+                .skip(1)  // First is always unwanted whitespace
                 .map(|res| res.map(|loc| loc.data))
                 .collect::<Result<Vec<_>, Locatable<Error>>>()
         };
@@ -934,8 +935,8 @@ impl<'a> PreProcessor<'a> {
     // `#include "file"` - local include, but falls back to system include if `file` is not found.
     fn include(&mut self, start: u32) -> Result<(), Locatable<Error>> {
         use crate::data::lex::ComparisonToken;
+        self.consume_whitespace_oneline(start, CppError::EmptyInclude)?;
         let lexer = self.lexer_mut();
-        lexer.consume_whitespace();
         let local = if lexer.match_next(b'"') {
             true
         } else if lexer.match_next(b'<') {
@@ -1484,20 +1485,20 @@ d
     #[test]
     fn pragma() {
         let src = "#pragma gcc __attribute__((inline))";
-        assert!(cpp(src).next().is_none());
+        assert!(cpp(src).next_non_whitespace().is_none());
     }
     #[test]
     fn line() {
         let src = "#line 1";
         let mut cpp = cpp(src);
-        assert!(cpp.next().is_none());
+        assert!(cpp.next_non_whitespace().is_none());
         assert!(cpp.warnings().pop_front().is_some());
     }
     #[test]
     fn warning() {
         let src = "#warning your pants are on file";
         let mut cpp = cpp(src);
-        assert!(cpp.next().is_none());
+        assert!(cpp.next_non_whitespace().is_none());
         assert!(cpp.warnings().pop_front().is_some());
     }
     #[test]
@@ -1508,8 +1509,8 @@ d
     fn invalid_directive() {
         assert_err!("#wrong", CppError::InvalidDirective, "invalid directive",);
         assert_err!("#1", CppError::UnexpectedToken(_, _), "unexpected token",);
-        assert_err!("#include", CppError::EndOfFile(_), "end of file");
-        assert_err!("#if defined", CppError::EndOfFile(_), "end of file");
+        assert_err!("#include", CppError::EmptyInclude, "empty include");
+        assert_err!("#if defined", CppError::EndOfFile(_), "unexpected eof");
         for s in &[
             "#if defined()",
             "#if defined(+)",
@@ -1594,6 +1595,8 @@ int main(){}
         assert_same_exact("int \t\n\r     main() {}", "int \t\n\r     main() {}");
         assert_same_exact("int/* */main() {}", "int main() {}");
         assert_same_exact("int/*\n\n\n*/main() {}", "int\n\n\nmain() {}");
-        // TODO add tests for `assert_same_exact` with preprocessor macros
+        assert_same_exact("#define a(c) c\tc\na(1);a(2)", "\n1\t1;2\t2");
+        // assert_same_exact("#define a //\n#if defined a\n  x\n#endif", "\n\n  x");
+        // TODO add mote tests for `assert_same_exact` with preprocessor macros
     }
 }

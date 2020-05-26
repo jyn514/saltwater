@@ -1775,12 +1775,17 @@ h",
         let assert_same_stringified = |cpp: &str, cpp_src: &str| {
             assert_same_exact(
                 &format!("#define xstr(a) #a\nxstr({})", cpp),
-                &format!("\n{}", cpp_src));
+                &format!("\n{}", cpp_src),
+            );
         };
         assert_same_stringified("a + b", r#""a + b""#);
         assert_same_stringified(r#"b   	 +"c""#, r#""b +\"c\"""#);
         assert_same_stringified(r#""+\\+\n+\"+""#, r#""\"+\\\\+\\n+\\\"+\"""#);
-        assert_same_stringified(r#""\'""#, r#""\"\\'\""#);  // TODO figure out why ' is different
-        // TODO test unicode chars
+        assert_same_stringified(r#""\'""#, r#""\"\\'\""#);
+        assert_same_stringified(
+            r#""\a+\b+\e+\f+\r+\v+\?""#,
+            r#""\"\\a+\\b+\\e+\\f+\\r+\\v+\\?\"""#,
+        );
+        assert_same_stringified(r#""\x3f""#, r#""\"\\x3f\"""#);
     }
 }

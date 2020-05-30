@@ -5,11 +5,10 @@ use std::process::{Command, Output};
 
 extern crate env_logger;
 extern crate log;
-extern crate rcc;
 extern crate tempfile;
 
 use log::info;
-use rcc::Error;
+use saltwater::Error;
 
 pub fn init() {
     env_logger::builder().is_test(true).init();
@@ -46,12 +45,12 @@ pub fn compile(
     filename: PathBuf,
     no_link: bool,
 ) -> Result<tempfile::TempPath, Error> {
-    let opts = rcc::Opt {
+    let opts = saltwater::Opt {
         filename,
         ..Default::default()
     };
-    let module = rcc::initialize_aot_module(program.to_owned());
-    let module = rcc::compile(module, program, opts).result?.finish();
+    let module = saltwater::initialize_aot_module(program.to_owned());
+    let module = saltwater::compile(module, program, opts).result?.finish();
     let output = tempfile::NamedTempFile::new()
         .expect("cannot create tempfile")
         .into_temp_path();
@@ -61,10 +60,10 @@ pub fn compile(
             .expect("cannot create tempfile")
             .into_temp_path();
         info!("tmp_file is {:?}", tmp_file);
-        rcc::assemble(module, &tmp_file)?;
-        rcc::link(&tmp_file, &output)?;
+        saltwater::assemble(module, &tmp_file)?;
+        saltwater::link(&tmp_file, &output)?;
     } else {
-        rcc::assemble(module, &output)?;
+        saltwater::assemble(module, &output)?;
     };
     Ok(output)
 }

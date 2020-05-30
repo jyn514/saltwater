@@ -972,7 +972,7 @@ impl Type {
     ///
     /// Examples:
     /// ```ignore
-    /// use rcc::data::types::Type::*;
+    /// use saltwater::data::types::Type::*;
     /// assert!(Long(true).rank() > Int(true).rank());
     /// assert!(Int(false).rank() > Short(false).rank());
     /// assert!(Short(true).rank() > Char(true).rank());

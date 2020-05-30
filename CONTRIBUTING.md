@@ -42,7 +42,7 @@ Writing unit tests for codegen is not really possible,
 since we want to see how the program behaves at runtime,
 and running arbitrary C code in-process is a recipe for disaster.
 
-Instead, rcc uses 'Runner tests', which are C files in
+Instead, saltwater uses 'Runner tests', which are C files in
 `tests/runner-tests` that are compiled and run by `tests/runner.rs`.
 You can control the expected output using a comment at the top of the file
 (usually something like `// succeeds` or `code: 1`).

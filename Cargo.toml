@@ -1,5 +1,5 @@
 [package]
-name = "rcc"
+name = "saltwater"
 version = "0.9.0"
 authors = [
   "Joshua Nelson <jyn514@gmail.com>",
@@ -12,13 +12,13 @@ authors = [
 ]
 edition = "2018"
 description = "A C compiler written in Rust, with a focus on good error messages."
-repository = "https://github.com/jyn514/rcc/"
+repository = "https://github.com/jyn514/saltwater/"
 readme = "README.md"
 categories = ["development-tools", "parser-implementations"]
 license = "BSD-3-Clause"
 keywords = ["C", "compiler", "recursive-descent", "cranelift"]
-default-run = "rcc"
-documentation = "https://docs.rs/rcc"
+default-run = "swcc"
+documentation = "https://docs.rs/saltwater"
 
 [dependencies]
 lazy_static = "1"
@@ -49,7 +49,7 @@ proptest-derive = "0.1"
 
 [features]
 default = ["cc", "codegen", "color-backtrace"]
-# The `rcc` binary
+# The `swcc` binary
 cc = ["ansi_term", "git-testament", "tempfile", "pico-args", "codegen", "atty"]
 codegen = ["cranelift", "cranelift-module", "cranelift-object"]
 jit = ["codegen", "cranelift-simplejit"]
@@ -57,7 +57,7 @@ jit = ["codegen", "cranelift-simplejit"]
 _test_headers = []
 
 [[bin]]
-name = "rcc"
+name = "swcc"
 path = "src/main.rs"
 required-features = ["cc"]
 

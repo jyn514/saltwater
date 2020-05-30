@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use ansi_term::{ANSIString, Colour};
 use git_testament::git_testament_macros;
 use pico_args::Arguments;
-use rcc::{
+use saltwater::{
     assemble, compile,
     data::{error::CompileWarning, Location},
     link, preprocess, Error, Files, Opt, Program,
@@ -39,7 +39,7 @@ FLAGS:
         --debug-ir         If set, print the intermediate representation (IR) of the program in addition to compiling.
         --debug-lex        If set, print all tokens found by the lexer in addition to compiling.
         --jit              If set, will use JIT compilation for C code and instantly run compiled code (No files produced).
-                            NOTE: this option only works if rcc was compiled with the `jit` feature.
+                            NOTE: this option only works if saltwater was compiled with the `jit` feature.
     -h, --help             Prints help information
     -c, --no-link          If set, compile and assemble but do not link. Object file is machine-dependent.
     -E, --preprocess-only  If set, preprocess only, but do not do anything else.
@@ -64,7 +64,7 @@ ARGS:
 );
 
 const USAGE: &str = "\
-usage: rcc [--help | -h] [--version | -V] [--debug-ir] [--debug-ast] [--debug-lex]
+usage: swcc [--help | -h] [--version | -V] [--debug-ir] [--debug-ast] [--debug-lex]
            [--debug-hir] [--jit] [--no-link | -c] [--preprocess-only | -E]
            [-I <dir>] [-D <id[=val]>] [<file>]";
 
@@ -109,7 +109,7 @@ impl std::str::FromStr for ColorChoice {
     }
 }
 
-macro_rules! rcc_try {
+macro_rules! sw_try {
     ($res: expr, $files: expr) => {
         match $res {
             Ok(program) => program,
@@ -133,7 +133,7 @@ fn real_main(buf: Rc<str>, bin_opt: BinOpt, output: &Path) -> Result<(), (Error,
 
         let stdout = io::stdout();
         let mut stdout_buf = BufWriter::new(stdout.lock());
-        for token in rcc_try!(tokens, files) {
+        for token in sw_try!(tokens, files) {
             write!(stdout_buf, "{}", token.data).expect("failed to write to stdout");
         }
 
@@ -146,15 +146,15 @@ fn real_main(buf: Rc<str>, bin_opt: BinOpt, output: &Path) -> Result<(), (Error,
         if !opt.jit {
             aot_main(&buf, opt, output, bin_opt.color)
         } else {
-            let module = rcc::initialize_jit_module();
+            let module = saltwater::initialize_jit_module();
             let Program {
                 result,
                 warnings,
                 files,
             } = compile(module, &buf, opt);
             handle_warnings(warnings, &files, bin_opt.color);
-            let mut rccjit = rcc::JIT::from(rcc_try!(result, files));
-            if let Some(exit_code) = unsafe { rccjit.run_main() } {
+            let mut jit = saltwater::JIT::from(sw_try!(result, files));
+            if let Some(exit_code) = unsafe { jit.run_main() } {
                 std::process::exit(exit_code);
             }
             Ok(())
@@ -167,7 +167,7 @@ fn real_main(buf: Rc<str>, bin_opt: BinOpt, output: &Path) -> Result<(), (Error,
 #[inline]
 fn aot_main(buf: &str, opt: Opt, output: &Path, color: ColorChoice) -> Result<(), (Error, Files)> {
     let no_link = opt.no_link;
-    let module = rcc::initialize_aot_module("rccmain".to_owned());
+    let module = saltwater::initialize_aot_module("saltwater_main".to_owned());
     let Program {
         result,
         warnings,
@@ -175,14 +175,14 @@ fn aot_main(buf: &str, opt: Opt, output: &Path, color: ColorChoice) -> Result<()
     } = compile(module, buf, opt);
     handle_warnings(warnings, &files, color);
 
-    let product = rcc_try!(result.map(|x| x.finish()), files);
+    let product = sw_try!(result.map(|x| x.finish()), files);
     if no_link {
-        rcc_try!(assemble(product, output), files);
+        sw_try!(assemble(product, output), files);
         return Ok(());
     }
-    let tmp_file = rcc_try!(NamedTempFile::new(), files);
-    rcc_try!(assemble(product, tmp_file.as_ref()), files);
-    rcc_try!(link(tmp_file.as_ref(), output), files);
+    let tmp_file = sw_try!(NamedTempFile::new(), files);
+    sw_try!(assemble(product, tmp_file.as_ref()), files);
+    sw_try!(link(tmp_file.as_ref(), output), files);
     Ok(())
 }
 
@@ -273,7 +273,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         std::process::exit(0);
     }
     if input.contains("--print-type-sizes") {
-        use rcc::data::*;
+        use saltwater::data::*;
         type_sizes!(
             Location,
             CompileError,
@@ -312,6 +312,8 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
     }
     let mut definitions = HashMap::new();
     while let Some(arg) = input.opt_value_from_str::<_, String>(["-D", "--define"])? {
+        use pico_args::Error::ArgumentParsingFailed;
+        use saltwater::data::error::LexError;
         use std::convert::TryInto;
 
         let mut iter = arg.splitn(2, '=');
@@ -319,11 +321,11 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             .next()
             .expect("apparently I don't understand pico_args");
         let val = iter.next().unwrap_or("1");
-        let def = val.try_into().map_err(|err: rcc::data::error::LexError| {
-            pico_args::Error::ArgumentParsingFailed {
+        let def = val
+            .try_into()
+            .map_err(|err: LexError| ArgumentParsingFailed {
                 cause: err.to_string(),
-            }
-        })?;
+            })?;
         definitions.insert(key.into(), def);
     }
     let bin_opt = BinOpt {
@@ -484,8 +486,7 @@ mod backtrace {
 mod test {
     use super::{Files, Location};
     use ansi_term::Style;
-    //use codespan::Span;
-    use rcc::data::lex::Span;
+    use saltwater::data::lex::Span;
 
     fn pp<S: Into<Span>>(span: S, source: &str) -> String {
         let mut file_db = Files::new();

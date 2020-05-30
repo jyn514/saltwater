@@ -57,7 +57,7 @@ mod struct_ref {
         ///
         /// Examples:
         /// ```
-        /// use rcc::data::types::StructRef;
+        /// use saltwater::data::types::StructRef;
         /// let struct_ref = StructRef::new();
         /// let members = struct_ref.get();
         /// for symbol in members.iter() {
@@ -79,7 +79,7 @@ mod struct_ref {
         /// Examples:
         ///
         /// ```compile_fail
-        /// use rcc::data::types::StructRef;
+        /// use saltwater::data::types::StructRef;
         /// let struct_ref = StructRef::new();
         /// struct_ref.update(vec![Symbol::new()]);
         /// ```

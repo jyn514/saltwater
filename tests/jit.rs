@@ -1,6 +1,6 @@
 mod utils;
 
-use rcc::{Opt, Program, JIT};
+use saltwater::{Opt, Program, JIT};
 
 #[test]
 fn jit_readme() -> Result<(), Box<dyn std::error::Error>> {

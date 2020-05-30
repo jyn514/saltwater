@@ -124,7 +124,7 @@ pub enum SemanticError {
     #[error("'{0}' is not a qualifier and cannot be used for pointers")]
     NotAQualifier(ast::DeclarationSpecifier),
 
-    #[error("'{}' is too long for rcc", vec!["long"; *.0].join(" "))]
+    #[error("'{}' is too long for {}", vec!["long"; *.0].join(" "), env!("CARGO_PKG_NAME"))]
     TooLong(usize),
 
     #[error("conflicting storage classes '{0}' and '{1}'")]
@@ -578,7 +578,7 @@ pub enum Warning {
     #[error("declaration does not declare anything")]
     EmptyDeclaration,
 
-    #[error("rcc does not support #pragma")]
+    #[error("{} does not support #pragma", env!("CARGO_PKG_NAME"))]
     IgnoredPragma,
 
     #[error("variadic macros are not yet supported")]

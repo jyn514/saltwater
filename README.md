@@ -1,19 +1,18 @@
-# rcc
+# Saltwater
 
 [![Build Status](https://travis-ci.org/jyn514/rcc.svg?branch=master)](https://travis-ci.org/jyn514/rcc)
 [Join us on Discord](https://discord.gg/BPER7PF)
 
-rcc: a Rust C compiler
+saltwater: the part of the sea causing lots of rust
 
 A C compiler written in Rust, with a focus on good error messages.
-Warning: my first rust project, code quality is pretty low.
 
 ## Running
 
-`rcc` reads from standard in by default, so you can type in code directly.
+`swcc` reads from standard in by default, so you can type in code directly.
 It's not interactive though, you have to hit Ctrl+D to indicate end of file (Ctrl+Z on Windows).
 
-Use `rcc --help` for all options (or see [below](#all-options)).
+Use `swcc --help` for all options (or see [below](#all-options)).
 
 ### Running on Windows
 
@@ -63,7 +62,7 @@ int g(int i) {
   }
   return a[i];
 }
-$ rcc tests/runner-tests/readme.c
+$ swcc tests/runner-tests/readme.c
 $️ ./a.out
 j is 6
 ```
@@ -88,12 +87,12 @@ syntax error
 # if defined b && defined(a)
     int main() { return i; }
 #endif
-$ rcc -E tests/runner-tests/cpp/if/defined.c
+$ swcc -E tests/runner-tests/cpp/if/defined.c
 int i = 2 ; int main ( ) { return i ; }
 ```
 
 ```c
-$ echo 'int i = 1 + 2 ^ 3 % 5 / 2 & 1; int main(){}' | rcc --debug-ast
+$ echo 'int i = 1 + 2 ^ 3 % 5 / 2 & 1; int main(){}' | swcc --debug-ast
 ast: int i = ((1) + (2)) ^ ((((3) % (5)) / (2)) & (1));
 ast: int main(){
 }
@@ -105,7 +104,7 @@ $ cat tests/runner-tests/hello_world.c
 int main() {
     puts("Hello, world!");
 }
-$ rcc --debug-ir tests/runner-tests/hello_world.c
+$ swcc --debug-ir tests/runner-tests/hello_world.c
 function u0:0() -> i32 system_v {
     gv0 = symbol colocated u1:3
     sig0 = (i64) -> i32 system_v
@@ -124,13 +123,13 @@ Hello, world!
 ### All options
 
 ```txt
-$ rcc --help
-rcc 0.9.0
+$ swcc --help
+swcc 0.9.0
 Joshua Nelson <jyn514@gmail.com>
 A C compiler written in Rust, with a focus on good error messages.
 Homepage: https://github.com/jyn514/rcc/
 
-usage: rcc [FLAGS] [OPTIONS] [<file>]
+usage: swcc [FLAGS] [OPTIONS] [<file>]
 
 FLAGS:
         --debug-ast        If set, print the parsed abstract syntax tree (AST) in addition to compiling.
@@ -140,7 +139,7 @@ FLAGS:
         --debug-ir         If set, print the intermediate representation (IR) of the program in addition to compiling.
         --debug-lex        If set, print all tokens found by the lexer in addition to compiling.
         --jit              If set, will use JIT compilation for C code and instantly run compiled code (No files produced).
-                            NOTE: this option only works if rcc was compiled with the `jit` feature.
+                            NOTE: this option only works if swcc was compiled with the `jit` feature.
     -h, --help             Prints help information
     -c, --no-link          If set, compile and assemble but do not link. Object file is machine-dependent.
     -E, --preprocess-only  If set, preprocess only, but do not do anything else.

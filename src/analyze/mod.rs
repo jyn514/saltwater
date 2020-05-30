@@ -1180,7 +1180,7 @@ impl FunctionAnalyzer<'_> {
         location: Location,
     ) -> (Symbol, Vec<Stmt>) {
         let parsed_func = analyzer.parse_type(func.specifiers, func.declarator.into(), location);
-        // rcc ignores `inline` and `_Noreturn`
+        // saltwater ignores `inline` and `_Noreturn`
         if parsed_func.qualifiers != Qualifiers::default() {
             analyzer.error_handler.warn(
                 Warning::FunctionQualifiersIgnored(parsed_func.qualifiers),

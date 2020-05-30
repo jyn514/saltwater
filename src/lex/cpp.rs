@@ -17,7 +17,7 @@
 //! but at the same time the `MacroReplacer` needs to be able to peek ahead in the input
 //! to see whether a token defined as a function macro is followed by a `(`.
 //! To support both these use cases, I create a new trait called `Peekable`;
-//! the intent is that users of rcc can use arbitrary iterators over `Token` by calling `iter.peekable()`.
+//! the intent is that users of saltwater can use arbitrary iterators over `Token` by calling `iter.peekable()`.
 //!
 //! TODO: The `PreProcessor` is very tightly coupled to the `FileProcessor`.
 //!
@@ -45,7 +45,7 @@ use crate::Files;
 ///
 /// Here is the example for `PreProcessor::new()` using the builder:
 /// ```
-/// use rcc::PreProcessorBuilder;
+/// use saltwater::PreProcessorBuilder;
 ///
 /// let cpp = PreProcessorBuilder::new("int main(void) { char *hello = \"hi\"; }\n").filename("example.c").build();
 /// for token in cpp {
@@ -121,7 +121,7 @@ impl<'a> PreProcessorBuilder<'a> {
 /// Examples:
 ///
 /// ```
-/// use rcc::PreProcessor;
+/// use saltwater::PreProcessor;
 ///
 /// let cpp = PreProcessor::new("int main(void) { char *hello = \"hi\"; }\n", "example.c", false, vec![], Default::default());
 /// for token in cpp {

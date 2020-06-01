@@ -372,7 +372,7 @@ impl std::fmt::Display for Literal {
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
             Str(s) => {
-                let escaped = s
+                let mut escaped = s
                     .into_iter()
                     .flat_map(|c| match c {
                         b'\n' => "\\n".bytes().collect(),
@@ -381,6 +381,11 @@ impl std::fmt::Display for Literal {
                         _ => vec![*c],
                     })
                     .collect::<Vec<_>>();
+
+                // Remove the null byte at the end,
+                // because this will break tests and
+                // it's not needed in debug output.
+                escaped.pop();
 
                 write!(f, "\"{}\"", String::from_utf8_lossy(&escaped))
             }
@@ -456,5 +461,13 @@ pub(crate) mod test {
             let first = lexer.next().unwrap().unwrap().data;
             assert_eq!(&first.to_string(), *token);
         }
+    }
+
+    #[test]
+    fn str_display_escape() {
+        let token = "\"Hello, world\\n\"";
+        let mut lexer = cpp(token);
+        let first = lexer.next().unwrap().unwrap().data;
+        assert_eq!(&first.to_string(), token);
     }
 }

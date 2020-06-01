@@ -385,7 +385,7 @@ impl std::fmt::Display for Literal {
                 // Remove the null byte at the end,
                 // because this will break tests and
                 // it's not needed in debug output.
-                escaped.pop();
+                assert_eq!(escaped.pop(), Some(b'\0'));
 
                 write!(f, "\"{}\"", String::from_utf8_lossy(&escaped))
             }
@@ -465,7 +465,7 @@ pub(crate) mod test {
 
     #[test]
     fn str_display_escape() {
-        let token = "\"Hello, world\\n\\r\\t\"";
+        let token = r#""Hello, world\\n\\r\\t""#;
         let mut lexer = cpp(token);
         let first = lexer.next().unwrap().unwrap().data;
         assert_eq!(&first.to_string(), token);

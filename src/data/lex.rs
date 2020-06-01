@@ -465,7 +465,7 @@ pub(crate) mod test {
 
     #[test]
     fn str_display_escape() {
-        let token = "\"Hello, world\\n\"";
+        let token = "\"Hello, world\\n\\r\\t\"";
         let mut lexer = cpp(token);
         let first = lexer.next().unwrap().unwrap().data;
         assert_eq!(&first.to_string(), token);

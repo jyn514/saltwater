@@ -212,6 +212,15 @@ fn replace_function(
                 // TODO: need to figure out what should happen if an error token happens during replacement
                 errors.push(Err(next.unwrap().unwrap_err()));
             }
+            // skip any whitespaces between `f` and `(`, so that
+            // `f (` is also valid.
+            Some(Ok(Locatable {
+                data: Token::Whitespace(_),
+                ..
+            })) => {
+                inner.next();
+                continue;
+            }
             // f (
             Some(Ok(Locatable {
                 data: Token::LeftParen,

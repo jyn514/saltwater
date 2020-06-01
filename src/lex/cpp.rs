@@ -1647,7 +1647,9 @@ int main(){}
 
     #[test]
     fn space_separated_function_macro() {
-        let src = "#define f(a) <a>\nf     (a)";
-        assert_same(src, "<a>");
+        assert_same_exact("#define f(a) <a>\nf     (a)", "\n<a>");
+        assert_same_exact("#define f(a) <a>\nf(a)", "\n<a>");
+        assert_same_exact("#define f <a>\nf", "\n<a>");
+        assert_same_exact("#define f <a>\nf   ", "\n<a>   ");
     }
 }

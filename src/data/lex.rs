@@ -371,7 +371,24 @@ impl std::fmt::Display for Literal {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(s) => write!(f, "\"{}\"", String::from_utf8_lossy(s)),
+            Str(s) => {
+                let mut escaped = s
+                    .iter()
+                    .flat_map(|c| match c {
+                        b'\n' => "\\n".bytes().collect(),
+                        b'\r' => "\\r".bytes().collect(),
+                        b'\t' => "\\t".bytes().collect(),
+                        _ => vec![*c],
+                    })
+                    .collect::<Vec<_>>();
+
+                // Remove the null byte at the end,
+                // because this will break tests and
+                // it's not needed in debug output.
+                assert_eq!(escaped.pop(), Some(b'\0'));
+
+                write!(f, "\"{}\"", String::from_utf8_lossy(&escaped))
+            }
             Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
         }
     }
@@ -444,5 +461,13 @@ pub(crate) mod test {
             let first = lexer.next().unwrap().unwrap().data;
             assert_eq!(&first.to_string(), *token);
         }
+    }
+
+    #[test]
+    fn str_display_escape() {
+        let token = r#""Hello, world\n\r\t""#;
+        let mut lexer = cpp(token);
+        let first = lexer.next().unwrap().unwrap().data;
+        assert_eq!(&first.to_string(), token);
     }
 }

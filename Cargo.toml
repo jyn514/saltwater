@@ -8,6 +8,7 @@ authors = [
   "playX",
   "Kevin Becker <k.becker@byter.dev>",
   "Hunter Damron <hdamron@email.sc.edu>",
+  "Justus K <justus.k@protonmail.com>",
 ]
 edition = "2018"
 description = "A C compiler written in Rust, with a focus on good error messages."

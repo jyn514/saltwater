@@ -1644,4 +1644,10 @@ int main(){}
         );
         // TODO test for #includes
     }
+
+    #[test]
+    fn space_separated_function_macro() {
+        let src = "#define f(a) <a>\nf     (a)";
+        assert_same(src, "<a>");
+    }
 }

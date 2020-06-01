@@ -371,7 +371,19 @@ impl std::fmt::Display for Literal {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(s) => write!(f, "\"{}\"", String::from_utf8_lossy(s)),
+            Str(s) => {
+                let escaped = s
+                    .into_iter()
+                    .flat_map(|c| match c {
+                        b'\n' => "\\n".bytes().collect(),
+                        b'\r' => "\\r".bytes().collect(),
+                        b'\t' => "\\t".bytes().collect(),
+                        _ => vec![*c],
+                    })
+                    .collect::<Vec<_>>();
+
+                write!(f, "\"{}\"", String::from_utf8_lossy(&escaped))
+            }
             Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
         }
     }

@@ -373,7 +373,7 @@ impl std::fmt::Display for Literal {
             Float(n) => write!(f, "{}", n),
             Str(s) => {
                 let mut escaped = s
-                    .into_iter()
+                    .iter()
                     .flat_map(|c| match c {
                         b'\n' => "\\n".bytes().collect(),
                         b'\r' => "\\r".bytes().collect(),

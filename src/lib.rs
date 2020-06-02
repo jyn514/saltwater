@@ -91,6 +91,7 @@ pub mod intern;
 mod ir;
 mod lex;
 mod parse;
+pub mod repl;
 
 pub use lex::replace;
 

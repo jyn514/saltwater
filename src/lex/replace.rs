@@ -212,15 +212,6 @@ fn replace_function(
                 // TODO: need to figure out what should happen if an error token happens during replacement
                 errors.push(Err(next.unwrap().unwrap_err()));
             }
-            // skip any whitespaces between `f` and `(`, so that
-            // `f (` is also valid.
-            Some(Ok(Locatable {
-                data: Token::Whitespace(_),
-                ..
-            })) => {
-                inner.next();
-                continue;
-            }
             // f (
             Some(Ok(Locatable {
                 data: Token::LeftParen,
@@ -232,8 +223,42 @@ fn replace_function(
                 }
                 break;
             }
-            // `f ;` or `f <EOF>`
-            Some(_) | None => return errors,
+            // skip any whitespaces and newlines between `f` and `(`, so that
+            // `f (` is also valid.
+            Some(Ok(Locatable {
+                data: Token::Whitespace(_),
+                ..
+            })) => {
+                let spaces = inner.next().unwrap();
+                if let Some(Ok(Locatable {
+                    data: Token::LeftParen,
+                    ..
+                })) = inner.peek()
+                {
+                    inner.next();
+                    break;
+                }
+                let id_token = Ok(location.with(Token::Id(id)));
+                errors.push(id_token);
+                errors.push(spaces);
+                return errors;
+            }
+            // If this branch is matched, this is not a macro call,
+            // since all other cases are covered above.
+            // So just append the identifier and the current token to the stack.
+            Some(Ok(Locatable { data: _, .. })) => {
+                let token = inner.next().unwrap();
+                let id_token = Ok(location.with(Token::Id(id)));
+                errors.push(id_token);
+                errors.push(token);
+                return errors;
+            }
+            // `f<EOF>`
+            None => {
+                let id_token = Ok(location.with(Token::Id(id)));
+                errors.push(id_token);
+                return errors;
+            }
         }
     }
 

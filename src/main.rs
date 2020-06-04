@@ -205,6 +205,8 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: C
             "To UB or not to UB? That is … apparently a question you never ask yourself.",
             "Do you _really_ want to know what this compiles to?",
             "Not the type to ever stop and think for a moment, eh? Here's your moment, use it well.",
+            "Federal regulations require me to warn you that this next warning... is looking pretty good",
+            "Try to avoid this garbage you're writing",
         ];
         let mut rng = rand::thread_rng();
         msgs[rng.gen_range(0, msgs.len())]
@@ -446,6 +448,8 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, colo
             // glados quotes
             "I'd just like to point out that you were given every opportunity to succeed",
             "Okay. Look. We both did a lot of things that you're going to regret. But I think we can put our differences behind us. To prevent segfaults. You monster.",
+            "Congratulations. Not on the code.",
+            "You know, if you'd done that to some other codebase, they might devote their existence to exacting revenge.",
             // linus rants
             "This code is shit, and it generates shit code. It looks bad, and there's no reason for it",
             "Christ people. This is just shit. Anybody who thinks that this is good is just incompetent and out to lunch",
@@ -562,7 +566,10 @@ fn install_panic_hook() {
             "For your own safety, do not destroy vital compiling apparatus.",
             "Vital compiling apparatus destroyed.",
             "Woah, you just blew my mind! … you monster.",
-            "Congratulations. Your code is so dumb that I'd rather kill myself than compile it.",
+            "Congratulations. Your code is so dumb that I'd rather crash myself than compile it.",
+            "Just... leave. I'll clean this mess up myself. Alone. Like I always do.",
+            "Sorry about the mess. I've really let the compiler go since you killed me. By the way, thanks for that.",
+            "You broke it, didn't you.",
             // keep this as the last element or the sleep will be wrong
             "Time out for a second. That wasn't supposed to happen.",
         ];

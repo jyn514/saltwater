@@ -869,10 +869,10 @@ impl<'a> PreProcessor<'a> {
                 ),
             }
             // either `,` or `)`
-            if self.lexer_mut().match_next(b')') {
+            if self.lexer_mut().match_next(')') {
                 return Ok(arguments);
             }
-            if self.lexer_mut().match_next(b',') {
+            if self.lexer_mut().match_next(',') {
                 continue;
             }
             // some other token
@@ -907,7 +907,7 @@ impl<'a> PreProcessor<'a> {
         self.consume_whitespace_oneline(start, CppError::EmptyDefine)?;
         let id = self.expect_id()?;
         // NOTE: does _not_ discard whitespace
-        if self.lexer_mut().match_next(b'(') {
+        if self.lexer_mut().match_next('(') {
             // function macro
             // first, parse the arguments:
             // # define identifier lparen identifier-listopt ) replacement-list new-line
@@ -917,7 +917,7 @@ impl<'a> PreProcessor<'a> {
                 self.file_processor.offset(),
                 CppError::Expected(")", "macro parameter list"),
             )?;
-            let params = if !self.lexer_mut().match_next(b')') {
+            let params = if !self.lexer_mut().match_next(')') {
                 self.fn_args(start)?
             } else {
                 Vec::new()
@@ -940,9 +940,9 @@ impl<'a> PreProcessor<'a> {
         use crate::data::lex::ComparisonToken;
         self.consume_whitespace_oneline(start, CppError::EmptyInclude)?;
         let lexer = self.lexer_mut();
-        let local = if lexer.match_next(b'"') {
+        let local = if lexer.match_next('"') {
             true
-        } else if lexer.match_next(b'<') {
+        } else if lexer.match_next('<') {
             false
         } else {
             let (id, location) = match self.file_processor.next() {
@@ -999,7 +999,8 @@ impl<'a> PreProcessor<'a> {
             }
         };
 
-        let filename = self.bytes_until(if local { b'"' } else { b'>' });
+        let end = if local { '"' } else { '>' };
+        let filename = self.chars_until(end).to_owned();
         self.include_path(filename, local, start)
     }
     // we've done the parsing for an `#include`,
@@ -1027,8 +1028,8 @@ impl<'a> PreProcessor<'a> {
         }
         // absolute path, ignore everything except the filename
         // e.g `#include </usr/local/include/stdio.h>`
-        if filename.as_bytes()[0] == b'/' {
-            let path = &std::path::Path::new(&filename);
+        if filename.starts_with('/') {
+            let path = std::path::Path::new(&filename);
             return if path.exists() {
                 Ok(PathBuf::from(filename))
             } else {
@@ -1061,14 +1062,10 @@ impl<'a> PreProcessor<'a> {
     // now we want to do the dirty work of reading it into memory
     fn include_path(
         &mut self,
-        filename: Vec<u8>,
+        filename: String,
         local: bool,
         start: u32,
     ) -> Result<(), Locatable<Error>> {
-        // Recall that the original file was valid UTF8.
-        // Since in UTF8 no ASCII character can occur
-        // within a multi-byte sequence, `filename` must be valid UTF8.
-        let filename = String::from_utf8(filename).expect("passed invalid utf8 to start");
         let resolved = self.find_include_path(filename.clone(), local, start)?;
         let src = std::fs::read_to_string(&resolved)
             .map_err(|err| Locatable {
@@ -1083,14 +1080,22 @@ impl<'a> PreProcessor<'a> {
         self.file_processor.add_file(filename, source);
         Ok(())
     }
-    // Returns every byte between the current position and the next `byte`.
-    // Consumes and does not return the final `byte`.
-    fn bytes_until(&mut self, byte: u8) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        loop {
-            match self.file_processor.lexer_mut().next_char() {
-                Some(c) if c != byte => bytes.push(c),
-                _ => return bytes,
+    /// Returns every char between the current position and the next `end`.
+    /// Consumes and does not return the final `end`.
+    fn chars_until(&mut self, end: char) -> &str {
+        // directives must not span multiple files
+        let lexer = self.file_processor.lexer_mut();
+        let offset = lexer.location.offset as usize;
+        match lexer.chars[offset..].find(end) {
+            None => {
+                lexer.location.offset += (lexer.chars.len() - offset) as u32;
+                &lexer.chars[offset..]
+            }
+            Some(idx) => {
+                lexer.location.offset += idx as u32;
+                let s = &lexer.chars[offset..lexer.location.offset as usize];
+                lexer.location.offset += 1; // to account for `end`
+                s
             }
         }
     }

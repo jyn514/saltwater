@@ -420,9 +420,13 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, colo
     #[cfg(not(feature = "salty"))]
     let err = "error";
     #[cfg(feature = "salty")]
+    let shut_up;
+    #[cfg(feature = "salty")]
     let err = {
         use rand::Rng;
 
+        let name = std::env::var("USER").unwrap_or("programmer".into());
+        shut_up = format!("Shut up, {}. I don't ever want to hear that kind of obvious garbage and idiocy from a developer again", name);
         let msgs = [
             "you can't write code",
             "your stupidity is ever-increasing",
@@ -434,11 +438,17 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, colo
             "you goofed",
             "really? you were dumb enough to try that?",
             "and you call yourself a programmer",
+            "for your own good, please don't push this rubbish to a public repo",
+            "You made Kernighan cry in a corner. What an achievement",
+            // from https://github.com/rust-lang/rust/issues/13871
             "You've met with a terrible fate, haven't you?",
+            // glados quotes
             "I'd just like to point out that you were given every opportunity to succeed",
             "Okay. Look. We both did a lot of things that you're going to regret. But I think we can put our differences behind us. To prevent segfaults. You monster.",
-            "for your own good, please don't push this rubbish to a public repo",
-            "You made Kernighan cry in a corner. What an achievement.",
+            // linus rants
+            "This code is shit, and it generates shit code. It looks bad, and there's no reason for it",
+            "Christ people. This is just shit. Anybody who thinks that this is good is just incompetent and out to lunch",
+            &shut_up,
         ];
         let mut rng = rand::thread_rng();
         msgs[rng.gen_range(0, msgs.len())]

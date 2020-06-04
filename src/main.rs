@@ -537,7 +537,7 @@ mod backtrace {
 #[cfg(feature = "salty")]
 fn install_panic_hook() {
     use rand::Rng;
-    use std::panic;
+    use std::{panic, thread, time};
 
     let old_hook = panic::take_hook();
     panic::set_hook(Box::new(move |e| {
@@ -550,13 +550,18 @@ fn install_panic_hook() {
             "To ensure the safe performance of all authorized activities, do not destroy vital compiling apparatus.",
             "For your own safety, do not destroy vital compiling apparatus.",
             "Vital compiling apparatus destroyed.",
-            "Time out for a second. That wasn't supposed to happen.",
             "Woah, you just blew my mind! … you monster.",
             "Congratulations. Your code is so dumb that I'd rather kill myself than compile it.",
+            // keep this as the last element or the sleep will be wrong
+            "Time out for a second. That wasn't supposed to happen.",
         ];
         let mut rng = rand::thread_rng();
-        let msg = msgs[rng.gen_range(0, msgs.len())];
+        let idx = rng.gen_range(0, msgs.len());
+        let msg = msgs[idx];
         println!("{}", msg);
+        if idx == msgs.len() - 1 {
+            thread::sleep(time::Duration::from_secs(1));
+        }
         old_hook(e);
     }));
 }

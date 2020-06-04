@@ -591,8 +591,9 @@ fn install_panic_hook() {
                 .spawn()
             {
                 use std::io::Write;
-                let stdin = child.stdin.as_mut().expect("Unable to open stdin");
-                stdin.write_all(SCREAM).expect("Unable to write scream");
+                if let Some(stdin) = child.stdin.as_mut() {
+                    let _ = stdin.write_all(SCREAM);
+                }
             }
         }
 

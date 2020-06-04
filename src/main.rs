@@ -580,6 +580,22 @@ fn install_panic_hook() {
         if idx == msgs.len() - 1 {
             thread::sleep(time::Duration::from_secs(1));
         }
+
+        #[cfg(target_os = "linux")]
+        {
+            const SCREAM: &[u8] = include_bytes!("data/R2D2-Scream.wav");
+
+            if let Ok(mut child) = std::process::Command::new("aplay")
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::null())
+                .spawn()
+            {
+                use std::io::Write;
+                let stdin = child.stdin.as_mut().expect("Unable to open stdin");
+                stdin.write_all(SCREAM).expect("Unable to write scream");
+            }
+        }
+
         old_hook(e);
     }));
 }

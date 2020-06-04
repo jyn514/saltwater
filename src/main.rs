@@ -450,7 +450,6 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, colo
             "Okay. Look. We both did a lot of things that you're going to regret. But I think we can put our differences behind us. To prevent segfaults. You monster.",
             "Congratulations. Not on the code.",
             "You know, if you'd done that to some other codebase, they might devote their existence to exacting revenge.",
-            "Not bad. I forgot how good you are at this. You should pace yourself, though. We have A LOT of code to compile.",
             // linus rants
             "This code is shit, and it generates shit code. It looks bad, and there's no reason for it",
             "Christ people. This is just shit. Anybody who thinks that this is good is just incompetent and out to lunch",

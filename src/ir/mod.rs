@@ -10,16 +10,6 @@ macro_rules! semantic_err {
     };
 }
 
-/// ensure that a condition is true at compile time
-/// thanks to https://nikolaivazquez.com/posts/programming/rust-static-assertions/
-macro_rules! const_assert {
-    ($condition:expr) => {
-        #[deny(const_err)]
-        #[allow(dead_code)]
-        const ASSERT: usize = 0 - !$condition as usize;
-    };
-}
-
 mod expr;
 mod static_init;
 mod stmt;

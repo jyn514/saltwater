@@ -161,7 +161,7 @@ impl FileProcessor {
                     location: ws_span,
                 }));
             }
-            if self.lexer_mut().peek().unwrap_or(b'\n') == b'\n' {
+            if self.lexer_mut().peek().unwrap_or('\n') == '\n' {
                 break;
             }
             match self.next() {

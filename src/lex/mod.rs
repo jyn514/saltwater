@@ -33,9 +33,9 @@ pub struct Lexer {
     location: SingleLocation,
     chars: Rc<str>,
     /// used for 2-character tokens
-    current: Option<u8>,
+    current: Option<char>,
     /// used for 3-character tokens
-    lookahead: Option<u8>,
+    lookahead: Option<char>,
     /// whether we've a token on this line before or not
     /// used for preprocessing (e.g. `#line 5` is a directive
     /// but `int main() { # line 5` is not)
@@ -46,6 +46,7 @@ pub struct Lexer {
     error_handler: ErrorHandler<LexError>,
     /// Whether or not to display each token as it is processed
     debug: bool,
+    given_newline_error: bool,
 }
 
 // returned when lexing a string literal
@@ -55,6 +56,7 @@ enum CharError {
     Terminator,
     OctalTooLarge,
     HexTooLarge,
+    MultiByte,
 }
 
 #[derive(Debug)]
@@ -67,6 +69,7 @@ impl Lexer {
     /// Creates a Lexer from a filename and the contents of a file
     pub fn new<S: Into<Rc<str>>>(file: FileId, chars: S, debug: bool) -> Lexer {
         Lexer {
+            given_newline_error: false,
             debug,
             location: SingleLocation { offset: 0, file },
             chars: chars.into(),
@@ -93,15 +96,15 @@ impl Lexer {
     /// Using `chars` will not update location information and may discard lookaheads.
     ///
     /// This function should never set `self.location.offset` to an out-of-bounds location
-    fn next_char(&mut self) -> Option<u8> {
+    fn next_char(&mut self) -> Option<char> {
         let mut c = self._next_char();
         // Section 5.1.1.2 phase 2: discard backslashes before newlines
-        while c == Some(b'\\') && self.peek() == Some(b'\n') {
+        while c == Some('\\') && self.peek() == Some('\n') {
             self._next_char(); // discard \n
             self.consume_whitespace();
             c = self._next_char();
         }
-        if c == Some(b'\n') {
+        if c == Some('\n') {
             self.seen_line_token = false;
             self.line += 1;
         }
@@ -110,42 +113,42 @@ impl Lexer {
     // Internal use only, use `next_char()` instead.
     // This gets the next token from the buffer
     // and updates the current offset and relevant fields.
-    fn _next_char(&mut self) -> Option<u8> {
+    fn _next_char(&mut self) -> Option<char> {
         if let c @ Some(_) = self.current {
             self.current = self.lookahead.take();
             c
         } else {
             assert!(self.lookahead.is_none());
-            self.chars
-                .as_bytes()
-                .get(self.location.offset as usize)
-                .copied()
+            self.chars().next()
         }
         .map(|c| {
-            self.location.offset += 1;
+            self.location.offset += c.len_utf8() as u32;
             c
         })
     }
+
+    // TODO: this _really_ needs to be refactored
+    fn chars(&self) -> std::str::Chars<'_> {
+        use std::mem;
+
+        // if we're compiling on 16-bit, we have bigger problems
+        const_assert!(mem::size_of::<usize>() >= mem::size_of::<u32>());
+        self.chars[self.location.offset as usize..].chars()
+    }
+
     /// Return the character that would be returned by `next_char`.
     /// Can be called any number of the times and will still return the same result.
-    fn peek(&mut self) -> Option<u8> {
-        self.current = self.current.or_else(|| self.lookahead.take()).or_else(|| {
-            self.chars
-                .as_bytes()
-                .get(self.location.offset as usize)
-                .copied()
-        });
+    fn peek(&mut self) -> Option<char> {
+        self.current = self
+            .current
+            .or_else(|| self.lookahead.take())
+            .or_else(|| self.chars().next());
         self.current
     }
     /// Return the character that would be returned if you called `next_char()` twice in a row.
     /// Can be called any number of the times and will still return the same result.
-    fn peek_next(&mut self) -> Option<u8> {
-        self.lookahead = self.lookahead.or_else(|| {
-            self.chars
-                .as_bytes()
-                .get((self.location.offset + 1) as usize)
-                .copied()
-        });
+    fn peek_next(&mut self) -> Option<char> {
+        self.lookahead = self.lookahead.or_else(|| self.chars().nth(1));
         self.lookahead
     }
     /// Return a single token to the stream.
@@ -154,7 +157,7 @@ impl Lexer {
     /// # Panics
     /// This function will panic if called twice in a row
     /// or when `self.lookahead.is_some()`.
-    fn unput(&mut self, byte: u8) {
+    fn unput(&mut self, byte: char) {
         assert!(
             self.lookahead.is_none(),
             "unputting {:?} would cause the lexer to forget it saw {:?} (current is {:?})",
@@ -170,7 +173,7 @@ impl Lexer {
     }
     /// If the next character is `item`, consume it and return true.
     /// Otherwise, return false.
-    fn match_next(&mut self, item: u8) -> bool {
+    fn match_next(&mut self, item: char) -> bool {
         if self.peek().map_or(false, |c| c == item) {
             self.next_char();
             true
@@ -213,17 +216,17 @@ impl Lexer {
         loop {
             // whitespace
             while self.peek().map_or(false, |c| {
-                c.is_ascii_whitespace() && !(stop_at_newline && c == b'\n')
+                c.is_ascii_whitespace() && !(stop_at_newline && c == '\n')
             }) {
                 if let Some(c) = self.next_char() {
-                    whitespace.push(c.into());
+                    whitespace.push(c);
                 }
             }
             // comments
-            if self.peek() == Some(b'/') {
+            if self.peek() == Some('/') {
                 match self.peek_next() {
-                    Some(b'/') => self.consume_line_comment(),
-                    Some(b'*') => {
+                    Some('/') => self.consume_line_comment(),
+                    Some('*') => {
                         self.next_char();
                         self.next_char();
                         match self.consume_multi_comment() {
@@ -242,14 +245,14 @@ impl Lexer {
         }
         whitespace
     }
-    /// Remove all characters between now and the next b'\n' character.
+    /// Remove all characters between now and the next '\n' character.
     ///
     /// Before: u8s{"blah `invalid tokens``\nhello // blah"}
     /// After:  chars{"hello // blah"}
     fn consume_line_comment(&mut self) {
         loop {
             match self.peek() {
-                None | Some(b'\n') => return,
+                None | Some('\n') => return,
                 _ => {
                     self.next_char();
                 }
@@ -266,15 +269,15 @@ impl Lexer {
         let mut whitespace = String::new();
         let start = self.location.offset - 2;
         while let Some(c) = self.next_char() {
-            if c == b'*' && self.peek() == Some(b'/') {
+            if c == '*' && self.peek() == Some('/') {
                 self.next_char();
                 if whitespace.is_empty() {
                     whitespace.push(' '); // For the case `a/* */b`
                 }
                 return Ok(whitespace);
             }
-            if c == b'\n' {
-                whitespace.push(c.into());
+            if c == '\n' {
+                whitespace.push(c);
             }
         }
         Err(Locatable {
@@ -291,24 +294,24 @@ impl Lexer {
     /// TODO: return an error enum instead of Strings
     ///
     /// I spent way too much time on this.
-    fn parse_num(&mut self, start: u8) -> Result<Token, LexError> {
-        // start - b'0' breaks for hex digits
+    fn parse_num(&mut self, start: char) -> Result<Token, LexError> {
+        // start - '0' breaks for hex digits
         assert!(
-            b'0' <= start && start <= b'9',
+            '0' <= start && start <= '9',
             "main loop should only pass [-.0-9] as start to parse_num"
         );
         let span_start = self.location.offset - 1; // -1 for `start`
         let float_literal = |f| Token::Literal(Literal::Float(f));
         let mut buf = String::new();
         buf.push(start as char);
-        // check for radix other than 10 - but if we see b'.', use 10
-        let radix = if start == b'0' {
-            if self.match_next(b'b') {
+        // check for radix other than 10 - but if we see '.', use 10
+        let radix = if start == '0' {
+            if self.match_next('b') {
                 Radix::Binary
-            } else if self.match_next(b'x') {
+            } else if self.match_next('x') {
                 buf.push('x');
                 Radix::Hexadecimal
-            } else if self.match_next(b'.') {
+            } else if self.match_next('.') {
                 // float: 0.431
                 return self.parse_float(Radix::Decimal, buf).map(float_literal);
             } else {
@@ -318,29 +321,29 @@ impl Lexer {
         } else {
             Radix::Decimal
         };
-        let start = start as u64 - b'0' as u64;
+        let start = start as u64 - '0' as u64;
 
         // the first {digits} in the regex
         let digits = match self.parse_int(start, radix, &mut buf)? {
             Some(int) => int,
             None => {
-                if radix == Radix::Octal || radix == Radix::Decimal || self.peek() == Some(b'.') {
+                if radix == Radix::Octal || radix == Radix::Decimal || self.peek() == Some('.') {
                     start
                 } else {
                     return Err(LexError::MissingDigits(radix.try_into().unwrap()));
                 }
             }
         };
-        if self.match_next(b'.') {
+        if self.match_next('.') {
             return self.parse_float(radix, buf).map(float_literal);
         }
-        if let Some(b'e') | Some(b'E') | Some(b'p') | Some(b'P') = self.peek() {
+        if let Some('e') | Some('E') | Some('p') | Some('P') = self.peek() {
             buf.push_str(".0"); // hexf doesn't like floats without a decimal point
             let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
             self.consume_float_suffix();
             return float.map(float_literal);
         }
-        let literal = if self.match_next(b'u') || self.match_next(b'U') {
+        let literal = if self.match_next('u') || self.match_next('U') {
             let unsigned = u64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
                 is_signed: Some(false),
             })?;
@@ -351,11 +354,11 @@ impl Lexer {
             })?;
             Literal::Int(long)
         };
-        // get rid of b'l' and 'll' suffixes, we don't handle them
-        if self.match_next(b'l') {
-            self.match_next(b'l');
-        } else if self.match_next(b'L') {
-            self.match_next(b'L');
+        // get rid of 'l' and 'll' suffixes, we don't handle them
+        if self.match_next('l') {
+            self.match_next('l');
+        } else if self.match_next('L') {
+            self.match_next('L');
         }
         if radix == Radix::Binary {
             let span = self.span(span_start);
@@ -379,33 +382,30 @@ impl Lexer {
         }
         // in case of an empty mantissa, hexf doesn't like having the exponent right after the .
         // if the mantissa isn't empty, .12 is the same as .120
-        //buf.push(b'0');
+        //buf.push('0');
         let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
         self.consume_float_suffix();
         float
     }
     fn consume_float_suffix(&mut self) {
         // Ignored for compatibility reasons
-        if !(self.match_next(b'f') || self.match_next(b'F') || self.match_next(b'l')) {
-            self.match_next(b'L');
+        if !(self.match_next('f') || self.match_next('F') || self.match_next('l')) {
+            self.match_next('L');
         }
     }
     // should only be called at the end of a number. mostly error handling
     fn parse_exponent(&mut self, hex: bool, mut buf: String) -> Result<f64, LexError> {
-        let is_digit = |c: Option<u8>| {
-            c.map_or(false, |c| {
-                (c as char).is_digit(10) || c == b'+' || c == b'-'
-            })
-        };
+        let is_digit =
+            |c: Option<char>| c.map_or(false, |c| (c as char).is_digit(10) || c == '+' || c == '-');
         if hex {
-            if self.match_next(b'p') || self.match_next(b'P') {
+            if self.match_next('p') || self.match_next('P') {
                 if !is_digit(self.peek()) {
                     return Err(LexError::ExponentMissingDigits);
                 }
                 buf.push('p');
                 buf.push(self.next_char().unwrap() as char);
             }
-        } else if self.match_next(b'e') || self.match_next(b'E') {
+        } else if self.match_next('e') || self.match_next('E') {
             if !is_digit(self.peek()) {
                 return Err(LexError::ExponentMissingDigits);
             }
@@ -426,8 +426,8 @@ impl Lexer {
         } else {
             buf.parse()?
         };
-        let should_be_zero = buf.bytes().all(|c| match c {
-            b'.' | b'+' | b'-' | b'e' | b'p' | b'0' => true,
+        let should_be_zero = buf.chars().all(|c| match c {
+            '.' | '+' | '-' | 'e' | 'p' | '0' => true,
             _ => false,
         });
         if float == 0.0 && !should_be_zero {
@@ -446,9 +446,9 @@ impl Lexer {
         let parse_digit = |c: char| match c.to_digit(16) {
             None => Ok(None),
             Some(digit) if digit < radix.as_u8().into() => Ok(Some(digit)),
-            // if we see b'e' or b'E', it's the end of the int, don't treat it as an error
-            // if we see b'b' this could be part of a binary constant (0b1)
-            // if we see b'f' it could be a float suffix
+            // if we see 'e' or 'E', it's the end of the int, don't treat it as an error
+            // if we see 'b' this could be part of a binary constant (0b1)
+            // if we see 'f' it could be a float suffix
             // we only get this far if it's not a valid digit for the radix, i.e. radix != 16
             Some(11) | Some(14) | Some(15) => Ok(None),
             Some(digit) => Err(LexError::InvalidDigit { digit, radix }),
@@ -497,70 +497,75 @@ impl Lexer {
     /// Before: u8s{"\b'"}
     /// After:  chars{"'"}
     fn parse_single_char(&mut self, string: bool) -> Result<u8, CharError> {
-        let terminator = if string { b'"' } else { b'\'' };
+        let terminator = if string { '"' } else { '\'' };
         if let Some(c) = self.next_char() {
-            if c == b'\\' {
+            if c == '\\' {
                 if let Some(c) = self.next_char() {
                     Ok(match c {
                         // escaped newline: "a\
                         // b"
-                        b'\n' => unreachable!("should be handled earlier"),
-                        b'n' => b'\n',   // embedded newline: "a\nb"
-                        b'r' => b'\r',   // carriage return
-                        b't' => b'\t',   // tab
-                        b'"' => b'"',    // escaped "
-                        b'\'' => b'\'',  // escaped '
-                        b'\\' => b'\\',  // \
-                        b'a' => b'\x07', // bell
-                        b'b' => b'\x08', // backspace
-                        b'v' => b'\x0b', // vertical tab
-                        b'f' => b'\x0c', // form feed
-                        b'?' => b'?',    // a literal b'?', for trigraphs
-                        b'0'..=b'9' => {
+                        '\n' => unreachable!("should be handled earlier"),
+                        'n' => b'\n',   // embedded newline: "a\nb"
+                        'r' => b'\r',   // carriage return
+                        't' => b'\t',   // tab
+                        '"' => b'"',    // escaped "
+                        '\'' => b'\'',  // escaped '
+                        '\\' => b'\\',  // \
+                        'a' => b'\x07', // bell
+                        'b' => b'\x08', // backspace
+                        'v' => b'\x0b', // vertical tab
+                        'f' => b'\x0c', // form feed
+                        '?' => b'?',    // a literal '?', for trigraphs
+                        '0'..='9' => {
                             return self.parse_octal_char_escape(c).map_err(|err| {
                                 // try to avoid extraneous errors, but don't try too hard
-                                self.match_next(b'\'');
+                                self.match_next('\'');
                                 err
                             });
                         }
-                        b'x' => {
+                        'x' => {
                             return self.parse_hex_char_escape().map_err(|err| {
                                 // try to avoid extraneous errors, but don't try too hard
-                                self.match_next(b'\'');
+                                self.match_next('\'');
                                 err
                             });
                         }
-                        _ => {
+                        '\0'..='\x7f' => {
                             self.error_handler.warn(
                                 &format!("unknown character escape '\\{}'", c),
                                 self.span(self.location.offset - 1),
                             );
-                            c
+                            c as u8
                         }
+                        _ => return Err(CharError::MultiByte),
                     })
                 } else {
                     Err(CharError::Eof)
                 }
-            } else if c == b'\n' {
+            } else if c == '\n' {
                 Err(CharError::Newline)
             } else if c == terminator {
                 Err(CharError::Terminator)
+            } else if c.is_ascii() {
+                Ok(c as u8)
             } else {
-                Ok(c)
+                Err(CharError::MultiByte)
             }
         } else {
             Err(CharError::Eof)
         }
     }
-    fn parse_octal_char_escape(&mut self, start: u8) -> Result<u8, CharError> {
-        let mut base: u16 = (start - b'0').into();
+    fn parse_octal_char_escape(&mut self, start: char) -> Result<u8, CharError> {
+        // char::to_digit without the `unwrap()`
+        let to_digit = |c| c as u32 - '0' as u32;
+        let mut base = to_digit(start);
         // at most 3 digits in an octal constant, `start` is the first so only 2 possible left
         for _ in 0..2 {
             match self.peek() {
-                Some(c) if b'0' <= c && c < b'8' => {
+                Some(c) if '0' <= c && c < '8' => {
                     self.next_char();
                     base <<= 3; // base *= 8
-                    base += u16::from(c - b'0');
+                    base += to_digit(c);
                 }
                 _ => break,
             }
@@ -570,16 +575,13 @@ impl Lexer {
     fn parse_hex_char_escape(&mut self) -> Result<u8, CharError> {
         // first, consume the hex literal so overflow errors don't cascade
         let mut buf = Vec::new();
-        let mut update = |this: &mut Self, c| {
-            this.next_char();
-            buf.push(c);
-        };
         while let Some(c) = self.peek() {
-            match c {
-                b'0'..=b'9' => update(self, c - b'0'),
-                b'a'..=b'f' => update(self, c - b'a' + 10),
-                b'A'..=b'F' => update(self, c - b'A' + 10),
-                _ => break,
+            match c.to_digit(16) {
+                Some(c) => {
+                    self.next_char();
+                    buf.push(c);
+                }
+                None => break,
             }
         }
 
@@ -590,7 +592,8 @@ impl Lexer {
             // NOTE: because we shifted in a 0 and c < 16, this can't overflow
             base += u64::from(digit);
         }
-        base.try_into().or(Err(CharError::HexTooLarge))
+        // the largest three digit octal is \777, but C characters are bytes and can only store up to 255
+        u8::try_from(base).or(Err(CharError::HexTooLarge))
     }
     /// Parse a character literal, starting after the opening quote.
     ///
@@ -608,12 +611,12 @@ impl Lexer {
         }
         match self.parse_single_char(false) {
             Ok(c) => match self.next_char() {
-                Some(b'\'') => Ok(Literal::Char(c as u8).into()),
-                Some(b'\n') => Err(LexError::NewlineInChar),
+                Some('\'') => Ok(Literal::Char(c).into()),
+                Some('\n') => Err(LexError::NewlineInChar),
                 None => Err(LexError::MissingEndQuote { string: false }),
                 Some(_) => {
                     consume_until_quote(self);
-                    Err(LexError::MultiCharCharLiteral)
+                    Err(LexError::MultiByteCharLiteral)
                 }
             },
             Err(CharError::Eof) => Err(LexError::MissingEndQuote { string: false }),
@@ -621,6 +624,7 @@ impl Lexer {
             Err(CharError::Terminator) => Err(LexError::EmptyChar),
             Err(CharError::HexTooLarge) => Err(LexError::CharEscapeOutOfRange(Radix::Hexadecimal)),
             Err(CharError::OctalTooLarge) => Err(LexError::CharEscapeOutOfRange(Radix::Octal)),
+            Err(CharError::MultiByte) => Err(LexError::MultiByteCharLiteral),
         }
     }
     /// Parse a string literal, starting before the opening quote.
@@ -633,7 +637,7 @@ impl Lexer {
     fn parse_string(&mut self) -> Result<Token, LexError> {
         let mut literal = Vec::new();
         // allow multiple adjacent strings
-        while self.peek() == Some(b'"') {
+        while self.peek() == Some('"') {
             self.next_char(); // start quote
             loop {
                 match self.parse_single_char(true) {
@@ -645,6 +649,7 @@ impl Lexer {
                         return Err(LexError::NewlineInString);
                     }
                     Err(CharError::Terminator) => break,
+                    Err(CharError::MultiByte) => return Err(LexError::MultiByteCharLiteral),
                     Err(CharError::HexTooLarge) => {
                         return Err(LexError::CharEscapeOutOfRange(Radix::Hexadecimal));
                     }
@@ -661,8 +666,8 @@ impl Lexer {
             // HACK: on the following call to `next()`.
             // NOTE: since we saw a newline, we must have consumed at least one token,
             // NOTE: so this can't possibly discard `self.lookahead`.
-            if self.seen_line_token != old_saw_token && self.peek() != Some(b'"') {
-                self.unput(b'\n');
+            if self.seen_line_token != old_saw_token && self.peek() != Some('"') {
+                self.unput('\n');
             }
         }
         literal.push(b'\0');
@@ -671,14 +676,14 @@ impl Lexer {
     /// Parse an identifier or keyword, given the starting letter.
     ///
     /// Identifiers match the following regex: `[a-zA-Z_][a-zA-Z0-9_]*`
-    fn parse_id(&mut self, start: u8) -> Result<Token, LexError> {
+    fn parse_id(&mut self, start: char) -> Result<Token, LexError> {
         let mut id = String::new();
-        id.push(start.into());
+        id.push(start);
         while let Some(c) = self.peek() {
             match c {
-                b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+                '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => {
                     self.next_char();
-                    id.push(c.into());
+                    id.push(c);
                 }
                 _ => break,
             }
@@ -713,103 +718,117 @@ impl Iterator for Lexer {
     /// Any item may be an error, but items will always have an associated location.
     /// The file may be empty to start, in which case the iterator will return None.
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(err) = self.error_handler.pop_front() {
+            return Some(Err(err));
+        }
+
         // sanity check
-        if self.chars.len() == 0 {
+        if self.chars.len() == self.location.offset as usize {
             return None;
         }
+
+        let check_no_newline = |this: &mut Self| {
+            // TODO: this is awful
+            if this.location.offset as usize == this.chars.len() && !this.chars.ends_with('\n') {
+                let location = this.span(this.chars.len() as u32);
+                this.error_handler
+                    .push_back(location.with(LexError::NoNewlineAtEOF));
+            }
+        };
 
         {
             let span_start = self.location.offset;
             let data = self.consume_whitespace();
+            check_no_newline(self);
             if !data.is_empty() {
                 return Some(Ok(Locatable {
                     data: Token::Whitespace(data),
                     location: self.span(span_start),
                 }));
             }
-        }
+        };
 
         let c = self.next_char().and_then(|c| {
             let span_start = self.location.offset - 1;
             // this giant switch is most of the logic
             let data = match c {
-                b'#' => Token::Hash,
-                b'+' => match self.peek() {
-                    Some(b'=') => {
+                '#' => Token::Hash,
+                '+' => match self.peek() {
+                    Some('=') => {
                         self.next_char();
                         AssignmentToken::AddEqual.into()
                     }
-                    Some(b'+') => {
+                    Some('+') => {
                         self.next_char();
                         Token::PlusPlus
                     }
                     _ => Token::Plus,
                 },
-                b'-' => match self.peek() {
-                    Some(b'=') => {
+                '-' => match self.peek() {
+                    Some('=') => {
                         self.next_char();
                         AssignmentToken::SubEqual.into()
                     }
-                    Some(b'-') => {
+                    Some('-') => {
                         self.next_char();
                         Token::MinusMinus
                     }
-                    Some(b'>') => {
+                    Some('>') => {
                         self.next_char();
                         Token::StructDeref
                     }
                     _ => Token::Minus,
                 },
-                b'*' => match self.peek() {
-                    Some(b'=') => {
+                '*' => match self.peek() {
+                    Some('=') => {
                         self.next_char();
                         AssignmentToken::MulEqual.into()
                     }
                     _ => Token::Star,
                 },
-                b'/' => {
-                    if self.match_next(b'=') {
+                '/' => {
+                    if self.match_next('=') {
                         AssignmentToken::DivEqual.into()
                     } else {
                         Token::Divide
                     }
                 }
-                b'%' => match self.peek() {
-                    Some(b'=') => {
+                '%' => match self.peek() {
+                    Some('=') => {
                         self.next_char();
                         AssignmentToken::ModEqual.into()
                     }
                     _ => Token::Mod,
                 },
-                b'^' => {
-                    if self.match_next(b'=') {
+                '^' => {
+                    if self.match_next('=') {
                         AssignmentToken::XorEqual.into()
                     } else {
                         Token::Xor
                     }
                 }
-                b'=' => match self.peek() {
-                    Some(b'=') => {
+                '=' => match self.peek() {
+                    Some('=') => {
                         self.next_char();
                         ComparisonToken::EqualEqual.into()
                     }
                     _ => Token::EQUAL,
                 },
-                b'!' => match self.peek() {
-                    Some(b'=') => {
+                '!' => match self.peek() {
+                    Some('=') => {
                         self.next_char();
                         ComparisonToken::NotEqual.into()
                     }
                     _ => Token::LogicalNot,
                 },
-                b'>' => match self.peek() {
-                    Some(b'=') => {
+                '>' => match self.peek() {
+                    Some('=') => {
                         self.next_char();
                         ComparisonToken::GreaterEqual.into()
                     }
-                    Some(b'>') => {
+                    Some('>') => {
                         self.next_char();
-                        if self.match_next(b'=') {
+                        if self.match_next('=') {
                             AssignmentToken::ShrEqual.into()
                         } else {
                             Token::ShiftRight
@@ -817,14 +836,14 @@ impl Iterator for Lexer {
                     }
                     _ => ComparisonToken::Greater.into(),
                 },
-                b'<' => match self.peek() {
-                    Some(b'=') => {
+                '<' => match self.peek() {
+                    Some('=') => {
                         self.next_char();
                         ComparisonToken::LessEqual.into()
                     }
-                    Some(b'<') => {
+                    Some('<') => {
                         self.next_char();
-                        if self.match_next(b'=') {
+                        if self.match_next('=') {
                             AssignmentToken::ShlEqual.into()
                         } else {
                             Token::ShiftLeft
@@ -832,39 +851,39 @@ impl Iterator for Lexer {
                     }
                     _ => ComparisonToken::Less.into(),
                 },
-                b'&' => match self.peek() {
-                    Some(b'&') => {
+                '&' => match self.peek() {
+                    Some('&') => {
                         self.next_char();
                         Token::LogicalAnd
                     }
-                    Some(b'=') => {
+                    Some('=') => {
                         self.next_char();
                         AssignmentToken::AndEqual.into()
                     }
                     _ => Token::Ampersand,
                 },
-                b'|' => match self.peek() {
-                    Some(b'|') => {
+                '|' => match self.peek() {
+                    Some('|') => {
                         self.next_char();
                         Token::LogicalOr
                     }
-                    Some(b'=') => {
+                    Some('=') => {
                         self.next_char();
                         AssignmentToken::OrEqual.into()
                     }
                     _ => Token::BitwiseOr,
                 },
-                b'{' => Token::LeftBrace,
-                b'}' => Token::RightBrace,
-                b'(' => Token::LeftParen,
-                b')' => Token::RightParen,
-                b'[' => Token::LeftBracket,
-                b']' => Token::RightBracket,
-                b'~' => Token::BinaryNot,
-                b':' => Token::Colon,
-                b';' => Token::Semicolon,
-                b',' => Token::Comma,
-                b'.' => match self.peek() {
+                '{' => Token::LeftBrace,
+                '}' => Token::RightBrace,
+                '(' => Token::LeftParen,
+                ')' => Token::RightParen,
+                '[' => Token::LeftBracket,
+                ']' => Token::RightBracket,
+                '~' => Token::BinaryNot,
+                ':' => Token::Colon,
+                ';' => Token::Semicolon,
+                ',' => Token::Comma,
+                '.' => match self.peek() {
                     Some(c) if c.is_ascii_digit() => {
                         match self.parse_float(Radix::Decimal, String::new()) {
                             Ok(f) => Literal::Float(f).into(),
@@ -876,8 +895,8 @@ impl Iterator for Lexer {
                             }
                         }
                     }
-                    Some(b'.') => {
-                        if self.peek_next() == Some(b'.') {
+                    Some('.') => {
+                        if self.peek_next() == Some('.') {
                             self.next_char();
                             self.next_char();
                             Token::Ellipsis
@@ -887,30 +906,30 @@ impl Iterator for Lexer {
                     }
                     _ => Token::Dot,
                 },
-                b'?' => Token::Question,
-                b'0'..=b'9' => match self.parse_num(c) {
+                '?' => Token::Question,
+                '0'..='9' => match self.parse_num(c) {
                     Ok(num) => num,
                     Err(err) => {
                         let span = self.span(span_start);
                         return Some(Err(span.with(err)));
                     }
                 },
-                b'a'..=b'z' | b'A'..=b'Z' | b'_' => match self.parse_id(c) {
+                'a'..='z' | 'A'..='Z' | '_' => match self.parse_id(c) {
                     Ok(id) => id,
                     Err(err) => {
                         let span = self.span(span_start);
                         return Some(Err(span.with(err)));
                     }
                 },
-                b'\'' => match self.parse_char() {
+                '\'' => match self.parse_char() {
                     Ok(id) => id,
                     Err(err) => {
                         let span = self.span(span_start);
                         return Some(Err(span.with(err)));
                     }
                 },
-                b'"' => {
-                    self.unput(b'"');
+                '"' => {
+                    self.unput('"');
                     match self.parse_string() {
                         Ok(id) => id,
                         Err(err) => {
@@ -932,15 +951,7 @@ impl Iterator for Lexer {
                 location: self.span(span_start),
             }))
         });
-        if c.is_none()
-            && self.location.offset as usize == self.chars.len()
-            && self.chars.as_bytes()[self.chars.len() - 1] != b'\n'
-        {
-            let location = self.span(self.chars.len() as u32 - 1);
-            // HACK: avoid infinite loop
-            self.location.offset += 1;
-            return Some(Err(location.with(LexError::NoNewlineAtEOF)));
-        }
+
         if self.debug {
             if let Some(Ok(token)) = &c {
                 println!("token: {}", token.data);

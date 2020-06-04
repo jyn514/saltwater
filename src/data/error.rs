@@ -537,8 +537,8 @@ pub enum LexError {
     #[error("invalid digit {digit} in {radix} constant")]
     InvalidDigit { digit: u32, radix: Radix },
 
-    #[error("multi-character character literal")]
-    MultiCharCharLiteral,
+    #[error("multi-byte character literal")]
+    MultiByteCharLiteral,
 
     #[error("illegal newline while parsing char literal")]
     NewlineInChar,

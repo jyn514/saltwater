@@ -91,7 +91,7 @@ required-features = ["cc", "_test_header"]
 lto = true
 
 [profile.test]
-#debug = false  # speeds up link time
+debug = false  # speeds up link time
 
 [profile.bench]
 opt-level = 3

@@ -205,8 +205,8 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: C
             "To UB or not to UB? That is … apparently a question you never ask yourself.",
             "Do you _really_ want to know what this compiles to?",
             "Not the type to ever stop and think for a moment, eh? Here's your moment, use it well.",
-            "Federal regulations require me to warn you that this next warning... is looking pretty good.",
-            "Try to avoid this garbage you're writing.",
+            "Federal regulations require me to warn you that this next warning... is looking pretty good",
+            "Try to avoid this garbage you're writing",
         ];
         let mut rng = rand::thread_rng();
         msgs[rng.gen_range(0, msgs.len())]

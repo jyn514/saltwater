@@ -202,6 +202,9 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: C
             "how does this make you feel?",
             "I'm checking some blueprints, and I think... Yes, right here. You're definitely going the wrong way",
             "I don't want to tell you your business, but if it were me, I'd leave that thing alone",
+            "To UB or not to UB? That is … apparently a question you never ask yourself.",
+            "Do you _really_ want to know what this compiles to?",
+            "Not the type to ever stop and think for a moment, eh? Here's your moment, use it well.",
         ];
         let mut rng = rand::thread_rng();
         msgs[rng.gen_range(0, msgs.len())]
@@ -433,6 +436,9 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, colo
             "and you call yourself a programmer",
             "You've met with a terrible fate, haven't you?",
             "I'd just like to point out that you were given every opportunity to succeed",
+            "Okay. Look. We both did a lot of things that you're going to regret. But I think we can put our differences behind us. To prevent segfaults. You monster.",
+            "for your own good, please don't push this rubbish to a public repo",
+            "You made Kernighan cry in a corner. What an achievement.",
         ];
         let mut rng = rand::thread_rng();
         msgs[rng.gen_range(0, msgs.len())]
@@ -537,7 +543,6 @@ fn install_panic_hook() {
     panic::set_hook(Box::new(move |e| {
         let msgs = [
             "I've been really busy being dead. You know, after you KILLED ME.",
-            "Okay. Look. We both said a lot of things that you're going to regret. But I think we can put our differences behind us. For science. You monster.",
             "You did this to me.",
             "Once, there was a time when programming was sane. In those days spirits were brave, the stakes were high, men were real men, women were real women and small furry creatures from Alpha Centauri were real small furry creatures from Alpha Centauri.",
             "Stand back. The portal to hell will open in three. two. one.",
@@ -546,6 +551,8 @@ fn install_panic_hook() {
             "For your own safety, do not destroy vital compiling apparatus.",
             "Vital compiling apparatus destroyed.",
             "Time out for a second. That wasn't supposed to happen.",
+            "Woah, you just blew my mind! … you monster.",
+            "Congratulations. Your code is so dumb that I'd rather kill myself than compile it.",
         ];
         let mut rng = rand::thread_rng();
         let msg = msgs[rng.gen_range(0, msgs.len())];

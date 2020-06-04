@@ -749,7 +749,7 @@ impl Iterator for Lexer {
         };
 
         let c = self.next_char().and_then(|c| {
-            let span_start = self.location.offset - 1;
+            let span_start = self.location.offset - c.len_utf8() as u32;
             // this giant switch is most of the logic
             let data = match c {
                 '#' => Token::Hash,

@@ -38,6 +38,7 @@ color-backtrace = { version = "0.4", default-features = false, optional = true }
 counter = "0.4"
 atty = { version = "0.2", default-features = false, optional = true } 
 git-testament = { version = "0.1", optional = true }
+rand = { version = "0.7", optional = true }
 
 [dev-dependencies]
 env_logger = { version = "0.7", default-features = false }
@@ -53,6 +54,7 @@ default = ["cc", "codegen", "color-backtrace"]
 cc = ["ansi_term", "git-testament", "tempfile", "pico-args", "codegen", "atty"]
 codegen = ["cranelift", "cranelift-module", "cranelift-object"]
 jit = ["codegen", "cranelift-simplejit"]
+salty = ["rand"]
 # for internal use
 _test_headers = []
 

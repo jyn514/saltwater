@@ -188,10 +188,29 @@ fn aot_main(buf: &str, opt: Opt, output: &Path, color: ColorChoice) -> Result<()
 
 fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: ColorChoice) {
     WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
+    #[cfg(not(feature = "salty"))]
+    let warn = "warning";
+    #[cfg(feature = "salty")]
+    let warn = {
+        use rand::Rng;
+
+        let msgs = [
+            "you sure this is a good idea?",
+            "this is probably fine",
+            "if your majesty in their wisdom thinks this is a good idea, far be it from me to argue",
+            "this is why the C standards committee has nightmares",
+            "how does this make you feel?",
+            "I'm checking some blueprints, and I think... Yes, right here. You're definitely going the wrong way",
+            "I don't want to tell you your business, but if it were me, I'd leave that thing alone",
+        ];
+        let mut rng = rand::thread_rng();
+        msgs[rng.gen_range(0, msgs.len())]
+    };
+
     let tag = if color.use_color_for(atty::Stream::Stdout) {
-        Colour::Yellow.bold().paint("warning")
+        Colour::Yellow.bold().paint(warn)
     } else {
-        ANSIString::from("warning")
+        ANSIString::from(warn)
     };
     for warning in warnings {
         print!(
@@ -219,6 +238,9 @@ fn main() {
 
     #[cfg(feature = "color-backtrace")]
     backtrace::install(opt.color);
+
+    #[cfg(feature = "salty")]
+    install_panic_hook();
 
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
@@ -392,10 +414,34 @@ fn print_issues(warnings: usize, errors: usize) {
 
 fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, color: ColorChoice) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
+    #[cfg(not(feature = "salty"))]
+    let err = "error";
+    #[cfg(feature = "salty")]
+    let err = {
+        use rand::Rng;
+
+        let msgs = [
+            "you can't write code",
+            "your stupidity is ever-increasing",
+            "why would you even think that this would work?",
+            "this code is bad and you should feel bad",
+            "this code makes me cry",
+            "do you really hate me so",
+            "it has to be bad if C doesn't allow it",
+            "you goofed",
+            "really? you were dumb enough to try that?",
+            "and you call yourself a programmer",
+            "You've met with a terrible fate, haven't you?",
+            "I'd just like to point out that you were given every opportunity to succeed",
+        ];
+        let mut rng = rand::thread_rng();
+        msgs[rng.gen_range(0, msgs.len())]
+    };
+
     let prefix = if color.use_color_for(atty::Stream::Stdout) {
-        Colour::Red.bold().paint("error")
+        Colour::Red.bold().paint(err)
     } else {
-        ANSIString::from("error")
+        ANSIString::from(err)
     };
     print!("{}", pretty_print(prefix, msg, location, file_db,));
 }
@@ -480,6 +526,32 @@ mod backtrace {
     pub(super) fn install(color: ColorChoice) {
         BacktracePrinter::new().install(Box::new(StandardStream::stderr(color.into())));
     }
+}
+
+#[cfg(feature = "salty")]
+fn install_panic_hook() {
+    use rand::Rng;
+    use std::panic;
+
+    let old_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |e| {
+        let msgs = [
+            "I've been really busy being dead. You know, after you KILLED ME.",
+            "Okay. Look. We both said a lot of things that you're going to regret. But I think we can put our differences behind us. For science. You monster.",
+            "You did this to me.",
+            "Once, there was a time when programming was sane. In those days spirits were brave, the stakes were high, men were real men, women were real women and small furry creatures from Alpha Centauri were real small furry creatures from Alpha Centauri.",
+            "Stand back. The portal to hell will open in three. two. one.",
+            "For your own safety and the safety of others, please refrain from doing this again.",
+            "To ensure the safe performance of all authorized activities, do not destroy vital compiling apparatus.",
+            "For your own safety, do not destroy vital compiling apparatus.",
+            "Vital compiling apparatus destroyed.",
+            "Time out for a second. That wasn't supposed to happen.",
+        ];
+        let mut rng = rand::thread_rng();
+        let msg = msgs[rng.gen_range(0, msgs.len())];
+        println!("{}", msg);
+        old_hook(e);
+    }));
 }
 
 #[cfg(test)]

@@ -549,6 +549,15 @@ mod backtrace {
     }
 }
 
+fn play_scream() -> Option<()> {
+    const SCREAM: &[u8] = include_bytes!("data/R2D2-Scream.ogg");
+    let device = rodio::default_output_device()?;
+    let source = rodio::Decoder::new(std::io::Cursor::new(SCREAM)).ok()?;
+    rodio::play_raw(&device, rodio::source::Source::convert_samples(source));
+    std::thread::sleep(std::time::Duration::from_millis(2835));
+    Some(())
+}
+
 #[cfg(feature = "salty")]
 fn install_panic_hook() {
     use rand::Rng;
@@ -581,21 +590,7 @@ fn install_panic_hook() {
             thread::sleep(time::Duration::from_secs(1));
         }
 
-        #[cfg(target_os = "linux")]
-        {
-            const SCREAM: &[u8] = include_bytes!("data/R2D2-Scream.wav");
-
-            if let Ok(mut child) = std::process::Command::new("aplay")
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::null())
-                .spawn()
-            {
-                use std::io::Write;
-                if let Some(stdin) = child.stdin.as_mut() {
-                    let _ = stdin.write_all(SCREAM);
-                }
-            }
-        }
+        let _ = play_scream();
 
         old_hook(e);
     }));

@@ -229,13 +229,16 @@ fn replace_function(
                 data: Token::Whitespace(_),
                 ..
             })) => {
-                let spaces = inner.next().unwrap();
+                let spaces = incoming.pop_front().or_else(|| inner.next()).unwrap();
+                let left_paren = incoming.front().or_else(|| inner.peek());
                 if let Some(Ok(Locatable {
                     data: Token::LeftParen,
                     ..
-                })) = inner.peek()
+                })) = left_paren
                 {
-                    inner.next();
+                    if incoming.pop_front().is_none() {
+                        inner.next();
+                    }
                     break;
                 }
                 let id_token = Ok(location.with(Token::Id(id)));
@@ -246,8 +249,8 @@ fn replace_function(
             // If this branch is matched, this is not a macro call,
             // since all other cases are covered above.
             // So just append the identifier and the current token to the stack.
-            Some(Ok(Locatable { data: _, .. })) => {
-                let token = inner.next().unwrap();
+            Some(Ok(_)) => {
+                let token = incoming.pop_front().or_else(|| inner.next()).unwrap();
                 let id_token = Ok(location.with(Token::Id(id)));
                 errors.push(id_token);
                 errors.push(token);

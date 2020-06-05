@@ -1653,7 +1653,12 @@ int main(){}
         assert_same_exact("#define f(a) <a>\nf   ", "\nf   ");
         assert_same_exact("#define f(a) <a>\nf   ;", "\nf   ;");
         assert_same_exact("#define f(a) <a>\nf;", "\nf;");
-        assert_same_exact("#define f(a) 1\n#define h f (2)\nh", "\n1");
+        assert_same_exact(
+            "#define f(a) 1
+#define h f (2)
+h",
+            "\n\n1",
+        );
     }
 
     #[test]

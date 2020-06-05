@@ -24,6 +24,7 @@ jobs:
                 - cmake
                 - gcc
                 - binutils-dev
+                - libasound2-dev
                 - libiberty-dev
                 - libssl-dev
           before_cache: cargo install cargo-tarpaulin

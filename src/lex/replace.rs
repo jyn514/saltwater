@@ -223,8 +223,45 @@ fn replace_function(
                 }
                 break;
             }
-            // `f ;` or `f <EOF>`
-            Some(_) | None => return errors,
+            // skip any whitespaces and newlines between `f` and `(`, so that
+            // `f (` is also valid.
+            Some(Ok(Locatable {
+                data: Token::Whitespace(_),
+                ..
+            })) => {
+                let spaces = incoming.pop_front().or_else(|| inner.next()).unwrap();
+                let left_paren = incoming.front().or_else(|| inner.peek());
+                if let Some(Ok(Locatable {
+                    data: Token::LeftParen,
+                    ..
+                })) = left_paren
+                {
+                    if incoming.pop_front().is_none() {
+                        inner.next();
+                    }
+                    break;
+                }
+                let id_token = Ok(location.with(Token::Id(id)));
+                errors.push(id_token);
+                errors.push(spaces);
+                return errors;
+            }
+            // If this branch is matched, this is not a macro call,
+            // since all other cases are covered above.
+            // So just append the identifier and the current token to the stack.
+            Some(Ok(_)) => {
+                let token = incoming.pop_front().or_else(|| inner.next()).unwrap();
+                let id_token = Ok(location.with(Token::Id(id)));
+                errors.push(id_token);
+                errors.push(token);
+                return errors;
+            }
+            // `f<EOF>`
+            None => {
+                let id_token = Ok(location.with(Token::Id(id)));
+                errors.push(id_token);
+                return errors;
+            }
         }
     }
 

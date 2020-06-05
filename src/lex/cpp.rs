@@ -1644,4 +1644,31 @@ int main(){}
         );
         // TODO test for #includes
     }
+
+    #[test]
+    fn space_separated_function_macro() {
+        assert_same_exact("#define f(a) <a>\nf     (a)", "\n<a>");
+        assert_same_exact("#define f(a) <a>\nf(a)", "\n<a>");
+        assert_same_exact("#define f(a) <a>\nf", "\nf");
+        assert_same_exact("#define f(a) <a>\nf   ", "\nf   ");
+        assert_same_exact("#define f(a) <a>\nf   ;", "\nf   ;");
+        assert_same_exact("#define f(a) <a>\nf;", "\nf;");
+        assert_same_exact(
+            "#define f(a) 1
+#define h f (2)
+h",
+            "\n\n1",
+        );
+    }
+
+    #[test]
+    fn eof_after_macro_call() {
+        use crate::data::lex::test::cpp_no_newline;
+
+        let cpp = cpp_no_newline("#define f(a)\nf")
+            .filter_map(|res| res.ok().map(|token| token.data.to_string()))
+            .collect::<Vec<_>>()
+            .join("");
+        assert_eq!(cpp, "\nf");
+    }
 }

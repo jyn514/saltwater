@@ -1,3 +1,4 @@
+use super::COMMANDS;
 use rustyline::{
     completion::{Completer, Pair},
     error::ReadlineError,
@@ -13,6 +14,7 @@ use std::borrow::Cow;
 pub(super) struct ReplHelper {
     pub(super) highlighter: MatchingBracketHighlighter,
     pub(super) validator: MatchingBracketValidator,
+    pub(super) hinter: CommandHinter,
 }
 
 impl Completer for ReplHelper {
@@ -29,8 +31,8 @@ impl Completer for ReplHelper {
 }
 
 impl Hinter for ReplHelper {
-    fn hint(&self, _line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<String> {
-        None
+    fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<String> {
+        self.hinter.hint(line, pos, ctx)
     }
 }
 
@@ -44,7 +46,8 @@ impl Highlighter for ReplHelper {
     }
 
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
-        self.highlighter.highlight_hint(hint)
+        let style = ansi_term::Style::new().dimmed();
+        Cow::Owned(style.paint(hint).to_string())
     }
 
     fn highlight<'l>(&self, line: &'l str, pos: usize) -> Cow<'l, str> {
@@ -66,5 +69,26 @@ impl Validator for ReplHelper {
 
     fn validate_while_typing(&self) -> bool {
         self.validator.validate_while_typing()
+    }
+}
+
+pub(super) struct CommandHinter;
+
+impl Hinter for CommandHinter {
+    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
+        if pos < line.len() {
+            return None;
+        }
+        let start = &line[..pos];
+        if !start.starts_with(":") {
+            return None;
+        }
+
+        COMMANDS
+            .iter()
+            .filter(|(k, _v)| k.starts_with(&start[1..]))
+            .map(|(k, _v)| k)
+            .next()
+            .map(|s| s.to_string())
     }
 }

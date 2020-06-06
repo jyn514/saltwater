@@ -7,6 +7,7 @@ use rustyline::{
     error::ReadlineError, highlight::MatchingBracketHighlighter,
     validate::MatchingBracketValidator, CompletionType, Config, EditMode, Editor,
 };
+use std::collections::HashMap;
 
 const PROMPT: &str = ">> ";
 const COMMAND_PREFIX: &str = ":";

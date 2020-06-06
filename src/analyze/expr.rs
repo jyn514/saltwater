@@ -1327,7 +1327,6 @@ impl Qualifiers {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::analyze::test::analyze;
     use crate::analyze::*;
     pub(crate) fn expr(input: &str) -> CompileResult<Expr> {
         analyze(input, Parser::expr, PureAnalyzer::expr)

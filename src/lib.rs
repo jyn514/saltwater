@@ -73,7 +73,7 @@ impl<T, E> Program<T, E> {
     }
 }
 
-pub use analyze::{Analyzer, PureAnalyzer};
+pub use analyze::{analyze, Analyzer, PureAnalyzer};
 pub use data::*;
 // https://github.com/rust-lang/rust/issues/64762
 #[allow(unreachable_pub)]

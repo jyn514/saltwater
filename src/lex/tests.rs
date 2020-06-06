@@ -1,5 +1,5 @@
 use super::{CompileResult, Literal, Locatable, Token};
-use crate::data::lex::test::{cpp, cpp_no_newline};
+use crate::data::lex::{new_pp, new_pp_no_newline};
 use crate::intern::InternedStr;
 
 type LexType = CompileResult<Locatable<Token>>;
@@ -15,7 +15,7 @@ fn lex(input: &str) -> Option<LexType> {
     lexed.pop()
 }
 fn lex_all(input: &str) -> Vec<LexType> {
-    cpp(input).filter(is_not_whitespace).collect()
+    new_pp(input).filter(is_not_whitespace).collect()
 }
 
 pub(crate) fn is_not_whitespace(res: &LexType) -> bool {
@@ -304,13 +304,13 @@ fn test_strings() {
 
 #[test]
 fn test_no_newline() {
-    assert!(cpp_no_newline("").next().is_none());
-    let mut tokens: Vec<_> = cpp_no_newline(" ").filter(is_not_whitespace).collect();
+    assert!(new_pp_no_newline("").next().is_none());
+    let mut tokens: Vec<_> = new_pp_no_newline(" ").filter(is_not_whitespace).collect();
     assert_eq!(tokens.len(), 1);
     assert!(tokens.remove(0).unwrap_err().is_lex_err());
 
     // regression test for https://github.com/jyn514/rcc/issues/323
-    let tokens: Vec<_> = cpp_no_newline("//").filter(is_not_whitespace).collect();
+    let tokens: Vec<_> = new_pp_no_newline("//").filter(is_not_whitespace).collect();
     assert_eq!(tokens.len(), 1);
     assert!(tokens[0].as_ref().unwrap_err().is_lex_err());
 }

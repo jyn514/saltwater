@@ -528,7 +528,7 @@ impl Eq for Symbol {}
 
 #[cfg(test)]
 mod tests {
-    use crate::analyze::{test::analyze, PureAnalyzer};
+    use crate::analyze::{analyze, PureAnalyzer};
     use crate::{Locatable, Parser};
 
     #[test]

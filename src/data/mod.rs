@@ -87,7 +87,7 @@ impl TryFrom<u32> for Radix {
 
 #[cfg(test)]
 mod tests {
-    use crate::analyze::test::analyze;
+    use crate::analyze::analyze;
     use crate::Parser;
 
     #[test]

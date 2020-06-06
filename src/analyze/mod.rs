@@ -9,7 +9,8 @@ use counter::Counter;
 
 use crate::data::{error::Warning, hir::*, lex::Keyword, *};
 use crate::intern::InternedStr;
-use crate::parse::{Lexer, Parser};
+use crate::lex::PreProcessor;
+use crate::parse::{parser, Lexer, Parser};
 use crate::RecursionGuard;
 
 pub(crate) type TagScope = Scope<InternedStr, TagEntry>;
@@ -1343,32 +1344,32 @@ impl UnitSpecifier {
     }
 }
 
+/// Analyzes the given input using the given parser, and analyze function.
+pub fn analyze<'c, 'input: 'c, P, A, R, S, E>(
+    input: &'input str,
+    parse_func: P,
+    analyze_func: A,
+) -> CompileResult<R>
+where
+    P: Fn(&mut Parser<PreProcessor<'c>>) -> Result<S, E>,
+    A: Fn(&mut PureAnalyzer, S) -> R,
+    CompileError: From<E>,
+{
+    let mut p = parser(input);
+    let ast = parse_func(&mut p)?;
+    let mut a = PureAnalyzer::new();
+    let e = analyze_func(&mut a, ast);
+    if let Some(err) = a.error_handler.pop_front() {
+        return Err(err);
+    }
+    Ok(e)
+}
+
 #[cfg(test)]
 pub(crate) mod test {
     use super::{Error, *};
     use crate::data::types::{ArrayType, FunctionType, Type::*};
-    use crate::lex::PreProcessor;
     use crate::parse::test::*;
-
-    pub(crate) fn analyze<'c, 'input: 'c, P, A, R, S, E>(
-        input: &'input str,
-        parse_func: P,
-        analyze_func: A,
-    ) -> CompileResult<R>
-    where
-        P: Fn(&mut Parser<PreProcessor<'c>>) -> Result<S, E>,
-        A: Fn(&mut PureAnalyzer, S) -> R,
-        CompileError: From<E>,
-    {
-        let mut p = parser(input);
-        let ast = parse_func(&mut p)?;
-        let mut a = PureAnalyzer::new();
-        let e = analyze_func(&mut a, ast);
-        if let Some(err) = a.error_handler.pop_front() {
-            return Err(err);
-        }
-        Ok(e)
-    }
 
     fn maybe_decl(s: &str) -> Option<CompileResult<Declaration>> {
         decls(s).into_iter().next()

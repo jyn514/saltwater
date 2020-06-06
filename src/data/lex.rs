@@ -6,6 +6,7 @@ use proptest_derive::Arbitrary;
 
 use crate::data::hir::BinaryOp;
 use crate::intern::InternedStr;
+use crate::lex::{PreProcessor, PreProcessorBuilder};
 
 // holds where a piece of code came from
 // should almost always be immutable
@@ -437,19 +438,19 @@ impl From<ComparisonToken> for Token {
     }
 }
 
+/// Create a new preprocessor with `s` as the input
+pub(crate) fn new_pp(s: &str) -> PreProcessor {
+    let newline = format!("{}\n", s).into_boxed_str();
+    new_pp_no_newline(Box::leak(newline))
+}
+/// Create a new preprocessor with `s` as the input, but without a trailing newline
+pub(crate) fn new_pp_no_newline(s: &str) -> PreProcessor {
+    PreProcessorBuilder::new(s).build()
+}
+
 #[cfg(test)]
 pub(crate) mod test {
-    use crate::*;
-
-    /// Create a new preprocessor with `s` as the input
-    pub(crate) fn cpp(s: &str) -> PreProcessor {
-        let newline = format!("{}\n", s).into_boxed_str();
-        cpp_no_newline(Box::leak(newline))
-    }
-    /// Create a new preprocessor with `s` as the input, but without a trailing newline
-    pub(crate) fn cpp_no_newline(s: &str) -> PreProcessor {
-        PreProcessorBuilder::new(s).build()
-    }
+    use crate::data::lex::new_pp;
 
     #[test]
     fn assignment_display() {
@@ -457,7 +458,7 @@ pub(crate) mod test {
             "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", ">>=", "<<=", "^=",
         ];
         for token in &tokens {
-            let mut lexer = cpp(token);
+            let mut lexer = new_pp(token);
             let first = lexer.next().unwrap().unwrap().data;
             assert_eq!(&first.to_string(), *token);
         }
@@ -466,7 +467,7 @@ pub(crate) mod test {
     #[test]
     fn str_display_escape() {
         let token = r#""Hello, world\n\r\t""#;
-        let mut lexer = cpp(token);
+        let mut lexer = new_pp(token);
         let first = lexer.next().unwrap().unwrap().data;
         assert_eq!(&first.to_string(), token);
     }

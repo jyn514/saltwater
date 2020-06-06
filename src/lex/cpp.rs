@@ -1240,11 +1240,16 @@ lazy_static! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::lex::test::{cpp, cpp_no_newline};
+    use crate::data::lex::{new_pp, new_pp_no_newline};
 
     macro_rules! assert_err {
         ($src: expr, $err: pat, $description: expr $(,)?) => {
-            match cpp($src).next_non_whitespace().unwrap().unwrap_err().data {
+            match new_pp($src)
+                .next_non_whitespace()
+                .unwrap()
+                .unwrap_err()
+                .data
+            {
                 Error::PreProcessor($err) => {}
                 Error::PreProcessor(other) => panic!("expected {}, got {}", $description, other),
                 _ => panic!("expected cpp err"),
@@ -1270,7 +1275,7 @@ mod tests {
     }
     fn assert_same(src: &str, cpp_src: &str) {
         assert!(
-            is_same_preprocessed(cpp(src), cpp(cpp_src)),
+            is_same_preprocessed(new_pp(src), new_pp(cpp_src)),
             "{} is not the same as {}",
             src,
             cpp_src,
@@ -1278,7 +1283,7 @@ mod tests {
     }
     fn assert_same_exact(src: &str, cpp_src: &str) {
         // NOTE make sure `cpp_src` has a trailing newline
-        let pprint = cpp(src)
+        let pprint = new_pp(src)
             .filter_map(|res| res.ok().map(|token| token.data.to_string()))
             .collect::<Vec<_>>()
             .join("");
@@ -1291,7 +1296,7 @@ mod tests {
             // and making it a keyword messes up parsing
             if *keyword != Keyword::VaList {
                 println!("{}", keyword);
-                assert_keyword(cpp(&keyword.to_string()).next(), *keyword);
+                assert_keyword(new_pp(&keyword.to_string()).next(), *keyword);
             }
         }
     }
@@ -1326,12 +1331,12 @@ mod tests {
         let code = "#ifdef a
         whatever, doesn't matter
         #endif";
-        assert_eq!(cpp(code).next_non_whitespace(), None);
+        assert_eq!(new_pp(code).next_non_whitespace(), None);
 
         let code = "#ifdef a\n#endif";
-        assert_eq!(cpp(code).next_non_whitespace(), None);
+        assert_eq!(new_pp(code).next_non_whitespace(), None);
 
-        assert!(cpp("#ifdef").next_non_whitespace().unwrap().is_err());
+        assert!(new_pp("#ifdef").next_non_whitespace().unwrap().is_err());
 
         let nested = "#ifdef a
         #ifdef b
@@ -1340,14 +1345,14 @@ mod tests {
         #endif
         char;";
         assert_eq!(
-            cpp(nested).next_non_whitespace().unwrap().unwrap().data,
+            new_pp(nested).next_non_whitespace().unwrap().unwrap().data,
             Token::Keyword(Keyword::Char)
         );
 
-        assert!(cpp("#endif").next_non_whitespace().unwrap().is_err());
+        assert!(new_pp("#endif").next_non_whitespace().unwrap().is_err());
 
         let same_line = "#ifdef a #endif\nint main() {}";
-        assert!(cpp(same_line).next_non_whitespace().unwrap().is_err());
+        assert!(new_pp(same_line).next_non_whitespace().unwrap().is_err());
     }
     #[test]
     fn ifndef() {
@@ -1356,7 +1361,7 @@ mod tests {
 #define A
 #endif
 A";
-        assert!(cpp(src).next_non_whitespace().is_none());
+        assert!(new_pp(src).next_non_whitespace().is_none());
     }
     #[test]
     fn object_macros() {
@@ -1485,19 +1490,19 @@ d
     #[test]
     fn pragma() {
         let src = "#pragma gcc __attribute__((inline))";
-        assert!(cpp(src).next_non_whitespace().is_none());
+        assert!(new_pp(src).next_non_whitespace().is_none());
     }
     #[test]
     fn line() {
         let src = "#line 1";
-        let mut cpp = cpp(src);
+        let mut cpp = new_pp(src);
         assert!(cpp.next_non_whitespace().is_none());
         assert!(cpp.warnings().pop_front().is_some());
     }
     #[test]
     fn warning() {
         let src = "#warning your pants are on file";
-        let mut cpp = cpp(src);
+        let mut cpp = new_pp(src);
         assert!(cpp.next_non_whitespace().is_none());
         assert!(cpp.warnings().pop_front().is_some());
     }
@@ -1535,14 +1540,14 @@ c
     }
     #[test]
     fn test_comment_newline() {
-        let tokens = cpp_no_newline(
+        let tokens = new_pp_no_newline(
             "
 #if 1 //
 int main() {}
 #endif
 ",
         );
-        assert!(is_same_preprocessed(tokens, cpp("int main() {}")));
+        assert!(is_same_preprocessed(tokens, new_pp("int main() {}")));
         assert_same(
             "
 #if 1 /**//**/

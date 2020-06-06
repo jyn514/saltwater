@@ -375,7 +375,6 @@ impl<I: Lexer> Parser<I> {
 mod test {
     use super::SyntaxResult;
     use crate::data::ast::{Expr, ExprType};
-    use crate::parse::test::*;
     use crate::parse::*;
 
     fn assert_same(left: &str, right: &str) {

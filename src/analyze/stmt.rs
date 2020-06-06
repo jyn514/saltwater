@@ -186,8 +186,8 @@ impl FunctionAnalyzer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analyze::test::{analyze, analyze_expr};
     use crate::analyze::FunctionData;
+    use crate::analyze::{analyze, test::analyze_expr};
     use crate::data::*;
     use crate::Parser;
 

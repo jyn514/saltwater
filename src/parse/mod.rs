@@ -7,7 +7,12 @@ use std::iter::Iterator;
 use std::mem;
 
 use crate::data::*;
-use crate::data::{ast::ExternalDeclaration, hir::Scope, lex::Keyword};
+use crate::data::{
+    ast::ExternalDeclaration,
+    hir::Scope,
+    lex::{new_pp, Keyword},
+};
+use crate::lex::PreProcessor;
 use crate::RecursionGuard;
 
 type Lexeme = CompileResult<Locatable<Token>>;
@@ -345,13 +350,18 @@ impl Token {
     }
 }
 
+/// Creates a new Parser from the given input
+pub(crate) fn parser(input: &str) -> Parser<PreProcessor> {
+    let mut lexer = new_pp(input);
+    let first: Locatable<Token> = lexer.next_non_whitespace().unwrap().unwrap();
+    Parser::new(first, lexer, false)
+}
+
 #[cfg(test)]
 pub(crate) mod test {
-    use super::Parser;
+    use super::{parser, Parser};
     use crate::data::ast::ExternalDeclaration;
-    use crate::data::lex::test::cpp;
     use crate::data::*;
-    use crate::lex::PreProcessor;
     use proptest::prelude::*;
 
     pub(crate) type ParseType = CompileResult<Locatable<ExternalDeclaration>>;
@@ -359,12 +369,6 @@ pub(crate) mod test {
     #[inline]
     pub(crate) fn parse_all(input: &str) -> Vec<ParseType> {
         parser(input).collect()
-    }
-    pub(crate) fn parser(input: &str) -> Parser<PreProcessor> {
-        //let mut lexer = Lexer::new((), format!("{}\n", input), false);
-        let mut lexer = cpp(input);
-        let first: Locatable<Token> = lexer.next_non_whitespace().unwrap().unwrap();
-        Parser::new(first, lexer, false)
     }
 
     prop_compose! {

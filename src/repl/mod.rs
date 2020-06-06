@@ -12,8 +12,10 @@ use rustyline::{
 const PROMPT: &str = ">> ";
 const COMMAND_PREFIX: &str = ":";
 
-const COMMANDS: [(&'static str, fn(String) -> Result<(), CommandError>); 2] = [
+const COMMANDS: [(&'static str, fn(String) -> Result<(), CommandError>); 4] = [
     ("help", commands::print_help),
+    ("quit", commands::quit_repl),
+    ("q", commands::quit_repl),
     ("type", commands::show_type),
 ];
 

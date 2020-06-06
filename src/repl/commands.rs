@@ -3,6 +3,7 @@ use std::fmt;
 
 const HELP_MESSAGE: &'static str = "
 :help   Shows this message
+:quit   Quits the repl
 :type   Shows the type of the given expression
 ";
 
@@ -29,4 +30,8 @@ pub(super) fn show_type(code: String) -> Result<(), CommandError> {
 pub(super) fn print_help(_code: String) -> Result<(), CommandError> {
     println!("{}", HELP_MESSAGE);
     Ok(())
+}
+
+pub(super) fn quit_repl(_code: String) -> Result<(), CommandError> {
+    std::process::exit(0)
 }

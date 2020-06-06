@@ -83,12 +83,14 @@ impl Hinter for CommandHinter {
         if !start.starts_with(":") {
             return None;
         }
+        let start = &start[1..];
 
         COMMANDS
             .iter()
-            .filter(|(k, _v)| k.starts_with(&start[1..]))
+            .filter(|(k, _v)| k.starts_with(&start[..]))
             .map(|(k, _v)| k)
             .next()
+            .map(|s| &s[start.len()..])
             .map(|s| s.to_string())
     }
 }

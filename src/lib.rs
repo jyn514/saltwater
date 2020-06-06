@@ -91,7 +91,6 @@ pub mod intern;
 mod ir;
 mod lex;
 mod parse;
-pub mod repl;
 
 pub use lex::replace;
 
@@ -202,6 +201,10 @@ pub struct Opt {
     /// An empty path is allowed but not recommended; it will cause the preprocessor
     /// to look for includes relative to the current directory of the process.
     pub filename: PathBuf,
+
+    #[cfg(feature = "repl")]
+    /// Indicates whether the repl should be started.
+    pub start_repl: bool,
 }
 
 /// Preprocess the source and return the tokens.

@@ -18,6 +18,9 @@ use saltwater::{
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
 
+#[cfg(feature = "repl")]
+mod repl;
+
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 
@@ -220,6 +223,17 @@ fn main() {
     #[cfg(feature = "color-backtrace")]
     backtrace::install(opt.color);
 
+    if opt.opt.start_repl {
+        let mut repl = repl::Repl::new(opt.opt);
+        match repl.run() {
+            Ok(_) => std::process::exit(0),
+            Err(err) => {
+                println!("Unknown error occurred in repl: {}", err);
+                std::process::exit(1)
+            }
+        }
+    }
+
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
     opt.opt.filename = if opt.opt.filename == PathBuf::from("-") {
@@ -328,6 +342,8 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             })?;
         definitions.insert(key.into(), def);
     }
+
+    let filename = input.free_from_os_str(os_str_to_path_buf)?;
     let bin_opt = BinOpt {
         preprocess_only: input.contains(["-E", "--preprocess-only"]),
         opt: Opt {
@@ -343,9 +359,8 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             search_path,
             // This is a little odd because `free` expects no arguments to be left,
             // so we have to parse it last.
-            filename: input
-                .free_from_os_str(os_str_to_path_buf)?
-                .unwrap_or_else(|| "-".into()),
+            start_repl: filename.is_none(),
+            filename: filename.unwrap_or_else(|| PathBuf::from("-")),
         },
         color: color_choice,
     };

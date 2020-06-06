@@ -2,7 +2,7 @@ use rustyline::{
     completion::{Completer, Pair},
     error::ReadlineError,
     highlight::{Highlighter, MatchingBracketHighlighter},
-    hint::{Hinter, HistoryHinter},
+    hint::Hinter,
     validate::{self, MatchingBracketValidator, Validator},
     Context,
 };
@@ -13,7 +13,6 @@ use std::borrow::Cow;
 pub(super) struct ReplHelper {
     pub(super) highlighter: MatchingBracketHighlighter,
     pub(super) validator: MatchingBracketValidator,
-    pub(super) hinter: HistoryHinter,
 }
 
 impl Completer for ReplHelper {
@@ -30,8 +29,8 @@ impl Completer for ReplHelper {
 }
 
 impl Hinter for ReplHelper {
-    fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<String> {
-        self.hinter.hint(line, pos, ctx)
+    fn hint(&self, _line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<String> {
+        None
     }
 }
 

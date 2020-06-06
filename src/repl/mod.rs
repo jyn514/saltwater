@@ -1,9 +1,10 @@
+mod commands;
 mod helper;
 
 use crate::Opt;
 use helper::ReplHelper;
 use rustyline::{
-    error::ReadlineError, highlight::MatchingBracketHighlighter, hint::HistoryHinter,
+    error::ReadlineError, highlight::MatchingBracketHighlighter,
     validate::MatchingBracketValidator, CompletionType, Config, EditMode, Editor,
 };
 
@@ -29,11 +30,11 @@ impl<'s> Repl<'s> {
         let helper = ReplHelper {
             highlighter: MatchingBracketHighlighter::new(),
             validator: MatchingBracketValidator::new(),
-            hinter: HistoryHinter {},
         };
         let mut editor = Editor::with_config(config);
         editor.set_helper(Some(helper));
         // TODO: Set some more key binds here. Definitely hist up / down
+        // and add Vim Mode support.
         Self {
             editor,
             opt,
@@ -48,10 +49,11 @@ impl<'s> Repl<'s> {
             let line = self.editor.readline(self.prompt);
             match line {
                 Ok(line) => self.process_line(line),
-                // Ctrl + C will do nothing
+                // Ctrl + C will skip the abort the current line
+                // and asks for new input
                 Err(ReadlineError::Interrupted) => continue,
                 // Ctrl + D will exit the repl
-                Err(ReadlineError::Eof) => std::process::exit(0),
+                Err(ReadlineError::Eof) => return Ok(()),
                 Err(err) => return Err(err),
             }
         }
@@ -65,8 +67,18 @@ impl<'s> Repl<'s> {
         }
     }
 
-    fn run_command(&mut self, _args: &str) {
-        todo!();
+    fn run_command(&mut self, args: &str) {
+        let result = match args {
+            s if s.starts_with("expr") => todo!(),
+            s if s.starts_with("decl") => todo!(),
+            s if s.starts_with("stmt") => todo!(),
+            _ => commands::run_command(args),
+        };
+
+        match result {
+            Ok(_) => {}
+            Err(err) => println!("{}", err),
+        }
     }
 
     fn execute_code(&mut self, _code: &str) {

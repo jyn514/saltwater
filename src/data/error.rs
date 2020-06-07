@@ -488,6 +488,11 @@ pub enum CppError {
     /// After parsing an `#if` expression, there were tokens left over.
     #[error("trailing tokens in `#if` expression")]
     TooManyTokens,
+
+    /// If a macro is redefined, the new definition must be identical to the
+    /// original.
+    #[error("redefinition of '{0}' does not match original definition")]
+    IncompatibleRedefinition(InternedStr),
 }
 
 /// Lex errors are non-exhaustive and may have new variants added at any time

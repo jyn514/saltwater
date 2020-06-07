@@ -3,6 +3,50 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2020-06-07
+
+### Changed
+
+- `rcc` has been renamed to `saltwater`! See https://github.com/jyn514/rcc/pull/460 for details on why. The new binary name is `swcc`.
+- `saltwater` no longer requires a `Files` and `FileId` struct to construct a preprocessor.
+  Instead, the preprocessor has a new `into_files()` method which allows you to recover the files for later use,
+  and the main `compile` method returns a `Program` struct which contains the files.
+  This makes it significantly easier to use the API if you don't need the files.
+- `saltwater` now uses `lasso` instead of `string-interner`. lasso is ~50% faster than string-interner ([benchmarks](https://docs.rs/lasso/0.2.2/lasso/#benchmarks)) and does not have the UB that string-interner currently does ([string-interner#15](https://github.com/Robbepop/string-interner/issues/15)). Giant thanks to @kixiron for not only making the PR, but writing lasso from scratch!
+
+### Added
+
+- The `Analyzer` has been separated out into `Analyzer` and `PureAnalyzer`. `Analyzer` is an iterator, while `PureAnalyzer` is not. The pure version is useful if you want to compile a single expression or statement instead of many at once.
+- `saltwater` now has whitespace tokens! This means that `-E` will keep all whitespace from the original file. Thank you to @hdamron for designing and implementing this!
+- `InternedStr::is_empty` has been added.
+- There is now a `replace` module separate from the preprocessor itself.
+  This allows replacing specific tokens without preprocessing the entire file. In particular, it means you can input `Token`s instead of needing the original `&str`.
+
+### Fixed
+
+- The semver requirements have been fixed. `saltwater` now states that it requires `proptest >= 0.9.6`.
+- Don't give warnings when compiling with `--no-default-features`.
+- Don't loop forever on mutual recursion in function macros ([#399](https://github.com/jyn514/saltwater/issues/399), [#427](https://github.com/jyn514/saltwater/issues/427))
+- Don't give an error for `1.0/0` and `0.0/0`,
+  which should evaluated to `INF` and `NaN`, respectively.
+- Don't give an error for function macros with no arguments ([#450](https://github.com/jyn514/saltwater/issues/450)).
+- Correctly give an error when an `#if` expression has trailing tokens. For example, this code would previously compile without warnings:
+```c
+#if 1+2;
+#endif
+<stdin>:2:4 error: invalid macro: trailing tokens in `#if` expression
+#if 1+2;
+   ^^^^^
+```
+- Correctly give an error when a macro is redefined. For example, this code would previously compile without warnings:
+```c
+#define a b
+#define a c
+<stdin>:2:2 error: invalid macro: redefinition of 'a' does not match original definition
+#define a c
+ ^^^^^^^^^^
+```
+
 ## [0.9.0] - 2020-05-11
 
 ### Added

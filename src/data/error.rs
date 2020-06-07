@@ -489,9 +489,9 @@ pub enum CppError {
     #[error("trailing tokens in `#if` expression")]
     TooManyTokens,
 
-    /// If a macro is redefined, its definition must be identical to as it's old
-    /// definition.
-    #[error("redefined macro definition for '{0}' does not match original definition")]
+    /// If a macro is redefined, the new definition must be identical to the
+    /// original.
+    #[error("redefinition of '{0}' does not match original definition")]
     IncompatibleRedefinition(InternedStr),
 }
 

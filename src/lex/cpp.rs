@@ -942,7 +942,7 @@ impl<'a> PreProcessor<'a> {
                 Ok(())
             }
             Entry::Occupied(entry) => {
-                // https://port70.net/~nsz/c/c11/n1570.html#6.10.3p1
+                // This behavior is defined by the spec in section 6.10.3p1
                 if entry.get() != &definition {
                     Err(CppError::IncompatibleRedefinition(name))
                 } else {
@@ -1457,6 +1457,35 @@ a
 a
 ";
         assert_same(src, "b");
+
+        let src = "
+#define a(b) b+1
+#define a(b) b+2
+a(2)
+";
+        assert_err!(
+            src,
+            CppError::IncompatibleRedefinition(_),
+            "incompatible redefinition"
+        );
+
+        let src = "
+#define a(b) b+1
+#define a(c) c+1
+a(2)
+";
+        assert_err!(
+            src,
+            CppError::IncompatibleRedefinition(_),
+            "incompatible redefinition"
+        );
+
+        let src = "
+#define a(b) b+1
+#define a(b) b+1
+a(2)        
+";
+        assert_same(src, "2+1");
     }
     #[test]
     fn undef() {

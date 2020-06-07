@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the main `compile` method returns a `Program` struct which contains the files.
   This makes it significantly easier to use the API if you don't need the files.
 - `saltwater` now uses `lasso` instead of `string-interner`. lasso is ~50% faster than string-interner ([benchmarks](https://docs.rs/lasso/0.2.2/lasso/#benchmarks)) and does not have the UB that string-interner currently does ([string-interner#15](https://github.com/Robbepop/string-interner/issues/15)). Giant thanks to @kixiron for not only making the PR, but writing lasso from scratch!
+- `cranelift` has been updated from 0.63 to 0.64.
 
 ### Added
 

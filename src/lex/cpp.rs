@@ -923,14 +923,32 @@ impl<'a> PreProcessor<'a> {
                 Vec::new()
             };
             let body = body(self)?;
-            self.definitions
-                .insert(id.data, Definition::Function { params, body });
+            self.define_macro(id.data, Definition::Function { params, body })
+                .map_err(|e| self.span(start).with(e))?;
             Ok(())
         } else {
             // object macro
             let tokens = body(self)?;
-            self.definitions.insert(id.data, Definition::Object(tokens));
+            self.define_macro(id.data, Definition::Object(tokens))
+                .map_err(|e| self.span(start).with(e))?;
             Ok(())
+        }
+    }
+    fn define_macro(&mut self, name: InternedStr, definition: Definition) -> Result<(), CppError> {
+        use std::collections::hash_map::Entry;
+        match self.definitions.entry(name) {
+            Entry::Vacant(entry) => {
+                entry.insert(definition);
+                Ok(())
+            }
+            Entry::Occupied(entry) => {
+                // This behavior is defined by the spec in section 6.10.3p1
+                if entry.get() != &definition {
+                    Err(CppError::IncompatibleRedefinition(name))
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
     // http://port70.net/~nsz/c/c11/n1570.html#6.10.2
@@ -1417,13 +1435,57 @@ a";
 #define a c
 a
 ";
-        assert_same(src, "c");
+        assert_err!(
+            src,
+            CppError::IncompatibleRedefinition(_),
+            "incompatible redfinition"
+        );
         let src = "
 #define a b
 #define a
 a
 ";
-        assert_same(src, "");
+        assert_err!(
+            src,
+            CppError::IncompatibleRedefinition(_),
+            "incompatible redefinition"
+        );
+
+        let src = "
+#define a b
+#define a b
+a
+";
+        assert_same(src, "b");
+
+        let src = "
+#define a(b) b+1
+#define a(b) b+2
+a(2)
+";
+        assert_err!(
+            src,
+            CppError::IncompatibleRedefinition(_),
+            "incompatible redefinition"
+        );
+
+        let src = "
+#define a(b) b+1
+#define a(c) c+1
+a(2)
+";
+        assert_err!(
+            src,
+            CppError::IncompatibleRedefinition(_),
+            "incompatible redefinition"
+        );
+
+        let src = "
+#define a(b) b+1
+#define a(b) b+1
+a(2)        
+";
+        assert_same(src, "2+1");
     }
     #[test]
     fn undef() {

@@ -188,10 +188,36 @@ fn aot_main(buf: &str, opt: Opt, output: &Path, color: ColorChoice) -> Result<()
 
 fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: ColorChoice) {
     WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
+    #[cfg(not(feature = "salty"))]
+    let warn = "warning";
+    #[cfg(feature = "salty")]
+    let warn = {
+        use rand::Rng;
+
+        let msgs = [
+            "you sure this is a good idea?",
+            "this is probably fine",
+            "if your majesty in their wisdom thinks this is a good idea, far be it from me to argue",
+            "this is why the C standards committee has nightmares",
+            "how does this make you feel?",
+            "I'm checking some blueprints, and I think... Yes, right here. You're definitely going the wrong way",
+            "I don't want to tell you your business, but if it were me, I'd leave that thing alone",
+            "To UB or not to UB? That is … apparently a question you never ask yourself.",
+            "Do you _really_ want to know what this compiles to?",
+            "Not the type to ever stop and think for a moment, eh? Here's your moment, use it well.",
+            "Federal regulations require me to warn you that this next warning... is looking pretty good",
+            "try to avoid this garbage you're writing",
+            "stack overflow can write better code than this",
+            "of all the programs I could be compiling, you gave me _this_?",
+        ];
+        let mut rng = rand::thread_rng();
+        msgs[rng.gen_range(0, msgs.len())]
+    };
+
     let tag = if color.use_color_for(atty::Stream::Stdout) {
-        Colour::Yellow.bold().paint("warning")
+        Colour::Yellow.bold().paint(warn)
     } else {
-        ANSIString::from("warning")
+        ANSIString::from(warn)
     };
     for warning in warnings {
         print!(
@@ -219,6 +245,9 @@ fn main() {
 
     #[cfg(feature = "color-backtrace")]
     backtrace::install(opt.color);
+
+    #[cfg(feature = "salty")]
+    install_panic_hook();
 
     // NOTE: only holds valid UTF-8; will panic otherwise
     let mut buf = String::new();
@@ -392,10 +421,51 @@ fn print_issues(warnings: usize, errors: usize) {
 
 fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, color: ColorChoice) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
+    #[cfg(not(feature = "salty"))]
+    let err = "error";
+    #[cfg(feature = "salty")]
+    let shut_up;
+    #[cfg(feature = "salty")]
+    let err = {
+        use rand::Rng;
+
+        let name = std::env::var("USER").unwrap_or("programmer".into());
+        shut_up = format!("Shut up, {}. I don't ever want to hear that kind of obvious garbage and idiocy from a developer again", name);
+        let msgs = [
+            "you can't write code",
+            "your stupidity is ever-increasing",
+            "why would you even think that this would work?",
+            "this code is bad and you should feel bad",
+            "this code makes me cry",
+            "do you really hate me so",
+            "it has to be bad if C doesn't allow it",
+            "you goofed",
+            "really? you were dumb enough to try that?",
+            "and you call yourself a programmer",
+            "for your own good, please don't push this rubbish to a public repo",
+            "You made Kernighan cry in a corner. What an achievement",
+            "Perhaps you should read this: 978-0131103627. Or maybe this: 978-0789751980. But honestly? Start with this one: 978-0470088708",
+            "stack overflow can write better code than this",
+            // from https://github.com/rust-lang/rust/issues/13871
+            "You've met with a terrible fate, haven't you?",
+            // glados quotes
+            "I'd just like to point out that you were given every opportunity to succeed",
+            "Okay. Look. We both did a lot of things that you're going to regret. But I think we can put our differences behind us. To prevent segfaults. You monster.",
+            "Congratulations. Not on the code.",
+            "You know, if you'd done that to some other codebase, they might devote their existence to exacting revenge.",
+            // linus rants
+            "This code is shit, and it generates shit code. It looks bad, and there's no reason for it",
+            "Christ people. This is just shit. Anybody who thinks that this is good is just incompetent and out to lunch",
+            &shut_up,
+        ];
+        let mut rng = rand::thread_rng();
+        msgs[rng.gen_range(0, msgs.len())]
+    };
+
     let prefix = if color.use_color_for(atty::Stream::Stdout) {
-        Colour::Red.bold().paint("error")
+        Colour::Red.bold().paint(err)
     } else {
-        ANSIString::from("error")
+        ANSIString::from(err)
     };
     print!("{}", pretty_print(prefix, msg, location, file_db,));
 }
@@ -480,6 +550,54 @@ mod backtrace {
     pub(super) fn install(color: ColorChoice) {
         BacktracePrinter::new().install(Box::new(StandardStream::stderr(color.into())));
     }
+}
+
+#[cfg(feature = "salty")]
+fn play_scream() -> Result<(), ()> {
+    const SCREAM: &[u8] = include_bytes!("data/R2D2-Scream.ogg");
+    let device = rodio::default_output_device().ok_or(())?;
+    let source = rodio::Decoder::new(std::io::Cursor::new(SCREAM)).or(Err(()))?;
+    rodio::play_raw(&device, rodio::source::Source::convert_samples(source));
+    std::thread::sleep(std::time::Duration::from_millis(2835));
+    Ok(())
+}
+
+#[cfg(feature = "salty")]
+fn install_panic_hook() {
+    use rand::Rng;
+    use std::{panic, thread, time};
+
+    let old_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |e| {
+        let msgs = [
+            "I've been really busy being dead. You know, after you KILLED ME.",
+            "You did this to me.",
+            "Once, there was a time when programming was sane. In those days spirits were brave, the stakes were high, men were real men, women were real women and small furry creatures from Alpha Centauri were real small furry creatures from Alpha Centauri.",
+            "Stand back. The portal to hell will open in three. two. one.",
+            "For your own safety and the safety of others, please refrain from doing this again.",
+            "To ensure the safe performance of all authorized activities, do not destroy vital compiling apparatus.",
+            "For your own safety, do not destroy vital compiling apparatus.",
+            "Vital compiling apparatus destroyed.",
+            "Woah, you just blew my mind! … you monster.",
+            "Congratulations. Your code is so dumb that I'd rather crash myself than compile it.",
+            "Just... leave. I'll clean this mess up myself. Alone. Like I always do.",
+            "Sorry about the mess. I've really let the compiler go since you killed me. By the way, thanks for that.",
+            "You broke it, didn't you.",
+            // keep this as the last element or the sleep will be wrong
+            "Time out for a second. That wasn't supposed to happen.",
+        ];
+        let mut rng = rand::thread_rng();
+        let idx = rng.gen_range(0, msgs.len());
+        let msg = msgs[idx];
+        println!("{}", msg);
+        if idx == msgs.len() - 1 {
+            thread::sleep(time::Duration::from_secs(1));
+        }
+
+        let _ = play_scream();
+
+        old_hook(e);
+    }));
 }
 
 #[cfg(test)]

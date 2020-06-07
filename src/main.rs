@@ -206,7 +206,9 @@ fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: C
             "Do you _really_ want to know what this compiles to?",
             "Not the type to ever stop and think for a moment, eh? Here's your moment, use it well.",
             "Federal regulations require me to warn you that this next warning... is looking pretty good",
-            "Try to avoid this garbage you're writing",
+            "try to avoid this garbage you're writing",
+            "stack overflow can write better code than this",
+            "of all the programs I could be compiling, you gave me _this_?",
         ];
         let mut rng = rand::thread_rng();
         msgs[rng.gen_range(0, msgs.len())]
@@ -442,7 +444,8 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, colo
             "and you call yourself a programmer",
             "for your own good, please don't push this rubbish to a public repo",
             "You made Kernighan cry in a corner. What an achievement",
-            "Perhaps you should read this: 978-0131103627. Or maybe this: 978-0789751980. But honestly? Start with this one: 978-0-47008-870-8",
+            "Perhaps you should read this: 978-0131103627. Or maybe this: 978-0789751980. But honestly? Start with this one: 978-0470088708",
+            "stack overflow can write better code than this",
             // from https://github.com/rust-lang/rust/issues/13871
             "You've met with a terrible fate, haven't you?",
             // glados quotes

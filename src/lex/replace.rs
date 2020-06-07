@@ -48,7 +48,7 @@ impl<I: Peekable + ?Sized> Peekable for &mut I {
 }
 
 /// A macro definition.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Definition {
     /// An object macro: `#define a b + 1`
     Object(Vec<Token>),

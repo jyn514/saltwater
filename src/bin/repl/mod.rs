@@ -1,13 +1,13 @@
 mod commands;
 mod helper;
 
-use crate::Opt;
 use commands::CommandError;
 use helper::{CommandHinter, ReplHelper};
 use rustyline::{
     error::ReadlineError, highlight::MatchingBracketHighlighter,
     validate::MatchingBracketValidator, CompletionType, Config, EditMode, Editor,
 };
+use saltwater::Opt;
 
 const PROMPT: &str = ">> ";
 const COMMAND_PREFIX: &str = ":";

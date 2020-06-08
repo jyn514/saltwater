@@ -1,32 +1,31 @@
-use std::collections::VecDeque;
-use std::fs::File;
-use std::io::{self, Read};
-use std::num::NonZeroUsize;
-use std::path::{Path, PathBuf};
-use std::process;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use ansi_term::{ANSIString, Colour};
 use git_testament::git_testament_macros;
 use pico_args::Arguments;
 use saltwater::{
-    assemble, compile,
     data::{error::CompileWarning, Location},
-    link, preprocess, Error, Files, Opt, Program,
+    Error, Files, Opt,
 };
-use std::ffi::OsStr;
-use tempfile::NamedTempFile;
-
-#[cfg(feature = "repl")]
-mod repl;
+use std::{
+    collections::VecDeque,
+    ffi::OsStr,
+    num::NonZeroUsize,
+    path::PathBuf,
+    process,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
 static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 
+macro_rules! type_sizes {
+    ($($type: ty),* $(,)?) => {
+        $(println!("{}: {}", stringify!($type), std::mem::size_of::<$type>());)*
+    };
+}
+
 git_testament_macros!(version);
 
-const HELP: &str = concat!(
+pub(super) const HELP: &str = concat!(
     env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"), "\n",
     "Joshua Nelson <jyn514@gmail.com>\n",
     env!("CARGO_PKG_DESCRIPTION"), "\n",
@@ -66,212 +65,12 @@ ARGS:
               Only one file at a time is currently accepted. [default: -]"
 );
 
-const USAGE: &str = "\
+pub(super) const USAGE: &str = "\
 usage: swcc [--help | -h] [--version | -V] [--debug-ir] [--debug-ast] [--debug-lex]
            [--debug-hir] [--jit] [--no-link | -c] [--preprocess-only | -E]
            [-I <dir>] [-D <id[=val]>] [<file>]";
 
-struct BinOpt {
-    /// The options that will be passed to `compile()`
-    opt: Opt,
-    /// If set, preprocess only, but do not do anything else.
-    ///
-    /// Note that preprocessing discards whitespace and comments.
-    /// There is not currently a way to disable this behavior.
-    preprocess_only: bool,
-    /// Whether or not to use color
-    color: ColorChoice,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ColorChoice {
-    Always,
-    Auto,
-    Never,
-}
-
-impl ColorChoice {
-    fn use_color_for(self, stream: atty::Stream) -> bool {
-        match self {
-            ColorChoice::Always => true,
-            ColorChoice::Never => false,
-            ColorChoice::Auto => atty::is(stream),
-        }
-    }
-}
-
-impl std::str::FromStr for ColorChoice {
-    type Err = &'static str;
-    fn from_str(s: &str) -> Result<ColorChoice, &'static str> {
-        match s {
-            "always" => Ok(ColorChoice::Always),
-            "auto" => Ok(ColorChoice::Auto),
-            "never" => Ok(ColorChoice::Never),
-            _ => Err("Invalid color choice"),
-        }
-    }
-}
-
-macro_rules! sw_try {
-    ($res: expr, $files: expr) => {
-        match $res {
-            Ok(program) => program,
-            Err(err) => return Err((err.into(), $files)),
-        }
-    };
-}
-
-// TODO: when std::process::termination is stable, make err_exit an impl for CompileError
-// TODO: then we can move this into `main` and have main return `Result<(), Error>`
-fn real_main(buf: Rc<str>, bin_opt: BinOpt, output: &Path) -> Result<(), (Error, Files)> {
-    let opt = if bin_opt.preprocess_only {
-        use std::io::{BufWriter, Write};
-
-        let Program {
-            result: tokens,
-            warnings,
-            files,
-        } = preprocess(&buf, bin_opt.opt);
-        handle_warnings(warnings, &files, bin_opt.color);
-
-        let stdout = io::stdout();
-        let mut stdout_buf = BufWriter::new(stdout.lock());
-        for token in sw_try!(tokens, files) {
-            write!(stdout_buf, "{}", token.data).expect("failed to write to stdout");
-        }
-
-        return Ok(());
-    } else {
-        bin_opt.opt
-    };
-    #[cfg(feature = "jit")]
-    {
-        if !opt.jit {
-            aot_main(&buf, opt, output, bin_opt.color)
-        } else {
-            let module = saltwater::initialize_jit_module();
-            let Program {
-                result,
-                warnings,
-                files,
-            } = compile(module, &buf, opt);
-            handle_warnings(warnings, &files, bin_opt.color);
-            let mut jit = saltwater::JIT::from(sw_try!(result, files));
-            if let Some(exit_code) = unsafe { jit.run_main() } {
-                std::process::exit(exit_code);
-            }
-            Ok(())
-        }
-    }
-    #[cfg(not(feature = "jit"))]
-    aot_main(&buf, opt, output, bin_opt.color)
-}
-
-#[inline]
-fn aot_main(buf: &str, opt: Opt, output: &Path, color: ColorChoice) -> Result<(), (Error, Files)> {
-    let no_link = opt.no_link;
-    let module = saltwater::initialize_aot_module("saltwater_main".to_owned());
-    let Program {
-        result,
-        warnings,
-        files,
-    } = compile(module, buf, opt);
-    handle_warnings(warnings, &files, color);
-
-    let product = sw_try!(result.map(|x| x.finish()), files);
-    if no_link {
-        sw_try!(assemble(product, output), files);
-        return Ok(());
-    }
-    let tmp_file = sw_try!(NamedTempFile::new(), files);
-    sw_try!(assemble(product, tmp_file.as_ref()), files);
-    sw_try!(link(tmp_file.as_ref(), output), files);
-    Ok(())
-}
-
-fn handle_warnings(warnings: VecDeque<CompileWarning>, file_db: &Files, color: ColorChoice) {
-    WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
-    let tag = if color.use_color_for(atty::Stream::Stdout) {
-        Colour::Yellow.bold().paint("warning")
-    } else {
-        ANSIString::from("warning")
-    };
-    for warning in warnings {
-        print!(
-            "{}",
-            pretty_print(tag.clone(), warning.data, warning.location, file_db)
-        );
-    }
-}
-
-fn main() {
-    let (mut opt, output) = match parse_args() {
-        Ok(opt) => opt,
-        Err(err) => {
-            println!(
-                "{}: error parsing args: {}",
-                std::env::args()
-                    .next()
-                    .unwrap_or_else(|| env!("CARGO_PKG_NAME").into()),
-                err
-            );
-            println!("{}", USAGE);
-            std::process::exit(1);
-        }
-    };
-
-    #[cfg(feature = "color-backtrace")]
-    backtrace::install(opt.color);
-
-    if opt.opt.start_repl {
-        let mut repl = repl::Repl::new(opt.opt);
-        match repl.run() {
-            Ok(_) => std::process::exit(0),
-            Err(err) => {
-                println!("Unknown error occurred in repl: {}", err);
-                std::process::exit(1)
-            }
-        }
-    }
-
-    // NOTE: only holds valid UTF-8; will panic otherwise
-    let mut buf = String::new();
-    opt.opt.filename = if opt.opt.filename == PathBuf::from("-") {
-        io::stdin().read_to_string(&mut buf).unwrap_or_else(|err| {
-            eprintln!("Failed to read stdin: {}", err);
-            process::exit(1);
-        });
-        PathBuf::from("<stdin>")
-    } else {
-        File::open(opt.opt.filename.as_path())
-            .and_then(|mut file| file.read_to_string(&mut buf))
-            .unwrap_or_else(|err| {
-                eprintln!(
-                    "Failed to read {}: {}",
-                    opt.opt.filename.to_string_lossy(),
-                    err
-                );
-                process::exit(1);
-            });
-        opt.opt.filename
-    };
-    let buf: Rc<_> = buf.into();
-    let max_errors = opt.opt.max_errors;
-    let color_choice = opt.color;
-    real_main(buf, opt, &output)
-        .unwrap_or_else(|(err, files)| err_exit(err, max_errors, color_choice, &files));
-}
-
-fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
-    Ok(os_str.into())
-}
-
-macro_rules! type_sizes {
-    ($($type: ty),* $(,)?) => {
-        $(println!("{}: {}", stringify!($type), std::mem::size_of::<$type>());)*
-    };
-}
-fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
+pub(super) fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
     use std::collections::HashMap;
 
     let mut input = Arguments::from_env();
@@ -343,7 +142,6 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         definitions.insert(key.into(), def);
     }
 
-    let filename = input.free_from_os_str(os_str_to_path_buf)?;
     let bin_opt = BinOpt {
         preprocess_only: input.contains(["-E", "--preprocess-only"]),
         opt: Opt {
@@ -359,15 +157,66 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             search_path,
             // This is a little odd because `free` expects no arguments to be left,
             // so we have to parse it last.
-            start_repl: filename.is_none(),
-            filename: filename.unwrap_or_else(|| PathBuf::from("-")),
+            filename: input
+                .free_from_os_str(os_str_to_path_buf)?
+                .unwrap_or_else(|| PathBuf::from("-")),
         },
         color: color_choice,
     };
     Ok((bin_opt, output))
 }
 
-fn err_exit(err: Error, max_errors: Option<NonZeroUsize>, color: ColorChoice, files: &Files) -> ! {
+pub(super) struct BinOpt {
+    /// The options that will be passed to `compile()`
+    pub(super) opt: Opt,
+    /// If set, preprocess only, but do not do anything else.
+    ///
+    /// Note that preprocessing discards whitespace and comments.
+    /// There is not currently a way to disable this behavior.
+    pub(super) preprocess_only: bool,
+    /// Whether or not to use color
+    pub(super) color: ColorChoice,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ColorChoice {
+    Always,
+    Auto,
+    Never,
+}
+
+impl ColorChoice {
+    pub(super) fn use_color_for(self, stream: atty::Stream) -> bool {
+        match self {
+            ColorChoice::Always => true,
+            ColorChoice::Never => false,
+            ColorChoice::Auto => atty::is(stream),
+        }
+    }
+}
+
+impl std::str::FromStr for ColorChoice {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<ColorChoice, &'static str> {
+        match s {
+            "always" => Ok(ColorChoice::Always),
+            "auto" => Ok(ColorChoice::Auto),
+            "never" => Ok(ColorChoice::Never),
+            _ => Err("Invalid color choice"),
+        }
+    }
+}
+
+fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
+    Ok(os_str.into())
+}
+
+pub(super) fn err_exit(
+    err: Error,
+    max_errors: Option<NonZeroUsize>,
+    color: ColorChoice,
+    files: &Files,
+) -> ! {
     use Error::*;
     match err {
         Source(errs) => {
@@ -391,7 +240,7 @@ fn err_exit(err: Error, max_errors: Option<NonZeroUsize>, color: ColorChoice, fi
     }
 }
 
-fn print_issues(warnings: usize, errors: usize) {
+pub(super) fn print_issues(warnings: usize, errors: usize) {
     if warnings == 0 && errors == 0 {
         return;
     }
@@ -405,7 +254,12 @@ fn print_issues(warnings: usize, errors: usize) {
     eprintln!("{} generated", msg);
 }
 
-fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, color: ColorChoice) {
+pub(super) fn error<T: std::fmt::Display>(
+    msg: T,
+    location: Location,
+    file_db: &Files,
+    color: ColorChoice,
+) {
     ERRORS.fetch_add(1, Ordering::Relaxed);
     let prefix = if color.use_color_for(atty::Stream::Stdout) {
         Colour::Red.bold().paint("error")
@@ -416,7 +270,7 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, colo
 }
 
 #[must_use]
-fn pretty_print<T: std::fmt::Display>(
+pub(super) fn pretty_print<T: std::fmt::Display>(
     prefix: ANSIString,
     msg: T,
     location: Location,
@@ -457,17 +311,36 @@ fn pretty_print<T: std::fmt::Display>(
     }
 }
 
+pub(super) fn handle_warnings(
+    warnings: VecDeque<CompileWarning>,
+    file_db: &Files,
+    color: ColorChoice,
+) {
+    WARNINGS.fetch_add(warnings.len(), Ordering::Relaxed);
+    let tag = if color.use_color_for(atty::Stream::Stdout) {
+        Colour::Yellow.bold().paint("warning")
+    } else {
+        ANSIString::from("warning")
+    };
+    for warning in warnings {
+        print!(
+            "{}",
+            pretty_print(tag.clone(), warning.data, warning.location, file_db)
+        );
+    }
+}
+
 #[inline]
-fn get_warnings() -> usize {
+pub(super) fn get_warnings() -> usize {
     WARNINGS.load(Ordering::SeqCst)
 }
 
 #[inline]
-fn get_errors() -> usize {
+pub(super) fn get_errors() -> usize {
     ERRORS.load(Ordering::SeqCst)
 }
 
-fn fatal<T: std::fmt::Display>(msg: T, code: i32, color: ColorChoice) -> ! {
+pub(super) fn fatal<T: std::fmt::Display>(msg: T, code: i32, color: ColorChoice) -> ! {
     if color.use_color_for(atty::Stream::Stderr) {
         eprintln!("{}: {}", Colour::Black.bold().paint("fatal"), msg);
     } else {
@@ -477,7 +350,7 @@ fn fatal<T: std::fmt::Display>(msg: T, code: i32, color: ColorChoice) -> ! {
 }
 
 #[cfg(feature = "color-backtrace")]
-mod backtrace {
+pub(super) mod backtrace {
     use super::ColorChoice;
     use color_backtrace::termcolor::{self, StandardStream};
     use color_backtrace::BacktracePrinter;
@@ -492,7 +365,7 @@ mod backtrace {
         }
     }
 
-    pub(super) fn install(color: ColorChoice) {
+    pub(crate) fn install(color: ColorChoice) {
         BacktracePrinter::new().install(Box::new(StandardStream::stderr(color.into())));
     }
 }

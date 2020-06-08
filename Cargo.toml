@@ -61,8 +61,13 @@ _test_headers = []
 
 [[bin]]
 name = "swcc"
-path = "src/main.rs"
+path = "src/bin/swcc.rs"
 required-features = ["cc"]
+
+[[bin]]
+name = "swcci"
+path = "src/bin/swcci.rs"
+required-features = ["repl"]
 
 [[bench]]
 name = "examples"

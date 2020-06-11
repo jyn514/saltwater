@@ -329,30 +329,36 @@ fn replace_function(
         }
     }
 
-    let mut next_stringify = false; // Set to true after # to stringify next arg
+    let mut pending_hash: Vec<Token> = Vec::new(); // Holds hash until stringify
     for token in body {
         match *token {
             Token::Id(id) => {
                 // #define f(a) { a + 1 } \n f(b) => b + 1
                 if let Some(index) = params.iter().position(|&param| param == id) {
                     let replacement = args[index].clone();
-                    if next_stringify {
-                        replacements.push(stringify(replacement));
-                    } else {
+                    if pending_hash.is_empty() {
                         replacements.extend(replacement);
+                    } else {
+                        // #define str(a) #a
+                        replacements.push(stringify(replacement));
                     }
                 } else {
+                    // only parameters can be stringified
                     let token = Token::Id(id);
                     replacements.push(token);
                 }
-                next_stringify = true;
+                pending_hash.clear();
             }
             Token::Hash => {
-                next_stringify = true;
+                pending_hash.push(token.clone());
             }
             _ => {
-                replacements.push(token.clone());
-                next_stringify = false;
+                if !pending_hash.is_empty() && matches!(token, Token::Whitespace(_)) {
+                    pending_hash.push(token.clone());
+                } else {
+                    replacements.append(&mut pending_hash); // Dump pending_hash into replacements
+                    replacements.push(token.clone());
+                }
             }
         }
     }
@@ -373,7 +379,7 @@ fn stringify(args: Vec<Token>) -> Token {
                     // TODO can we unwrap safely?
                     let new_s = std::str::from_utf8(&s)
                         .unwrap()
-                        .trim_end_matches('\u{0}')  // remove null terminator
+                        .trim_end_matches('\0')  // remove null terminator
                         .escape_default()  // Escape whitespace, etc
                         .flat_map(char::escape_default); // Escape a second time
                     "\\\"" // Wrap with escaped quotation marks
@@ -386,5 +392,7 @@ fn stringify(args: Vec<Token>) -> Token {
             }
         })
         .collect();
-    Token::Literal(Literal::Str(ret.into()))
+    let mut ret: Vec<_> = ret.into();
+    ret.push(0); // null terminate
+    Token::Literal(Literal::Str(ret))
 }

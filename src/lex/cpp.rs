@@ -1770,22 +1770,31 @@ h",
             .join("");
         assert_eq!(cpp, "\nf");
     }
+    fn assert_same_stringified(cpp: &str, cpp_src: &str) {
+        assert_same_exact(
+            &format!("#define xstr(a) #a\nxstr({})", cpp),
+            &format!("\n{}", cpp_src),
+        );
+    }
     #[test]
-    fn preprocess_stringify() {
-        let assert_same_stringified = |cpp: &str, cpp_src: &str| {
-            assert_same_exact(
-                &format!("#define xstr(a) #a\nxstr({})", cpp),
-                &format!("\n{}", cpp_src),
-            );
-        };
+    fn stringify() {
         assert_same_stringified("a + b", r#""a + b""#);
         assert_same_stringified(r#"b   	 +"c""#, r#""b +\"c\"""#);
         assert_same_stringified(r#""+\\+\n+\"+""#, r#""\"+\\\\+\\n+\\\"+\"""#);
-        assert_same_stringified(r#""\'""#, r#""\"\\'\""#);
+        assert_same_exact("#define xstr(a, b) #a = b\nxstr(1+2,3)", "\n\"1+2\" = 3");
+        assert_same_exact("#define xstr(a, b) a b\nxstr(1+2,3)", "\n1+2 3");
+        assert_same_exact("#define xstr(a) # a\nxstr(1+2)", "\n\"1+2\"");
+        assert_same_exact("#define hash #a\nhash", "\n#a");
+    }
+    #[test]
+    #[ignore = "Depends on #384"]
+    fn stringify_string() {
+        assert_same_stringified(r#""\'""#, r#""\"\\'\"""#);
         assert_same_stringified(
             r#""\a+\b+\e+\f+\r+\v+\?""#,
             r#""\"\\a+\\b+\\e+\\f+\\r+\\v+\\?\"""#,
         );
         assert_same_stringified(r#""\x3f""#, r#""\"\\x3f\"""#);
+        assert_same_stringified(r#""\xff""#, r#""\"\\xff\"""#);
     }
 }

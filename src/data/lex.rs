@@ -15,6 +15,18 @@ pub struct Span {
     pub end: u32,
 }
 
+impl Span {
+    pub fn len(&self) -> usize {
+        (self.end - self.start) as usize // TODO is this unsafe?
+    }
+}
+
+impl Into<codespan::Span> for Span {
+    fn into(self) -> codespan::Span {
+        codespan::Span::new(self.start, self.end)
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Location {
     pub span: Span,
@@ -140,14 +152,14 @@ pub enum ComparisonToken {
     GreaterEqual,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum Literal {
     // literals
     Int(i64),
     UnsignedInt(u64),
     Float(f64),
-    Str(Vec<u8>),
+    Str(usize), // Stores length of string
     Char(u8),
 }
 
@@ -234,6 +246,10 @@ impl Location {
 
     pub fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError {
         self.with(error.into())
+    }
+
+    pub fn len(&self) -> usize {
+        self.span.len()
     }
 }
 
@@ -370,24 +386,7 @@ impl std::fmt::Display for Literal {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(s) => {
-                let mut escaped = s
-                    .iter()
-                    .flat_map(|c| match c {
-                        b'\n' => "\\n".bytes().collect(),
-                        b'\r' => "\\r".bytes().collect(),
-                        b'\t' => "\\t".bytes().collect(),
-                        _ => vec![*c],
-                    })
-                    .collect::<Vec<_>>();
-
-                // Remove the null byte at the end,
-                // because this will break tests and
-                // it's not needed in debug output.
-                assert_eq!(escaped.pop(), Some(b'\0'));
-
-                write!(f, "\"{}\"", String::from_utf8_lossy(&escaped))
-            }
+            Str(_) => todo!(),
             Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
         }
     }

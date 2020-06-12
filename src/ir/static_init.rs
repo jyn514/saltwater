@@ -15,11 +15,12 @@ use crate::data::{
     types::ArrayType,
     StorageClass,
 };
+use crate::lex::LiteralParser;
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
 
-impl<B: Backend> Compiler<B> {
+impl<B: Backend> Compiler<'_, B> {
     pub(super) fn store_static(
         &mut self,
         symbol: Symbol,
@@ -78,7 +79,7 @@ impl<B: Backend> Compiler<B> {
                 if let Some(len) = match &init {
                     Initializer::InitializerList(list) => Some(list.len()),
                     Initializer::Scalar(expr) => match &expr.expr {
-                        ExprType::Literal(Literal::Str(s)) => Some(s.len()),
+                        ExprType::Literal(Literal::Str(len)) => Some(*len),
                         _ => None,
                     },
                     _ => None,
@@ -112,11 +113,11 @@ impl<B: Backend> Compiler<B> {
             })
         })
     }
-    pub(super) fn compile_string(
-        &mut self,
-        string: Vec<u8>,
-        location: Location,
-    ) -> CompileResult<DataId> {
+    pub(super) fn compile_string(&mut self, location: Location) -> CompileResult<DataId> {
+        let string = self
+            .literal_parser_iter(location)
+            .parse_string_raw()
+            .unwrap(); // TODO is this safe?
         use std::collections::hash_map::Entry;
         let len = self.strings.len();
         // TODO: it seems silly for both us and cranelift to store the string
@@ -160,8 +161,8 @@ impl<B: Backend> Compiler<B> {
         match expr.expr {
             ExprType::StaticRef(inner) => match inner.expr {
                 ExprType::Id(symbol) => self.static_ref(symbol, 0, offset, ctx),
-                ExprType::Literal(Literal::Str(str_ref)) => {
-                    let str_id = self.compile_string(str_ref, expr.location)?;
+                ExprType::Literal(Literal::Str(_)) => {
+                    let str_id = self.compile_string(expr.location)?;
                     let str_addr = self.module.declare_data_in_data(str_id, ctx);
                     ctx.write_data_addr(offset, str_addr, 0);
                 }
@@ -422,7 +423,10 @@ impl Literal {
                     x, f
                 )),
             }),
-            Literal::Str(string) => Ok(string.into_boxed_slice()),
+            Literal::Str(_) => {
+                todo!("string literal")
+                // Ok(string.into_boxed_slice())
+            }
             Literal::Char(c) => Ok(Box::new([c])),
         }
     }

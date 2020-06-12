@@ -897,10 +897,10 @@ pub(super) fn literal(literal: Literal, location: Location) -> Expr {
         Literal::Int(_) => Type::Long(true),
         Literal::UnsignedInt(_) => Type::Long(false),
         Literal::Float(_) => Type::Double,
-        Literal::Str(s) => {
-            let len = s.len() as arch::SIZE_T;
-            Type::Array(Box::new(Type::Char(true)), ArrayType::Fixed(len))
-        }
+        Literal::Str(len) => Type::Array(
+            Box::new(Type::Char(true)),
+            ArrayType::Fixed(*len as arch::SIZE_T),
+        ),
     };
     Expr {
         lval: false,
@@ -1366,7 +1366,7 @@ mod test {
         assert_eq!(
             parsed,
             Ok(literal(
-                Literal::Str("hi there\0".into()),
+                Literal::Str("hi there\0".len()),
                 get_location(&parsed)
             )),
         );

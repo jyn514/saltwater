@@ -1090,7 +1090,7 @@ impl PureAnalyzer {
                     // and also
                     // > 3 If the declaration of a file scope identifier for an object contains the storage- class specifier static, the identifier has internal linkage.
                     // so since
-                    // > If, within a translation unit, the same identifier appears with both internal and external linkage, the behavior is undefined. 
+                    // > If, within a translation unit, the same identifier appears with both internal and external linkage, the behavior is undefined.
 
                     // extern int i; int i;
                     || (existing.storage_class == StorageClass::Extern && meta.storage_class != StorageClass::Static))

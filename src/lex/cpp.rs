@@ -33,7 +33,7 @@ use std::rc::Rc;
 
 use super::files::FileProcessor;
 use super::replace::{replace, Definition, Definitions};
-use super::{Lexer, Token};
+use super::{Lexer, LiteralParser, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
 use crate::data::lex::{Keyword, Literal};
@@ -1472,7 +1472,7 @@ a(2)
         let src = "
 #define a(b) b+1
 #define a(b) b+1
-a(2)        
+a(2)
 ";
         assert_same(src, "2+1");
     }

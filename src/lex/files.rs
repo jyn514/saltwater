@@ -1,4 +1,4 @@
-use super::Lexer;
+use super::{Lexer, LiteralParser};
 use crate::{
     data::{CompileResult, Locatable, Token},
     ErrorHandler, Location,

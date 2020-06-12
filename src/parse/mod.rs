@@ -144,23 +144,19 @@ impl<I: Lexer> Parser<I> {
                     ..
                 })) => continue,
                 Some(Ok(Locatable {
-                    data: Token::Literal(Literal::Str(mut concat)),
+                    data: Token::Literal(Literal::Str(mut concat_len)),
                     mut location,
                 })) => {
                     // 5.1.1.2p1: Translation phase 6: Adjacent string literal tokens are concatenated.
                     loop {
                         match self.tokens.peek() {
                             Some(Ok(Locatable {
-                                data: Token::Literal(Literal::Str(_)),
+                                data: Token::Literal(Literal::Str(merge_len)),
                                 location: next_location,
                             })) => {
                                 location = location.merge(next_location);
-                                let mut s = match self.tokens.next().unwrap().unwrap().data {
-                                    Token::Literal(Literal::Str(s)) => s,
-                                    _ => unreachable!(),
-                                };
-                                assert_eq!(concat.pop(), Some(b'\0'));
-                                concat.append(&mut s);
+                                concat_len += merge_len - 1; // -1 for removed null terminator
+                                self.tokens.next(); // Actually remove next
                             }
                             Some(Ok(Locatable {
                                 data: Token::Whitespace(_),
@@ -177,7 +173,7 @@ impl<I: Lexer> Parser<I> {
                         }
                     }
                     break Some(Locatable::new(
-                        Token::Literal(Literal::Str(concat)),
+                        Token::Literal(Literal::Str(concat_len)),
                         location,
                     ));
                 }
@@ -429,23 +425,23 @@ pub(crate) mod test {
 
     #[test]
     fn test_strings() {
-        let assert_str = |s, expected: &str| {
+        let assert_str_len = |s, expected: &str| {
             use crate::data::ast::ExprType;
             use crate::parse::expr::test::expr;
 
             let e = expr(s).unwrap();
-            let mut bytes = match e.data {
+            let len = match e.data {
                 ExprType::Literal(Literal::Str(s)) => s,
                 x => panic!("wrong expression: {:?}", x),
             };
-            assert_eq!(bytes.pop(), Some(b'\0'));
-            assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected);
+            assert_eq!(len, expected.len() + 1); // +1 for \0
         };
-        assert_str("\"this is a sample string\"", "this is a sample string");
-        assert_str("\"consecutive \" \"strings\"", "consecutive strings");
-        assert_str("\"string with \\0\"", "string with \0");
+        assert_str_len("\"this is a sample string\"", "this is a sample string");
+        assert_str_len("\"consecutive \" \"strings\"", "consecutive strings");
+        assert_str_len("\"string with \\0\"", "string with \0");
         // regression test for https://github.com/jyn514/rcc/issues/350
         let newlines = " \"a\" \n \"b\" ";
-        assert_str(newlines, "ab");
+        assert_str_len(newlines, "ab");
+        // Content comparisons are done in ir::static_init::tests
     }
 }

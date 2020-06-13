@@ -13,16 +13,9 @@ use crate::RecursionGuard;
 type Lexeme = CompileResult<Locatable<Token>>;
 type SyntaxResult<T> = Result<T, Locatable<SyntaxError>>;
 
-/// An iterator over `Lexeme`, but with a little more flexibility
-pub trait Lexer {
-    fn next(&mut self) -> Option<Lexeme>;
-}
-
-impl<I: Iterator<Item = Result<Locatable<Token>, E>>, E: Into<CompileError>> Lexer for I {
-    fn next(&mut self) -> Option<Lexeme> {
-        Iterator::next(self).map(|res| res.map_err(Into::into))
-    }
-}
+/// Trait alias for Iterator, but stable
+pub trait Lexer: Iterator<Item = Lexeme> {}
+impl<I: Iterator<Item = Lexeme>> Lexer for I {}
 
 #[derive(Debug)]
 pub struct Parser<I: Lexer> {
@@ -30,7 +23,7 @@ pub struct Parser<I: Lexer> {
     pub(crate) typedefs: Scope<InternedStr, ()>,
     /// we iterate lazily over the tokens, so if we have a program that's mostly valid but
     /// breaks at the end, we don't only show lex errors
-    tokens: I,
+    tokens: std::iter::Peekable<I>,
     /// VecDeque supports pop_front with reasonable efficiency
     /// this is useful because there could be multiple declarators
     /// in a single declaration; e.g. `int a, b, c;`
@@ -57,7 +50,7 @@ impl<I: Lexer> Parser<I> {
     pub fn new(tokens: I, debug: bool) -> Self {
         Parser {
             typedefs: Default::default(),
-            tokens,
+            tokens: tokens.peekable(),
             pending: Default::default(),
             // The only time this is used is when an error occurs,
             // which only happens after at least one token has been seen.
@@ -144,12 +137,52 @@ impl<I: Lexer> Parser<I> {
     }
     // don't use this, use next_token instead
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
+        // needed for string concatenation
+        assert!(self.current.is_none() || self.next.is_none());
         loop {
             match self.tokens.next() {
                 Some(Ok(Locatable {
                     data: Token::Whitespace(_),
                     ..
                 })) => continue,
+                Some(Ok(Locatable {
+                    data: Token::Literal(Literal::Str(mut concat)),
+                    mut location,
+                })) => {
+                    // 5.1.1.2p1: Translation phase 6: Adjacent string literal tokens are concatenated.
+                    loop {
+                        match self.tokens.peek() {
+                            Some(Ok(Locatable {
+                                data: Token::Literal(Literal::Str(_)),
+                                location: next_location,
+                            })) => {
+                                location = location.merge(next_location);
+                                let mut s = match self.tokens.next().unwrap().unwrap().data {
+                                    Token::Literal(Literal::Str(s)) => s,
+                                    _ => unreachable!(),
+                                };
+                                assert_eq!(concat.pop(), Some(b'\0'));
+                                concat.append(&mut s);
+                            }
+                            Some(Ok(Locatable {
+                                data: Token::Whitespace(_),
+                                ..
+                            })) => {
+                                self.tokens.next();
+                            }
+                            Some(Ok(_)) => break,
+                            Some(Err(_)) => {
+                                let err = self.tokens.next().unwrap().unwrap_err();
+                                self.error_handler.push_back(err);
+                            }
+                            None => break,
+                        }
+                    }
+                    break Some(Locatable::new(
+                        Token::Literal(Literal::Str(concat)),
+                        location,
+                    ));
+                }
                 Some(Ok(mut token)) => {
                     self.last_location = token.location;
                     // This is _such_ a hack
@@ -301,10 +334,11 @@ impl<I: Lexer> Parser<I> {
             err
         }
     }
-    /// replace `self.current` with `item`
-    /// replace `self.next` with `self.current`
-    /// the previous value of `self.next` is lost
+    /// - replace `self.current` with `item`
+    /// - replace `self.next` with `self.current`
+    /// - the previous value of `self.next` is lost
     fn unput(&mut self, item: Option<Locatable<Token>>) {
+        assert!(self.next.is_none());
         self.next = mem::replace(&mut self.current, item);
     }
     fn lex_error(&mut self, err: CompileError) {
@@ -393,5 +427,27 @@ pub(crate) mod test {
 
             prop_assert_eq!(peek, next);
         }
+    }
+
+    #[test]
+    fn test_strings() {
+        let assert_str = |s, expected: &str| {
+            use crate::data::ast::ExprType;
+            use crate::parse::expr::test::expr;
+
+            let e = expr(s).unwrap();
+            let mut bytes = match e.data {
+                ExprType::Literal(Literal::Str(s)) => s,
+                x => panic!("wrong expression: {:?}", x),
+            };
+            assert_eq!(bytes.pop(), Some(b'\0'));
+            assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected);
+        };
+        assert_str("\"this is a sample string\"", "this is a sample string");
+        assert_str("\"consecutive \" \"strings\"", "consecutive strings");
+        assert_str("\"string with \\0\"", "string with \0");
+        // regression test for https://github.com/jyn514/rcc/issues/350
+        let newlines = " \"a\" \n \"b\" ";
+        assert_str(newlines, "ab");
     }
 }

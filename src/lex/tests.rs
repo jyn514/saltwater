@@ -49,11 +49,6 @@ fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
     match_data(lexed, |c| c == Ok(&Literal::Char(expected).into()))
 }
 
-fn match_str(lexed: Option<LexType>, expected: &str) -> bool {
-    let string = format!("{}\0", expected).into();
-    match_data(lexed, |c| c == Ok(&Literal::Str(string).into()))
-}
-
 fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
     lexed
         .iter()
@@ -241,6 +236,7 @@ fn test_comments() {
     assert_eq!(lex(&"//".repeat(10_000)), None);
     assert_eq!(lex(&"/* */".repeat(10_000)), None);
 }
+
 #[test]
 fn test_characters() {
     assert!(match_char(lex("'a'"), b'a'));
@@ -284,23 +280,6 @@ fn test_characters() {
     assert_overflow("'\\xfffffffffffffffffffffffffff'");
     assert_overflow(r"'\xff00000000000000ff'");
 }
-#[test]
-fn test_strings() {
-    assert!(match_str(
-        lex("\"this is a sample string\""),
-        "this is a sample string"
-    ));
-    assert!(match_str(
-        lex("\"consecutive \" \"strings\""),
-        "consecutive strings"
-    ));
-    assert!(match_str(lex("\"string with \\0\""), "string with \0"));
-    // 2 for newline
-    assert_eq!(lex("\"").unwrap().unwrap_err().location.span, (0..2).into());
-    // regression test for https://github.com/jyn514/rcc/issues/350
-    let newlines = " \"a\" \n \"b\" ";
-    assert!(match_str(lex(newlines), "ab"));
-}
 
 #[test]
 fn test_no_newline() {
@@ -313,6 +292,12 @@ fn test_no_newline() {
     let tokens: Vec<_> = cpp_no_newline("//").filter(is_not_whitespace).collect();
     assert_eq!(tokens.len(), 1);
     assert!(tokens[0].as_ref().unwrap_err().is_lex_err());
+}
+
+#[test]
+fn test_location() {
+    // 2 for newline
+    assert_eq!(lex("\"").unwrap().unwrap_err().location.span, (0..2).into());
 }
 
 // Integration tests

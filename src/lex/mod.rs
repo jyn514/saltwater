@@ -15,7 +15,7 @@ mod tests;
 #[allow(unreachable_pub)]
 pub use cpp::{PreProcessor, PreProcessorBuilder};
 #[allow(unreachable_pub)]
-pub use replace::Definition;
+pub use replace::{Definition, Peekable};
 
 type LexResult<T = Token> = Result<T, Locatable<LexError>>;
 
@@ -151,26 +151,7 @@ impl Lexer {
         self.lookahead = self.lookahead.or_else(|| self.chars().nth(1));
         self.lookahead
     }
-    /// Return a single token to the stream.
-    /// Can be called at most once before running out of space to store the token.
-    ///
-    /// # Panics
-    /// This function will panic if called twice in a row
-    /// or when `self.lookahead.is_some()`.
-    fn unput(&mut self, byte: char) {
-        assert!(
-            self.lookahead.is_none(),
-            "unputting {:?} would cause the lexer to forget it saw {:?} (current is {:?})",
-            byte as char,
-            self.lookahead.unwrap() as char,
-            self.current.unwrap() as char
-        );
-        self.lookahead = self.current.take();
-        self.current = Some(byte);
-        // TODO: this is not right,
-        // it will break if someone calls `span()` before consuming the newline
-        self.location.offset -= 1;
-    }
+
     /// If the next character is `item`, consume it and return true.
     /// Otherwise, return false.
     fn match_next(&mut self, item: char) -> bool {
@@ -627,49 +608,34 @@ impl Lexer {
             Err(CharError::MultiByte) => Err(LexError::MultiByteCharLiteral),
         }
     }
-    /// Parse a string literal, starting before the opening quote.
+    /// Parse a string literal, starting after the opening quote.
     ///
-    /// Concatenates multiple adjacent literals into one string.
     /// Adds a terminating null character, even if a null character has already been found.
     ///
-    /// Before: u8s{"hello" "you" "it's me" mary}
-    /// After:  chars{mary}
+    /// Before: chars{hello" "you"}
+    /// After:  chars{ "you"}
     fn parse_string(&mut self) -> Result<Token, LexError> {
         let mut literal = Vec::new();
-        // allow multiple adjacent strings
-        while self.peek() == Some('"') {
-            self.next_char(); // start quote
-            loop {
-                match self.parse_single_char(true) {
-                    Ok(c) => literal.push(c),
-                    Err(CharError::Eof) => {
-                        return Err(LexError::MissingEndQuote { string: true });
-                    }
-                    Err(CharError::Newline) => {
-                        return Err(LexError::NewlineInString);
-                    }
-                    Err(CharError::Terminator) => break,
-                    Err(CharError::MultiByte) => return Err(LexError::MultiByteCharLiteral),
-                    Err(CharError::HexTooLarge) => {
-                        return Err(LexError::CharEscapeOutOfRange(Radix::Hexadecimal));
-                    }
-                    Err(CharError::OctalTooLarge) => {
-                        return Err(LexError::CharEscapeOutOfRange(Radix::Octal));
-                    }
+        loop {
+            match self.parse_single_char(true) {
+                Ok(c) => literal.push(c),
+                Err(CharError::Eof) => {
+                    return Err(LexError::MissingEndQuote { string: true });
+                }
+                Err(CharError::Newline) => {
+                    return Err(LexError::NewlineInString);
+                }
+                Err(CharError::Terminator) => break,
+                Err(CharError::MultiByte) => return Err(LexError::MultiByteCharLiteral),
+                Err(CharError::HexTooLarge) => {
+                    return Err(LexError::CharEscapeOutOfRange(Radix::Hexadecimal));
+                }
+                Err(CharError::OctalTooLarge) => {
+                    return Err(LexError::CharEscapeOutOfRange(Radix::Octal));
                 }
             }
-            let old_saw_token = self.seen_line_token;
-            self.consume_whitespace();
-            // we're in a quandry here: we saw a newline, which reset `seen_line_token`,
-            // but we're about to return a string, which will mistakenly reset it again.
-            // HACK: `unput()` a newline, so that we'll reset `seen_line_token` again
-            // HACK: on the following call to `next()`.
-            // NOTE: since we saw a newline, we must have consumed at least one token,
-            // NOTE: so this can't possibly discard `self.lookahead`.
-            if self.seen_line_token != old_saw_token && self.peek() != Some('"') {
-                self.unput('\n');
-            }
         }
+
         literal.push(b'\0');
         Ok(Literal::Str(literal).into())
     }
@@ -928,16 +894,13 @@ impl Iterator for Lexer {
                         return Some(Err(span.with(err)));
                     }
                 },
-                '"' => {
-                    self.unput('"');
-                    match self.parse_string() {
-                        Ok(id) => id,
-                        Err(err) => {
-                            let span = self.span(span_start);
-                            return Some(Err(span.with(err)));
-                        }
+                '"' => match self.parse_string() {
+                    Ok(id) => id,
+                    Err(err) => {
+                        let span = self.span(span_start);
+                        return Some(Err(span.with(err)));
                     }
-                }
+                },
                 x => {
                     return Some(Err(self
                         .span(span_start)

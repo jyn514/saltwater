@@ -358,20 +358,6 @@ impl<'a> PreProcessor<'a> {
             file_processor,
         }
     }
-    /// Return the first valid token in the file,
-    /// or None if there are no valid tokens.
-    ///
-    /// In either case, return all invalid tokens found.
-    pub fn first_token(&mut self) -> (Option<Locatable<Token>>, VecDeque<CompileError>) {
-        let mut errs = VecDeque::new();
-        loop {
-            match self.next() {
-                Some(Ok(token)) => return (Some(token), errs),
-                Some(Err(err)) => errs.push_back(err),
-                None => return (None, errs),
-            }
-        }
-    }
 
     /// Return all warnings found so far.
     ///
@@ -712,7 +698,7 @@ impl<'a> PreProcessor<'a> {
             cpp_tokens.push(token);
         }
         let mut expr_location = None;
-        let mut cpp_tokens: Vec<_> = cpp_tokens
+        let cpp_tokens: Vec<_> = cpp_tokens
             .into_iter()
             .map(|t| replace(definitions, t.data, std::iter::empty(), t.location))
             .flatten()
@@ -735,9 +721,8 @@ impl<'a> PreProcessor<'a> {
         }
         // TODO: remove(0) is bad and I should feel bad
         // TODO: this only returns the first error because anything else requires a refactor
-        let first = cpp_tokens.remove(0)?;
         use crate::{analyze::PureAnalyzer, Parser};
-        let mut parser = Parser::new(first, cpp_tokens.into_iter(), false);
+        let mut parser = Parser::new(cpp_tokens.into_iter(), false);
         let expr = parser.expr()?;
         if !parser.is_empty() {
             return Err(CompileError::new(

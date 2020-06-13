@@ -235,40 +235,19 @@ pub fn check_semantics(buf: &str, opt: Opt) -> Program<Vec<Locatable<hir::Declar
 
     let mut errs = VecDeque::new();
 
-    macro_rules! handle_err {
-        ($err: expr) => {{
-            errs.push_back($err);
-            if let Some(max) = opt.max_errors {
-                if errs.len() >= max.into() {
-                    return Program::from_cpp(cpp, Err(errs));
-                }
-            }
-        }};
-    }
-    let first = loop {
-        match cpp.next_non_whitespace() {
-            Some(Ok(token)) => break Some(token),
-            Some(Err(err)) => handle_err!(err),
-            None => break None,
-        }
-    };
-
-    let first = match first {
-        Some(token) => token,
-        None => {
-            if errs.is_empty() {
-                errs.push_back(cpp.eof().error(SemanticError::EmptyProgram));
-            }
-            return Program::from_cpp(cpp, Err(errs));
-        }
-    };
-
     let mut hir = vec![];
-    let mut parser = Analyzer::new(Parser::new(first, &mut cpp, opt.debug_ast), opt.debug_hir);
+    let mut parser = Analyzer::new(Parser::new(&mut cpp, opt.debug_ast), opt.debug_hir);
     for res in &mut parser {
         match res {
             Ok(decl) => hir.push(decl),
-            Err(err) => handle_err!(err),
+            Err(err) => {
+                errs.push_back(err);
+                if let Some(max) = opt.max_errors {
+                    if errs.len() >= max.into() {
+                        return Program::from_cpp(cpp, Err(errs));
+                    }
+                }
+            }
         }
     }
 

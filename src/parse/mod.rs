@@ -54,18 +54,16 @@ pub struct Parser<I: Lexer> {
 
 impl<I: Lexer> Parser<I> {
     /// Create a new parser over the tokens.
-    ///
-    /// The `first` token is required for internal invariants;
-    /// I would rather ensure `I` has at least one token,
-    /// but I don't know a good way to do that without requiring users to
-    /// use `std::iter::once`.
-    pub fn new(first: Locatable<Token>, tokens: I, debug: bool) -> Self {
+    pub fn new(tokens: I, debug: bool) -> Self {
         Parser {
             typedefs: Default::default(),
             tokens,
             pending: Default::default(),
-            last_location: first.location,
-            current: Some(first),
+            // The only time this is used is when an error occurs,
+            // which only happens after at least one token has been seen.
+            // So this default location will never be used.
+            last_location: Location::default(),
+            current: None,
             next: None,
             debug,
             error_handler: ErrorHandler::new(),
@@ -112,7 +110,11 @@ impl<I: Lexer> Iterator for Parser<I> {
                 return Some(Ok(decl));
             }
 
-            // Parse more of our file
+            // Check for end of file
+            if self.peek_token().is_none() {
+                // peek_token can encounter lex errors that it doesn't return
+                return self.error_handler.pop_front().map(Err);
+            }
 
             // Remove extra semicolons
             while let Some(locatable) = self.match_next(&Token::Semicolon) {
@@ -120,19 +122,15 @@ impl<I: Lexer> Iterator for Parser<I> {
                     .warn("extraneous semicolon at top level", locatable.location);
             }
 
-            // Check for end of file
-            if self.peek_token().is_none() {
-                return None;
-            } else {
-                match self.external_declaration() {
-                    Ok(decls) => {
-                        self.pending.push_back(decls);
-                    }
-                    Err(err) => {
-                        // there could be semantic errors that were reported in the meantime,
-                        // so we can't just return this error (it might be in the wrong order)
-                        self.error_handler.push_back(err);
-                    }
+            // Parse more of our file
+            match self.external_declaration() {
+                Ok(decls) => {
+                    self.pending.push_back(decls);
+                }
+                Err(err) => {
+                    // there could be semantic errors that were reported in the meantime,
+                    // so we can't just return this error (it might be in the wrong order)
+                    self.error_handler.push_back(err);
                 }
             }
         }
@@ -361,10 +359,7 @@ pub(crate) mod test {
         parser(input).collect()
     }
     pub(crate) fn parser(input: &str) -> Parser<PreProcessor> {
-        //let mut lexer = Lexer::new((), format!("{}\n", input), false);
-        let mut lexer = cpp(input);
-        let first: Locatable<Token> = lexer.next_non_whitespace().unwrap().unwrap();
-        Parser::new(first, lexer, false)
+        Parser::new(cpp(input), false)
     }
 
     prop_compose! {
@@ -376,10 +371,9 @@ pub(crate) mod test {
     proptest! {
         #[test]
         fn proptest_peek_equals_token(
-            first in any::<Token>(),
             tokens in arb_vec_result_locatable_token()
-            ) {
-            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), false);
+        ) {
+            let mut parser = Parser::new(tokens.into_iter(), false);
 
             let peek = parser.peek_token().cloned();
             let next = parser.next_token().map(|l| l.data);
@@ -389,10 +383,9 @@ pub(crate) mod test {
 
         #[test]
         fn proptest_peek_next_equals_2_next_token(
-            first in any::<Token>(),
             tokens in arb_vec_result_locatable_token()
-            ) {
-            let mut parser = Parser::new(Locatable { data: first, location: Location::default() }, tokens.into_iter(), false);
+        ) {
+            let mut parser = Parser::new(tokens.into_iter(), false);
 
             let peek = parser.peek_next_token().cloned();
             parser.next_token();

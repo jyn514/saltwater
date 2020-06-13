@@ -15,7 +15,7 @@ mod tests;
 #[allow(unreachable_pub)]
 pub use cpp::{PreProcessor, PreProcessorBuilder};
 #[allow(unreachable_pub)]
-pub use replace::Definition;
+pub use replace::{Definition, Peekable};
 
 type LexResult<T = Token> = Result<T, Locatable<LexError>>;
 
@@ -637,39 +637,43 @@ impl Lexer {
     fn parse_string(&mut self) -> Result<Token, LexError> {
         let mut literal = Vec::new();
         // allow multiple adjacent strings
-        while self.peek() == Some('"') {
-            self.next_char(); // start quote
-            loop {
-                match self.parse_single_char(true) {
-                    Ok(c) => literal.push(c),
-                    Err(CharError::Eof) => {
-                        return Err(LexError::MissingEndQuote { string: true });
-                    }
-                    Err(CharError::Newline) => {
-                        return Err(LexError::NewlineInString);
-                    }
-                    Err(CharError::Terminator) => break,
-                    Err(CharError::MultiByte) => return Err(LexError::MultiByteCharLiteral),
-                    Err(CharError::HexTooLarge) => {
-                        return Err(LexError::CharEscapeOutOfRange(Radix::Hexadecimal));
-                    }
-                    Err(CharError::OctalTooLarge) => {
-                        return Err(LexError::CharEscapeOutOfRange(Radix::Octal));
-                    }
+        //while self.peek() == Some(b'"') {
+        self.next_char(); // start quote
+        loop {
+            match self.parse_single_char(true) {
+                Ok(c) => literal.push(c),
+                Err(CharError::Eof) => {
+                    return Err(LexError::MissingEndQuote { string: true });
+                }
+                Err(CharError::Newline) => {
+                    return Err(LexError::NewlineInString);
+                }
+                Err(CharError::Terminator) => break,
+                Err(CharError::MultiByte) => return Err(LexError::MultiByteCharLiteral),
+                Err(CharError::HexTooLarge) => {
+                    return Err(LexError::CharEscapeOutOfRange(Radix::Hexadecimal));
+                }
+                Err(CharError::OctalTooLarge) => {
+                    return Err(LexError::CharEscapeOutOfRange(Radix::Octal));
                 }
             }
-            let old_saw_token = self.seen_line_token;
-            self.consume_whitespace();
-            // we're in a quandry here: we saw a newline, which reset `seen_line_token`,
-            // but we're about to return a string, which will mistakenly reset it again.
-            // HACK: `unput()` a newline, so that we'll reset `seen_line_token` again
-            // HACK: on the following call to `next()`.
-            // NOTE: since we saw a newline, we must have consumed at least one token,
-            // NOTE: so this can't possibly discard `self.lookahead`.
-            if self.seen_line_token != old_saw_token && self.peek() != Some('"') {
-                self.unput('\n');
-            }
         }
+        /*
+        let old_saw_token = self.seen_line_token;
+        self.consume_whitespace();
+        // we're in a quandry here: we saw a newline, which reset `seen_line_token`,
+        // but we're about to return a string, which will mistakenly reset it again.
+        // HACK: `unput()` a newline, so that we'll reset `seen_line_token` again
+        // HACK: on the following call to `next()`.
+        // NOTE: since we saw a newline, we must have consumed at least one token,
+        // NOTE: so this can't possibly discard `self.lookahead`.
+        if self.seen_line_token != old_saw_token && self.peek() != Some(b'"') {
+            self.unput(b'\n');
+        }
+        */
+        //}
+
+        
         literal.push(b'\0');
         Ok(Literal::Str(literal).into())
     }

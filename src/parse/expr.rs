@@ -372,7 +372,7 @@ impl<I: Lexer> Parser<I> {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::SyntaxResult;
     use crate::data::ast::{Expr, ExprType};
     use crate::parse::test::*;
@@ -388,7 +388,7 @@ mod test {
         assert_eq!(expr(left).unwrap().to_string(), right);
     }
 
-    fn expr(e: &str) -> SyntaxResult<Expr> {
+    pub(crate) fn expr(e: &str) -> SyntaxResult<Expr> {
         parser(e).expr()
     }
 

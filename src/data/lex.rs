@@ -286,11 +286,10 @@ impl AssignmentToken {
     }
 }
 
-#[cfg(test)]
 impl Default for Location {
     fn default() -> Self {
         let mut files = crate::Files::default();
-        let id = files.add("<test suite>", String::new().into());
+        let id = files.add("<default location>", String::new().into());
         Self {
             span: (0..1).into(),
             file: id,

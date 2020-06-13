@@ -137,8 +137,6 @@ impl<I: Lexer> Parser<I> {
     }
     // don't use this, use next_token instead
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
-        // needed for string concatenation
-        assert!(self.current.is_none() || self.next.is_none());
         loop {
             match self.tokens.next() {
                 Some(Ok(Locatable {

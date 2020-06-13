@@ -719,7 +719,6 @@ impl<'a> PreProcessor<'a> {
                 location,
             ));
         }
-        // TODO: remove(0) is bad and I should feel bad
         // TODO: this only returns the first error because anything else requires a refactor
         use crate::{analyze::PureAnalyzer, Parser};
         let mut parser = Parser::new(cpp_tokens.into_iter(), false);

@@ -2,12 +2,14 @@ mod commands;
 mod helper;
 
 use commands::CommandError;
+use cranelift_module::Module;
+use cranelift_simplejit::SimpleJITBackend;
 use helper::{CommandHinter, ReplHelper};
 use rustyline::{
     error::ReadlineError, highlight::MatchingBracketHighlighter,
     validate::MatchingBracketValidator, CompletionType, Config, EditMode, Editor,
 };
-use saltwater::Opt;
+use saltwater::{analyze, check_semantics, initialize_jit_module, Opt, Parser, PureAnalyzer};
 
 const PROMPT: &str = ">> ";
 const COMMAND_PREFIX: &str = ":";
@@ -26,6 +28,7 @@ pub struct Repl<'s> {
     prompt: &'s str,
     opt: Opt,
     code: String,
+    module: Module<SimpleJITBackend>,
 }
 
 impl<'s> Repl<'s> {
@@ -51,6 +54,7 @@ impl<'s> Repl<'s> {
             prefix: COMMAND_PREFIX,
             prompt: PROMPT,
             code: String::new(),
+            module: initialize_jit_module(),
         }
     }
 
@@ -92,7 +96,7 @@ impl<'s> Repl<'s> {
         }
     }
 
-    fn execute_code(&mut self, _code: &str) {
-        todo!();
+    fn execute_code(&mut self, code: &str) {
+        let program = check_semantics(code, self.opt.clone());
     }
 }

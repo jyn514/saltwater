@@ -159,7 +159,7 @@ impl RecursionGuard {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Opt {
     /// If set, print all tokens found by the lexer in addition to compiling.
     pub debug_lex: bool,

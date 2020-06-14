@@ -638,7 +638,7 @@ pub(crate) trait LiteralParser {
     ///
     /// Has a side effect: will call `warn` if it sees an invalid escape.
     ///
-    /// Before: u8s{"\b'"}
+    /// Before: chars{"\b'"}
     /// After:  chars{"'"}
     fn parse_single_char(&mut self, string: bool) -> Result<u8, CharError> {
         let terminator = if string { '"' } else { '\'' };

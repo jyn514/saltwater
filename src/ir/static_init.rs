@@ -20,6 +20,33 @@ use crate::lex::LiteralParser;
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
 
+macro_rules! cast {
+    ($i: expr, $from: ty, $to: ty, $ctype: expr, $location: expr, $handler: expr) => {{
+        let cast = $i as $to;
+        if cast as $from != $i {
+            $handler.warn(
+                &format!(
+                    "conversion to {} loses precision ({} != {})",
+                    $ctype, cast as $from, $i
+                ),
+                $location,
+            )
+        }
+        cast
+    }};
+}
+
+macro_rules! bytes {
+    ($int: expr, $be: expr) => {{
+        let boxed: Box<[u8]> = if $be {
+            Box::new($int.to_be_bytes())
+        } else {
+            Box::new($int.to_le_bytes())
+        };
+        boxed
+    }};
+}
+
 impl<B: Backend> Compiler<'_, B> {
     pub(super) fn store_static(
         &mut self,
@@ -185,8 +212,7 @@ impl<B: Backend> Compiler<'_, B> {
                 _ => semantic_err!("cannot take the address of an rvalue".into(), expr.location),
             },
             ExprType::Literal(token) => {
-                let bytes =
-                    token.into_bytes(&expr.ctype, &expr.location, &mut self.error_handler)?;
+                let bytes = self.into_bytes(token, &expr.ctype, &expr.location)?;
                 buf.copy_from_slice(&bytes);
             }
             _ => semantic_err!(
@@ -323,41 +349,12 @@ impl<B: Backend> Compiler<'_, B> {
         // zero-init should already have been taken care of by init_symbol
         Ok(())
     }
-}
 
-macro_rules! cast {
-    ($i: expr, $from: ty, $to: ty, $ctype: expr, $location: expr, $handler: expr) => {{
-        let cast = $i as $to;
-        if cast as $from != $i {
-            $handler.warn(
-                &format!(
-                    "conversion to {} loses precision ({} != {})",
-                    $ctype, cast as $from, $i
-                ),
-                $location,
-            )
-        }
-        cast
-    }};
-}
-
-macro_rules! bytes {
-    ($int: expr, $be: expr) => {{
-        let boxed: Box<[u8]> = if $be {
-            Box::new($int.to_be_bytes())
-        } else {
-            Box::new($int.to_le_bytes())
-        };
-        boxed
-    }};
-}
-
-impl Literal {
     fn into_bytes(
-        self,
+        &mut self,
+        token: Literal,
         ctype: &Type,
         location: &Location,
-        error_handler: &mut ErrorHandler,
     ) -> CompileResult<Box<[u8]>> {
         let ir_type = ctype.as_ir_type();
         let big_endian = TARGET
@@ -365,18 +362,18 @@ impl Literal {
             .expect("target should be big or little endian")
             == target_lexicon::Endianness::Big;
 
-        match self {
+        match token {
             Literal::Int(i) => Ok(match ir_type {
                 types::I8 => bytes!(
-                    cast!(i, i64, i8, &ctype, *location, error_handler),
+                    cast!(i, i64, i8, &ctype, *location, self.error_handler),
                     big_endian
                 ),
                 types::I16 => bytes!(
-                    cast!(i, i64, i16, &ctype, *location, error_handler),
+                    cast!(i, i64, i16, &ctype, *location, self.error_handler),
                     big_endian
                 ),
                 types::I32 => bytes!(
-                    cast!(i, i64, i32, &ctype, *location, error_handler),
+                    cast!(i, i64, i32, &ctype, *location, self.error_handler),
                     big_endian
                 ),
                 types::I64 => bytes!(i, big_endian),
@@ -387,15 +384,15 @@ impl Literal {
             }),
             Literal::UnsignedInt(i) => Ok(match ir_type {
                 types::I8 => bytes!(
-                    cast!(i, u64, u8, &ctype, *location, error_handler),
+                    cast!(i, u64, u8, &ctype, *location, self.error_handler),
                     big_endian
                 ),
                 types::I16 => bytes!(
-                    cast!(i, u64, u16, &ctype, *location, error_handler),
+                    cast!(i, u64, u16, &ctype, *location, self.error_handler),
                     big_endian
                 ),
                 types::I32 => bytes!(
-                    cast!(i, u64, u32, &ctype, *location, error_handler),
+                    cast!(i, u64, u32, &ctype, *location, self.error_handler),
                     big_endian
                 ),
                 types::I64 => bytes!(i, big_endian),
@@ -412,7 +409,7 @@ impl Literal {
                             "conversion from double to float loses precision ({} is different from {} by more than DBL_EPSILON ({}))",
                             f, std::f64::EPSILON, f64::from(cast)
                         );
-                        error_handler.warn(&warning, *location);
+                        self.error_handler.warn(&warning, *location);
                     }
                     let float_as_int = cast.to_bits();
                     bytes!(float_as_int, big_endian)
@@ -423,10 +420,11 @@ impl Literal {
                     x, f
                 )),
             }),
-            Literal::Str(_) => {
-                todo!("string literal")
-                // Ok(string.into_boxed_slice())
-            }
+            Literal::Str(_) => Ok(self
+                .literal_parser_iter(*location)
+                .parse_string_raw()
+                .unwrap()
+                .into_boxed_slice()),
             Literal::Char(c) => Ok(Box::new([c])),
         }
     }

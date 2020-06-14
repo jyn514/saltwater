@@ -1052,6 +1052,7 @@ impl PureAnalyzer {
     /// This returns an opaque index to the `Metadata`.
     fn declare(&mut self, mut decl: Variable, init: bool, location: Location) -> Symbol {
         if decl.id == "main".into() {
+            println!("main: {:?}", decl);
             if let Type::Function(ftype) = &decl.ctype {
                 // int main(int)
                 if !ftype.is_main_func_signature() {

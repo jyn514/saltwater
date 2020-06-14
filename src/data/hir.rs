@@ -115,7 +115,7 @@ impl Symbol {
 }
 
 impl Variable {
-    pub(crate) fn insert(self) -> Symbol {
+    pub fn insert(self) -> Symbol {
         SYMBOL_TABLE.with(|store| store.borrow_mut().insert(self))
     }
 }

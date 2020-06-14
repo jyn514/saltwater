@@ -88,7 +88,7 @@ pub mod data;
 mod fold;
 pub mod intern;
 #[cfg(feature = "codegen")]
-mod ir;
+pub mod ir;
 mod lex;
 mod parse;
 

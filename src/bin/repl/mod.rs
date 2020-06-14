@@ -2,14 +2,16 @@ mod commands;
 mod helper;
 
 use commands::CommandError;
-use cranelift_module::Module;
-use cranelift_simplejit::SimpleJITBackend;
 use helper::{CommandHinter, ReplHelper};
 use rustyline::{
     error::ReadlineError, highlight::MatchingBracketHighlighter,
     validate::MatchingBracketValidator, CompletionType, Config, EditMode, Editor,
 };
-use saltwater::{analyze, check_semantics, initialize_jit_module, Opt, Parser, PureAnalyzer};
+use saltwater::{
+    analyze,
+    data::{self, hir, types},
+    initialize_jit_module, ir, Opt, Parser, PureAnalyzer, JIT,
+};
 
 const PROMPT: &str = ">> ";
 const COMMAND_PREFIX: &str = ":";
@@ -28,7 +30,6 @@ pub struct Repl<'s> {
     prompt: &'s str,
     opt: Opt,
     code: String,
-    module: Module<SimpleJITBackend>,
 }
 
 impl<'s> Repl<'s> {
@@ -54,7 +55,6 @@ impl<'s> Repl<'s> {
             prefix: COMMAND_PREFIX,
             prompt: PROMPT,
             code: String::new(),
-            module: initialize_jit_module(),
         }
     }
 
@@ -97,6 +97,56 @@ impl<'s> Repl<'s> {
     }
 
     fn execute_code(&mut self, code: &str) {
-        let program = check_semantics(code, self.opt.clone());
+        let module = initialize_jit_module();
+        let expr = match analyze(code, Parser::expr, PureAnalyzer::expr) {
+            Ok(mut expr) => {
+                expr.ctype = types::Type::Int(true);
+                expr
+            }
+            Err(err) => {
+                println!("error: {}", err.data);
+                return;
+            }
+        };
+        let function_type = types::FunctionType {
+            return_type: Box::new(types::Type::Int(true)),
+            params: vec![],
+            varargs: false,
+        };
+        let qualifiers = hir::Qualifiers {
+            volatile: false,
+            c_const: false,
+            func: hir::FunctionQualifiers {
+                inline: false,
+                no_return: false,
+            },
+        };
+
+        let main = hir::Variable {
+            ctype: types::Type::Function(function_type),
+            storage_class: data::StorageClass::Extern,
+            qualifiers,
+            id: saltwater::InternedStr::get_or_intern("main"),
+        };
+
+        let span = expr.location;
+        let stmt = span.with(hir::StmtType::Return(Some(expr)));
+        let init = hir::Initializer::FunctionBody(vec![stmt]);
+        let decl = hir::Declaration {
+            symbol: main.insert(),
+            init: Some(init),
+        };
+        let (result, _warns) = ir::compile(module, vec![span.with(decl)], false);
+
+        if let Err(err) = result {
+            println!("failed to compile: {}", err.data);
+            return;
+        }
+
+        let module = result.unwrap();
+        let mut jit = JIT::from(module);
+
+        let result = unsafe { jit.run_main() }.unwrap();
+        println!("result: {}", result);
     }
 }

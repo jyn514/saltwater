@@ -1643,6 +1643,9 @@ int main(){}
     #[test]
     // https://github.com/jyn514/rcc/issues/356
     fn preprocess_only() {
+        let assert_unchanged = |s| assert_same_exact(s, s);
+        assert_unchanged("\"abc\\?\" 1 2.0 3.000f 0x88 false");
+        assert_unchanged("sdflasd;lfja s;dkj;adjsfl;ds lkjl;jljlkj23840uofjsd;");
         assert_same_exact("int \t\n\r     main() {}", "int \t\n\r     main() {}");
         assert_same_exact("int/* */main() {}", "int main() {}");
         assert_same_exact("int/*\n\n\n*/main() {}", "int\n\n\nmain() {}");

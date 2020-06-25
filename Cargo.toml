@@ -23,17 +23,17 @@ documentation = "https://docs.rs/saltwater"
 [dependencies]
 lazy_static = "1"
 ansi_term = { version = "0.12", optional = true }
-cranelift = { version = "0.64", optional = true }
-cranelift-module = { version = "0.64", optional = true }
-cranelift-object = { version = "0.64", optional = true }
-cranelift-simplejit = { version = "0.64", optional = true }
+cranelift = { version = "0.65", optional = true }
+cranelift-module = { version = "0.65", optional = true }
+cranelift-object = { version = "0.65", optional = true }
+cranelift-simplejit = { version = "0.65", optional = true }
 hexponent = "0.3"
 thiserror = "^1.0.10"
 target-lexicon = "0.10"
 tempfile = { version = "3", optional = true }
 pico-args = { version = "0.3", optional = true }
 lasso = "0.2"
-codespan = "0.9"
+codespan = { version = ">=0.9.5", default-features = false }
 color-backtrace = { version = "0.4", default-features = false, optional = true }
 counter = "0.4"
 atty = { version = "0.2", default-features = false, optional = true } 

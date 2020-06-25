@@ -13,29 +13,15 @@ jobs:
             # this also tests the header files
             - cargo test --all-features
             - cargo test --no-default-features
-          # upload coverage statistics to codecov.io
-          env: RUSTFLAGS="-C link-dead-code"
           addons:
             apt:
               packages:
-                - libcurl4-openssl-dev
-                - libelf-dev
-                - libdw-dev
-                - cmake
                 - gcc
-                - binutils-dev
                 - libasound2-dev
-                - libiberty-dev
-                - libssl-dev
-          before_cache: cargo install cargo-tarpaulin
           # cache ~/.cargo explicitly so that ./target isn't cached
           cache:
               directories:
                   - $HOME/.cargo
-          after_success: |
-              cargo tarpaulin --out Xml &&
-              bash <(curl -s https://codecov.io/bash) &&
-              echo "Uploaded code coverage"
 
         - rust: beta
           script: cargo check

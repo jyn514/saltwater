@@ -9,7 +9,7 @@ use crate::data::{
     *,
 };
 
-impl<B: Backend> Compiler<'_, B> {
+impl<B: Backend> Compiler<B> {
     pub(super) fn compile_all(
         &mut self,
         stmts: Vec<Stmt>,

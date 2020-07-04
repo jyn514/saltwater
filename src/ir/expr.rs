@@ -23,7 +23,7 @@ enum FuncCall {
     Indirect(Value),
 }
 
-impl<B: Backend> Compiler<'_, B> {
+impl<B: Backend> Compiler<B> {
     // clippy doesn't like big match statements, but this is kind of essential complexity,
     // it can't be any smaller without supporting fewer features
     #[allow(clippy::cognitive_complexity)]
@@ -222,8 +222,8 @@ impl<B: Backend> Compiler<'_, B> {
             (Literal::Float(f), types::F32) => builder.ins().f32const(f as f32),
             (Literal::Float(f), types::F64) => builder.ins().f64const(f),
             (Literal::Char(c), _) => builder.ins().iconst(ir_type, i64::from(c)),
-            (Literal::Str(_), _) => {
-                let str_id = self.compile_string(location)?;
+            (Literal::Str(strs, _), _) => {
+                let str_id = self.compile_string(location, strs)?;
                 let str_addr = self.module.declare_data_in_func(str_id, builder.func);
                 builder.ins().global_value(Type::ptr_type(), str_addr)
             }

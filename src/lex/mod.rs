@@ -316,6 +316,18 @@ impl Lexer {
             Ok(Some(acc))
         }
     }
+    fn parse_string(&mut self) -> Result<Token, LexError> {
+        let start = self.get_location().offset;
+        let raw_str = self.parse_string_raw();
+        let span = self.span(start).span;
+        raw_str.map(|s| {
+            Literal::Str(
+                vec![source_slice(self.chars.clone(), span).unwrap()],
+                s.len(),
+            )
+            .into()
+        })
+    }
     /// Parse an identifier or keyword, given the starting letter.
     ///
     /// Identifiers match the following regex: `[a-zA-Z_][a-zA-Z0-9_]*`
@@ -801,10 +813,6 @@ pub(crate) trait LiteralParser {
 
         literal.push(b'\0');
         Ok(literal)
-    }
-    fn parse_string(&mut self) -> Result<Token, LexError> {
-        self.parse_string_raw()
-            .map(|s| Literal::Str(s.len()).into())
     }
 
     #[inline]

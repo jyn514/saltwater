@@ -432,7 +432,7 @@ pub(crate) mod test {
 
             let e = expr(s).unwrap();
             let len = match e.data {
-                ExprType::Literal(Literal::Str(s)) => s,
+                ExprType::Literal(Literal::Str(_, len)) => len,
                 x => panic!("wrong expression: {:?}", x),
             };
             assert_eq!(len, expected.len() + 1); // +1 for \0

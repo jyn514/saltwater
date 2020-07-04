@@ -897,7 +897,7 @@ pub(super) fn literal(literal: Literal, location: Location) -> Expr {
         Literal::Int(_) => Type::Long(true),
         Literal::UnsignedInt(_) => Type::Long(false),
         Literal::Float(_) => Type::Double,
-        Literal::Str(len) => Type::Array(
+        Literal::Str(_, len) => Type::Array(
             Box::new(Type::Char(true)),
             ArrayType::Fixed(*len as arch::SIZE_T),
         ),

@@ -36,10 +36,11 @@ lasso = "0.2"
 codespan = "0.9"
 color-backtrace = { version = "0.4", default-features = false, optional = true }
 counter = "0.4"
-atty = { version = "0.2", default-features = false, optional = true } 
+atty = { version = "0.2", default-features = false, optional = true }
 git-testament = { version = "0.1", optional = true }
 rand = { version = "0.7", optional = true }
 rodio = { version = "0.11.0", optional = true }
+shared_str = "0.1.0"
 
 [dev-dependencies]
 env_logger = { version = "0.7", default-features = false }
@@ -109,3 +110,6 @@ overflow-checks = false
 all-features = true
 # opt-out of non-default targets
 targets = []
+
+[patch.crates-io]
+shared_str = { git = 'https://github.com/hdamron17/shared_str.git' }

@@ -6,7 +6,7 @@ use std::convert::{TryFrom, TryInto};
 use cranelift::codegen::ir::types;
 use cranelift_module::{Backend, DataContext, DataId, Linkage};
 
-use super::{Compiler, Id};
+use super::{Compiler, Id, PseudoLexer};
 use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::*;
 use crate::data::{
@@ -16,6 +16,7 @@ use crate::data::{
     StorageClass,
 };
 use crate::lex::LiteralParser;
+use shared_str::RcStr;
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
@@ -47,7 +48,7 @@ macro_rules! bytes {
     }};
 }
 
-impl<B: Backend> Compiler<'_, B> {
+impl<B: Backend> Compiler<B> {
     pub(super) fn store_static(
         &mut self,
         symbol: Symbol,
@@ -106,7 +107,7 @@ impl<B: Backend> Compiler<'_, B> {
                 if let Some(len) = match &init {
                     Initializer::InitializerList(list) => Some(list.len()),
                     Initializer::Scalar(expr) => match &expr.expr {
-                        ExprType::Literal(Literal::Str(len)) => Some(*len),
+                        ExprType::Literal(Literal::Str(_, len)) => Some(*len),
                         _ => None,
                     },
                     _ => None,
@@ -140,11 +141,20 @@ impl<B: Backend> Compiler<'_, B> {
             })
         })
     }
-    pub(super) fn compile_string(&mut self, location: Location) -> CompileResult<DataId> {
-        let string = self
-            .literal_parser_iter(location)
-            .parse_string_raw()
-            .unwrap(); // TODO is this safe?
+    pub(super) fn compile_string(
+        &mut self,
+        location: Location,
+        strs: Vec<RcStr>,
+    ) -> CompileResult<DataId> {
+        let string: Vec<_> = strs
+            .iter()
+            .flat_map(|s| {
+                PseudoLexer::new(location, s.as_str())
+                    .parse_string_raw()
+                    .unwrap()
+                    .into_iter()
+            })
+            .collect();
         use std::collections::hash_map::Entry;
         let len = self.strings.len();
         // TODO: it seems silly for both us and cranelift to store the string
@@ -188,8 +198,8 @@ impl<B: Backend> Compiler<'_, B> {
         match expr.expr {
             ExprType::StaticRef(inner) => match inner.expr {
                 ExprType::Id(symbol) => self.static_ref(symbol, 0, offset, ctx),
-                ExprType::Literal(Literal::Str(_)) => {
-                    let str_id = self.compile_string(expr.location)?;
+                ExprType::Literal(Literal::Str(strs, _)) => {
+                    let str_id = self.compile_string(expr.location, strs)?;
                     let str_addr = self.module.declare_data_in_data(str_id, ctx);
                     ctx.write_data_addr(offset, str_addr, 0);
                 }
@@ -420,10 +430,15 @@ impl<B: Backend> Compiler<'_, B> {
                     x, f
                 )),
             }),
-            Literal::Str(_) => Ok(self
-                .literal_parser_iter(*location)
-                .parse_string_raw()
-                .unwrap()
+            Literal::Str(strs, _) => Ok(strs
+                .iter()
+                .flat_map(|s| {
+                    PseudoLexer::new(*location, s.as_str())
+                        .parse_string_raw()
+                        .unwrap()
+                        .into_iter()
+                })
+                .collect::<Vec<_>>()
                 .into_boxed_slice()),
             Literal::Char(c) => Ok(Box::new([c])),
         }

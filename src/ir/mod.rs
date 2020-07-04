@@ -46,7 +46,6 @@ use crate::data::{
 
 use crate::data::error::{LexError, Warning};
 use crate::lex::{LiteralParser, SingleLocation};
-use crate::Files;
 
 // TODO: make this const when const_if_match is stabilized
 // TODO: see https://github.com/rust-lang/rust/issues/49146
@@ -92,7 +91,7 @@ enum Id {
     Local(StackSlot),
 }
 
-struct Compiler<'a, T: Backend> {
+struct Compiler<T: Backend> {
     module: Module<T>,
     debug: bool,
     // if false, we last saw a switch
@@ -106,19 +105,17 @@ struct Compiler<'a, T: Backend> {
     switches: Vec<(Switch, Option<Block>, Block)>,
     labels: HashMap<InternedStr, Block>,
     error_handler: ErrorHandler,
-    files: &'a Files,
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
 pub(crate) fn compile<B: Backend>(
     module: Module<B>,
     program: Vec<Locatable<Declaration>>,
-    files: &Files,
     debug: bool,
 ) -> (Result<Module<B>, CompileError>, VecDeque<CompileWarning>) {
     // really we'd like to have all errors but that requires a refactor
     let mut err = None;
-    let mut compiler = Compiler::new(module, files, debug);
+    let mut compiler = Compiler::new(module, debug);
     for decl in program {
         let meta = decl.data.symbol.get();
         if let StorageClass::Typedef = meta.storage_class {
@@ -153,8 +150,8 @@ pub(crate) fn compile<B: Backend>(
     }
 }
 
-impl<B: Backend> Compiler<'_, B> {
-    fn new(module: Module<B>, files: &Files, debug: bool) -> Compiler<B> {
+impl<B: Backend> Compiler<B> {
+    fn new(module: Module<B>, debug: bool) -> Compiler<B> {
         Compiler {
             module,
             declarations: HashMap::new(),
@@ -166,7 +163,6 @@ impl<B: Backend> Compiler<'_, B> {
             strings: Default::default(),
             error_handler: Default::default(),
             debug,
-            files,
         }
     }
     // we have to consider the following cases:
@@ -399,19 +395,6 @@ impl<B: Backend> Compiler<'_, B> {
 
         Ok(())
     }
-    fn resolve_location(&self, loc: Location) -> &str {
-        self.files.source_slice(loc.file, loc.span).unwrap() // TODO unwrap safely
-    }
-    fn literal_parser_iter(&self, loc: Location) -> PseudoLexer<std::str::Chars> {
-        PseudoLexer {
-            loc: SingleLocation {
-                offset: loc.span.start,
-                file: loc.file,
-            },
-            iter: self.resolve_location(loc).chars().peekable(),
-            lookahead: None,
-        }
-    }
 }
 
 impl FunctionType {
@@ -549,6 +532,19 @@ struct PseudoLexer<T: Iterator<Item = char>> {
     loc: SingleLocation,
     iter: Peekable<T>,
     lookahead: Option<char>, // For peek_next
+}
+
+impl<'a> PseudoLexer<std::str::Chars<'a>> {
+    fn new(loc: Location, src: &'a str) -> Self {
+        PseudoLexer {
+            loc: SingleLocation {
+                offset: loc.span.start,
+                file: loc.file,
+            },
+            iter: src.chars().peekable(),
+            lookahead: None,
+        }
+    }
 }
 
 impl<T: Iterator<Item = char>> LiteralParser for PseudoLexer<T> {

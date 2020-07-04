@@ -7,6 +7,9 @@ use proptest_derive::Arbitrary;
 use crate::data::hir::BinaryOp;
 use crate::intern::InternedStr;
 
+use shared_str::RcStr;
+use std::rc::Rc;
+
 // holds where a piece of code came from
 // should almost always be immutable
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -24,6 +27,12 @@ impl Span {
 impl Into<codespan::Span> for Span {
     fn into(self) -> codespan::Span {
         codespan::Span::new(self.start, self.end)
+    }
+}
+
+impl Into<Range<usize>> for Span {
+    fn into(self) -> Range<usize> {
+        (self.start as usize)..(self.end as usize)
     }
 }
 
@@ -152,14 +161,14 @@ pub enum ComparisonToken {
     GreaterEqual,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum Literal {
     // literals
     Int(i64),
     UnsignedInt(u64),
     Float(f64),
-    Str(usize), // Stores length of string
+    Str(Vec<RcStr>, usize), // second arg is length of parsed string
     Char(u8),
 }
 
@@ -386,7 +395,7 @@ impl std::fmt::Display for Literal {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(_) => todo!(),
+            Str(_, _) => todo!(),
             Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
         }
     }
@@ -433,6 +442,12 @@ impl From<ComparisonToken> for Token {
     fn from(a: ComparisonToken) -> Self {
         Token::Comparison(a)
     }
+}
+
+pub fn source_slice(source: Rc<str>, span: Span) -> Option<RcStr> {
+    RcStr::from(source)
+        .clone()
+        .slice_with(|s| s.get::<Range<usize>>(span.into()).unwrap_or(""))
 }
 
 #[cfg(test)]

@@ -279,7 +279,7 @@ pub fn compile<B: Backend>(module: Module<B>, buf: &str, opt: Opt) -> Program<Mo
             }
         }
     };
-    let (result, ir_warnings) = ir::compile(module, hir, &program.files, debug_asm);
+    let (result, ir_warnings) = ir::compile(module, hir, debug_asm);
     program.warnings.extend(ir_warnings);
     Program {
         result: result.map_err(|errs| vec_deque![errs]),

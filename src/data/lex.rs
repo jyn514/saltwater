@@ -162,7 +162,6 @@ pub enum ComparisonToken {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(test, derive(Arbitrary))]
 pub enum Literal {
     // literals
     Int(i64),
@@ -448,6 +447,31 @@ pub fn source_slice(source: Rc<str>, span: Span) -> Option<RcStr> {
     RcStr::from(source)
         .clone()
         .slice_with(|s| s.get::<Range<usize>>(span.into()).unwrap_or(""))
+}
+
+#[cfg(test)]
+mod proptest_impl {
+    use super::Literal;
+    use shared_str::RcStr;
+    use proptest::prelude::*;
+
+    impl Arbitrary for Literal {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Literal>;
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                any::<i64>().prop_map(Literal::Int),
+                any::<u64>().prop_map(Literal::UnsignedInt),
+                any::<f64>().prop_map(Literal::Float),
+                ".*".prop_map(|s| {
+                    let len = s.len();
+                    let s = RcStr::from(format!("\"{}\"", s.escape_default().collect::<String>()));
+                    Literal::Str(vec![s], len)
+                }),
+                any::<u8>().prop_map(Literal::Char),
+            ].boxed()
+        }
+    }
 }
 
 #[cfg(test)]

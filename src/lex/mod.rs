@@ -317,8 +317,8 @@ impl Lexer {
         }
     }
     fn parse_string(&mut self) -> Result<Token, LexError> {
-        let start = self.get_location().offset;
-        let raw_str = self.parse_string_raw();
+        let start = self.get_location().offset - '"'.len_utf8() as u32;
+        let raw_str = self.parse_string_raw(false);
         let span = self.span(start).span;
         raw_str.map(|s| {
             Literal::Str(
@@ -783,14 +783,21 @@ pub(crate) trait LiteralParser {
             Err(CharError::MultiByte) => Err(LexError::MultiByteCharLiteral),
         }
     }
-    /// Parse a string literal, starting after the opening quote.
+    /// Parse a string literal
+    /// If `start_quote` is false then the leading quote has already been stripped
     ///
     /// Adds a terminating null character, even if a null character has already been found.
     ///
     /// Before: chars{hello" "you"}
     /// After:  chars{ "you"}
-    fn parse_string_raw(&mut self) -> Result<Vec<u8>, LexError> {
+    fn parse_string_raw(&mut self, start_quote: bool) -> Result<Vec<u8>, LexError> {
         let mut literal = Vec::new();
+        if start_quote {
+            assert!(matches!(
+                self.parse_single_char(true),
+                Err(CharError::Terminator)
+            ));
+        }
         loop {
             match self.parse_single_char(true) {
                 Ok(c) => literal.push(c),

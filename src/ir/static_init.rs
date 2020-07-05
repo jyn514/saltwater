@@ -150,7 +150,7 @@ impl<B: Backend> Compiler<B> {
             .iter()
             .flat_map(|s| {
                 PseudoLexer::new(location, s.as_str())
-                    .parse_string_raw()
+                    .parse_string_raw(true)
                     .unwrap()
                     .into_iter()
             })
@@ -434,7 +434,7 @@ impl<B: Backend> Compiler<B> {
                 .iter()
                 .flat_map(|s| {
                     PseudoLexer::new(*location, s.as_str())
-                        .parse_string_raw()
+                        .parse_string_raw(true)
                         .unwrap()
                         .into_iter()
                 })

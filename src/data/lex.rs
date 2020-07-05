@@ -394,7 +394,11 @@ impl std::fmt::Display for Literal {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(_, _) => todo!(),
+            Str(rcstr, _) => write!(
+                f,
+                "{}",
+                rcstr.iter().map(RcStr::as_str).collect::<Vec<_>>().join("")
+            ),
             Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
         }
     }
@@ -452,8 +456,8 @@ pub fn source_slice(source: Rc<str>, span: Span) -> Option<RcStr> {
 #[cfg(test)]
 mod proptest_impl {
     use super::Literal;
-    use shared_str::RcStr;
     use proptest::prelude::*;
+    use shared_str::RcStr;
 
     impl Arbitrary for Literal {
         type Parameters = ();
@@ -469,7 +473,8 @@ mod proptest_impl {
                     Literal::Str(vec![s], len)
                 }),
                 any::<u8>().prop_map(Literal::Char),
-            ].boxed()
+            ]
+            .boxed()
         }
     }
 }

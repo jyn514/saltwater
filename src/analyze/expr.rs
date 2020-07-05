@@ -1360,22 +1360,21 @@ mod test {
     }
     #[test]
     fn test_primaries() {
-        use crate::data::lex::{source_slice, Span};
-        use std::rc::Rc;
+        use shared_str::RcStr;
         assert_literal(Literal::Int(141));
         let src = "\"hi there\"";
-        let src_rc = Rc::from(src);
-        let dst_rcstr = source_slice(src_rc, Span { start: 1, end: 10 }).unwrap(); // Don't include opening quote
+        let src_rc = RcStr::from(src);
         let parsed = expr(src);
 
-        if let Ok(Expr{
+        if let Ok(Expr {
             expr: ExprType::Literal(Literal::Str(mut parsed_rcstrs, _)),
             ..
-        }) = parsed.clone() {
+        }) = parsed.clone()
+        {
             let parsed_rcstr = parsed_rcstrs.pop().unwrap();
-            assert_eq!(parsed_rcstr.as_str(), dst_rcstr.as_str());
-            // This is necessary because expr creates a new Rc from the input str
-            // TODO check that the string is never copied
+            assert_eq!(parsed_rcstr.as_str(), src_rc.as_str());
+        // This is necessary because expr creates a new Rc from the input str
+        // TODO check that the string is never copied
         } else {
             panic!("Unsuccessful string parse");
         }

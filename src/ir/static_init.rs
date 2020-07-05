@@ -146,15 +146,7 @@ impl<B: Backend> Compiler<B> {
         location: Location,
         strs: Vec<RcStr>,
     ) -> CompileResult<DataId> {
-        let string: Vec<_> = strs
-            .iter()
-            .flat_map(|s| {
-                PseudoLexer::new(location, s.as_str())
-                    .parse_string_raw(true)
-                    .unwrap()
-                    .into_iter()
-            })
-            .collect();
+        let string = parse_string(strs, location);
         use std::collections::hash_map::Entry;
         let len = self.strings.len();
         // TODO: it seems silly for both us and cranelift to store the string
@@ -430,19 +422,26 @@ impl<B: Backend> Compiler<B> {
                     x, f
                 )),
             }),
-            Literal::Str(strs, _) => Ok(strs
-                .iter()
-                .flat_map(|s| {
-                    PseudoLexer::new(*location, s.as_str())
-                        .parse_string_raw(true)
-                        .unwrap()
-                        .into_iter()
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice()),
+            Literal::Str(strs, _) => Ok(parse_string(strs, *location).into_boxed_slice()),
             Literal::Char(c) => Ok(Box::new([c])),
         }
     }
+}
+
+fn parse_string(strs: Vec<RcStr>, location: Location) -> Vec<u8> {
+    let num_strs = strs.len();
+    strs.iter()
+        .enumerate()
+        .flat_map(|(i, s)| {
+            let mut s = PseudoLexer::new(location, s.as_str())
+                .parse_string_raw(true)
+                .unwrap();
+            if i + 1 != num_strs {
+                assert_eq!(s.pop().unwrap(), 0);
+            }
+            s.into_iter()
+        })
+        .collect()
 }
 
 impl TryFrom<StorageClass> for Linkage {

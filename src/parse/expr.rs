@@ -54,14 +54,15 @@ impl BinaryPrecedence {
     }
     fn constructor(self) -> impl Fn(Expr, Expr) -> ExprType {
         use crate::data::lex::ComparisonToken;
+        use BinaryPrecedence as Op;
         use BinaryPrecedence::*;
         use ExprType::*;
         let func: Box<dyn Fn(_, _) -> _> = match self {
-            Self::Mul => Box::new(ExprType::Mul),
-            Self::Div => Box::new(ExprType::Div),
-            Self::Mod => Box::new(ExprType::Mod),
-            Self::Add => Box::new(ExprType::Add),
-            Self::Sub => Box::new(ExprType::Sub),
+            Op::Mul => Box::new(ExprType::Mul),
+            Op::Div => Box::new(ExprType::Div),
+            Op::Mod => Box::new(ExprType::Mod),
+            Op::Add => Box::new(ExprType::Add),
+            Op::Sub => Box::new(ExprType::Sub),
             Shl => Box::new(|a, b| Shift(a, b, true)),
             Shr => Box::new(|a, b| Shift(a, b, false)),
             Less => Box::new(|a, b| Compare(a, b, ComparisonToken::Less)),
@@ -75,9 +76,9 @@ impl BinaryPrecedence {
             BitOr => Box::new(BitwiseOr),
             LogAnd => Box::new(LogicalAnd),
             LogOr => Box::new(LogicalOr),
-            Self::Assignment(token) => Box::new(move |a, b| Assign(a, b, token)),
-            Self::Ternary => panic!("lol no"),
-            Self::Comma => Box::new(ExprType::Comma),
+            Op::Assignment(token) => Box::new(move |a, b| Assign(a, b, token)),
+            Op::Ternary => panic!("lol no"),
+            Op::Comma => Box::new(ExprType::Comma),
         };
         move |a, b| func(Box::new(a), Box::new(b))
     }

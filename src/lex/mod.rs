@@ -513,7 +513,7 @@ impl Lexer {
                         }
                         '\0'..='\x7f' => {
                             self.error_handler.warn(
-                                &format!("unknown character escape '\\{}'", c),
+                                format!("unknown character escape '\\{}'", c),
                                 self.span(self.location.offset - 1),
                             );
                             c as u8
@@ -908,7 +908,7 @@ impl Iterator for Lexer {
                 }
             };
             // We've seen a token if this isn't # or whitespace
-            self.seen_line_token |= !(data == Token::Hash || matches!(data, Token::Whitespace(_)));
+            self.seen_line_token |= !(data == Token::Hash || data.is_whitespace());
             Some(Ok(Locatable {
                 data,
                 location: self.span(span_start),

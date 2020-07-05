@@ -253,6 +253,12 @@ impl<T> Locatable<T> {
 
 impl Token {
     pub const EQUAL: Token = Token::Assignment(AssignmentToken::Equal);
+    pub fn is_whitespace(&self) -> bool {
+        match self {
+            Token::Whitespace(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl Literal {

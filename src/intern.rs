@@ -22,7 +22,7 @@ impl fmt::Debug for InternedStr {
 }
 
 lazy_static! {
-    pub static ref STRINGS: RwLock<Rodeo<Spur>> = RwLock::new(Rodeo::default());
+    pub static ref STRINGS: RwLock<Rodeo<str, Spur>> = RwLock::new(Rodeo::default());
     static ref EMPTY_STRING: InternedStr = InternedStr::get_or_intern("");
 }
 

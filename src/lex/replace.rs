@@ -288,7 +288,7 @@ fn replace_function(
             // NOTE: `f(,)` is _legal_ and means to replace f with two arguments, each an empty token lists
             // on the bright side, we don't have to check if `current_arg` is empty or not
             Token::Comma if nested_parens == 1 => {
-                args.push(mem::take(&mut current_arg));
+                args.push(mem::replace(&mut current_arg, Vec::new()));
                 continue;
             }
             // f ( (a + 1)
@@ -296,7 +296,7 @@ fn replace_function(
                 nested_parens -= 1;
                 // f ( )
                 if nested_parens == 0 {
-                    args.push(mem::take(&mut current_arg));
+                    args.push(mem::replace(&mut current_arg, Vec::new()));
                     break;
                 }
             }

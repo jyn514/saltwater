@@ -17,7 +17,6 @@ readme = "README.md"
 categories = ["development-tools", "parser-implementations"]
 license = "BSD-3-Clause"
 keywords = ["C", "compiler", "recursive-descent", "cranelift"]
-default-run = "swcc"
 documentation = "https://docs.rs/saltwater"
 
 [dependencies]
@@ -27,12 +26,12 @@ cranelift = { version = "0.65", optional = true }
 cranelift-module = { version = "0.65", optional = true }
 cranelift-object = { version = "0.65", optional = true }
 cranelift-simplejit = { version = "0.65", optional = true }
-hexponent = "0.3"
+hexponent = "0.3.1"
 thiserror = "^1.0.10"
-target-lexicon = "0.10"
+target-lexicon = { git = "https://github.com/jyn514/target-lexicon/", branch = "1.34", features = ["std"] }
 tempfile = { version = "3", optional = true }
 pico-args = { version = "0.3", optional = true }
-lasso = "0.2"
+lasso = { git = "https://github.com/Kixiron/lasso.git" }
 codespan = { version = ">=0.9.5", default-features = false }
 color-backtrace = { version = "0.4", default-features = false, optional = true }
 counter = "0.4"

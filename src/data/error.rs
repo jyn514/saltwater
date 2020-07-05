@@ -82,6 +82,15 @@ impl<T> ErrorHandler<T> {
             .extend(&mut other.errors.drain(..).map(|loc| loc.map(Into::into)));
         self.warnings.append(&mut other.warnings);
     }
+
+    /// Return all warnings seen so far.
+    ///
+    /// These warnings are consumed and will not be returned if you call
+    /// `warnings()` again.
+    #[inline]
+    pub(crate) fn warnings(&mut self) -> VecDeque<Locatable<Warning>> {
+        std::mem::replace(&mut self.warnings, Default::default())
+    }
 }
 
 impl Iterator for ErrorHandler {
@@ -109,7 +118,7 @@ pub enum Error {
 
 /// Semantic errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq)]
-#[non_exhaustive]
+#[cfg_attr(rust_1_40, non_exhaustive)]
 pub enum SemanticError {
     #[error("{0}")]
     Generic(String),
@@ -356,7 +365,7 @@ pub enum SemanticError {
 
 /// Syntax errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq)]
-#[non_exhaustive]
+#[cfg_attr(rust_1_40, non_exhaustive)]
 pub enum SyntaxError {
     #[error("{0}")]
     Generic(String),
@@ -406,7 +415,7 @@ pub enum SyntaxError {
 
 /// Preprocessing errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq)]
-#[non_exhaustive]
+#[cfg_attr(rust_1_40, non_exhaustive)]
 pub enum CppError {
     /// A user-defined error (`#error`) was present.
     /// The `Vec<Token>` contains the tokens which followed the error.
@@ -497,7 +506,7 @@ pub enum CppError {
 
 /// Lex errors are non-exhaustive and may have new variants added at any time
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
-#[non_exhaustive]
+#[cfg_attr(rust_1_40, non_exhaustive)]
 pub enum LexError {
     #[error("unterminated /* comment")]
     UnterminatedComment,
@@ -554,7 +563,7 @@ pub enum LexError {
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
-#[non_exhaustive]
+#[cfg_attr(rust_1_40, non_exhaustive)]
 /// errors are non-exhaustive and may have new variants added at any time
 pub enum Warning {
     // for compatibility

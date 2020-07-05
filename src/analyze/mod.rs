@@ -137,21 +137,26 @@ impl PureAnalyzer {
     /// These warnings are consumed and will not be returned if you call
     /// `warnings()` again.
     pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
-        std::mem::take(&mut self.error_handler.warnings)
+        self.error_handler.warnings()
     }
+
     // I type these a lot
     #[inline(always)]
     fn err(&mut self, e: SemanticError, l: Location) {
         self.error_handler.error(e, l);
     }
+
     #[inline(always)]
     fn warn(&mut self, w: Warning, l: Location) {
         self.error_handler.warn(w, l);
     }
+
+    #[inline(always)]
     fn recursion_check(&mut self) -> RecursionGuard {
         self.recursion_guard
             .recursion_check(&mut self.error_handler)
     }
+
     /// 6.9 External Definitions
     ///
     /// Either a function or a list of declarations.

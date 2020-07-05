@@ -721,15 +721,15 @@ impl TryFrom<Keyword> for DeclarationSpecifier {
 
         // TODO: get rid of this macro and store a `enum Keyword { Qualifier(Qualifier), etc. }` instead
         macro_rules! change_enum {
-            ($val: expr, $source: path, $dest: ident, $($name: ident),* $(,)?) => {
+            ($val: expr, $($name: ident),* $(,)?) => {
                 match $val {
-                    $(<$source>::$name => Ok(DeclarationSpecifier::Unit(UnitSpecifier::$name)),)*
+                    $(Keyword::$name => Ok(DeclarationSpecifier::Unit(UnitSpecifier::$name)),)*
                     _ => Err(()),
                 }
             }
         }
 
-        change_enum!(k, Keyword, DeclarationSpecifier,
+        change_enum!(k,
             Const, Volatile, Restrict, Atomic, ThreadLocal,
             Unsigned, Signed,
             Bool, Char, Short, Int, Long, Float, Double, Void,

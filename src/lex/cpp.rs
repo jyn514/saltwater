@@ -364,10 +364,8 @@ impl<'a> PreProcessor<'a> {
     /// These warnings are consumed and will not be returned if you call
     /// `warnings()` again.
     pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
-        let mut warnings = std::mem::take(&mut self.error_handler.warnings);
-        warnings.extend(std::mem::take(
-            &mut self.file_processor.error_handler.warnings,
-        ));
+        let mut warnings = self.error_handler.warnings();
+        warnings.extend(self.file_processor.error_handler.warnings());
         warnings
     }
 
@@ -401,13 +399,13 @@ impl<'a> PreProcessor<'a> {
     }
 
     fn is_whitespace(res: &CppResult<Token>) -> bool {
-        matches!(
-            res,
+        match res {
             Ok(Locatable {
                 data: Token::Whitespace(_),
                 ..
-            })
-        )
+            }) => true,
+            _ => false,
+        }
     }
     fn is_not_whitespace(res: &CppResult<Token>) -> bool {
         !PreProcessor::is_whitespace(res)

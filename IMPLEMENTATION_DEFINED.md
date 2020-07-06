@@ -23,3 +23,8 @@ Once it is parsed it will be ignored.
 ## Does `register` do anything?
 
 No.
+
+## Are there any differences from the C standard?
+
+Yes, hexadecimal constants are not required to have an exponent.
+See [the hexponent docs](https://docs.rs/hexponent/latest/hexponent/#differences-from-the-specification) and [#483](https://github.com/jyn514/saltwater/issues/483) for more information.

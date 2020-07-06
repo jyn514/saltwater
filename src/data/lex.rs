@@ -19,8 +19,11 @@ pub struct Span {
 }
 
 impl Span {
-    pub fn len(&self) -> usize {
+    pub fn len(self) -> usize {
         (self.end - self.start) as usize // TODO is this unsafe?
+    }
+    pub fn is_empty(self) -> bool {
+        self.start == self.end
     }
 }
 
@@ -259,6 +262,10 @@ impl Location {
     pub fn len(&self) -> usize {
         self.span.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.span.is_empty()
+    }
 }
 
 impl<T: PartialEq> PartialEq for Locatable<T> {
@@ -448,9 +455,7 @@ impl From<ComparisonToken> for Token {
 }
 
 pub fn source_slice(source: Rc<str>, span: Span) -> Option<RcStr> {
-    RcStr::from(source)
-        .clone()
-        .slice_with(|s| s.get::<Range<usize>>(span.into()).unwrap_or(""))
+    RcStr::from(source).slice_with(|s| s.get::<Range<usize>>(span.into()).unwrap_or(""))
 }
 
 #[cfg(test)]

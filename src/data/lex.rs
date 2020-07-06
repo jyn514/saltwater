@@ -472,12 +472,17 @@ mod proptest_impl {
                 any::<i64>().prop_map(Literal::Int),
                 any::<u64>().prop_map(Literal::UnsignedInt),
                 any::<f64>().prop_map(Literal::Float),
-                ".*".prop_map(|s| {
-                    let len = s.len();
-                    let s = RcStr::from(format!("\"{}\"", s.escape_default().collect::<String>()));
-                    Literal::Str(vec![s], len)
-                }),
                 any::<u8>().prop_map(Literal::Char),
+                prop::collection::vec(".*", 1..10).prop_map(|strs| {
+                    let len = strs.iter().map(|s| s.len()).sum();
+                    let rcstrs = strs
+                        .into_iter()
+                        .map(|s| {
+                            RcStr::from(format!("\"{}\"", s.escape_default().collect::<String>()))
+                        })
+                        .collect();
+                    Literal::Str(rcstrs, len)
+                }),
             ]
             .boxed()
         }

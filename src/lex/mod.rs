@@ -110,6 +110,9 @@ impl Lexer {
         const_assert!(mem::size_of::<usize>() >= mem::size_of::<u32>());
         self.chars[self.location.offset as usize..].chars()
     }
+    fn parse_char(&mut self) -> Result<Token, LexError> {
+        self.parse_char_raw().map(Literal::Char).map(Token::from)
+    }
     fn parse_string(&mut self) -> Result<Token, LexError> {
         let start = self.get_location().offset - '"'.len_utf8() as u32;
         let raw_str = self.parse_string_raw(false);
@@ -754,7 +757,7 @@ pub(crate) trait LiteralParser {
     ///
     /// Before: chars{"\0' blah"}
     /// After:  chars{" blah"}
-    fn parse_char(&mut self) -> Result<Token, LexError> {
+    fn parse_char_raw(&mut self) -> Result<u8, LexError> {
         fn consume_until_quote<T: LiteralParser + ?Sized>(lexer: &mut T) {
             loop {
                 match lexer.parse_single_char(false) {
@@ -766,7 +769,7 @@ pub(crate) trait LiteralParser {
         }
         match self.parse_single_char(false) {
             Ok(c) => match self.next_char() {
-                Some('\'') => Ok(Literal::Char(c).into()),
+                Some('\'') => Ok(c),
                 Some('\n') => Err(LexError::NewlineInChar),
                 None => Err(LexError::MissingEndQuote { string: false }),
                 Some(_) => {

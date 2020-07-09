@@ -1,4 +1,4 @@
-use super::{CompileResult, Literal, Locatable, Token};
+use super::{CompileResult, LiteralToken, Locatable, Token};
 use crate::data::lex::test::{cpp, cpp_no_newline};
 use crate::intern::InternedStr;
 
@@ -46,7 +46,7 @@ where
 }
 
 fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
-    match_data(lexed, |c| c == Ok(&Literal::Char(expected).into()))
+    match_data(lexed, |c| c == Ok(&LiteralToken::Char(expected).into()))
 }
 
 fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
@@ -60,7 +60,8 @@ fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
 }
 fn assert_int(s: &str, expected: i64) {
     assert!(
-        match_data(lex(s), |lexed| lexed == Ok(&Literal::Int(expected).into())),
+        match_data(lex(s), |lexed| lexed
+            == Ok(&LiteralToken::Int(expected).into())),
         "{} != {}",
         s,
         expected
@@ -70,7 +71,7 @@ fn assert_float(s: &str, expected: f64) {
     let lexed = lex(s);
     assert!(
         match_data_ref(&lexed, |lexed| lexed
-            == Ok(&Literal::Float(expected).into())),
+            == Ok(&LiteralToken::Float(expected).into())),
         "({}) {:?} != {}",
         s,
         lexed,
@@ -146,15 +147,15 @@ fn test_float_literals() {
     }
     assert!(match_all(
         &lex_all("-1"),
-        &[Token::Minus, Literal::Int(1).into()]
+        &[Token::Minus, LiteralToken::Int(1).into()]
     ));
     assert!(match_all(
         &lex_all("-1e10"),
-        &[Token::Minus, Literal::Float(10_000_000_000.0).into()]
+        &[Token::Minus, LiteralToken::Float(10_000_000_000.0).into()]
     ));
     assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
         == Ok(
-            &Literal::UnsignedInt(9_223_372_036_854_775_807u64).into()
+            &LiteralToken::UnsignedInt(9_223_372_036_854_775_807u64).into()
         )));
     assert_float("0x.ep0", 0.875);
     assert_float("0x.ep-0l", 0.875);

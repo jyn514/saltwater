@@ -426,23 +426,23 @@ pub(crate) mod test {
 
     #[test]
     fn test_strings() {
-        let assert_str_len = |s, expected: &str| {
+        let assert_str = |s, expected: &str| {
             use crate::data::ast::ExprType;
             use crate::parse::expr::test::expr;
 
             let e = expr(s).unwrap();
-            let len = match e.data {
-                ExprType::Literal(Literal::Str(_, len)) => len,
+            let mut bytes = match e.data {
+                ExprType::Literal(LiteralValue::Str(s)) => s,
                 x => panic!("wrong expression: {:?}", x),
             };
-            assert_eq!(len, expected.len() + 1); // +1 for \0
+            assert_eq!(bytes.pop(), Some(b'\0'));
+            assert_eq!(std::str::from_utf8(&bytes).unwrap(), expected);
         };
-        assert_str_len("\"this is a sample string\"", "this is a sample string");
-        assert_str_len("\"consecutive \" \"strings\"", "consecutive strings");
-        assert_str_len("\"string with \\0\"", "string with \0");
+        assert_str("\"this is a sample string\"", "this is a sample string");
+        assert_str("\"consecutive \" \"strings\"", "consecutive strings");
+        assert_str("\"string with \\0\"", "string with \0");
         // regression test for https://github.com/jyn514/rcc/issues/350
         let newlines = " \"a\" \n \"b\" ";
-        assert_str_len(newlines, "ab");
-        // Content comparisons are done in ir::static_init::tests
+        assert_str(newlines, "ab");
     }
 }

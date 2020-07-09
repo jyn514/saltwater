@@ -8,7 +8,7 @@ use std::rc::Rc;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use super::lex::{ComparisonToken, Keyword, Literal, Locatable};
+use super::lex::{ComparisonToken, Keyword, Locatable};
 use super::types::Type;
 use super::*;
 use crate::intern::InternedStr;
@@ -126,7 +126,7 @@ pub enum ExprType {
     // This stores a reference to the metadata for the identifier,
     // which can be looked up using a `metadata_store`.
     Id(Symbol),
-    Literal(Literal),
+    Literal(LiteralValue),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, InternedStr),
 
@@ -151,6 +151,18 @@ pub enum ExprType {
     StaticRef(Box<Expr>),
     // used to work around various bugs, see places this is constructed for details
     Noop(Box<Expr>),
+}
+
+use shared_str::RcStr; // TODO this will be removed when we differentiate LiteralToken and LiteralValue
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum LiteralValue {
+    // literals
+    Int(i64),
+    UnsignedInt(u64),
+    Float(f64),
+    Str(Vec<RcStr>, usize), // second arg is length of parsed string
+    Char(u8),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -503,6 +515,46 @@ impl Display for Declaration {
                 write!(f, "}};")
             }
             None => write!(f, ";"),
+        }
+    }
+}
+
+impl LiteralValue {
+    pub fn is_zero(&self) -> bool {
+        match *self {
+            LiteralValue::Int(i) => i == 0,
+            LiteralValue::UnsignedInt(u) => u == 0,
+            LiteralValue::Char(c) => c == 0,
+            _ => false,
+        }
+    }
+}
+
+impl From<LiteralToken> for LiteralValue {
+    fn from(item: LiteralToken) -> Self {
+        match item {
+            LiteralToken::Int(i) => LiteralValue::Int(i),
+            LiteralToken::UnsignedInt(u) => LiteralValue::UnsignedInt(u),
+            LiteralToken::Float(f) => LiteralValue::Float(f),
+            LiteralToken::Str(rcstr, len) => LiteralValue::Str(rcstr, len),
+            LiteralToken::Char(c) => LiteralValue::Char(c),
+        }
+    }
+}
+
+impl std::fmt::Display for LiteralValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use LiteralValue::*;
+        match self {
+            Int(i) => write!(f, "{}", i),
+            UnsignedInt(u) => write!(f, "{}", u),
+            Float(n) => write!(f, "{}", n),
+            Str(rcstr, _) => write!(
+                f,
+                "{}",
+                rcstr.iter().map(RcStr::as_str).collect::<Vec<_>>().join("")
+            ),
+            Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
         }
     }
 }

@@ -116,7 +116,6 @@ impl FunctionAnalyzer<'_> {
         location: Location,
     ) -> StmtType {
         use super::expr::literal;
-        use crate::data::lex::Literal;
 
         let expr = match self.expr(expr).const_fold() {
             Ok(e) => e,
@@ -126,9 +125,9 @@ impl FunctionAnalyzer<'_> {
             }
         };
         let int = match expr.into_literal() {
-            Ok(Literal::Int(i)) => i as u64,
-            Ok(Literal::UnsignedInt(u)) => u,
-            Ok(Literal::Char(c)) => c.into(),
+            Ok(LiteralValue::Int(i)) => i as u64,
+            Ok(LiteralValue::UnsignedInt(u)) => u,
+            Ok(LiteralValue::Char(c)) => c.into(),
             Ok(other) => {
                 let ctype = literal(other, location).ctype;
                 self.err(SemanticError::NonIntegralExpr(ctype), location);

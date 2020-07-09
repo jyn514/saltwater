@@ -987,7 +987,7 @@ impl PureAnalyzer {
         }
     }
     // used for arrays like `int a[BUF_SIZE - 1];` and enums like `enum { A = 1 }`
-    fn const_literal(expr: Expr) -> CompileResult<Literal> {
+    fn const_literal(expr: Expr) -> CompileResult<LiteralValue> {
         let location = expr.location;
         expr.const_fold()?.into_literal().or_else(|runtime_expr| {
             Err(Locatable::new(
@@ -998,7 +998,7 @@ impl PureAnalyzer {
     }
     /// Return an unsigned integer that can be evaluated at compile time, or an error otherwise.
     fn const_uint(expr: Expr) -> CompileResult<crate::arch::SIZE_T> {
-        use Literal::*;
+        use LiteralValue::*;
 
         let location = expr.location;
         match Self::const_literal(expr)? {
@@ -1022,7 +1022,7 @@ impl PureAnalyzer {
     }
     /// Return a signed integer that can be evaluated at compile time, or an error otherwise.
     fn const_sint(expr: Expr) -> CompileResult<i64> {
-        use Literal::*;
+        use LiteralValue::*;
 
         let location = expr.location;
         match Self::const_literal(expr)? {

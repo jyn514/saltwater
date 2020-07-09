@@ -153,15 +153,13 @@ pub enum ExprType {
     Noop(Box<Expr>),
 }
 
-use shared_str::RcStr; // TODO this will be removed when we differentiate LiteralToken and LiteralValue
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum LiteralValue {
     // literals
     Int(i64),
     UnsignedInt(u64),
     Float(f64),
-    Str(Vec<RcStr>, usize), // second arg is length of parsed string
+    Str(Vec<u8>), // second arg is length of parsed string
     Char(u8),
 }
 
@@ -530,18 +528,6 @@ impl LiteralValue {
     }
 }
 
-impl From<LiteralToken> for LiteralValue {
-    fn from(item: LiteralToken) -> Self {
-        match item {
-            LiteralToken::Int(i) => LiteralValue::Int(i),
-            LiteralToken::UnsignedInt(u) => LiteralValue::UnsignedInt(u),
-            LiteralToken::Float(f) => LiteralValue::Float(f),
-            LiteralToken::Str(rcstr, len) => LiteralValue::Str(rcstr, len),
-            LiteralToken::Char(c) => LiteralValue::Char(c),
-        }
-    }
-}
-
 impl std::fmt::Display for LiteralValue {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         use LiteralValue::*;
@@ -549,11 +535,24 @@ impl std::fmt::Display for LiteralValue {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(rcstr, _) => write!(
-                f,
-                "{}",
-                rcstr.iter().map(RcStr::as_str).collect::<Vec<_>>().join("")
-            ),
+            Str(s) => {
+                let mut escaped = s
+                    .iter()
+                    .flat_map(|c| match c {
+                        b'\n' => "\\n".bytes().collect(),
+                        b'\r' => "\\r".bytes().collect(),
+                        b'\t' => "\\t".bytes().collect(),
+                        _ => vec![*c],
+                    })
+                    .collect::<Vec<_>>();
+
+                // Remove the null byte at the end,
+                // because this will break tests and
+                // it's not needed in debug output.
+                assert_eq!(escaped.pop(), Some(b'\0'));
+
+                write!(f, "\"{}\"", String::from_utf8_lossy(&escaped))
+            }
             Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
         }
     }

@@ -222,8 +222,8 @@ impl<B: Backend> Compiler<B> {
             (LiteralValue::Float(f), types::F32) => builder.ins().f32const(f as f32),
             (LiteralValue::Float(f), types::F64) => builder.ins().f64const(f),
             (LiteralValue::Char(c), _) => builder.ins().iconst(ir_type, i64::from(c)),
-            (LiteralValue::Str(strs, _), _) => {
-                let str_id = self.compile_string(location, strs)?;
+            (LiteralValue::Str(string), _) => {
+                let str_id = self.compile_string(string, location)?;
                 let str_addr = self.module.declare_data_in_func(str_id, builder.func);
                 builder.ins().global_value(Type::ptr_type(), str_addr)
             }

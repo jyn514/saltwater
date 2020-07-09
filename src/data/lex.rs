@@ -286,17 +286,6 @@ impl Token {
     pub const EQUAL: Token = Token::Assignment(AssignmentToken::Equal);
 }
 
-impl LiteralToken {
-    pub fn is_zero(&self) -> bool {
-        match *self {
-            LiteralToken::Int(i) => i == 0,
-            LiteralToken::UnsignedInt(u) => u == 0,
-            LiteralToken::Char(c) => c == 0,
-            _ => false,
-        }
-    }
-}
-
 impl AssignmentToken {
     pub fn without_assignment(self) -> BinaryOp {
         use AssignmentToken::*;

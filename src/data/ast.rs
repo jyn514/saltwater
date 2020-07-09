@@ -1,7 +1,8 @@
 use std::fmt::{self, Display};
 
 use super::{joined, joined_locatable};
-use crate::data::lex::{AssignmentToken, ComparisonToken, Literal, Locatable};
+use crate::data::hir::LiteralValue;
+use crate::data::lex::{AssignmentToken, ComparisonToken, Locatable};
 use crate::intern::InternedStr;
 
 pub type Program = Vec<Declaration>;
@@ -208,7 +209,7 @@ pub type Expr = Locatable<ExprType>;
 pub enum ExprType {
     // primary
     Id(InternedStr),
-    Literal(Literal),
+    Literal(LiteralValue),
 
     // postfix
     FuncCall(Box<Expr>, Vec<Expr>),

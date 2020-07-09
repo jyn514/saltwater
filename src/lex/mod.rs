@@ -111,14 +111,16 @@ impl Lexer {
         self.chars[self.location.offset as usize..].chars()
     }
     fn parse_char(&mut self) -> Result<Token, LexError> {
-        self.parse_char_raw().map(Literal::Char).map(Token::from)
+        self.parse_char_raw()
+            .map(LiteralToken::Char)
+            .map(Token::from)
     }
     fn parse_string(&mut self) -> Result<Token, LexError> {
         let start = self.get_location().offset - '"'.len_utf8() as u32;
         let raw_str = self.parse_string_raw(false);
         let span = self.span(start).span;
         raw_str.map(|s| {
-            Literal::Str(
+            LiteralToken::Str(
                 vec![source_slice(self.chars.clone(), span).unwrap()],
                 s.len(),
             )
@@ -338,7 +340,7 @@ impl Iterator for Lexer {
                 '.' => match self.peek() {
                     Some(c) if c.is_ascii_digit() => {
                         match self.parse_float(Radix::Decimal, String::new()) {
-                            Ok(f) => Literal::Float(f).into(),
+                            Ok(f) => LiteralToken::Float(f).into(),
                             Err(err) => {
                                 return Some(Err(Locatable {
                                     data: err,
@@ -460,7 +462,7 @@ pub(crate) trait LiteralParser {
             "main loop should only pass [-.0-9] as start to parse_num"
         );
         let span_start = self.get_location().offset - 1; // -1 for `start`
-        let float_literal = |f| Token::Literal(Literal::Float(f));
+        let float_literal = |f| Token::Literal(LiteralToken::Float(f));
         let mut buf = String::new();
         buf.push(start as char);
         // check for radix other than 10 - but if we see '.', use 10
@@ -506,12 +508,12 @@ pub(crate) trait LiteralParser {
             let unsigned = u64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
                 is_signed: Some(false),
             })?;
-            Literal::UnsignedInt(unsigned)
+            LiteralToken::UnsignedInt(unsigned)
         } else {
             let long = i64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
                 is_signed: Some(true),
             })?;
-            Literal::Int(long)
+            LiteralToken::Int(long)
         };
         // get rid of 'l' and 'll' suffixes, we don't handle them
         if self.match_next('l') {

@@ -10,8 +10,7 @@ use super::{Compiler, Id, PseudoLexer};
 use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::*;
 use crate::data::{
-    hir::{Expr, ExprType, Initializer, Symbol},
-    lex::Literal,
+    hir::{Expr, ExprType, Initializer, LiteralValue, Symbol},
     types::ArrayType,
     StorageClass,
 };
@@ -107,7 +106,7 @@ impl<B: Backend> Compiler<B> {
                 if let Some(len) = match &init {
                     Initializer::InitializerList(list) => Some(list.len()),
                     Initializer::Scalar(expr) => match &expr.expr {
-                        ExprType::Literal(Literal::Str(_, len)) => Some(*len),
+                        ExprType::Literal(LiteralValue::Str(_, len)) => Some(*len),
                         _ => None,
                     },
                     _ => None,
@@ -190,7 +189,7 @@ impl<B: Backend> Compiler<B> {
         match expr.expr {
             ExprType::StaticRef(inner) => match inner.expr {
                 ExprType::Id(symbol) => self.static_ref(symbol, 0, offset, ctx),
-                ExprType::Literal(Literal::Str(strs, _)) => {
+                ExprType::Literal(LiteralValue::Str(strs, _)) => {
                     let str_id = self.compile_string(expr.location, strs)?;
                     let str_addr = self.module.declare_data_in_data(str_id, ctx);
                     ctx.write_data_addr(offset, str_addr, 0);
@@ -354,7 +353,7 @@ impl<B: Backend> Compiler<B> {
 
     fn into_bytes(
         &mut self,
-        token: Literal,
+        token: LiteralValue,
         ctype: &Type,
         location: &Location,
     ) -> CompileResult<Box<[u8]>> {
@@ -365,7 +364,7 @@ impl<B: Backend> Compiler<B> {
             == target_lexicon::Endianness::Big;
 
         match token {
-            Literal::Int(i) => Ok(match ir_type {
+            LiteralValue::Int(i) => Ok(match ir_type {
                 types::I8 => bytes!(
                     cast!(i, i64, i8, &ctype, *location, self.error_handler),
                     big_endian
@@ -384,7 +383,7 @@ impl<B: Backend> Compiler<B> {
                     x, i
                 )),
             }),
-            Literal::UnsignedInt(i) => Ok(match ir_type {
+            LiteralValue::UnsignedInt(i) => Ok(match ir_type {
                 types::I8 => bytes!(
                     cast!(i, u64, u8, &ctype, *location, self.error_handler),
                     big_endian
@@ -403,7 +402,7 @@ impl<B: Backend> Compiler<B> {
                     x, i
                 )),
             }),
-            Literal::Float(f) => Ok(match ir_type {
+            LiteralValue::Float(f) => Ok(match ir_type {
                 types::F32 => {
                     let cast = f as f32;
                     if (f64::from(cast) - f).abs() >= std::f64::EPSILON {
@@ -422,8 +421,8 @@ impl<B: Backend> Compiler<B> {
                     x, f
                 )),
             }),
-            Literal::Str(strs, _) => Ok(parse_string(strs, *location).into_boxed_slice()),
-            Literal::Char(c) => Ok(Box::new([c])),
+            LiteralValue::Str(strs, _) => Ok(parse_string(strs, *location).into_boxed_slice()),
+            LiteralValue::Char(c) => Ok(Box::new([c])),
         }
     }
 }

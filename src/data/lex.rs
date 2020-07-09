@@ -165,7 +165,7 @@ pub enum ComparisonToken {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Literal {
+pub enum LiteralToken {
     // literals
     Int(i64),
     UnsignedInt(u64),
@@ -210,7 +210,7 @@ pub enum Token {
     Question,
 
     Keyword(Keyword),
-    Literal(Literal),
+    Literal(LiteralToken),
     Id(InternedStr),
 
     Whitespace(String),
@@ -286,12 +286,12 @@ impl Token {
     pub const EQUAL: Token = Token::Assignment(AssignmentToken::Equal);
 }
 
-impl Literal {
+impl LiteralToken {
     pub fn is_zero(&self) -> bool {
         match *self {
-            Literal::Int(i) => i == 0,
-            Literal::UnsignedInt(u) => u == 0,
-            Literal::Char(c) => c == 0,
+            LiteralToken::Int(i) => i == 0,
+            LiteralToken::UnsignedInt(u) => u == 0,
+            LiteralToken::Char(c) => c == 0,
             _ => false,
         }
     }
@@ -394,9 +394,9 @@ impl std::fmt::Display for Token {
     }
 }
 
-impl std::fmt::Display for Literal {
+impl std::fmt::Display for LiteralToken {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use Literal::*;
+        use LiteralToken::*;
         match self {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
@@ -436,8 +436,8 @@ impl std::fmt::Display for AssignmentToken {
     }
 }
 
-impl From<Literal> for Token {
-    fn from(l: Literal) -> Self {
+impl From<LiteralToken> for Token {
+    fn from(l: LiteralToken) -> Self {
         Token::Literal(l)
     }
 }

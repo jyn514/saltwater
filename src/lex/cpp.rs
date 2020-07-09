@@ -36,7 +36,7 @@ use super::replace::{replace, Definition, Definitions};
 use super::{Lexer, LiteralParser, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
-use crate::data::lex::{Keyword, Literal};
+use crate::data::lex::{Keyword, LiteralToken};
 use crate::data::*;
 use crate::get_str;
 use crate::Files;
@@ -324,7 +324,7 @@ impl<'a> PreProcessor<'a> {
             "{}-{}-{}",
             TARGET.architecture, TARGET.operating_system, TARGET.environment
         );
-        let int = |i| Definition::Object(vec![Token::Literal(Literal::Int(i))]);
+        let int = |i| Definition::Object(vec![Token::Literal(LiteralToken::Int(i))]);
 
         #[allow(clippy::inconsistent_digit_grouping)]
         let mut definitions = map! {
@@ -590,7 +590,7 @@ impl<'a> PreProcessor<'a> {
             .constexpr()?
             .data
         {
-            (Literal::Int(i), Type::Bool) => Ok(i != 0),
+            (LiteralValue::Int(i), Type::Bool) => Ok(i != 0),
             _ => unreachable!("bug in const_fold or parser: cpp cond should be boolean"),
         }
     }
@@ -687,9 +687,9 @@ impl<'a> PreProcessor<'a> {
                 } if name == defined => {
                     let def = Self::defined(&mut lex_tokens, location)?;
                     let literal = if definitions.contains_key(&def) {
-                        Literal::Int(1)
+                        LiteralToken::Int(1)
                     } else {
-                        Literal::Int(0)
+                        LiteralToken::Int(0)
                     };
                     location.with(Token::Literal(literal))
                 }
@@ -707,7 +707,7 @@ impl<'a> PreProcessor<'a> {
                 if let Ok(tok) = &mut token {
                     expr_location = Some(location.maybe_merge(expr_location));
                     if let Token::Id(_) = tok.data {
-                        tok.data = Token::Literal(Literal::Int(0));
+                        tok.data = Token::Literal(LiteralToken::Int(0));
                     }
                 }
                 token
@@ -977,7 +977,7 @@ impl<'a> PreProcessor<'a> {
             {
                 // local
                 Some(Ok(Locatable {
-                    data: Token::Literal(Literal::Str(_, _)),
+                    data: Token::Literal(LiteralToken::Str(_, _)),
                     ..
                 })) => unimplemented!("#include for macros"), //return self.include_path(id, true, start),
                 // system

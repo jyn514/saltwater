@@ -6,7 +6,7 @@ use std::convert::{TryFrom, TryInto};
 use cranelift::codegen::ir::types;
 use cranelift_module::{Backend, DataContext, DataId, Linkage};
 
-use super::{Compiler, Id, PseudoLexer};
+use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::*;
 use crate::data::{
@@ -14,8 +14,6 @@ use crate::data::{
     types::ArrayType,
     StorageClass,
 };
-use crate::lex::LiteralParser;
-use shared_str::RcStr;
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
@@ -106,7 +104,7 @@ impl<B: Backend> Compiler<B> {
                 if let Some(len) = match &init {
                     Initializer::InitializerList(list) => Some(list.len()),
                     Initializer::Scalar(expr) => match &expr.expr {
-                        ExprType::Literal(LiteralValue::Str(_, len)) => Some(*len),
+                        ExprType::Literal(LiteralValue::Str(s)) => Some(s.len()),
                         _ => None,
                     },
                     _ => None,
@@ -142,10 +140,9 @@ impl<B: Backend> Compiler<B> {
     }
     pub(super) fn compile_string(
         &mut self,
+        string: Vec<u8>,
         location: Location,
-        strs: Vec<RcStr>,
     ) -> CompileResult<DataId> {
-        let string = parse_string(strs, location);
         use std::collections::hash_map::Entry;
         let len = self.strings.len();
         // TODO: it seems silly for both us and cranelift to store the string
@@ -189,8 +186,8 @@ impl<B: Backend> Compiler<B> {
         match expr.expr {
             ExprType::StaticRef(inner) => match inner.expr {
                 ExprType::Id(symbol) => self.static_ref(symbol, 0, offset, ctx),
-                ExprType::Literal(LiteralValue::Str(strs, _)) => {
-                    let str_id = self.compile_string(expr.location, strs)?;
+                ExprType::Literal(LiteralValue::Str(str_ref)) => {
+                    let str_id = self.compile_string(str_ref, expr.location)?;
                     let str_addr = self.module.declare_data_in_data(str_id, ctx);
                     ctx.write_data_addr(offset, str_addr, 0);
                 }
@@ -213,7 +210,8 @@ impl<B: Backend> Compiler<B> {
                 _ => semantic_err!("cannot take the address of an rvalue".into(), expr.location),
             },
             ExprType::Literal(token) => {
-                let bytes = self.into_bytes(token, &expr.ctype, &expr.location)?;
+                let bytes =
+                    token.into_bytes(&expr.ctype, &expr.location, &mut self.error_handler)?;
                 buf.copy_from_slice(&bytes);
             }
             _ => semantic_err!(
@@ -350,12 +348,14 @@ impl<B: Backend> Compiler<B> {
         // zero-init should already have been taken care of by init_symbol
         Ok(())
     }
+}
 
+impl LiteralValue {
     fn into_bytes(
-        &mut self,
-        token: LiteralValue,
+        self,
         ctype: &Type,
         location: &Location,
+        error_handler: &mut ErrorHandler,
     ) -> CompileResult<Box<[u8]>> {
         let ir_type = ctype.as_ir_type();
         let big_endian = TARGET
@@ -363,18 +363,18 @@ impl<B: Backend> Compiler<B> {
             .expect("target should be big or little endian")
             == target_lexicon::Endianness::Big;
 
-        match token {
+        match self {
             LiteralValue::Int(i) => Ok(match ir_type {
                 types::I8 => bytes!(
-                    cast!(i, i64, i8, &ctype, *location, self.error_handler),
+                    cast!(i, i64, i8, &ctype, *location, error_handler),
                     big_endian
                 ),
                 types::I16 => bytes!(
-                    cast!(i, i64, i16, &ctype, *location, self.error_handler),
+                    cast!(i, i64, i16, &ctype, *location, error_handler),
                     big_endian
                 ),
                 types::I32 => bytes!(
-                    cast!(i, i64, i32, &ctype, *location, self.error_handler),
+                    cast!(i, i64, i32, &ctype, *location, error_handler),
                     big_endian
                 ),
                 types::I64 => bytes!(i, big_endian),
@@ -385,15 +385,15 @@ impl<B: Backend> Compiler<B> {
             }),
             LiteralValue::UnsignedInt(i) => Ok(match ir_type {
                 types::I8 => bytes!(
-                    cast!(i, u64, u8, &ctype, *location, self.error_handler),
+                    cast!(i, u64, u8, &ctype, *location, error_handler),
                     big_endian
                 ),
                 types::I16 => bytes!(
-                    cast!(i, u64, u16, &ctype, *location, self.error_handler),
+                    cast!(i, u64, u16, &ctype, *location, error_handler),
                     big_endian
                 ),
                 types::I32 => bytes!(
-                    cast!(i, u64, u32, &ctype, *location, self.error_handler),
+                    cast!(i, u64, u32, &ctype, *location, error_handler),
                     big_endian
                 ),
                 types::I64 => bytes!(i, big_endian),
@@ -410,7 +410,7 @@ impl<B: Backend> Compiler<B> {
                             "conversion from double to float loses precision ({} is different from {} by more than DBL_EPSILON ({}))",
                             f, std::f64::EPSILON, f64::from(cast)
                         );
-                        self.error_handler.warn(&warning, *location);
+                        error_handler.warn(&warning, *location);
                     }
                     let float_as_int = cast.to_bits();
                     bytes!(float_as_int, big_endian)
@@ -421,26 +421,10 @@ impl<B: Backend> Compiler<B> {
                     x, f
                 )),
             }),
-            LiteralValue::Str(strs, _) => Ok(parse_string(strs, *location).into_boxed_slice()),
+            LiteralValue::Str(string) => Ok(string.into_boxed_slice()),
             LiteralValue::Char(c) => Ok(Box::new([c])),
         }
     }
-}
-
-fn parse_string(strs: Vec<RcStr>, location: Location) -> Vec<u8> {
-    let num_strs = strs.len();
-    strs.iter()
-        .enumerate()
-        .flat_map(|(i, s)| {
-            let mut s = PseudoLexer::new(location, s.as_str())
-                .parse_string_raw(true)
-                .unwrap();
-            if i + 1 != num_strs {
-                assert_eq!(s.pop().unwrap(), 0);
-            }
-            s.into_iter()
-        })
-        .collect()
 }
 
 impl TryFrom<StorageClass> for Linkage {

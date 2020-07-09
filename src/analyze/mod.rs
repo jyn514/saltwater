@@ -1014,7 +1014,7 @@ impl PureAnalyzer {
                 }
             }
             Char(c) => Ok(c.into()),
-            Str(_, _) | Float(_) => Err(Locatable::new(
+            Str(_) | Float(_) => Err(Locatable::new(
                 SemanticError::NonIntegralLength.into(),
                 location,
             )),
@@ -1035,7 +1035,7 @@ impl PureAnalyzer {
             },
             Int(i) => Ok(i),
             Char(c) => Ok(c.into()),
-            Str(_, _) | Float(_) => Err(Locatable::new(
+            Str(_) | Float(_) => Err(Locatable::new(
                 SemanticError::NonIntegralLength.into(),
                 location,
             )),

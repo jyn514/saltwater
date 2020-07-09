@@ -53,6 +53,12 @@ pub struct Lexer {
     given_newline_error: bool,
 }
 
+struct PseudoLexer<T: Iterator<Item = char>> {
+    loc: SingleLocation,
+    iter: std::iter::Peekable<T>,
+    lookahead: Option<char>, // For peek_next
+}
+
 // returned when lexing a string literal
 pub(crate) enum CharError {
     Eof,
@@ -409,6 +415,19 @@ impl Iterator for Lexer {
             }
         }
         c.or_else(|| self.error_handler.pop_front().map(Err))
+    }
+}
+
+impl<'a> PseudoLexer<std::str::Chars<'a>> {
+    fn new(loc: Location, src: &'a str) -> Self {
+        PseudoLexer {
+            loc: SingleLocation {
+                offset: loc.span.start,
+                file: loc.file,
+            },
+            iter: src.chars().peekable(),
+            lookahead: None,
+        }
     }
 }
 
@@ -979,5 +998,60 @@ impl LiteralParser for Lexer {
     }
     fn handle_warning(&mut self, err: Locatable<Warning>) {
         self.error_handler.warnings.push_back(err);
+    }
+}
+
+impl<T: Iterator<Item = char>> LiteralParser for PseudoLexer<T> {
+    fn next_char(&mut self) -> Option<char> {
+        let c = self.lookahead.take().or_else(|| self.iter.next());
+        self.loc.offset += c.map_or(0, char::len_utf8) as u32;
+        c
+    }
+    fn peek(&mut self) -> Option<char> {
+        self.lookahead.or_else(|| self.iter.peek().copied())
+    }
+    fn peek_next(&mut self) -> Option<char> {
+        if self.lookahead.is_none() {
+            self.lookahead = self.iter.next();
+        }
+        self.peek()
+    }
+    fn get_location(&self) -> &SingleLocation {
+        &self.loc
+    }
+    fn handle_error(&mut self, _err: Locatable<LexError>) {
+        unreachable!("No errors on second lexer pass");
+    }
+    fn handle_warning(&mut self, _err: Locatable<Warning>) {
+        // Warnings have already been handled, theoretically
+    }
+}
+
+impl Locatable<LiteralToken> {
+    pub fn parse(self) -> Locatable<LiteralValue> {
+        let loc = self.location;
+        self.map(|item| match item {
+            LiteralToken::Int(i) => LiteralValue::Int(i),
+            LiteralToken::UnsignedInt(u) => LiteralValue::UnsignedInt(u),
+            LiteralToken::Float(f) => LiteralValue::Float(f),
+            LiteralToken::Str(strs, _) => {
+                let num_strs = strs.len();
+                LiteralValue::Str(
+                    strs.iter()
+                        .enumerate()
+                        .flat_map(|(i, s)| {
+                            let mut s = PseudoLexer::new(loc, s.as_str())
+                                .parse_string_raw(true)
+                                .unwrap();
+                            if i + 1 != num_strs {
+                                assert_eq!(s.pop().unwrap(), 0);
+                            }
+                            s.into_iter()
+                        })
+                        .collect(),
+                )
+            }
+            LiteralToken::Char(c) => LiteralValue::Char(c),
+        })
     }
 }

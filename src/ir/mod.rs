@@ -44,9 +44,6 @@ use crate::data::{
     StorageClass, *,
 };
 
-use crate::data::error::{LexError, Warning};
-use crate::lex::{LiteralParser, SingleLocation};
-
 // TODO: make this const when const_if_match is stabilized
 // TODO: see https://github.com/rust-lang/rust/issues/49146
 lazy_static! {
@@ -524,52 +521,6 @@ impl CompileError {
 impl FunctionType {
     fn should_return(&self) -> bool {
         *self.return_type != Type::Void
-    }
-}
-
-use std::iter::Peekable;
-struct PseudoLexer<T: Iterator<Item = char>> {
-    loc: SingleLocation,
-    iter: Peekable<T>,
-    lookahead: Option<char>, // For peek_next
-}
-
-impl<'a> PseudoLexer<std::str::Chars<'a>> {
-    fn new(loc: Location, src: &'a str) -> Self {
-        PseudoLexer {
-            loc: SingleLocation {
-                offset: loc.span.start,
-                file: loc.file,
-            },
-            iter: src.chars().peekable(),
-            lookahead: None,
-        }
-    }
-}
-
-impl<T: Iterator<Item = char>> LiteralParser for PseudoLexer<T> {
-    fn next_char(&mut self) -> Option<char> {
-        let c = self.lookahead.take().or_else(|| self.iter.next());
-        self.loc.offset += c.map_or(0, char::len_utf8) as u32;
-        c
-    }
-    fn peek(&mut self) -> Option<char> {
-        self.lookahead.or_else(|| self.iter.peek().copied())
-    }
-    fn peek_next(&mut self) -> Option<char> {
-        if self.lookahead.is_none() {
-            self.lookahead = self.iter.next();
-        }
-        self.peek()
-    }
-    fn get_location(&self) -> &SingleLocation {
-        &self.loc
-    }
-    fn handle_error(&mut self, _err: Locatable<LexError>) {
-        unreachable!("No errors on second lexer pass");
-    }
-    fn handle_warning(&mut self, _err: Locatable<Warning>) {
-        // Warnings have already been handled, theoretically
     }
 }
 

@@ -897,10 +897,10 @@ pub(super) fn literal(literal: LiteralValue, location: Location) -> Expr {
         LiteralValue::Int(_) => Type::Long(true),
         LiteralValue::UnsignedInt(_) => Type::Long(false),
         LiteralValue::Float(_) => Type::Double,
-        LiteralValue::Str(_, len) => Type::Array(
-            Box::new(Type::Char(true)),
-            ArrayType::Fixed(*len as arch::SIZE_T),
-        ),
+        LiteralValue::Str(s) => {
+            let len = s.len() as arch::SIZE_T;
+            Type::Array(Box::new(Type::Char(true)), ArrayType::Fixed(len))
+        }
     };
     Expr {
         lval: false,

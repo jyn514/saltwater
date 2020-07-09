@@ -460,19 +460,19 @@ pub fn source_slice(source: Rc<str>, span: Span) -> Option<RcStr> {
 
 #[cfg(test)]
 mod proptest_impl {
-    use super::Literal;
+    use super::LiteralToken;
     use proptest::prelude::*;
     use shared_str::RcStr;
 
-    impl Arbitrary for Literal {
+    impl Arbitrary for LiteralToken {
         type Parameters = ();
-        type Strategy = BoxedStrategy<Literal>;
+        type Strategy = BoxedStrategy<LiteralToken>;
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             prop_oneof![
-                any::<i64>().prop_map(Literal::Int),
-                any::<u64>().prop_map(Literal::UnsignedInt),
-                any::<f64>().prop_map(Literal::Float),
-                any::<u8>().prop_map(Literal::Char),
+                any::<i64>().prop_map(LiteralToken::Int),
+                any::<u64>().prop_map(LiteralToken::UnsignedInt),
+                any::<f64>().prop_map(LiteralToken::Float),
+                any::<u8>().prop_map(LiteralToken::Char),
                 prop::collection::vec(".*", 1..10).prop_map(|strs| {
                     let len = strs.iter().map(|s| s.len()).sum();
                     let rcstrs = strs
@@ -481,7 +481,7 @@ mod proptest_impl {
                             RcStr::from(format!("\"{}\"", s.escape_default().collect::<String>()))
                         })
                         .collect();
-                    Literal::Str(rcstrs, len)
+                    LiteralToken::Str(rcstrs, len)
                 }),
             ]
             .boxed()

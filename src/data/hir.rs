@@ -154,6 +154,7 @@ pub enum ExprType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
 pub enum LiteralValue {
     // literals
     Int(i64),

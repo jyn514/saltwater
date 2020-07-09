@@ -1360,27 +1360,22 @@ mod test {
     }
     #[test]
     fn test_primaries() {
-        use shared_str::RcStr;
-        assert_literal(Literal::Int(141));
-        let src = "\"hi there\"";
-        let src_rc = RcStr::from(src);
-        let parsed = expr(src);
+        assert_literal(LiteralValue::Int(141));
+        let parsed = expr("\"hi there\"");
 
-        if let Ok(Expr {
-            expr: ExprType::Literal(Literal::Str(mut parsed_rcstrs, _)),
-            ..
-        }) = parsed.clone()
-        {
-            let parsed_rcstr = parsed_rcstrs.pop().unwrap();
-            assert_eq!(parsed_rcstr.as_str(), src_rc.as_str());
-        // This is necessary because expr creates a new Rc from the input str
-        // TODO check that the string is never copied
-        } else {
-            panic!("Unsuccessful string parse");
-        }
-        assert_literal(Literal::Float(1.5));
+        assert_eq!(
+            parsed,
+            Ok(literal(
+                LiteralValue::Str("hi there\0".into()),
+                get_location(&parsed)
+            )),
+        );
+        assert_literal(LiteralValue::Float(1.5));
         let parsed = expr("(1)");
-        assert_eq!(parsed, Ok(literal(Literal::Int(1), get_location(&parsed))));
+        assert_eq!(
+            parsed,
+            Ok(literal(LiteralValue::Int(1), get_location(&parsed)))
+        );
         let x = Variable {
             ctype: Type::Int(true),
             id: InternedStr::get_or_intern("x"),

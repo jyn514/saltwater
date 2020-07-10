@@ -260,7 +260,7 @@ impl<I: Lexer> Parser<I> {
         } else if let Some(loc) = self.match_id() {
             loc.map(ExprType::Id)
         } else if let Some(literal) = self.match_literal() {
-            literal.parse().map(ExprType::Literal)
+            literal.map(LiteralToken::parse).map(ExprType::Literal)
         } else {
             return Err(self.next_location().with(SyntaxError::MissingPrimary));
         };

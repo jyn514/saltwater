@@ -48,24 +48,10 @@ where
 fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
     use crate::data::hir::LiteralValue;
     match lexed {
-        Some(Ok(loc)) => {
-            if let Locatable {
-                data: Token::Literal(LiteralToken::Char(rcstr)),
-                location,
-            } = loc
-            {
-                let loc = Locatable {
-                    data: LiteralToken::Char(rcstr),
-                    location,
-                };
-                match loc.parse().data {
-                    LiteralValue::Char(c) => c == expected,
-                    _ => false,
-                }
-            } else {
-                return false;
-            }
-        }
+        Some(Ok(Locatable {
+            data: Token::Literal(lit @ LiteralToken::Char(_)),
+            ..
+        })) => lit.parse() == LiteralValue::Char(expected),
         _ => false,
     }
 }

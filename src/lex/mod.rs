@@ -420,7 +420,8 @@ impl Iterator for Lexer {
 }
 
 impl<'a> PseudoLexer<std::str::Chars<'a>> {
-    fn new(loc: Location, src: &'a str) -> Self {
+    fn new(src: &'a str) -> Self {
+        let loc = Location::default();
         PseudoLexer {
             loc: SingleLocation {
                 offset: loc.span.start,
@@ -1033,10 +1034,9 @@ impl<T: Iterator<Item = char>> LiteralParser for PseudoLexer<T> {
     }
 }
 
-impl Locatable<LiteralToken> {
-    pub fn parse(self) -> Locatable<LiteralValue> {
-        let loc = self.location;
-        self.map(|item| match item {
+impl LiteralToken {
+    pub fn parse(self) -> LiteralValue {
+        match self {
             LiteralToken::Int(i) => LiteralValue::Int(i),
             LiteralToken::UnsignedInt(u) => LiteralValue::UnsignedInt(u),
             LiteralToken::Float(f) => LiteralValue::Float(f),
@@ -1046,9 +1046,8 @@ impl Locatable<LiteralToken> {
                     strs.iter()
                         .enumerate()
                         .flat_map(|(i, s)| {
-                            let mut s = PseudoLexer::new(loc, s.as_str())
-                                .parse_string_raw(true)
-                                .unwrap();
+                            let mut s =
+                                PseudoLexer::new(s.as_str()).parse_string_raw(true).unwrap();
                             if i + 1 != num_strs {
                                 assert_eq!(s.pop().unwrap(), 0);
                             }
@@ -1058,10 +1057,10 @@ impl Locatable<LiteralToken> {
                 )
             }
             LiteralToken::Char(rcstr) => LiteralValue::Char(
-                PseudoLexer::new(loc, rcstr.as_str())
+                PseudoLexer::new(rcstr.as_str())
                     .parse_char_raw(true)
                     .unwrap(),
             ),
-        })
+        }
     }
 }

@@ -171,7 +171,7 @@ pub enum LiteralToken {
     UnsignedInt(u64),
     Float(f64),
     Str(Vec<RcStr>, usize), // second arg is length of parsed string
-    Char(u8),
+    Char(RcStr),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -395,7 +395,7 @@ impl std::fmt::Display for LiteralToken {
                 "{}",
                 rcstr.iter().map(RcStr::as_str).collect::<Vec<_>>().join("")
             ),
-            Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
+            Char(rcstr) => write!(f, "'{}'", rcstr.as_str()),
         }
     }
 }
@@ -461,7 +461,10 @@ mod proptest_impl {
                 any::<i64>().prop_map(LiteralToken::Int),
                 any::<u64>().prop_map(LiteralToken::UnsignedInt),
                 any::<f64>().prop_map(LiteralToken::Float),
-                any::<u8>().prop_map(LiteralToken::Char),
+                any::<u8>().prop_map(|c| LiteralToken::Char(RcStr::from(format!(
+                    "\"{}\"",
+                    (c as char).escape_default().collect::<String>()
+                )))),
                 prop::collection::vec(".*", 1..10).prop_map(|strs| {
                     let len = strs.iter().map(|s| s.len()).sum();
                     let rcstrs = strs

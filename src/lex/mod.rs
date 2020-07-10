@@ -117,9 +117,10 @@ impl Lexer {
         self.chars[self.location.offset as usize..].chars()
     }
     fn parse_char(&mut self) -> Result<Token, LexError> {
-        self.parse_char_raw()
-            .map(LiteralToken::Char)
-            .map(Token::from)
+        let start = self.get_location().offset - '\''.len_utf8() as u32;
+        self.parse_char_raw(false)?;
+        let span = self.span(start).span;
+        Ok(LiteralToken::Char(source_slice(self.chars.clone(), span).unwrap()).into())
     }
     fn parse_string(&mut self) -> Result<Token, LexError> {
         let start = self.get_location().offset - '"'.len_utf8() as u32;
@@ -776,9 +777,11 @@ pub(crate) trait LiteralParser {
     }
     /// Parse a character literal, starting after the opening quote.
     ///
+    /// If start_quote is false, the openning quote has been removed
+    ///
     /// Before: chars{"\0' blah"}
     /// After:  chars{" blah"}
-    fn parse_char_raw(&mut self) -> Result<u8, LexError> {
+    fn parse_char_raw(&mut self, start_quote: bool) -> Result<u8, LexError> {
         fn consume_until_quote<T: LiteralParser + ?Sized>(lexer: &mut T) {
             loop {
                 match lexer.parse_single_char(false) {
@@ -787,6 +790,9 @@ pub(crate) trait LiteralParser {
                     _ => {}
                 }
             }
+        }
+        if start_quote {
+            assert!(matches!(self.parse_single_char(true), Ok(b'\'')));
         }
         match self.parse_single_char(false) {
             Ok(c) => match self.next_char() {
@@ -1051,7 +1057,11 @@ impl Locatable<LiteralToken> {
                         .collect(),
                 )
             }
-            LiteralToken::Char(c) => LiteralValue::Char(c),
+            LiteralToken::Char(rcstr) => LiteralValue::Char(
+                PseudoLexer::new(loc, rcstr.as_str())
+                    .parse_char_raw(true)
+                    .unwrap(),
+            ),
         })
     }
 }

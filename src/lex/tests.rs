@@ -46,7 +46,28 @@ where
 }
 
 fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
-    match_data(lexed, |c| c == Ok(&LiteralToken::Char(expected).into()))
+    use crate::data::hir::LiteralValue;
+    match lexed {
+        Some(Ok(loc)) => {
+            if let Locatable {
+                data: Token::Literal(LiteralToken::Char(rcstr)),
+                location,
+            } = loc
+            {
+                let loc = Locatable {
+                    data: LiteralToken::Char(rcstr),
+                    location,
+                };
+                match loc.parse().data {
+                    LiteralValue::Char(c) => c == expected,
+                    _ => false,
+                }
+            } else {
+                return false;
+            }
+        }
+        _ => false,
+    }
 }
 
 fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {

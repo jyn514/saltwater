@@ -116,6 +116,211 @@ impl Lexer {
         const_assert!(mem::size_of::<usize>() >= mem::size_of::<u32>());
         self.chars[self.location.offset as usize..].chars()
     }
+
+    /// Parse a number literal, given the starting character and whether floats are allowed.
+    ///
+    /// A number matches the following regex:
+    /// `({digits}\.{digits}|{digits}|\.{digits})([eE]-?{digits})?`
+    /// where {digits} is the regex `([0-9]*|0x[0-9a-f]+)`
+    ///
+    /// TODO: return an error enum instead of Strings
+    ///
+    /// I spent way too much time on this.
+    fn parse_num(&mut self, start: char) -> Result<Token, LexError> {
+        // start - '0' breaks for hex digits
+        assert!(
+            '0' <= start && start <= '9',
+            "main loop should only pass [-.0-9] as start to parse_num"
+        );
+        let span_start = self.get_location().offset - 1; // -1 for `start`
+        let float_literal = |f| Token::Literal(LiteralToken::Float(f));
+        let mut buf = String::new();
+        buf.push(start as char);
+        // check for radix other than 10 - but if we see '.', use 10
+        let radix = if start == '0' {
+            if self.match_next('b') {
+                Radix::Binary
+            } else if self.match_next('x') {
+                buf.push('x');
+                Radix::Hexadecimal
+            } else if self.match_next('.') {
+                // float: 0.431
+                return self.parse_float(Radix::Decimal, buf).map(float_literal);
+            } else {
+                // octal: 0755 => 493
+                Radix::Octal
+            }
+        } else {
+            Radix::Decimal
+        };
+        let start = start as u64 - '0' as u64;
+
+        // the first {digits} in the regex
+        let digits = match self.parse_int(start, radix, &mut buf)? {
+            Some(int) => int,
+            None => {
+                if radix == Radix::Octal || radix == Radix::Decimal || self.peek() == Some('.') {
+                    start
+                } else {
+                    return Err(LexError::MissingDigits(radix.try_into().unwrap()));
+                }
+            }
+        };
+        if self.match_next('.') {
+            return self.parse_float(radix, buf).map(float_literal);
+        }
+        if let Some('e') | Some('E') | Some('p') | Some('P') = self.peek() {
+            buf.push_str(".0"); // hexf doesn't like floats without a decimal point
+            let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
+            self.consume_float_suffix();
+            return float.map(float_literal);
+        }
+        let literal = if self.match_next('u') || self.match_next('U') {
+            let unsigned = u64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
+                is_signed: Some(false),
+            })?;
+            LiteralToken::UnsignedInt(unsigned)
+        } else {
+            let long = i64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
+                is_signed: Some(true),
+            })?;
+            LiteralToken::Int(long)
+        };
+        // get rid of 'l' and 'll' suffixes, we don't handle them
+        if self.match_next('l') {
+            self.match_next('l');
+        } else if self.match_next('L') {
+            self.match_next('L');
+        }
+        if radix == Radix::Binary {
+            let span = self.span(span_start);
+            self.handle_warning_loc("binary number literals are an extension", span);
+        }
+        Ok(Token::Literal(literal))
+    }
+    // at this point we've already seen a '.', if we see one again it's an error
+    fn parse_float(&mut self, radix: Radix, mut buf: String) -> Result<f64, LexError> {
+        buf.push('.');
+        // parse fraction: second {digits} in regex
+        while let Some(c) = self.peek() {
+            let c = c as char;
+            if c.is_digit(radix.as_u8().into()) {
+                self.next_char();
+                buf.push(c);
+            } else {
+                break;
+            }
+        }
+        // in case of an empty mantissa, hexf doesn't like having the exponent right after the .
+        // if the mantissa isn't empty, .12 is the same as .120
+        //buf.push('0');
+        let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
+        self.consume_float_suffix();
+        float
+    }
+    fn consume_float_suffix(&mut self) {
+        // Ignored for compatibility reasons
+        if !(self.match_next('f') || self.match_next('F') || self.match_next('l')) {
+            self.match_next('L');
+        }
+    }
+    // should only be called at the end of a number. mostly error handling
+    fn parse_exponent(&mut self, hex: bool, mut buf: String) -> Result<f64, LexError> {
+        let is_digit =
+            |c: Option<char>| c.map_or(false, |c| (c as char).is_digit(10) || c == '+' || c == '-');
+        if hex {
+            if self.match_next('p') || self.match_next('P') {
+                if !is_digit(self.peek()) {
+                    return Err(LexError::ExponentMissingDigits);
+                }
+                buf.push('p');
+                buf.push(self.next_char().unwrap() as char);
+            }
+        } else if self.match_next('e') || self.match_next('E') {
+            if !is_digit(self.peek()) {
+                return Err(LexError::ExponentMissingDigits);
+            }
+            buf.push('e');
+            buf.push(self.next_char().unwrap() as char);
+        }
+        while let Some(c) = self.peek() {
+            let c = c as char;
+            if !(c).is_digit(10) {
+                break;
+            }
+            buf.push(c);
+            self.next_char();
+        }
+        let float: f64 = if hex {
+            let float_literal: hexponent::FloatLiteral = buf.parse()?;
+            float_literal.into()
+        } else {
+            buf.parse()?
+        };
+        let should_be_zero = buf.chars().all(|c| match c {
+            '.' | '+' | '-' | 'e' | 'p' | '0' => true,
+            _ => false,
+        });
+        if float == 0.0 && !should_be_zero {
+            Err(LexError::FloatUnderflow)
+        } else {
+            Ok(float)
+        }
+    }
+    // returns None if there are no digits at the current position
+    fn parse_int(
+        &mut self,
+        mut acc: u64,
+        radix: Radix,
+        buf: &mut String,
+    ) -> Result<Option<u64>, LexError> {
+        let parse_digit = |c: char| match c.to_digit(16) {
+            None => Ok(None),
+            Some(digit) if digit < radix.as_u8().into() => Ok(Some(digit)),
+            // if we see 'e' or 'E', it's the end of the int, don't treat it as an error
+            // if we see 'b' this could be part of a binary constant (0b1)
+            // if we see 'f' it could be a float suffix
+            // we only get this far if it's not a valid digit for the radix, i.e. radix != 16
+            Some(11) | Some(14) | Some(15) => Ok(None),
+            Some(digit) => Err(LexError::InvalidDigit { digit, radix }),
+        };
+        // we keep going on error so we don't get more errors from unconsumed input
+        // for example, if we stopped halfway through 10000000000000000000 because of
+        // overflow, we'd get a bogus Token::Int(0).
+        let mut err = false;
+        let mut saw_digit = false;
+        while let Some(c) = self.peek() {
+            if err {
+                self.next_char();
+                continue;
+            }
+            let digit = match parse_digit(c as char)? {
+                Some(d) => {
+                    self.next_char();
+                    saw_digit = true;
+                    d
+                }
+                None => {
+                    break;
+                }
+            };
+            buf.push(c as char);
+            let maybe_digits = acc
+                .checked_mul(radix.as_u8().into())
+                .and_then(|a| a.checked_add(digit.into()));
+            match maybe_digits {
+                Some(digits) => acc = digits,
+                None => err = true,
+            }
+        }
+        if err {
+            Err(LexError::IntegerOverflow { is_signed: None })
+        } else if !saw_digit {
+            Ok(None)
+        } else {
+            Ok(Some(acc))
+        }
+    }
     fn parse_char(&mut self) -> Result<Token, LexError> {
         let start = self.get_location().offset - '\''.len_utf8() as u32;
         self.parse_char_raw(false)?;
@@ -464,211 +669,6 @@ pub(crate) trait LiteralParser {
             true
         } else {
             false
-        }
-    }
-
-    /// Parse a number literal, given the starting character and whether floats are allowed.
-    ///
-    /// A number matches the following regex:
-    /// `({digits}\.{digits}|{digits}|\.{digits})([eE]-?{digits})?`
-    /// where {digits} is the regex `([0-9]*|0x[0-9a-f]+)`
-    ///
-    /// TODO: return an error enum instead of Strings
-    ///
-    /// I spent way too much time on this.
-    fn parse_num(&mut self, start: char) -> Result<Token, LexError> {
-        // start - '0' breaks for hex digits
-        assert!(
-            '0' <= start && start <= '9',
-            "main loop should only pass [-.0-9] as start to parse_num"
-        );
-        let span_start = self.get_location().offset - 1; // -1 for `start`
-        let float_literal = |f| Token::Literal(LiteralToken::Float(f));
-        let mut buf = String::new();
-        buf.push(start as char);
-        // check for radix other than 10 - but if we see '.', use 10
-        let radix = if start == '0' {
-            if self.match_next('b') {
-                Radix::Binary
-            } else if self.match_next('x') {
-                buf.push('x');
-                Radix::Hexadecimal
-            } else if self.match_next('.') {
-                // float: 0.431
-                return self.parse_float(Radix::Decimal, buf).map(float_literal);
-            } else {
-                // octal: 0755 => 493
-                Radix::Octal
-            }
-        } else {
-            Radix::Decimal
-        };
-        let start = start as u64 - '0' as u64;
-
-        // the first {digits} in the regex
-        let digits = match self.parse_int(start, radix, &mut buf)? {
-            Some(int) => int,
-            None => {
-                if radix == Radix::Octal || radix == Radix::Decimal || self.peek() == Some('.') {
-                    start
-                } else {
-                    return Err(LexError::MissingDigits(radix.try_into().unwrap()));
-                }
-            }
-        };
-        if self.match_next('.') {
-            return self.parse_float(radix, buf).map(float_literal);
-        }
-        if let Some('e') | Some('E') | Some('p') | Some('P') = self.peek() {
-            buf.push_str(".0"); // hexf doesn't like floats without a decimal point
-            let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
-            self.consume_float_suffix();
-            return float.map(float_literal);
-        }
-        let literal = if self.match_next('u') || self.match_next('U') {
-            let unsigned = u64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
-                is_signed: Some(false),
-            })?;
-            LiteralToken::UnsignedInt(unsigned)
-        } else {
-            let long = i64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
-                is_signed: Some(true),
-            })?;
-            LiteralToken::Int(long)
-        };
-        // get rid of 'l' and 'll' suffixes, we don't handle them
-        if self.match_next('l') {
-            self.match_next('l');
-        } else if self.match_next('L') {
-            self.match_next('L');
-        }
-        if radix == Radix::Binary {
-            let span = self.span(span_start);
-            self.handle_warning_loc("binary number literals are an extension", span);
-        }
-        Ok(Token::Literal(literal))
-    }
-    // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, radix: Radix, mut buf: String) -> Result<f64, LexError> {
-        buf.push('.');
-        // parse fraction: second {digits} in regex
-        while let Some(c) = self.peek() {
-            let c = c as char;
-            if c.is_digit(radix.as_u8().into()) {
-                self.next_char();
-                buf.push(c);
-            } else {
-                break;
-            }
-        }
-        // in case of an empty mantissa, hexf doesn't like having the exponent right after the .
-        // if the mantissa isn't empty, .12 is the same as .120
-        //buf.push('0');
-        let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
-        self.consume_float_suffix();
-        float
-    }
-    fn consume_float_suffix(&mut self) {
-        // Ignored for compatibility reasons
-        if !(self.match_next('f') || self.match_next('F') || self.match_next('l')) {
-            self.match_next('L');
-        }
-    }
-    // should only be called at the end of a number. mostly error handling
-    fn parse_exponent(&mut self, hex: bool, mut buf: String) -> Result<f64, LexError> {
-        let is_digit =
-            |c: Option<char>| c.map_or(false, |c| (c as char).is_digit(10) || c == '+' || c == '-');
-        if hex {
-            if self.match_next('p') || self.match_next('P') {
-                if !is_digit(self.peek()) {
-                    return Err(LexError::ExponentMissingDigits);
-                }
-                buf.push('p');
-                buf.push(self.next_char().unwrap() as char);
-            }
-        } else if self.match_next('e') || self.match_next('E') {
-            if !is_digit(self.peek()) {
-                return Err(LexError::ExponentMissingDigits);
-            }
-            buf.push('e');
-            buf.push(self.next_char().unwrap() as char);
-        }
-        while let Some(c) = self.peek() {
-            let c = c as char;
-            if !(c).is_digit(10) {
-                break;
-            }
-            buf.push(c);
-            self.next_char();
-        }
-        let float: f64 = if hex {
-            let float_literal: hexponent::FloatLiteral = buf.parse()?;
-            float_literal.into()
-        } else {
-            buf.parse()?
-        };
-        let should_be_zero = buf.chars().all(|c| match c {
-            '.' | '+' | '-' | 'e' | 'p' | '0' => true,
-            _ => false,
-        });
-        if float == 0.0 && !should_be_zero {
-            Err(LexError::FloatUnderflow)
-        } else {
-            Ok(float)
-        }
-    }
-    // returns None if there are no digits at the current position
-    fn parse_int(
-        &mut self,
-        mut acc: u64,
-        radix: Radix,
-        buf: &mut String,
-    ) -> Result<Option<u64>, LexError> {
-        let parse_digit = |c: char| match c.to_digit(16) {
-            None => Ok(None),
-            Some(digit) if digit < radix.as_u8().into() => Ok(Some(digit)),
-            // if we see 'e' or 'E', it's the end of the int, don't treat it as an error
-            // if we see 'b' this could be part of a binary constant (0b1)
-            // if we see 'f' it could be a float suffix
-            // we only get this far if it's not a valid digit for the radix, i.e. radix != 16
-            Some(11) | Some(14) | Some(15) => Ok(None),
-            Some(digit) => Err(LexError::InvalidDigit { digit, radix }),
-        };
-        // we keep going on error so we don't get more errors from unconsumed input
-        // for example, if we stopped halfway through 10000000000000000000 because of
-        // overflow, we'd get a bogus Token::Int(0).
-        let mut err = false;
-        let mut saw_digit = false;
-        while let Some(c) = self.peek() {
-            if err {
-                self.next_char();
-                continue;
-            }
-            let digit = match parse_digit(c as char)? {
-                Some(d) => {
-                    self.next_char();
-                    saw_digit = true;
-                    d
-                }
-                None => {
-                    break;
-                }
-            };
-            buf.push(c as char);
-            let maybe_digits = acc
-                .checked_mul(radix.as_u8().into())
-                .and_then(|a| a.checked_add(digit.into()));
-            match maybe_digits {
-                Some(digits) => acc = digits,
-                None => err = true,
-            }
-        }
-        if err {
-            Err(LexError::IntegerOverflow { is_signed: None })
-        } else if !saw_digit {
-            Ok(None)
-        } else {
-            Ok(Some(acc))
         }
     }
     /// Read a logical character, which may be a character escape.

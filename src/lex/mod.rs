@@ -130,7 +130,7 @@ impl Lexer {
         // start - '0' breaks for hex digits
         assert!(
             '0' <= start && start <= '9',
-            "main loop should only pass [-.0-9] as start to parse_num"
+            "main loop should only pass [0-9] as start to parse_num"
         );
         let span_start = self.get_location().offset - 1; // -1 for `start`
         let float_literal = |f| Token::Literal(LiteralToken::Float(f));
@@ -170,7 +170,6 @@ impl Lexer {
             return self.parse_float(radix, buf).map(float_literal);
         }
         if let Some('e') | Some('E') | Some('p') | Some('P') = self.peek() {
-            buf.push_str(".0"); // hexf doesn't like floats without a decimal point
             let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
             self.consume_float_suffix();
             return float.map(float_literal);
@@ -211,9 +210,6 @@ impl Lexer {
                 break;
             }
         }
-        // in case of an empty mantissa, hexf doesn't like having the exponent right after the .
-        // if the mantissa isn't empty, .12 is the same as .120
-        //buf.push('0');
         let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
         self.consume_float_suffix();
         float

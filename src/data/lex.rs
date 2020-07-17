@@ -8,7 +8,6 @@ use crate::data::hir::BinaryOp;
 use crate::intern::InternedStr;
 
 use shared_str::RcStr;
-use std::rc::Rc;
 
 // holds where a piece of code came from
 // should almost always be immutable
@@ -169,7 +168,7 @@ pub enum LiteralToken {
     // literals
     Int(i64),
     UnsignedInt(u64),
-    Float(f64),
+    Float(RcStr),
     Str(Vec<RcStr>, usize), // second arg is length of parsed string
     Char(RcStr),
 }
@@ -441,10 +440,6 @@ impl From<ComparisonToken> for Token {
     fn from(a: ComparisonToken) -> Self {
         Token::Comparison(a)
     }
-}
-
-pub fn source_slice(source: Rc<str>, span: Span) -> Option<RcStr> {
-    RcStr::from(source).slice_with(|s| s.get::<Range<usize>>(span.into()).unwrap_or(""))
 }
 
 #[cfg(test)]

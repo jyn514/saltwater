@@ -9,6 +9,7 @@ use super::data::{
     *,
 };
 use super::intern::InternedStr;
+use shared_str::RcStr;
 
 mod cpp;
 mod files;
@@ -117,6 +118,16 @@ impl Lexer {
         self.chars[self.location.offset as usize..].chars()
     }
 
+    fn slice(&self, span_start: u32) -> RcStr {
+        use std::ops::Range;
+        RcStr::from(self.chars.clone())
+            .slice_with(|s| {
+                s.get::<Range<usize>>(self.span(span_start).span.into())
+                    .unwrap_or("")
+            })
+            .unwrap()
+    }
+
     /// Parse a number literal, given the starting character and whether floats are allowed.
     ///
     /// A number matches the following regex:
@@ -145,7 +156,9 @@ impl Lexer {
                 Radix::Hexadecimal
             } else if self.match_next('.') {
                 // float: 0.431
-                return self.parse_float(Radix::Decimal, buf).map(float_literal);
+                return self
+                    .parse_float(Radix::Decimal, span_start)
+                    .map(float_literal);
             } else {
                 // octal: 0755 => 493
                 Radix::Octal
@@ -167,12 +180,12 @@ impl Lexer {
             }
         };
         if self.match_next('.') {
-            return self.parse_float(radix, buf).map(float_literal);
+            return self.parse_float(radix, span_start).map(float_literal);
         }
         if let Some('e') | Some('E') | Some('p') | Some('P') = self.peek() {
-            let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
+            self.parse_exponent(radix == Radix::Hexadecimal)?;
             self.consume_float_suffix();
-            return float.map(float_literal);
+            return Ok(self.slice(span_start)).map(float_literal);
         }
         let literal = if self.match_next('u') || self.match_next('U') {
             let unsigned = u64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
@@ -198,21 +211,19 @@ impl Lexer {
         Ok(Token::Literal(literal))
     }
     // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, radix: Radix, mut buf: String) -> Result<f64, LexError> {
-        buf.push('.');
+    fn parse_float(&mut self, radix: Radix, span_start: u32) -> Result<RcStr, LexError> {
         // parse fraction: second {digits} in regex
         while let Some(c) = self.peek() {
             let c = c as char;
             if c.is_digit(radix.as_u8().into()) {
                 self.next_char();
-                buf.push(c);
             } else {
                 break;
             }
         }
-        let float = self.parse_exponent(radix == Radix::Hexadecimal, buf);
+        self.parse_exponent(radix == Radix::Hexadecimal)?;
         self.consume_float_suffix();
-        float
+        Ok(self.slice(span_start))
     }
     fn consume_float_suffix(&mut self) {
         // Ignored for compatibility reasons
@@ -221,7 +232,7 @@ impl Lexer {
         }
     }
     // should only be called at the end of a number. mostly error handling
-    fn parse_exponent(&mut self, hex: bool, mut buf: String) -> Result<f64, LexError> {
+    fn parse_exponent(&mut self, hex: bool) -> Result<(), LexError> {
         let is_digit =
             |c: Option<char>| c.map_or(false, |c| (c as char).is_digit(10) || c == '+' || c == '-');
         if hex {
@@ -229,39 +240,20 @@ impl Lexer {
                 if !is_digit(self.peek()) {
                     return Err(LexError::ExponentMissingDigits);
                 }
-                buf.push('p');
-                buf.push(self.next_char().unwrap() as char);
             }
         } else if self.match_next('e') || self.match_next('E') {
             if !is_digit(self.peek()) {
                 return Err(LexError::ExponentMissingDigits);
             }
-            buf.push('e');
-            buf.push(self.next_char().unwrap() as char);
         }
         while let Some(c) = self.peek() {
             let c = c as char;
             if !(c).is_digit(10) {
                 break;
             }
-            buf.push(c);
             self.next_char();
         }
-        let float: f64 = if hex {
-            let float_literal: hexponent::FloatLiteral = buf.parse()?;
-            float_literal.into()
-        } else {
-            buf.parse()?
-        };
-        let should_be_zero = buf.chars().all(|c| match c {
-            '.' | '+' | '-' | 'e' | 'p' | '0' => true,
-            _ => false,
-        });
-        if float == 0.0 && !should_be_zero {
-            Err(LexError::FloatUnderflow)
-        } else {
-            Ok(float)
-        }
+        Ok(())
     }
     // returns None if there are no digits at the current position
     fn parse_int(
@@ -320,20 +312,12 @@ impl Lexer {
     fn parse_char(&mut self) -> Result<Token, LexError> {
         let start = self.get_location().offset - '\''.len_utf8() as u32;
         self.parse_char_raw(false)?;
-        let span = self.span(start).span;
-        Ok(LiteralToken::Char(source_slice(self.chars.clone(), span).unwrap()).into())
+        Ok(LiteralToken::Char(self.slice(start)).into())
     }
     fn parse_string(&mut self) -> Result<Token, LexError> {
         let start = self.get_location().offset - '"'.len_utf8() as u32;
         let raw_str = self.parse_string_raw(false);
-        let span = self.span(start).span;
-        raw_str.map(|s| {
-            LiteralToken::Str(
-                vec![source_slice(self.chars.clone(), span).unwrap()],
-                s.len(),
-            )
-            .into()
-        })
+        raw_str.map(|s| LiteralToken::Str(vec![self.slice(start)], s.len()).into())
     }
     /// Parse an identifier or keyword, given the starting letter.
     ///
@@ -547,7 +531,7 @@ impl Iterator for Lexer {
                 ',' => Token::Comma,
                 '.' => match self.peek() {
                     Some(c) if c.is_ascii_digit() => {
-                        match self.parse_float(Radix::Decimal, String::new()) {
+                        match self.parse_float(Radix::Decimal, span_start) {
                             Ok(f) => LiteralToken::Float(f).into(),
                             Err(err) => {
                                 return Some(Err(Locatable {
@@ -1035,7 +1019,31 @@ impl LiteralToken {
         match self {
             LiteralToken::Int(i) => LiteralValue::Int(i),
             LiteralToken::UnsignedInt(u) => LiteralValue::UnsignedInt(u),
-            LiteralToken::Float(f) => LiteralValue::Float(f),
+            LiteralToken::Float(rcstr) => {
+                let buf = rcstr.as_str();
+                let hex = buf.starts_with("0x");
+                let buf = buf
+                    .trim_end_matches("f")
+                    .trim_end_matches("F")
+                    .trim_end_matches("l")
+                    .trim_end_matches("L"); // Ignored for compatibility reasons
+                let float: f64 = if hex {
+                    let float_literal: hexponent::FloatLiteral =
+                        buf.parse().expect("This should handle errors"); // TODO
+                    float_literal.into()
+                } else {
+                    buf.parse().expect("This should handle errors") // TODO
+                };
+                let should_be_zero = buf.chars().all(|c| match c {
+                    '.' | '+' | '-' | 'e' | 'p' | '0' => true,
+                    _ => false,
+                });
+                if float == 0.0 && !should_be_zero {
+                    todo!("This should error"); // TODO
+                    // Err(LexError::FloatUnderflow)
+                }
+                LiteralValue::Float(float)
+            }
             LiteralToken::Str(strs, _) => {
                 let num_strs = strs.len();
                 LiteralValue::Str(

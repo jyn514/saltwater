@@ -1413,8 +1413,7 @@ pub(crate) mod test {
         assert_eq!(decl(left).unwrap().to_string(), right);
     }
     fn assert_extern_decl_display(s: &str) {
-        // TODO: this `auto` is such a hack
-        assert_decl_display(s, &s.to_string());
+        assert_decl_display(s, s);
     }
 
     pub(super) fn assert_same(left: &str, right: &str) {

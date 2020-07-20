@@ -22,7 +22,7 @@ fn printf_helper(format: &str, args: &[&str]) {
     let mut replaced = vec![];
     let new_args = args.iter().enumerate().map(|(i, arg)| {
         // replace 'a' with a
-        if arg.len() == 3 && arg.chars().nth(0) == Some('\'') && arg.chars().nth(2) == Some('\'') {
+        if arg.len() == 3 && arg.chars().next() == Some('\'') && arg.chars().nth(2) == Some('\'') {
             replaced.push(i);
             &arg[1..2]
         } else {

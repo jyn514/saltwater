@@ -989,11 +989,8 @@ impl PureAnalyzer {
     // used for arrays like `int a[BUF_SIZE - 1];` and enums like `enum { A = 1 }`
     fn const_literal(expr: Expr) -> CompileResult<Literal> {
         let location = expr.location;
-        expr.const_fold()?.into_literal().or_else(|runtime_expr| {
-            Err(Locatable::new(
-                SemanticError::NotConstant(runtime_expr).into(),
-                location,
-            ))
+        expr.const_fold()?.into_literal().map_err(|runtime_expr| {
+            Locatable::new(SemanticError::NotConstant(runtime_expr).into(), location)
         })
     }
     /// Return an unsigned integer that can be evaluated at compile time, or an error otherwise.
@@ -1417,7 +1414,7 @@ pub(crate) mod test {
     }
     fn assert_extern_decl_display(s: &str) {
         // TODO: this `auto` is such a hack
-        assert_decl_display(s, &format!("{}", s));
+        assert_decl_display(s, &s.to_string());
     }
 
     pub(super) fn assert_same(left: &str, right: &str) {

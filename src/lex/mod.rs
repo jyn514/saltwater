@@ -311,7 +311,7 @@ impl Lexer {
                 if radix == Radix::Octal || radix == Radix::Decimal || self.peek() == Some('.') {
                     start
                 } else {
-                    return Err(LexError::MissingDigits(radix.try_into().unwrap()));
+                    return Err(LexError::MissingDigits(radix));
                 }
             }
         };
@@ -325,10 +325,7 @@ impl Lexer {
             return float.map(float_literal);
         }
         let literal = if self.match_next('u') || self.match_next('U') {
-            let unsigned = u64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
-                is_signed: Some(false),
-            })?;
-            Literal::UnsignedInt(unsigned)
+            Literal::UnsignedInt(digits)
         } else {
             let long = i64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
                 is_signed: Some(true),
@@ -714,7 +711,7 @@ impl Iterator for Lexer {
             }
         };
 
-        let c = self.next_char().and_then(|c| {
+        let c = self.next_char().map(|c| {
             let span_start = self.location.offset - c.len_utf8() as u32;
             // this giant switch is most of the logic
             let data = match c {
@@ -854,10 +851,10 @@ impl Iterator for Lexer {
                         match self.parse_float(Radix::Decimal, String::new()) {
                             Ok(f) => Literal::Float(f).into(),
                             Err(err) => {
-                                return Some(Err(Locatable {
+                                return Err(Locatable {
                                     data: err,
                                     location: self.span(span_start),
-                                }))
+                                });
                             }
                         }
                     }
@@ -877,42 +874,42 @@ impl Iterator for Lexer {
                     Ok(num) => num,
                     Err(err) => {
                         let span = self.span(span_start);
-                        return Some(Err(span.with(err)));
+                        return Err(span.with(err));
                     }
                 },
                 'a'..='z' | 'A'..='Z' | '_' => match self.parse_id(c) {
                     Ok(id) => id,
                     Err(err) => {
                         let span = self.span(span_start);
-                        return Some(Err(span.with(err)));
+                        return Err(span.with(err));
                     }
                 },
                 '\'' => match self.parse_char() {
                     Ok(id) => id,
                     Err(err) => {
                         let span = self.span(span_start);
-                        return Some(Err(span.with(err)));
+                        return Err(span.with(err));
                     }
                 },
                 '"' => match self.parse_string() {
                     Ok(id) => id,
                     Err(err) => {
                         let span = self.span(span_start);
-                        return Some(Err(span.with(err)));
+                        return Err(span.with(err));
                     }
                 },
                 x => {
-                    return Some(Err(self
+                    return Err(self
                         .span(span_start)
-                        .with(LexError::UnknownToken(x as char))));
+                        .with(LexError::UnknownToken(x as char)));
                 }
             };
             // We've seen a token if this isn't # or whitespace
             self.seen_line_token |= !(data == Token::Hash || matches!(data, Token::Whitespace(_)));
-            Some(Ok(Locatable {
+            Ok(Locatable {
                 data,
                 location: self.span(span_start),
-            }))
+            })
         });
 
         if self.debug {

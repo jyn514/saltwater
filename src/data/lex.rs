@@ -392,9 +392,9 @@ impl std::fmt::Display for LiteralToken {
             Str(rcstr, _) => write!(
                 f,
                 "{}",
-                rcstr.iter().map(RcStr::as_str).collect::<Vec<_>>().join("")
+                rcstr.iter().map(RcStr::as_str).collect::<Vec<_>>().join("") // TODO does this remove middle quotation marks?
             ),
-            Char(rcstr) => write!(f, "'{}'", rcstr.as_str()),
+            Char(rcstr) => write!(f, "{}", rcstr.as_str()),
         }
     }
 }

@@ -166,18 +166,12 @@ impl Lexer {
         } else {
             Radix::Decimal
         };
-        let start = start as u64 - '0' as u64;
 
         // the first {digits} in the regex
-        let digits = match self.parse_int(start, radix, &mut buf)? {
-            Some(int) => int,
-            None => {
-                if radix == Radix::Octal || radix == Radix::Decimal || self.peek() == Some('.') {
-                    start
-                } else {
-                    return Err(LexError::MissingDigits(radix.try_into().unwrap()));
-                }
-            }
+        if self.parse_int(radix)?.is_none()
+            && !(radix == Radix::Octal || radix == Radix::Decimal || self.peek() == Some('.'))
+        {
+            return Err(LexError::MissingDigits(radix.try_into().unwrap()));
         };
         if self.match_next('.') {
             return self.parse_float(radix, span_start).map(float_literal);
@@ -188,15 +182,9 @@ impl Lexer {
             return Ok(self.slice(span_start)).map(float_literal);
         }
         let literal = if self.match_next('u') || self.match_next('U') {
-            let unsigned = u64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
-                is_signed: Some(false),
-            })?;
-            LiteralToken::UnsignedInt(unsigned)
+            LiteralToken::UnsignedInt(self.slice(span_start))
         } else {
-            let long = i64::try_from(digits).map_err(|_| LexError::IntegerOverflow {
-                is_signed: Some(true),
-            })?;
-            LiteralToken::Int(long)
+            LiteralToken::Int(self.slice(span_start))
         };
         // get rid of 'l' and 'll' suffixes, we don't handle them
         if self.match_next('l') {
@@ -256,57 +244,31 @@ impl Lexer {
         Ok(())
     }
     // returns None if there are no digits at the current position
-    fn parse_int(
-        &mut self,
-        mut acc: u64,
-        radix: Radix,
-        buf: &mut String,
-    ) -> Result<Option<u64>, LexError> {
+    fn parse_int(&mut self, radix: Radix) -> Result<Option<()>, LexError> {
         let parse_digit = |c: char| match c.to_digit(16) {
             None => Ok(None),
             Some(digit) if digit < radix.as_u8().into() => Ok(Some(digit)),
             // if we see 'e' or 'E', it's the end of the int, don't treat it as an error
-            // if we see 'b' this could be part of a binary constant (0b1)
-            // if we see 'f' it could be a float suffix
             // we only get this far if it's not a valid digit for the radix, i.e. radix != 16
-            Some(11) | Some(14) | Some(15) => Ok(None),
+            Some(14) => Ok(None),
             Some(digit) => Err(LexError::InvalidDigit { digit, radix }),
         };
-        // we keep going on error so we don't get more errors from unconsumed input
-        // for example, if we stopped halfway through 10000000000000000000 because of
-        // overflow, we'd get a bogus Token::Int(0).
-        let mut err = false;
         let mut saw_digit = false;
         while let Some(c) = self.peek() {
-            if err {
-                self.next_char();
-                continue;
-            }
-            let digit = match parse_digit(c as char)? {
-                Some(d) => {
+            match parse_digit(c as char)? {
+                Some(_) => {
                     self.next_char();
                     saw_digit = true;
-                    d
                 }
                 None => {
                     break;
                 }
             };
-            buf.push(c as char);
-            let maybe_digits = acc
-                .checked_mul(radix.as_u8().into())
-                .and_then(|a| a.checked_add(digit.into()));
-            match maybe_digits {
-                Some(digits) => acc = digits,
-                None => err = true,
-            }
         }
-        if err {
-            Err(LexError::IntegerOverflow { is_signed: None })
-        } else if !saw_digit {
+        if !saw_digit {
             Ok(None)
         } else {
-            Ok(Some(acc))
+            Ok(Some(()))
         }
     }
     fn parse_char(&mut self) -> Result<Token, LexError> {
@@ -1014,39 +976,73 @@ impl<T: Iterator<Item = char>> LiteralParser for PseudoLexer<T> {
     }
 }
 
+fn parse_int_raw(buf: &str) -> Result<u64, SyntaxError> {
+    let (radix, buf) = if buf.starts_with("0b") {
+        (Radix::Binary, buf.trim_start_matches("0b"))
+    } else if buf.starts_with("0x") {
+        (Radix::Hexadecimal, buf.trim_start_matches("0x"))
+    } else if buf.starts_with("0") {
+        // octal: 0755 => 493
+        (Radix::Octal, buf.trim_start_matches("0"))
+    } else {
+        (Radix::Decimal, buf)
+    };
+    let mut acc: u64 = 0;
+    for c in buf.chars() {
+        let digit = c.to_digit(radix.as_u8().into());
+        let digit = match digit {
+            Some(digit) => digit,
+            None => break,
+        };
+
+        acc = acc
+            .checked_mul(radix.as_u8().into())
+            .and_then(|a| a.checked_add(digit.into()))
+            .ok_or(SyntaxError::IntegerOverflow { is_signed: None })?;
+    }
+    Ok(acc)
+}
+
 impl LiteralToken {
-    pub fn parse(self) -> LiteralValue {
+    pub fn parse(self) -> Result<LiteralValue, SyntaxError> {
         match self {
-            LiteralToken::Int(i) => LiteralValue::Int(i),
-            LiteralToken::UnsignedInt(u) => LiteralValue::UnsignedInt(u),
+            LiteralToken::Int(rcstr) => Ok(LiteralValue::Int(
+                i64::try_from(parse_int_raw(rcstr.as_str())?).map_err(|_| {
+                    SyntaxError::IntegerOverflow {
+                        is_signed: Some(true),
+                    }
+                })?,
+            )),
+            LiteralToken::UnsignedInt(rcstr) => Ok(LiteralValue::UnsignedInt(
+                u64::try_from(parse_int_raw(rcstr.as_str())?).map_err(|_| {
+                    SyntaxError::IntegerOverflow {
+                        is_signed: Some(false),
+                    }
+                })?,
+            )),
             LiteralToken::Float(rcstr) => {
                 let buf = rcstr.as_str();
                 let hex = buf.starts_with("0x");
-                let buf = buf
-                    .trim_end_matches("f")
-                    .trim_end_matches("F")
-                    .trim_end_matches("l")
-                    .trim_end_matches("L"); // Ignored for compatibility reasons
+                let buf = buf.trim_end_matches(|c| "fFlL".contains(c));
                 let float: f64 = if hex {
-                    let float_literal: hexponent::FloatLiteral =
-                        buf.parse().expect("This should handle errors"); // TODO
+                    let float_literal: hexponent::FloatLiteral = buf.parse()?;
                     float_literal.into()
                 } else {
-                    buf.parse().expect("This should handle errors") // TODO
+                    buf.parse()?
                 };
                 let should_be_zero = buf.chars().all(|c| match c {
                     '.' | '+' | '-' | 'e' | 'p' | '0' => true,
                     _ => false,
                 });
                 if float == 0.0 && !should_be_zero {
-                    todo!("This should error"); // TODO
-                    // Err(LexError::FloatUnderflow)
+                    Err(SyntaxError::FloatUnderflow)
+                } else {
+                    Ok(LiteralValue::Float(float))
                 }
-                LiteralValue::Float(float)
             }
             LiteralToken::Str(strs, _) => {
                 let num_strs = strs.len();
-                LiteralValue::Str(
+                Ok(LiteralValue::Str(
                     strs.iter()
                         .enumerate()
                         .flat_map(|(i, s)| {
@@ -1058,13 +1054,13 @@ impl LiteralToken {
                             s.into_iter()
                         })
                         .collect(),
-                )
+                ))
             }
-            LiteralToken::Char(rcstr) => LiteralValue::Char(
+            LiteralToken::Char(rcstr) => Ok(LiteralValue::Char(
                 PseudoLexer::new(rcstr.as_str())
                     .parse_char_raw(true)
                     .unwrap(),
-            ),
+            )),
         }
     }
 }

@@ -166,8 +166,8 @@ pub enum ComparisonToken {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LiteralToken {
     // literals
-    Int(i64),
-    UnsignedInt(u64),
+    Int(RcStr),
+    UnsignedInt(RcStr),
     Float(RcStr),
     Str(Vec<RcStr>, usize), // second arg is length of parsed string
     Char(RcStr),

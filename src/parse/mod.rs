@@ -310,7 +310,7 @@ impl<I: Lexer> Parser<I> {
             Some(t) => t,
             None => {
                 let err = Err(Locatable {
-                    data: SyntaxError::from(format!("expected '{}', got '<end-of-file>'", next)),
+                    data: SyntaxError::Generic(format!("expected '{}', got '<end-of-file>'", next)),
                     // TODO: we don't actually want this, we want the end of the file
                     location: self.last_location,
                 });
@@ -322,7 +322,7 @@ impl<I: Lexer> Parser<I> {
             Ok(self.next_token().unwrap())
         } else {
             let err = Err(Locatable {
-                data: SyntaxError::from(format!("expected '{}', got '{}'", next, token)),
+                data: SyntaxError::Generic(format!("expected '{}', got '{}'", next, token)),
                 location: self.next_location(),
             });
             self.panic();

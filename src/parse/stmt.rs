@@ -33,9 +33,9 @@ impl<I: Lexer> Parser<I> {
         }
         if self.expect(Token::RightBrace).is_err() {
             assert!(self.peek_token().is_none()); // from the 'break' above
-            let actual_err = self
-                .last_location
-                .with(SyntaxError::from("unclosed '{' delimeter at end of file"));
+            let actual_err = self.last_location.with(SyntaxError::Generic(
+                "unclosed '{' delimeter at end of file".into(),
+            ));
             pending_errs.push(actual_err);
         }
         if let Some(err) = pending_errs.pop() {

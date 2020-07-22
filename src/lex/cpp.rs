@@ -25,6 +25,7 @@
 
 use lazy_static::lazy_static;
 
+use shared_str::RcStr;
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
@@ -324,7 +325,11 @@ impl<'a> PreProcessor<'a> {
             "{}-{}-{}",
             TARGET.architecture, TARGET.operating_system, TARGET.environment
         );
-        let int = |i| Definition::Object(vec![Token::Literal(LiteralToken::Int(i))]);
+        let int = |i: i64| {
+            Definition::Object(vec![Token::Literal(LiteralToken::Int(RcStr::from(
+                i.to_string(),
+            )))])
+        };
 
         #[allow(clippy::inconsistent_digit_grouping)]
         let mut definitions = map! {
@@ -687,9 +692,9 @@ impl<'a> PreProcessor<'a> {
                 } if name == defined => {
                     let def = Self::defined(&mut lex_tokens, location)?;
                     let literal = if definitions.contains_key(&def) {
-                        LiteralToken::Int(1)
+                        LiteralToken::Int(RcStr::from("1")) // TODO can we not do tokens here?
                     } else {
-                        LiteralToken::Int(0)
+                        LiteralToken::Int(RcStr::from("0"))
                     };
                     location.with(Token::Literal(literal))
                 }
@@ -707,7 +712,7 @@ impl<'a> PreProcessor<'a> {
                 if let Ok(tok) = &mut token {
                     expr_location = Some(location.maybe_merge(expr_location));
                     if let Token::Id(_) = tok.data {
-                        tok.data = Token::Literal(LiteralToken::Int(0));
+                        tok.data = Token::Literal(LiteralToken::Int(RcStr::from("0")));
                     }
                 }
                 token

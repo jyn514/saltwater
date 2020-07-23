@@ -2,7 +2,6 @@ use super::{CompileResult, LiteralToken, Locatable, Token};
 use crate::data::hir::LiteralValue;
 use crate::data::lex::test::{cpp, cpp_no_newline};
 use crate::intern::InternedStr;
-use shared_str::RcStr;
 
 type LexType = CompileResult<Locatable<Token>>;
 
@@ -66,13 +65,13 @@ fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
             _ => false,
         })
 }
-fn assert_int(s: &str, expected: u64) {
+fn assert_int(s: &str, expected: i64) {
     assert!(
-        match_data(lex(s), |lexed| lexed
-            == Ok(&LiteralToken::UnsignedInt(RcStr::from(
-                expected.to_string()
-            ))
-            .into())),
+        match_data(lex(s), |lexed| match lexed.unwrap() {
+            Token::Literal(lit @ LiteralToken::Int(_)) =>
+                lit.clone().parse() == Ok(LiteralValue::Int(expected)),
+            _ => false,
+        }),
         "{} != {}",
         s,
         expected
@@ -131,10 +130,14 @@ fn test_ellipses() {
 
 #[test]
 fn test_overflow() {
-    assert!(match lex("10000000000000000000000") {
-        Some(lexed) => lexed.is_err(),
-        None => false,
-    })
+    let lexed = lex("10000000000000000000000");
+    match lexed {
+        Some(Ok(Locatable {
+            data: Token::Literal(lit @ LiteralToken::Int(_)),
+            ..
+        })) => assert!(lit.parse().is_err(), "No overflow"),
+        _ => panic!("Not an integer"),
+    };
 }
 
 #[test]

@@ -163,7 +163,7 @@ pub enum ComparisonToken {
     GreaterEqual,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum LiteralToken {
     // literals
     Int(RcStr),
@@ -172,6 +172,21 @@ pub enum LiteralToken {
     Str(Vec<RcStr>, usize), // second arg is length of parsed string
     Char(RcStr),
 }
+
+impl PartialEq for LiteralToken {
+    fn eq(&self, other: &Self) -> bool {
+        use LiteralToken::*;
+        match (self, other) {
+            (Int(x), Int(y))
+            | (UnsignedInt(x), UnsignedInt(y))
+            | (Float(x), Float(y))
+            | (Char(x), Char(y)) => x.as_str() == y.as_str(),
+            (Str(x, _), Str(y, _)) => x.iter().zip(y).all(|(x, y)| x.as_str() == y.as_str()),
+            _ => false,
+        }
+    }
+}
+impl Eq for LiteralToken {}
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(test, derive(Arbitrary))]
@@ -453,11 +468,12 @@ mod proptest_impl {
         type Strategy = BoxedStrategy<LiteralToken>;
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             prop_oneof![
-                any::<i64>().prop_map(LiteralToken::Int),
-                any::<u64>().prop_map(LiteralToken::UnsignedInt),
-                any::<f64>().prop_map(LiteralToken::Float),
+                // TODO give regex of all possible literals
+                any::<i64>().prop_map(|x| LiteralToken::Int(RcStr::from(x.to_string()))),
+                any::<u64>().prop_map(|x| LiteralToken::UnsignedInt(RcStr::from(x.to_string()))),
+                any::<f64>().prop_map(|x| LiteralToken::Float(RcStr::from(x.to_string()))),
                 any::<u8>().prop_map(|c| LiteralToken::Char(RcStr::from(format!(
-                    "\"{}\"",
+                    "\'{}\'",
                     (c as char).escape_default().collect::<String>()
                 )))),
                 prop::collection::vec(".*", 1..10).prop_map(|strs| {

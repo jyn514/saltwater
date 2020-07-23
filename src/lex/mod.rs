@@ -983,9 +983,9 @@ fn parse_int_raw(buf: &str) -> Result<u64, SyntaxError> {
         (Radix::Binary, buf.trim_start_matches("0b"))
     } else if buf.starts_with("0x") {
         (Radix::Hexadecimal, buf.trim_start_matches("0x"))
-    } else if buf.starts_with("0") {
+    } else if buf.starts_with('0') {
         // octal: 0755 => 493
-        (Radix::Octal, buf.trim_start_matches("0"))
+        (Radix::Octal, buf.trim_start_matches('0'))
     } else {
         (Radix::Decimal, buf)
     };
@@ -1015,13 +1015,9 @@ impl LiteralToken {
                     }
                 })?,
             )),
-            LiteralToken::UnsignedInt(rcstr) => Ok(LiteralValue::UnsignedInt(
-                u64::try_from(parse_int_raw(rcstr.as_str())?).map_err(|_| {
-                    SyntaxError::IntegerOverflow {
-                        is_signed: Some(false),
-                    }
-                })?,
-            )),
+            LiteralToken::UnsignedInt(rcstr) => {
+                Ok(LiteralValue::UnsignedInt(parse_int_raw(rcstr.as_str())?))
+            }
             LiteralToken::Float(rcstr) => {
                 let buf = rcstr.as_str();
                 let hex = buf.starts_with("0x");

@@ -228,11 +228,13 @@ impl Lexer {
                 if !is_digit(self.peek()) {
                     return Err(LexError::ExponentMissingDigits);
                 }
+                self.next_char();
             }
         } else if self.match_next('e') || self.match_next('E') {
             if !is_digit(self.peek()) {
                 return Err(LexError::ExponentMissingDigits);
             }
+            self.next_char();
         }
         while let Some(c) = self.peek() {
             let c = c as char;

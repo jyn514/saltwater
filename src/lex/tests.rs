@@ -1,6 +1,8 @@
 use super::{CompileResult, LiteralToken, Locatable, Token};
+use crate::data::hir::LiteralValue;
 use crate::data::lex::test::{cpp, cpp_no_newline};
 use crate::intern::InternedStr;
+use shared_str::RcStr;
 
 type LexType = CompileResult<Locatable<Token>>;
 
@@ -46,12 +48,11 @@ where
 }
 
 fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
-    use crate::data::hir::LiteralValue;
     match lexed {
         Some(Ok(Locatable {
             data: Token::Literal(lit @ LiteralToken::Char(_)),
             ..
-        })) => lit.parse() == LiteralValue::Char(expected),
+        })) => lit.parse() == Ok(LiteralValue::Char(expected)),
         _ => false,
     }
 }
@@ -65,10 +66,13 @@ fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
             _ => false,
         })
 }
-fn assert_int(s: &str, expected: i64) {
+fn assert_int(s: &str, expected: u64) {
     assert!(
         match_data(lex(s), |lexed| lexed
-            == Ok(&LiteralToken::Int(expected).into())),
+            == Ok(&LiteralToken::UnsignedInt(RcStr::from(
+                expected.to_string()
+            ))
+            .into())),
         "{} != {}",
         s,
         expected
@@ -77,8 +81,11 @@ fn assert_int(s: &str, expected: i64) {
 fn assert_float(s: &str, expected: f64) {
     let lexed = lex(s);
     assert!(
-        match_data_ref(&lexed, |lexed| lexed
-            == Ok(&LiteralToken::Float(expected).into())),
+        match_data_ref(&lexed, |lexed| match lexed {
+            Ok(Token::Literal(lit @ LiteralToken::Float(_))) =>
+                lit.clone().parse() == Ok(LiteralValue::Float(expected)),
+            _ => false,
+        }),
         "({}) {:?} != {}",
         s,
         lexed,

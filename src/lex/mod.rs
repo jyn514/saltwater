@@ -281,7 +281,7 @@ impl Lexer {
     fn parse_string(&mut self) -> Result<Token, LexError> {
         let start = self.get_location().offset - '"'.len_utf8() as u32;
         let raw_str = self.parse_string_raw(false);
-        raw_str.map(|s| LiteralToken::Str(vec![self.slice(start)], s.len()).into())
+        raw_str.map(|_| LiteralToken::Str(vec![self.slice(start)]).into())
     }
     /// Parse an identifier or keyword, given the starting letter.
     ///
@@ -1038,7 +1038,7 @@ impl LiteralToken {
                     Ok(LiteralValue::Float(float))
                 }
             }
-            LiteralToken::Str(strs, _) => {
+            LiteralToken::Str(strs) => {
                 let num_strs = strs.len();
                 Ok(LiteralValue::Str(
                     strs.iter()

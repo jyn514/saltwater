@@ -144,19 +144,18 @@ impl<I: Lexer> Parser<I> {
                     ..
                 })) => continue,
                 Some(Ok(Locatable {
-                    data: Token::Literal(LiteralToken::Str(mut concat_strs, mut concat_len)),
+                    data: Token::Literal(LiteralToken::Str(mut concat_strs)),
                     mut location,
                 })) => {
                     // 5.1.1.2p1: Translation phase 6: Adjacent string literal tokens are concatenated.
                     loop {
                         match self.tokens.peek() {
                             Some(Ok(Locatable {
-                                data: Token::Literal(LiteralToken::Str(merge_strs, merge_len)),
+                                data: Token::Literal(LiteralToken::Str(merge_strs)),
                                 location: next_location,
                             })) => {
                                 location = location.merge(next_location);
                                 concat_strs.append(&mut merge_strs.clone());
-                                concat_len += merge_len - 1; // -1 for removed null terminator
                                 self.tokens.next(); // Actually remove next
                             }
                             Some(Ok(Locatable {
@@ -174,7 +173,7 @@ impl<I: Lexer> Parser<I> {
                         }
                     }
                     break Some(Locatable::new(
-                        Token::Literal(LiteralToken::Str(concat_strs, concat_len)),
+                        Token::Literal(LiteralToken::Str(concat_strs)),
                         location,
                     ));
                 }

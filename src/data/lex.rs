@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 
@@ -15,7 +16,8 @@ pub struct Span {
     pub end: u32,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+// TODO: this serialize is broken and will mangle the file id
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Location {
     pub span: Span,
     pub file: codespan::FileId,
@@ -31,7 +33,7 @@ impl From<Range<u32>> for Span {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Locatable<T> {
     pub data: T,
     pub location: Location,
@@ -113,7 +115,7 @@ pub enum Keyword {
     Alignof,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum AssignmentToken {
     Equal,
@@ -129,7 +131,7 @@ pub enum AssignmentToken {
     XorEqual, // ^=
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum ComparisonToken {
     Less,
@@ -151,7 +153,7 @@ pub enum Literal {
     Char(u8),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum Token {
     PlusPlus,

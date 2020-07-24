@@ -10,7 +10,7 @@ use crate::intern::InternedStr;
 
 // holds where a piece of code came from
 // should almost always be immutable
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Span {
     pub start: u32,
     pub end: u32,
@@ -48,7 +48,7 @@ impl<T> Locatable<T> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum Keyword {
     // statements
@@ -142,7 +142,7 @@ pub enum ComparisonToken {
     GreaterEqual,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum Literal {
     // literals

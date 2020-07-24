@@ -1066,15 +1066,33 @@ impl<'a> PreProcessor<'a> {
         local: bool,
         start: u32,
     ) -> Result<(), Locatable<Error>> {
-        let resolved = self.find_include_path(&filename, local, start)?;
-        let src = std::fs::read_to_string(&resolved)
-            .map_err(|err| Locatable {
-                data: CppError::IO(err.to_string()),
-                location: self.span(start),
-            })?
-            .into();
+        let (path, src) = match self.find_include_path(&filename, local, start) {
+            Ok(path) => {
+                let src = std::fs::read_to_string(&path)
+                    .map_err(|err| Locatable {
+                        data: CppError::IO(err.to_string()),
+                        location: self.span(start),
+                    })?
+                    .into();
+                (path, src)
+            }
+            Err(not_found) => {
+                let filename = match filename.file_name().and_then(|f| f.to_str()) {
+                    None => return Err(not_found),
+                    Some(f) => f,
+                };
+                match get_builtin_header(filename) {
+                    Some(file) => {
+                        let mut path = PathBuf::from("<builtin>");
+                        path.push(filename);
+                        (path, Rc::from(file))
+                    }
+                    None => return Err(not_found),
+                }
+            }
+        };
         let source = crate::Source {
-            path: resolved,
+            path,
             code: Rc::clone(&src),
         };
         self.file_processor.add_file(filename, source);
@@ -1127,6 +1145,29 @@ impl<'a> PreProcessor<'a> {
         }
         Ok(ret)
     }
+}
+
+macro_rules! built_in_headers {
+    ( $($filename: literal)*, $(,)? ) => {
+        [
+            // Relative to the current file, not the crate root
+            $( ($filename, include_str!(concat!("../../headers/", $filename))) )*,
+        ]
+    };
+}
+
+// [(filename, contents)]
+// TODO: this could probably use a perfect-hashmap,
+// but it's so small that it's not worth it
+const PRECOMPILED_HEADERS: [(&str, &str); 1] = built_in_headers! {
+    "stddef.h",
+};
+
+fn get_builtin_header(expected: impl AsRef<str>) -> Option<&'static str> {
+    PRECOMPILED_HEADERS
+        .iter()
+        .find(|&(path, _)| path == &expected.as_ref())
+        .map(|x| x.1)
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

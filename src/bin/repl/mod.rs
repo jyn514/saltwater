@@ -2,21 +2,23 @@
 //!
 //! [`rustyline`]: https://docs.rs/rustyline
 
+use commands::default_commands;
 use dirs_next::home_dir;
 use helper::ReplHelper;
 use rustyline::{error::ReadlineError, Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
+mod commands;
 mod helper;
 
 /// The prefix for commands inside the repl.
-const PREFIX: &str = ":";
+const PREFIX: char = ':';
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PROMPT: &str = ">> ";
 
-#[derive(Debug)]
 pub struct Repl {
     editor: Editor<ReplHelper>,
+    commands: HashMap<&'static str, fn(&mut Repl, &str)>,
 }
 
 impl Repl {
@@ -26,17 +28,20 @@ impl Repl {
             .history_ignore_dups(false)
             .completion_type(CompletionType::List)
             .edit_mode(EditMode::Emacs)
+            .max_history_size(1000)
             .tab_stop(4)
             .build();
         let mut editor = Editor::with_config(config);
 
-        let helper = ReplHelper::new(vec!["help".to_string()]);
+        let commands = default_commands();
+        let helper = ReplHelper::new(commands.keys().map(|x| *x).collect());
         editor.set_helper(Some(helper));
 
         editor.bind_sequence(KeyPress::Up, Cmd::LineUpOrPreviousHistory(1));
         editor.bind_sequence(KeyPress::Down, Cmd::LineDownOrNextHistory(1));
+        editor.bind_sequence(KeyPress::Tab, Cmd::Complete);
 
-        Self { editor }
+        Self { editor, commands }
     }
 
     pub fn run(&mut self) -> rustyline::Result<()> {
@@ -60,12 +65,6 @@ impl Repl {
         result
     }
 
-    fn history_path() -> Option<PathBuf> {
-        let mut history = home_dir()?;
-        history.push(".saltwater_history");
-        Some(history)
-    }
-
     fn save_history(&self) -> Option<()> {
         let path = Self::history_path()?;
         self.editor.save_history(&path).ok()
@@ -76,7 +75,24 @@ impl Repl {
         self.editor.load_history(&path).ok()
     }
 
+    fn history_path() -> Option<PathBuf> {
+        let mut history = home_dir()?;
+        history.push(".saltwater_history");
+        Some(history)
+    }
+
     fn process_line(&mut self, line: String) {
-        self.editor.add_history_entry(line);
+        self.editor.add_history_entry(line.clone());
+
+        if line.trim().starts_with(PREFIX) {
+            let name = line.split(' ').next().unwrap();
+
+            match self.commands.get(&name[1..]) {
+                Some(action) => action(self, &line[name.len()..]),
+                None => println!("unknown command '{}'", name),
+            }
+        } else {
+            todo!()
+        }
     }
 }

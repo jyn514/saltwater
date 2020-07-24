@@ -1,9 +1,12 @@
+use super::PREFIX;
 use ansi_term::Style;
 use rustyline::{
-    completion::Completer,
+    completion::{extract_word, Completer},
     highlight::{Highlighter, MatchingBracketHighlighter},
     hint::Hinter,
+    line_buffer::LineBuffer,
     validate::{ValidationContext, ValidationResult, Validator},
+    Context,
 };
 use rustyline_derive::Helper;
 use std::borrow::Cow;
@@ -11,11 +14,11 @@ use std::borrow::Cow;
 #[derive(Helper)]
 pub struct ReplHelper {
     highlighter: MatchingBracketHighlighter,
-    commands: Vec<String>,
+    commands: Vec<&'static str>,
 }
 
 impl ReplHelper {
-    pub fn new(commands: Vec<String>) -> Self {
+    pub fn new(commands: Vec<&'static str>) -> Self {
         Self {
             commands,
             highlighter: Default::default(),
@@ -68,9 +71,9 @@ impl Validator for ReplHelper {
 }
 
 impl Hinter for ReplHelper {
-    fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context<'_>) -> Option<String> {
+    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
         let start = &line[..pos];
-        if !start.starts_with(super::PREFIX) {
+        if !start.starts_with(PREFIX) {
             return None;
         }
         let start = &start[1..];
@@ -83,6 +86,28 @@ impl Hinter for ReplHelper {
 
 impl Completer for ReplHelper {
     type Candidate = String;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
+        let (idx, word) = extract_word(line, pos, None, &[]);
+        if !line.starts_with(PREFIX) {
+            return Ok((0, vec![]));
+        }
+        let word = word.trim_matches(PREFIX);
+
+        let commands = self
+            .commands
+            .iter()
+            .filter(|cmd| cmd.starts_with(word))
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>();
+
+        Ok((idx + 1, commands))
+    }
 
     // TODO: Complete method names, types, etc.
 }

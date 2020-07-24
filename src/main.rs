@@ -13,7 +13,7 @@ use pico_args::Arguments;
 use saltwater::{
     assemble, compile,
     data::{error::CompileWarning, Location},
-    link, preprocess, Error, Files, Opt, PreProcessor, Program,
+    link, preprocess, Error, Files, Opt, Program,
 };
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;

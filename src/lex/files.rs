@@ -4,8 +4,36 @@ use crate::{
     ErrorHandler, Location,
 };
 use crate::{Files, Source};
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+
+enum TokenSource {
+    Lexer(Lexer),
+    Precompiled(VecDeque<Locatable<Token>>),
+}
+
+impl From<VecDeque<Locatable<Token>>> for TokenSource {
+    fn from(queue: VecDeque<Locatable<Token>>) -> Self {
+        Self::Precompiled(queue)
+    }
+}
+
+impl From<Lexer> for TokenSource {
+    fn from(lexer: Lexer) -> Self {
+        Self::Lexer(lexer)
+    }
+}
+
+impl Iterator for TokenSource {
+    type Item = super::LexResult<Locatable<Token>>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Lexer(l) => l.next(),
+            Self::Precompiled(queue) => queue.pop_front().map(Ok),
+        }
+    }
+}
 
 // TODO: this API is absolutely terrible, there's _no_ encapsulation
 pub(super) struct FileProcessor {
@@ -13,7 +41,7 @@ pub(super) struct FileProcessor {
     /// since it sometimes needs to know if a token is followed by whitespace.
     first_lexer: Lexer,
     /// Each lexer represents a separate source file that is currently being processed.
-    includes: Vec<Lexer>,
+    includes: Vec<TokenSource>,
     /// All known files, including files which have already been read.
     files: Files,
     pub(super) error_handler: ErrorHandler,
@@ -23,18 +51,23 @@ pub(super) struct FileProcessor {
 impl Iterator for FileProcessor {
     type Item = CompileResult<Locatable<Token>>;
     fn next(&mut self) -> Option<Self::Item> {
+        let first_lexer = &mut self.first_lexer;
         loop {
             // we have to duplicate a bit of code here to avoid borrow errors
-            let lexer = self.includes.last_mut().unwrap_or(&mut self.first_lexer);
-            match self
-                .current
-                .take()
-                .or_else(|| lexer.next().map(|r| r.map_err(Into::into)))
-            {
+            let mut lexer = self.includes.last_mut();
+            match self.current.take().or_else(|| {
+                match &mut lexer {
+                    None => first_lexer.next(),
+                    Some(l) => l.next(),
+                }
+                .map(|res| res.map_err(Into::into))
+            }) {
                 Some(token) => return Some(token),
                 // finished this file, go on to the next one
                 None => {
-                    self.error_handler.append(&mut lexer.error_handler);
+                    if let Some(TokenSource::Lexer(lexer)) = lexer {
+                        self.error_handler.append(&mut lexer.error_handler);
+                    }
                     // this is the original source file
                     if self.includes.is_empty() {
                         return None;
@@ -80,17 +113,37 @@ impl FileProcessor {
     /// Since there could potentially be multiple lexers (for multiple files),
     /// this is a convenience function that returns the lexer for the current file.
     pub(super) fn lexer(&self) -> &Lexer {
-        self.includes.last().unwrap_or(&self.first_lexer)
+        self.includes
+            .iter()
+            .rev()
+            .filter_map(|source| match source {
+                TokenSource::Lexer(l) => Some(l),
+                TokenSource::Precompiled(_) => None,
+            })
+            .next()
+            .unwrap_or(&self.first_lexer)
     }
     /// Same as `lexer()` but `&mut self -> &mut Lexer`.
     pub(super) fn lexer_mut(&mut self) -> &mut Lexer {
-        self.includes.last_mut().unwrap_or(&mut self.first_lexer)
+        self.includes
+            .iter_mut()
+            .rev()
+            .filter_map(|source| match source {
+                TokenSource::Lexer(l) => Some(l),
+                TokenSource::Precompiled(_) => None,
+            })
+            .next()
+            .unwrap_or(&mut self.first_lexer)
     }
     pub(super) fn add_file(&mut self, filename: PathBuf, source: Source) {
         let code = Rc::clone(&source.code);
         let id = self.files.add(filename, source);
         self.includes
-            .push(Lexer::new(id, code, self.first_lexer.debug));
+            .push(Lexer::new(id, code, self.first_lexer.debug).into());
+    }
+
+    pub(super) fn add_precompiled_file(&mut self, tokens: VecDeque<Locatable<Token>>) {
+        self.includes.push(TokenSource::Precompiled(tokens));
     }
 
     /// Return a `Location` representing the end of the first file.

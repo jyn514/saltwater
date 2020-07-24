@@ -1066,7 +1066,22 @@ impl<'a> PreProcessor<'a> {
         local: bool,
         start: u32,
     ) -> Result<(), Locatable<Error>> {
-        let resolved = self.find_include_path(&filename, local, start)?;
+        let resolved = match self.find_include_path(&filename, local, start) {
+            Ok(path) => path,
+            Err(_) => {
+                return match get_precompiled_header(filename.as_path()) {
+                    Some((tokens, definitions)) => {
+                        self.definitions.extend(definitions.into_iter());
+                        self.file_processor.add_precompiled_file(tokens);
+                        Ok(())
+                    }
+                    // Not a built-in header
+                    None => Err(self.span(start).error(CppError::FileNotFound(
+                        filename.to_string_lossy().to_string(),
+                    ))),
+                };
+            }
+        };
         let src = std::fs::read_to_string(&resolved)
             .map_err(|err| Locatable {
                 data: CppError::IO(err.to_string()),
@@ -1240,6 +1255,35 @@ lazy_static! {
         "_Generic" => Keyword::Generic,
         "_Static_assert" => Keyword::StaticAssert,
     };
+}
+
+macro_rules! built_in_headers {
+    ( $($filename: literal)*, $(,)? ) => {
+        [
+            $( ($filename, include_bytes!(concat!(env!("OUT_DIR"), "/headers/", $filename))) )*,
+        ]
+    };
+}
+
+const PRECOMPILED_HEADERS: [(&str, &[u8]); 1] = built_in_headers! {
+    "stddef.h",
+};
+
+// This is the biggest hack that has ever been hacked.
+// Others say they are hackers. They are lying. This puts them to shame. They should go back to their halls in defeat.
+// GLIBC thinks that stddef.h should be provided by the compiler. Very well. We shall provide.
+fn get_precompiled_header(expected: &Path) -> Option<(VecDeque<Locatable<Token>>, Definitions)> {
+    PRECOMPILED_HEADERS
+        .iter()
+        .find(|&(path, _)| Path::new(path) == expected)
+        .map(|(_, bytes)| {
+            let x: (_, _) =
+                bincode::deserialize(bytes).expect("🚫 your bootstrap compiler is out of date 🚫");
+            for (key, value) in &x.1 {
+                println!("{}=???", key);
+            }
+            x
+        })
 }
 
 #[cfg(test)]

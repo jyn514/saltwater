@@ -10,7 +10,7 @@ use crate::intern::InternedStr;
 
 // holds where a piece of code came from
 // should almost always be immutable
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Span {
     pub start: u32,
     pub end: u32,
@@ -48,7 +48,7 @@ impl<T> Locatable<T> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum Keyword {
     // statements
@@ -115,7 +115,7 @@ pub enum Keyword {
     Alignof,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum AssignmentToken {
     Equal,
@@ -131,7 +131,7 @@ pub enum AssignmentToken {
     XorEqual, // ^=
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum ComparisonToken {
     Less,
@@ -142,7 +142,7 @@ pub enum ComparisonToken {
     GreaterEqual,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Arbitrary))]
 pub enum Literal {
     // literals

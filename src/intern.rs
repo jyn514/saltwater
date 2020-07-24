@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// [interned]: https://en.wikipedia.org/wiki/String_interning
 // TODO: lol this serialize is so wrong
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct InternedStr(pub Spur);
 
 impl fmt::Debug for InternedStr {

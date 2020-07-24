@@ -54,21 +54,21 @@ pub type Product = <cranelift_object::ObjectBackend as Backend>::Product;
 /// If successful, this returns an `Ok(T)`.
 /// If unsuccessful, this returns an `Err(E)`.
 /// Regardless, this always returns all warnings found.
-pub struct Program<T, E = VecDeque<CompileError>> {
+pub struct Program<'a, T, E = VecDeque<CompileError>> {
     /// Either the errors found while compiling the program, or the successfully compiled program.
     pub result: Result<T, E>,
     /// The warnings emitted while compiling the program
     pub warnings: VecDeque<CompileWarning>,
-    /// The files that were `#include`d by the preprocessor
-    pub files: Files,
+    /// The preprocessor used to compile the program
+    pub preprocessor: PreProcessor<'a>,
 }
 
-impl<T, E> Program<T, E> {
-    fn from_cpp(mut cpp: PreProcessor, result: Result<T, E>) -> Self {
+impl<'a, T, E> Program<'a, T, E> {
+    fn from_cpp(mut cpp: PreProcessor<'a>, result: Result<T, E>) -> Self {
         Program {
             result,
             warnings: cpp.warnings(),
-            files: cpp.into_files(),
+            preprocessor: cpp,
         }
     }
 }
@@ -205,7 +205,7 @@ pub struct Opt {
 
 /// Preprocess the source and return the tokens.
 pub fn preprocess(buf: &str, opt: Opt) -> Program<VecDeque<Locatable<Token>>> {
-    let path = opt.search_path.iter().map(|p| p.into());
+    let path = opt.search_path.into_iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(buf, opt.filename, opt.debug_lex, path, opt.definitions);
 
     let mut tokens = VecDeque::new();
@@ -224,13 +224,13 @@ pub fn preprocess(buf: &str, opt: Opt) -> Program<VecDeque<Locatable<Token>>> {
     Program {
         result,
         warnings: cpp.warnings(),
-        files: cpp.into_files(),
+        preprocessor: cpp,
     }
 }
 
 /// Perform semantic analysis, including type checking and constant folding.
 pub fn check_semantics(buf: &str, opt: Opt) -> Program<Vec<Locatable<hir::Declaration>>> {
-    let path = opt.search_path.iter().map(|p| p.into());
+    let path = opt.search_path.into_iter().map(|p| p.into());
     let mut cpp = PreProcessor::new(buf, opt.filename, opt.debug_lex, path, opt.definitions);
 
     let mut errs = VecDeque::new();
@@ -260,7 +260,7 @@ pub fn check_semantics(buf: &str, opt: Opt) -> Program<Vec<Locatable<hir::Declar
     Program {
         result,
         warnings,
-        files: cpp.into_files(),
+        preprocessor: cpp,
     }
 }
 
@@ -275,7 +275,7 @@ pub fn compile<B: Backend>(module: Module<B>, buf: &str, opt: Opt) -> Program<Mo
             return Program {
                 result: Err(err),
                 warnings: program.warnings,
-                files: program.files,
+                preprocessor: program.preprocessor,
             }
         }
     };
@@ -284,7 +284,7 @@ pub fn compile<B: Backend>(module: Module<B>, buf: &str, opt: Opt) -> Program<Mo
     Program {
         result: result.map_err(|errs| vec_deque![errs]),
         warnings: program.warnings,
-        files: program.files,
+        preprocessor: program.preprocessor,
     }
 }
 

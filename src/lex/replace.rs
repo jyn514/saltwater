@@ -8,6 +8,8 @@ use crate::{
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use serde::{Deserialize, Serialize};
+
 /// All known macro definitions.
 ///
 /// Note that this is a simple HashMap and not a `Scope`, because
@@ -48,7 +50,7 @@ impl<I: Peekable + ?Sized> Peekable for &mut I {
 }
 
 /// A macro definition.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Definition {
     /// An object macro: `#define a b + 1`
     Object(Vec<Token>),

@@ -13,7 +13,7 @@ use pico_args::Arguments;
 use saltwater::{
     assemble, compile,
     data::{error::CompileWarning, Location},
-    link, preprocess, Error, Files, Opt, Program,
+    link, preprocess, Error, Files, Opt, PreProcessor, Program,
 };
 use std::ffi::OsStr;
 use tempfile::NamedTempFile;
@@ -127,8 +127,9 @@ fn real_main(buf: Rc<str>, bin_opt: BinOpt, output: &Path) -> Result<(), (Error,
         let Program {
             result: tokens,
             warnings,
-            files,
+            preprocessor,
         } = preprocess(&buf, bin_opt.opt);
+        let files = preprocessor.into_files();
         handle_warnings(warnings, &files, bin_opt.color);
 
         let stdout = io::stdout();
@@ -171,8 +172,9 @@ fn aot_main(buf: &str, opt: Opt, output: &Path, color: ColorChoice) -> Result<()
     let Program {
         result,
         warnings,
-        files,
+        preprocessor,
     } = compile(module, buf, opt);
+    let files = preprocessor.into_files();
     handle_warnings(warnings, &files, color);
 
     let product = sw_try!(result.map(|x| x.finish()), files);

@@ -137,7 +137,7 @@ pub struct PreProcessor<'a> {
     /// The paths to search for `#include`d files
     search_path: Vec<Cow<'a, Path>>,
     /// The current macro definitions
-    definitions: Definitions,
+    pub definitions: Definitions,
     /// Handles reading from files
     file_processor: FileProcessor,
 }

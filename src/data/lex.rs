@@ -169,7 +169,7 @@ pub enum LiteralToken {
     Int(RcStr),
     UnsignedInt(RcStr),
     Float(RcStr),
-    Str(Vec<RcStr>, usize), // second arg is length of parsed string
+    Str(Vec<RcStr>),
     Char(RcStr),
 }
 
@@ -181,7 +181,7 @@ impl PartialEq for LiteralToken {
             | (UnsignedInt(x), UnsignedInt(y))
             | (Float(x), Float(y))
             | (Char(x), Char(y)) => x.as_str() == y.as_str(),
-            (Str(x, _), Str(y, _)) => x.iter().zip(y).all(|(x, y)| x.as_str() == y.as_str()),
+            (Str(x), Str(y)) => x.iter().zip(y).all(|(x, y)| x.as_str() == y.as_str()),
             _ => false,
         }
     }
@@ -404,7 +404,7 @@ impl std::fmt::Display for LiteralToken {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(rcstr, _) => write!(
+            Str(rcstr) => write!(
                 f,
                 "{}",
                 rcstr.iter().map(RcStr::as_str).collect::<Vec<_>>().join("") // TODO does this remove middle quotation marks?
@@ -477,14 +477,13 @@ mod proptest_impl {
                     (c as char).escape_default().collect::<String>()
                 )))),
                 prop::collection::vec(".*", 1..10).prop_map(|strs| {
-                    let len = strs.iter().map(|s| s.len()).sum();
                     let rcstrs = strs
                         .into_iter()
                         .map(|s| {
                             RcStr::from(format!("\"{}\"", s.escape_default().collect::<String>()))
                         })
                         .collect();
-                    LiteralToken::Str(rcstrs, len)
+                    LiteralToken::Str(rcstrs)
                 }),
             ]
             .boxed()

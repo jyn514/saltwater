@@ -982,7 +982,7 @@ impl<'a> PreProcessor<'a> {
             {
                 // local
                 Some(Ok(Locatable {
-                    data: Token::Literal(LiteralToken::Str(_, _)),
+                    data: Token::Literal(LiteralToken::Str(_)),
                     ..
                 })) => unimplemented!("#include for macros"), //return self.include_path(id, true, start),
                 // system

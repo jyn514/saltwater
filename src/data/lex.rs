@@ -2,6 +2,8 @@ use std::borrow::Borrow;
 use std::cmp::Ordering;
 
 #[cfg(test)]
+use proptest::strategy::Strategy;
+#[cfg(test)]
 use proptest_derive::Arbitrary;
 
 use crate::data::hir::BinaryOp;
@@ -147,6 +149,12 @@ pub enum Literal {
     Int(i64),
     UnsignedInt(u64),
     Float(f64),
+    #[rustfmt::skip] // just no
+    #[cfg_attr(test, proptest(strategy =
+        "proptest::prelude::any::<Vec<u8>>().prop_map(|mut v| {
+            v.push(b'\0'); Literal::Str(v)
+        })"
+    ))]
     Str(Vec<u8>),
     Char(u8),
 }

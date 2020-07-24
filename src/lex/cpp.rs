@@ -1148,10 +1148,10 @@ impl<'a> PreProcessor<'a> {
 }
 
 macro_rules! built_in_headers {
-    ( $($filename: literal)*, $(,)? ) => {
+    ( $($filename: literal),+ $(,)? ) => {
         [
             // Relative to the current file, not the crate root
-            $( ($filename, include_str!(concat!("../../headers/", $filename))) )*,
+            $( ($filename, include_str!(concat!("../../headers/", $filename))) ),+
         ]
     };
 }
@@ -1159,7 +1159,8 @@ macro_rules! built_in_headers {
 // [(filename, contents)]
 // TODO: this could probably use a perfect-hashmap,
 // but it's so small that it's not worth it
-const PRECOMPILED_HEADERS: [(&str, &str); 1] = built_in_headers! {
+const PRECOMPILED_HEADERS: [(&str, &str); 2] = built_in_headers! {
+    "stdarg.h",
     "stddef.h",
 };
 

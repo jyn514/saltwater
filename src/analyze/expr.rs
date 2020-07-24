@@ -911,12 +911,15 @@ pub(super) fn literal(literal: Literal, location: Location) -> Expr {
 }
 
 fn pointer_promote(left: &mut Expr, right: &mut Expr) -> bool {
+    let is_convertible_to_any_pointer = |expr: &Expr| {
+        expr.ctype.is_void_pointer() || expr.ctype.is_char_pointer() || expr.is_null()
+    };
     if left.ctype == right.ctype {
         true
-    } else if left.ctype.is_void_pointer() || left.ctype.is_char_pointer() || left.is_null() {
+    } else if is_convertible_to_any_pointer(left) && right.ctype.is_pointer() {
         left.ctype = right.ctype.clone();
         true
-    } else if right.ctype.is_void_pointer() || right.ctype.is_char_pointer() || right.is_null() {
+    } else if is_convertible_to_any_pointer(right) && left.ctype.is_pointer() {
         right.ctype = left.ctype.clone();
         true
     } else {
@@ -1429,6 +1432,7 @@ mod test {
     #[test]
     fn test_type_errors() {
         assert!(expr("1 % 2.0").is_err());
+        assert!(expr("0 ? \"error message\" : 0.0").is_err());
     }
 
     #[test]

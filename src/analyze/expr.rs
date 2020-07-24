@@ -910,6 +910,7 @@ pub(super) fn literal(literal: Literal, location: Location) -> Expr {
     }
 }
 
+// 6.5.15 - Conditional operator
 fn pointer_promote(left: &mut Expr, right: &mut Expr) -> bool {
     let is_convertible_to_any_pointer = |expr: &Expr| {
         expr.ctype.is_void_pointer() || expr.ctype.is_char_pointer() || expr.is_null()

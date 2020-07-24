@@ -19,7 +19,7 @@ pub struct Span {
 
 impl Span {
     pub fn len(self) -> usize {
-        (self.end - self.start) as usize // TODO is this unsafe?
+        (self.end - self.start) as usize
     }
     pub fn is_empty(self) -> bool {
         self.start == self.end
@@ -407,7 +407,11 @@ impl std::fmt::Display for LiteralToken {
             Str(rcstr) => write!(
                 f,
                 "{}",
-                rcstr.iter().map(RcStr::as_str).collect::<Vec<_>>().join("") // TODO does this remove middle quotation marks?
+                rcstr
+                    .iter()
+                    .map(RcStr::as_str)
+                    .collect::<Vec<_>>()
+                    .join(" ")
             ),
             Char(rcstr) => write!(f, "{}", rcstr.as_str()),
         }

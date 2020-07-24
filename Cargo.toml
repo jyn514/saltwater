@@ -32,8 +32,8 @@ thiserror = "^1.0.10"
 target-lexicon = "0.10"
 tempfile = { version = "3", optional = true }
 pico-args = { version = "0.3", optional = true }
-lasso = "0.2"
-codespan = { version = ">=0.9.5", default-features = false }
+lasso = { version = "0.3", features = ["serialize"] }
+codespan = { version = ">=0.9.5", features = ["serialization"] }
 color-backtrace = { version = "0.4", default-features = false, optional = true }
 counter = "0.4"
 atty = { version = "0.2", default-features = false, optional = true } 
@@ -41,7 +41,7 @@ git-testament = { version = "0.1", optional = true }
 rand = { version = "0.7", optional = true }
 rodio = { version = "0.11.0", optional = true }
 bincode = "1"
-serde = { version = "1", default-features = false }
+serde = { version = "1", features = ["derive"] }
 
 #[patch.crates-io]
 #saltwater = { git = "https://github.com/jyn514/saltwater", branch = "mutually-assured-destruction" }

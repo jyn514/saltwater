@@ -5,7 +5,7 @@ fn main() {
     match repl.run() {
         Ok(_) => {}
         Err(err) => {
-            println!("Unknown error in the REPL occurred: {}", err);
+            println!("error: {}", err);
             std::process::exit(1);
         }
     }

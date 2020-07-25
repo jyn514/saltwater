@@ -1,10 +1,9 @@
 use super::PREFIX;
 use ansi_term::Style;
 use rustyline::{
-    completion::{extract_word, Completer},
+    completion::{extract_word, Candidate, Completer},
     highlight::{Highlighter, MatchingBracketHighlighter},
     hint::Hinter,
-    line_buffer::LineBuffer,
     validate::{ValidationContext, ValidationResult, Validator},
     Context,
 };
@@ -54,7 +53,7 @@ impl Validator for ReplHelper {
                     (Some('('), ')') | (Some('['), ']') | (Some('{'), '}') => {}
                     (_, _) => {
                         return Ok(ValidationResult::Invalid(Some(
-                            "unclosed delimiter".to_string(),
+                            "extra closing delimiter".to_string(),
                         )));
                     }
                 },
@@ -84,8 +83,23 @@ impl Hinter for ReplHelper {
     }
 }
 
+/// Wrapper around a `&'static str` to be used for completion candidates.
+pub struct CompletionCandidate {
+    display: &'static str,
+}
+
+impl Candidate for CompletionCandidate {
+    fn display(&self) -> &str {
+        self.display
+    }
+
+    fn replacement(&self) -> &str {
+        self.display
+    }
+}
+
 impl Completer for ReplHelper {
-    type Candidate = String;
+    type Candidate = CompletionCandidate;
 
     fn complete(
         &self,
@@ -103,7 +117,7 @@ impl Completer for ReplHelper {
             .commands
             .iter()
             .filter(|cmd| cmd.starts_with(word))
-            .map(|x| x.to_string())
+            .map(|x| CompletionCandidate { display: x })
             .collect::<Vec<_>>();
 
         Ok((idx + 1, commands))

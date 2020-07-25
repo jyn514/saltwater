@@ -3,7 +3,7 @@
 //! [`rustyline`]: https://docs.rs/rustyline
 
 use commands::default_commands;
-use dirs_next::home_dir;
+use dirs_next::data_dir;
 use helper::ReplHelper;
 use rustyline::{error::ReadlineError, Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use std::{collections::HashMap, path::PathBuf};
@@ -34,7 +34,7 @@ impl Repl {
         let mut editor = Editor::with_config(config);
 
         let commands = default_commands();
-        let helper = ReplHelper::new(commands.keys().map(|x| *x).collect());
+        let helper = ReplHelper::new(commands.keys().copied().collect());
         editor.set_helper(Some(helper));
 
         editor.bind_sequence(KeyPress::Up, Cmd::LineUpOrPreviousHistory(1));
@@ -76,15 +76,16 @@ impl Repl {
     }
 
     fn history_path() -> Option<PathBuf> {
-        let mut history = home_dir()?;
-        history.push(".saltwater_history");
+        let mut history = data_dir()?;
+        history.push("saltwater_history");
         Some(history)
     }
 
     fn process_line(&mut self, line: String) {
         self.editor.add_history_entry(line.clone());
 
-        if line.trim().starts_with(PREFIX) {
+        let line = line.trim();
+        if line.starts_with(PREFIX) {
             let name = line.split(' ').next().unwrap();
 
             match self.commands.get(&name[1..]) {

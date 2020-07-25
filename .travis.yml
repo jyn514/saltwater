@@ -47,7 +47,7 @@ deploy:
           tags: true
           branch: master
           condition: $TRAVIS_RUST_VERSION = stable
-      file: target/release/rcc
+      file: target/release/saltwater
       skip_cleanup: true
       api_key:
           secure: ioFdF6noWh8DuG5lIGCuMoAcTrum6gsqvDKe+9kjR+tRYnZ6J4cPJ16WUq4qWlp1AnrcB7HRwKuShg8Eu7PPojRKdxNA2fnblJHViNQa8gN3kyr1sfgCo6EEp0qL+eh9qNjx0O4nglMVPUFyg81fyhsX3B6UaQGYK6idxhYvM3e6DvZu5yE8o/FXn1vh9NfDP9RwwuZQTmPYitL2No07GEmeMhCbveXwpFqx9mq1sj51posEAsGFEf3wy+1GwZv0h3jGiYYsyWVLKDKPBRdImA784hnY9L5LqiZOUdpeULzogTNky510rzNI/Uy1vi/IMaTNoCUKo7BVjvtlga9a95Vwz7s7Xav5bUrMqMhwCbBp0WDyEJPkkWx14MzGyIOc2y2bx0PMrxS/tpl0Fzb+QJUai0J1LNBJQbs+B71I/E/Qq7kY5ytMYjboeA3IrqUT3takjEUuuZmMt+AOKN8rl9X81jMqCnVm9VVi+jDJuhhKUVwCfIVzFeVtv7/oQGBiZwTTF6pIk/dL50KUZg3gXjUTBo884+JZYaPC9GuEW/x+5fHHbObetvDQziIBCUABSNU+Votzgbk2CWoJLOUaSmZIYBac4LxnCDT9GZI6Y075uHhDXrzAgNTrUphKqwsK1aBQVy2+EeWrNB+5IKxWT60/ToWprHHx3aoLNGC7qDM=

@@ -554,7 +554,7 @@ mod backtrace {
 
 #[cfg(feature = "salty")]
 fn play_scream() -> Result<(), ()> {
-    const SCREAM: &[u8] = include_bytes!("data/R2D2-Scream.ogg");
+    const SCREAM: &[u8] = include_bytes!("../data/R2D2-Scream.ogg");
     let device = rodio::default_output_device().ok_or(())?;
     let source = rodio::Decoder::new(std::io::Cursor::new(SCREAM)).or(Err(()))?;
     rodio::play_raw(&device, rodio::source::Source::convert_samples(source));

@@ -404,15 +404,14 @@ impl std::fmt::Display for LiteralToken {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(rcstr) => write!(
-                f,
-                "{}",
-                rcstr
+            Str(rcstr) => {
+                let joined = rcstr
                     .iter()
                     .map(RcStr::as_str)
                     .collect::<Vec<_>>()
-                    .join(" ")
-            ),
+                    .join(" ");
+                write!(f, "{}", joined)
+            }
             Char(rcstr) => write!(f, "{}", rcstr.as_str()),
         }
     }
@@ -478,14 +477,12 @@ mod proptest_impl {
                 any::<f64>().prop_map(|x| LiteralToken::Float(RcStr::from(x.to_string()))),
                 any::<u8>().prop_map(|c| LiteralToken::Char(RcStr::from(format!(
                     "\'{}\'",
-                    (c as char).escape_default().collect::<String>()
+                    (c as char).escape_default()
                 )))),
                 prop::collection::vec(".*", 1..10).prop_map(|strs| {
                     let rcstrs = strs
                         .into_iter()
-                        .map(|s| {
-                            RcStr::from(format!("\"{}\"", s.escape_default().collect::<String>()))
-                        })
+                        .map(|s| RcStr::from(format!("\"{}\"", s.escape_default())))
                         .collect();
                     LiteralToken::Str(rcstrs)
                 }),

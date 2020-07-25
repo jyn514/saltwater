@@ -136,6 +136,7 @@ impl<I: Lexer> Parser<I> {
             .recursion_check(&mut self.error_handler)
     }
     // don't use this, use next_token instead
+    // WARNING: this _cannot_ read or modify `self.current` or `self.next`
     fn __impl_next_token(&mut self) -> Option<Locatable<Token>> {
         loop {
             match self.tokens.next() {
@@ -199,16 +200,11 @@ impl<I: Lexer> Parser<I> {
         }
     }
     fn next_token(&mut self) -> Option<Locatable<Token>> {
-        if self.current.is_some() {
-            let tmp = mem::take(&mut self.next);
-            mem::replace(&mut self.current, tmp)
-        } else {
-            self.__impl_next_token()
-        }
+        mem::replace(&mut self.current, self.next.take()).or_else(|| self.__impl_next_token())
     }
     fn peek_token(&mut self) -> Option<&Token> {
         if self.current.is_none() {
-            self.current = self.next.take().or_else(|| self.next_token());
+            self.current = self.next.take().or_else(|| self.__impl_next_token());
         }
         self.current.as_ref().map(|x| &x.data)
     }

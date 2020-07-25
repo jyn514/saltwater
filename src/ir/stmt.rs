@@ -87,7 +87,7 @@ impl<B: Backend> Compiler<B> {
                 None => Err(stmt.location.error(SemanticError::UndeclaredLabel(name))),
             },
             StmtType::Case(constexpr, inner) => {
-                self.case(constexpr, *inner, stmt.location, builder)
+                self.case(constexpr.into(), *inner, stmt.location, builder)
             }
             StmtType::Default(inner) => self.default(*inner, stmt.location, builder),
         }
@@ -278,7 +278,7 @@ impl<B: Backend> Compiler<B> {
     }
     fn case(
         &mut self,
-        constexpr: u64,
+        constexpr: u128,
         stmt: Stmt,
         location: Location,
         builder: &mut FunctionBuilder,

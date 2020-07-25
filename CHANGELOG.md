@@ -3,6 +3,65 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2020-07-24
+
+This release is the first time that `saltwater` can compile hello world without any workaround on a GNU libc platform!
+Previously, the following would give an error on Ubuntu 20.04:
+
+```c
+#include<stdio.h>
+
+int main() {
+    puts("Hello, world!");
+}
+stdio.h:33:2 error: invalid macro: file 'stddef.h' not found
+#include <stddef.h>
+ ^^^^^^^^^^^^^^^^^^
+stdio.h:36:2 error: invalid macro: file 'stdarg.h' not found
+#include <stdarg.h>
+ ^^^^^^^^^^^^^^^^^^
+```
+
+This error was because glibc expects certain header files to be part of the compiler,
+not part of the standard library. Since `saltwater` does not come packaged with any
+header files, it would be unable to find them on disk.
+
+Now, `saltwater` comes with `stddef.h` and `stdarg.h` built-in,
+and it is simple to extend it to add more built-in headers. If you run into other
+errors of this sort (standardized headers only please),
+feel free to file a bug and they can be added!
+
+### Changed
+
+- [#477] Get rid of `first` argument to `Parser::new`, making the API easier to use.
+- `LexError::MultiCharCharLiteral` was renamed to `MultiByteCharLiteral`. See [#468] below.
+- Cranelift has been updated to 0.66.
+- [#448] `git-testament` is now optional and disabled by default. This should reduce compile times slightly.
+
+### Fixed
+
+- [#468] Don't panic on unicode characters.
+  Note that Unicode identifiers still aren't allowed, they just give a nice error message instead of panicking.
+
+- [#480] Don't require `codespan-reporting`.
+  The dependency was unused.
+
+### Added
+
+- [#479] `Opt` now derives `Clone`.
+- [#485] Document how to install `saltwater` via homebrew. Thank you to @SeekingMeaning for the PR!
+- [#487] `stddef.h` and `stdarg.h` are now built-in header files.
+  If the standard library packages stddef.h (e.g. on Alpine) that file will be used;
+  otherwise, saltwater will use the built-in files.
+
+[#448]: https://github.com/jyn514/saltwater/pull/448
+[#468]: https://github.com/jyn514/saltwater/pull/468
+[#477]: https://github.com/jyn514/saltwater/pull/477
+[#479]: https://github.com/jyn514/saltwater/pull/479
+[#480]: https://github.com/jyn514/saltwater/pull/480
+[#485]: https://github.com/jyn514/saltwater/pull/485
+[#487]: https://github.com/jyn514/saltwater/pull/487
+
 ## [0.10.0] - 2020-06-07
 
 ### Changed

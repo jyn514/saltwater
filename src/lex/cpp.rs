@@ -692,7 +692,7 @@ impl<'a> PreProcessor<'a> {
                 } if name == defined => {
                     let def = Self::defined(&mut lex_tokens, location)?;
                     let literal = if definitions.contains_key(&def) {
-                        LiteralToken::Int(RcStr::from("1")) // TODO can we not do tokens here?
+                        LiteralToken::Int(RcStr::from("1"))
                     } else {
                         LiteralToken::Int(RcStr::from("0"))
                     };
@@ -1691,7 +1691,7 @@ int main(){}
         let assert_unchanged = |s| assert_same_exact(s, s);
         assert_unchanged("\"abc\\?\" 1 2.0 3.000f 0x88 false");
         assert_unchanged("sdflasd;lfja s;dkj;adjsfl;ds lkjl;jljlkj23840uofjsd;");
-        assert_same_exact("int \t\n\r     main() {}", "int \t\n\r     main() {}");
+        assert_unchanged("int \t\n\r     main() {}");
         assert_same_exact("int/* */main() {}", "int main() {}");
         assert_same_exact("int/*\n\n\n*/main() {}", "int\n\n\nmain() {}");
         assert_same_exact("#define a(c) c\tc\na(1);a(2)", "\n1\t1;2\t2");

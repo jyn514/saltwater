@@ -160,7 +160,7 @@ pub enum LiteralValue {
     Int(i64),
     UnsignedInt(u64),
     Float(f64),
-    Str(Vec<u8>), // second arg is length of parsed string
+    Str(Vec<u8>),
     Char(u8),
 }
 

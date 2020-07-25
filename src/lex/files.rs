@@ -4,7 +4,7 @@ use crate::{
     ErrorHandler, Location,
 };
 use crate::{Files, Source};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 // TODO: this API is absolutely terrible, there's _no_ encapsulation
@@ -86,7 +86,7 @@ impl FileProcessor {
     pub(super) fn lexer_mut(&mut self) -> &mut Lexer {
         self.includes.last_mut().unwrap_or(&mut self.first_lexer)
     }
-    pub(super) fn add_file(&mut self, filename: String, source: Source) {
+    pub(super) fn add_file(&mut self, filename: PathBuf, source: Source) {
         let code = Rc::clone(&source.code);
         let id = self.files.add(filename, source);
         self.includes

@@ -1,6 +1,6 @@
 [package]
 name = "saltwater"
-version = "0.10.0"
+version = "0.11.0"
 authors = [
   "Joshua Nelson <jyn514@gmail.com>",
   "Graham Scheaffer <me@gisch.dev>",
@@ -23,17 +23,17 @@ documentation = "https://docs.rs/saltwater"
 [dependencies]
 lazy_static = "1"
 ansi_term = { version = "0.12", optional = true }
-cranelift = { version = "0.64", optional = true }
-cranelift-module = { version = "0.64", optional = true }
-cranelift-object = { version = "0.64", optional = true }
-cranelift-simplejit = { version = "0.64", optional = true }
+cranelift = { version = "0.66", optional = true }
+cranelift-module = { version = "0.66", optional = true }
+cranelift-object = { version = "0.66", optional = true }
+cranelift-simplejit = { version = "0.66", optional = true }
 hexponent = "0.3"
 thiserror = "^1.0.10"
 target-lexicon = "0.10"
 tempfile = { version = "3", optional = true }
 pico-args = { version = "0.3", optional = true }
 lasso = "0.2"
-codespan = "0.9"
+codespan = { version = ">=0.9.5", default-features = false }
 color-backtrace = { version = "0.4", default-features = false, optional = true }
 counter = "0.4"
 atty = { version = "0.2", default-features = false, optional = true }
@@ -53,7 +53,7 @@ proptest-derive = "0.1"
 [features]
 default = ["cc", "codegen", "color-backtrace"]
 # The `swcc` binary
-cc = ["ansi_term", "git-testament", "tempfile", "pico-args", "codegen", "atty"]
+cc = ["ansi_term", "tempfile", "pico-args", "codegen", "atty"]
 codegen = ["cranelift", "cranelift-module", "cranelift-object"]
 jit = ["codegen", "cranelift-simplejit"]
 salty = ["rand", "rodio"]

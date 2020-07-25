@@ -6,12 +6,6 @@ use super::*;
 
 use super::Radix;
 
-/// RecoverableResult is a type that represents a Result that can be recovered from.
-///
-/// See the [`Recover`] trait for more information.
-///
-/// [`Recover`]: trait.Recover.html
-pub type RecoverableResult<T, E = CompileError> = Result<T, (E, T)>;
 pub type CompileResult<T> = Result<T, CompileError>;
 pub type CompileError = Locatable<Error>;
 pub type CompileWarning = Locatable<Warning>;
@@ -683,41 +677,12 @@ impl<S: Into<String>> From<S> for SemanticError {
     }
 }
 
-pub(crate) trait Recover {
-    type Ok;
-    fn recover(self, error_handler: &mut ErrorHandler) -> Self::Ok;
-}
-
-impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, E> {
-    type Ok = T;
-    fn recover(self, error_handler: &mut ErrorHandler) -> T {
-        self.unwrap_or_else(|(e, i)| {
-            error_handler.push_back(e);
-            i
-        })
-    }
-}
-
-impl<T, E: Into<CompileError>> Recover for RecoverableResult<T, Vec<E>> {
-    type Ok = T;
-    fn recover(self, error_handler: &mut ErrorHandler) -> T {
-        self.unwrap_or_else(|(es, i)| {
-            error_handler.extend(es.into_iter());
-            i
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn dummy_error() -> CompileError {
         Location::default().with(Error::Lex(LexError::UnterminatedComment))
-    }
-
-    fn new_error(error: Error) -> CompileError {
-        Location::default().with(error)
     }
 
     #[test]
@@ -756,46 +721,6 @@ mod tests {
         assert_eq!(
             Error::Semantic(SemanticError::Generic("bad code".to_string())).to_string(),
             "invalid program: bad code"
-        );
-    }
-
-    #[test]
-    fn test_recover_error() {
-        let mut error_handler = ErrorHandler::new();
-        let r: RecoverableResult<i32> = Ok(1);
-        assert_eq!(r.recover(&mut error_handler), 1);
-        assert_eq!(error_handler.pop_front(), None);
-
-        let mut error_handler = ErrorHandler::new();
-        let r: RecoverableResult<i32> = Err((dummy_error(), 42));
-        assert_eq!(r.recover(&mut error_handler), 42);
-        let errors = error_handler.collect::<Vec<_>>();
-        assert_eq!(errors, vec![dummy_error()]);
-    }
-
-    #[test]
-    fn test_recover_multiple_errors() {
-        let mut error_handler = ErrorHandler::new();
-        let r: RecoverableResult<i32, Vec<CompileError>> = Ok(1);
-        assert_eq!(r.recover(&mut error_handler), 1);
-        assert_eq!(error_handler.pop_front(), None);
-
-        let mut error_handler = ErrorHandler::new();
-        let r: RecoverableResult<i32, Vec<CompileError>> = Err((
-            vec![
-                dummy_error(),
-                new_error(Error::Semantic(SemanticError::Generic("pears".to_string()))),
-            ],
-            42,
-        ));
-        assert_eq!(r.recover(&mut error_handler), 42);
-        let errors = error_handler.collect::<Vec<_>>();
-        assert_eq!(
-            errors,
-            vec![
-                dummy_error(),
-                new_error(Error::Semantic(SemanticError::Generic("pears".to_string()))),
-            ]
         );
     }
 }

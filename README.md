@@ -19,6 +19,12 @@ Use `swcc --help` for all options (or see [below](#all-options)).
 You need to have `cc` on your PATH. You can either install mingw + gcc or MSVC.
 Other than that, it should work exactly the same as on Linux.
 
+### Homebrew
+
+```
+brew install saltwater
+```
+
 ## Unimplemented features
 
 - Defining functions taking variadic arguments. Note that calling variadic functions (like `printf`) is already supported.

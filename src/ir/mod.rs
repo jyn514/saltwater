@@ -75,11 +75,12 @@ pub(crate) fn get_isa(jit: bool) -> Box<dyn TargetIsa + 'static> {
 }
 
 pub fn initialize_aot_module(name: String) -> Module<ObjectBackend> {
-    Module::new(ObjectBuilder::new(
+    let builder = ObjectBuilder::new(
         get_isa(false),
         name,
         cranelift_module::default_libcall_names(),
-    ))
+    );
+    Module::new(builder.expect("unsupported binary format or target architecture"))
 }
 
 enum Id {

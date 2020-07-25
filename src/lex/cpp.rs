@@ -1007,40 +1007,37 @@ impl<'a> PreProcessor<'a> {
         };
 
         let end = if local { '"' } else { '>' };
-        let filename = self.chars_until(end).to_owned();
+        let filename = PathBuf::from(self.chars_until(end).to_owned());
         self.include_path(filename, local, start)
     }
     // we've done the parsing for an `#include`,
     // now we want to figure what file on disk it corresponds to
     fn find_include_path(
         &mut self,
-        filename: String,
+        filename: &Path,
         local: bool,
         start: u32,
     ) -> Result<PathBuf, Locatable<Error>> {
-        if filename.is_empty() {
+        if filename.as_os_str().is_empty() {
             return Err(CompileError::new(
                 CppError::EmptyInclude.into(),
                 self.span(start),
             ));
         }
-        // can't be a closure because of borrowck
-        macro_rules! not_found {
-            () => {
-                Err(CompileError::new(
-                    CppError::FileNotFound(filename).into(),
-                    self.span(start),
-                ))
-            };
-        }
+
+        let not_found = |this: &Self, filename: &Path| {
+            Err(this.span(start).error(CppError::FileNotFound(
+                filename.to_string_lossy().to_string(),
+            )))
+        };
+
         // absolute path, ignore everything except the filename
         // e.g `#include </usr/local/include/stdio.h>`
-        if filename.starts_with('/') {
-            let path = std::path::Path::new(&filename);
-            return if path.exists() {
-                Ok(PathBuf::from(filename))
+        if filename.is_absolute() {
+            return if filename.exists() {
+                Ok(filename.to_owned())
             } else {
-                not_found!()
+                not_found(self, filename)
             };
         }
         // local include: #include "dict.h"
@@ -1049,7 +1046,7 @@ impl<'a> PreProcessor<'a> {
             let relative_path = &current_path
                 .parent()
                 .unwrap_or_else(|| std::path::Path::new(""));
-            let resolved = relative_path.join(&filename);
+            let resolved = relative_path.join(filename);
             if resolved.exists() {
                 return Ok(resolved);
             }
@@ -1057,31 +1054,50 @@ impl<'a> PreProcessor<'a> {
         // if we don't find it locally, we fall back to system headers
         // this is part of the spec! http://port70.net/~nsz/c/c11/n1570.html#6.10.2p3
         for path in &self.search_path {
-            let mut buf = PathBuf::from(path.as_ref());
-            buf.push(&filename);
+            let mut buf = path.clone().into_owned();
+            buf.push(filename);
             if buf.exists() {
                 return Ok(buf);
             }
         }
-        return not_found!();
+
+        not_found(self, filename)
     }
     // we've done the parsing for an `#include`,
     // now we want to do the dirty work of reading it into memory
     fn include_path(
         &mut self,
-        filename: String,
+        filename: PathBuf,
         local: bool,
         start: u32,
     ) -> Result<(), Locatable<Error>> {
-        let resolved = self.find_include_path(filename.clone(), local, start)?;
-        let src = std::fs::read_to_string(&resolved)
-            .map_err(|err| Locatable {
-                data: CppError::IO(err.to_string()),
-                location: self.span(start),
-            })?
-            .into();
+        let (path, src) = match self.find_include_path(&filename, local, start) {
+            Ok(path) => {
+                let src = std::fs::read_to_string(&path)
+                    .map_err(|err| Locatable {
+                        data: CppError::IO(err.to_string()),
+                        location: self.span(start),
+                    })?
+                    .into();
+                (path, src)
+            }
+            Err(not_found) => {
+                let filename = match filename.file_name().and_then(|f| f.to_str()) {
+                    None => return Err(not_found),
+                    Some(f) => f,
+                };
+                match get_builtin_header(filename) {
+                    Some(file) => {
+                        let mut path = PathBuf::from("<builtin>");
+                        path.push(filename);
+                        (path, Rc::from(file))
+                    }
+                    None => return Err(not_found),
+                }
+            }
+        };
         let source = crate::Source {
-            path: resolved,
+            path,
             code: Rc::clone(&src),
         };
         self.file_processor.add_file(filename, source);
@@ -1134,6 +1150,30 @@ impl<'a> PreProcessor<'a> {
         }
         Ok(ret)
     }
+}
+
+macro_rules! built_in_headers {
+    ( $($filename: literal),+ $(,)? ) => {
+        [
+            // Relative to the current file, not the crate root
+            $( ($filename, include_str!(concat!("../../headers/", $filename))) ),+
+        ]
+    };
+}
+
+// [(filename, contents)]
+// TODO: this could probably use a perfect-hashmap,
+// but it's so small that it's not worth it
+const PRECOMPILED_HEADERS: [(&str, &str); 2] = built_in_headers! {
+    "stdarg.h",
+    "stddef.h",
+};
+
+fn get_builtin_header(expected: impl AsRef<str>) -> Option<&'static str> {
+    PRECOMPILED_HEADERS
+        .iter()
+        .find(|&(path, _)| path == &expected.as_ref())
+        .map(|x| x.1)
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

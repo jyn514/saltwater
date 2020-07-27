@@ -4,9 +4,12 @@
 
 use super::{cpp::CppResult, files::FileProcessor};
 use crate::{
-    error::CppError, CompileError, CompileResult, InternedStr, Literal, Locatable, Location, Token,
+    error::CppError, CompileError, CompileResult, InternedStr, LiteralToken, Locatable, Location,
+    Token,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
+
+use shared_str::RcStr;
 
 /// All known macro definitions.
 ///
@@ -375,24 +378,22 @@ fn stringify(args: Vec<Token>) -> Token {
         .map(|arg| {
             match arg {
                 Token::Whitespace(_) => String::from(" "), // Single space in replacement
-                Token::Literal(Literal::Str(s)) => {
-                    // TODO can we unwrap safely?
-                    let new_s = std::str::from_utf8(&s)
-                        .unwrap()
-                        .trim_end_matches('\0')  // remove null terminator
-                        .escape_default()  // Escape whitespace, etc
-                        .flat_map(char::escape_default); // Escape a second time
-                    "\\\"" // Wrap with escaped quotation marks
-                        .chars()
-                        .chain(new_s)
-                        .chain("\\\"".chars())
-                        .collect::<String>()
+                Token::Literal(LiteralToken::Str(rcstrs)) => {
+                    rcstrs
+                        .iter()
+                        .map(|rcstr| {
+                            rcstr
+                                .as_str()
+                                .escape_default()
+                                .collect::<String>()
+                                .replace(r#"\'"#, "'") // Because Rust escapes ' but C does not
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
                 }
                 other => other.to_string(),
             }
         })
         .collect();
-    let mut ret: Vec<_> = ret.into();
-    ret.push(0); // null terminate
-    Token::Literal(Literal::Str(ret))
+    Token::Literal(LiteralToken::Str(vec![RcStr::from(format!("\"{}\"", ret))]))
 }

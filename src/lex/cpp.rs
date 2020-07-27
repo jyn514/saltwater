@@ -1787,7 +1787,6 @@ h",
         assert_same_exact("#define hash #a\nhash", "\n#a");
     }
     #[test]
-    #[ignore = "Depends on #384"]
     fn stringify_string() {
         assert_same_stringified(r#""\'""#, r#""\"\\'\"""#);
         assert_same_stringified(

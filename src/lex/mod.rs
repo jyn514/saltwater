@@ -194,7 +194,7 @@ impl Lexer {
         }
         if radix == Radix::Binary {
             let span = self.span(span_start);
-            self.handle_warning_loc("binary number literals are an extension", span);
+            self.warn_loc("binary number literals are an extension", span);
         }
         Ok(Token::Literal(literal))
     }
@@ -587,14 +587,14 @@ pub(crate) trait LiteralParser {
     fn peek(&mut self) -> Option<char>;
     fn peek_next(&mut self) -> Option<char>;
     fn get_location(&self) -> &SingleLocation;
-    fn handle_error(&mut self, err: Locatable<LexError>);
-    fn handle_warning(&mut self, err: Locatable<Warning>);
+    fn err(&mut self, err: Locatable<LexError>);
+    fn warn(&mut self, err: Locatable<Warning>);
 
-    fn handle_error_loc<E: Into<LexError>>(&mut self, err: E, location: Location) {
-        self.handle_error(location.with(err.into()));
+    fn err_loc<E: Into<LexError>>(&mut self, err: E, location: Location) {
+        self.err(location.with(err.into()));
     }
-    fn handle_warning_loc<W: Into<Warning>>(&mut self, warning: W, location: Location) {
-        self.handle_warning(location.with(warning.into()));
+    fn warn_loc<W: Into<Warning>>(&mut self, warning: W, location: Location) {
+        self.warn(location.with(warning.into()));
     }
 
     /// Given the start of a span as an offset,
@@ -656,7 +656,7 @@ pub(crate) trait LiteralParser {
                             });
                         }
                         '\0'..='\x7f' => {
-                            self.handle_warning_loc(
+                            self.warn_loc(
                                 &format!("unknown character escape '\\{}'", c),
                                 self.span(self.get_location().offset - 1),
                             );
@@ -840,7 +840,7 @@ pub(crate) trait LiteralParser {
                                 let ws = if comments_newlines { &ws } else { " " };
                                 whitespace.push_str(ws)
                             }
-                            Err(err) => self.handle_error(err),
+                            Err(err) => self.err(err),
                         }
                     }
                     _ => break,
@@ -944,10 +944,10 @@ impl LiteralParser for Lexer {
     fn get_location(&self) -> &SingleLocation {
         &self.location
     }
-    fn handle_error(&mut self, err: Locatable<LexError>) {
+    fn err(&mut self, err: Locatable<LexError>) {
         self.error_handler.push_back(err);
     }
-    fn handle_warning(&mut self, err: Locatable<Warning>) {
+    fn warn(&mut self, err: Locatable<Warning>) {
         self.error_handler.warnings.push_back(err);
     }
 }
@@ -970,10 +970,10 @@ impl<T: Iterator<Item = char>> LiteralParser for PseudoLexer<T> {
     fn get_location(&self) -> &SingleLocation {
         &self.loc
     }
-    fn handle_error(&mut self, _err: Locatable<LexError>) {
+    fn err(&mut self, _err: Locatable<LexError>) {
         unreachable!("No errors on second lexer pass");
     }
-    fn handle_warning(&mut self, _err: Locatable<Warning>) {
+    fn warn(&mut self, _err: Locatable<Warning>) {
         // Warnings have already been handled, theoretically
     }
 }

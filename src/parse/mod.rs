@@ -145,23 +145,19 @@ impl<I: Lexer> Parser<I> {
                     ..
                 })) => continue,
                 Some(Ok(Locatable {
-                    data: Token::Literal(Literal::Str(mut concat)),
+                    data: Token::Literal(LiteralToken::Str(mut concat_strs)),
                     mut location,
                 })) => {
                     // 5.1.1.2p1: Translation phase 6: Adjacent string literal tokens are concatenated.
                     loop {
                         match self.tokens.peek() {
                             Some(Ok(Locatable {
-                                data: Token::Literal(Literal::Str(_)),
+                                data: Token::Literal(LiteralToken::Str(merge_strs)),
                                 location: next_location,
                             })) => {
                                 location = location.merge(next_location);
-                                let mut s = match self.tokens.next().unwrap().unwrap().data {
-                                    Token::Literal(Literal::Str(s)) => s,
-                                    _ => unreachable!(),
-                                };
-                                assert_eq!(concat.pop(), Some(b'\0'));
-                                concat.append(&mut s);
+                                concat_strs.append(&mut merge_strs.clone());
+                                self.tokens.next(); // Actually remove next
                             }
                             Some(Ok(Locatable {
                                 data: Token::Whitespace(_),
@@ -178,7 +174,7 @@ impl<I: Lexer> Parser<I> {
                         }
                     }
                     break Some(Locatable::new(
-                        Token::Literal(Literal::Str(concat)),
+                        Token::Literal(LiteralToken::Str(concat_strs)),
                         location,
                     ));
                 }
@@ -251,7 +247,7 @@ impl<I: Lexer> Parser<I> {
             None
         }
     }
-    fn match_literal(&mut self) -> Option<Locatable<Literal>> {
+    fn match_literal(&mut self) -> Option<Locatable<LiteralToken>> {
         let next = self.next_token();
         if let Some(Locatable {
             data: Token::Literal(lit),
@@ -309,7 +305,7 @@ impl<I: Lexer> Parser<I> {
             Some(t) => t,
             None => {
                 let err = Err(Locatable {
-                    data: SyntaxError::from(format!("expected '{}', got '<end-of-file>'", next)),
+                    data: SyntaxError::Generic(format!("expected '{}', got '<end-of-file>'", next)),
                     // TODO: we don't actually want this, we want the end of the file
                     location: self.last_location,
                 });
@@ -321,7 +317,7 @@ impl<I: Lexer> Parser<I> {
             Ok(self.next_token().unwrap())
         } else {
             let err = Err(Locatable {
-                data: SyntaxError::from(format!("expected '{}', got '{}'", next, token)),
+                data: SyntaxError::Generic(format!("expected '{}', got '{}'", next, token)),
                 location: self.next_location(),
             });
             self.panic();
@@ -431,7 +427,7 @@ pub(crate) mod test {
 
             let e = expr(s).unwrap();
             let mut bytes = match e.data {
-                ExprType::Literal(Literal::Str(s)) => s,
+                ExprType::Literal(LiteralValue::Str(s)) => s,
                 x => panic!("wrong expression: {:?}", x),
             };
             assert_eq!(bytes.pop(), Some(b'\0'));

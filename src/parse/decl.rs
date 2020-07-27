@@ -522,15 +522,15 @@ impl<I: Lexer> Parser<I> {
             _ if allow_abstract => None,
             Some(x) => {
                 let err = Err(Locatable::new(
-                    SyntaxError::from(format!("expected variable name or '(', got '{}'", x)),
+                    SyntaxError::Generic(format!("expected variable name or '(', got '{}'", x)),
                     self.next_location(),
                 ));
                 self.panic();
                 return err;
             }
             None => {
-                return Err(self.next_location().with(SyntaxError::from(
-                    "expected variable name or '(', got <end-of-of-file>",
+                return Err(self.next_location().with(SyntaxError::Generic(
+                    "expected variable name or '(', got <end-of-of-file>".into(),
                 )));
             }
         };

@@ -5,8 +5,8 @@ use cranelift_module::Backend;
 use super::{Compiler, Id};
 use crate::data::*;
 use crate::data::{
-    hir::{BinaryOp, Expr, ExprType, Symbol, Variable},
-    lex::{ComparisonToken, Literal},
+    hir::{BinaryOp, Expr, ExprType, LiteralValue, Symbol, Variable},
+    lex::ComparisonToken,
 };
 
 type IrResult = CompileResult<Value>;
@@ -210,19 +210,19 @@ impl<B: Backend> Compiler<B> {
         &mut self,
         ir_type: IrType,
         ctype: Type,
-        token: Literal,
+        token: LiteralValue,
         location: Location,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
         let ir_val = match (token, ir_type) {
-            (Literal::Int(i), types::B1) => builder.ins().bconst(ir_type, i != 0),
-            (Literal::Int(i), _) => builder.ins().iconst(ir_type, i),
-            (Literal::UnsignedInt(u), types::B1) => builder.ins().bconst(ir_type, u != 0),
-            (Literal::UnsignedInt(u), _) => builder.ins().iconst(ir_type, u as i64),
-            (Literal::Float(f), types::F32) => builder.ins().f32const(f as f32),
-            (Literal::Float(f), types::F64) => builder.ins().f64const(f),
-            (Literal::Char(c), _) => builder.ins().iconst(ir_type, i64::from(c)),
-            (Literal::Str(string), _) => {
+            (LiteralValue::Int(i), types::B1) => builder.ins().bconst(ir_type, i != 0),
+            (LiteralValue::Int(i), _) => builder.ins().iconst(ir_type, i),
+            (LiteralValue::UnsignedInt(u), types::B1) => builder.ins().bconst(ir_type, u != 0),
+            (LiteralValue::UnsignedInt(u), _) => builder.ins().iconst(ir_type, u as i64),
+            (LiteralValue::Float(f), types::F32) => builder.ins().f32const(f as f32),
+            (LiteralValue::Float(f), types::F64) => builder.ins().f64const(f),
+            (LiteralValue::Char(c), _) => builder.ins().iconst(ir_type, i64::from(c)),
+            (LiteralValue::Str(string), _) => {
                 let str_id = self.compile_string(string, location)?;
                 let str_addr = self.module.declare_data_in_func(str_id, builder.func);
                 builder.ins().global_value(Type::ptr_type(), str_addr)

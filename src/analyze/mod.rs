@@ -987,7 +987,7 @@ impl PureAnalyzer {
         }
     }
     // used for arrays like `int a[BUF_SIZE - 1];` and enums like `enum { A = 1 }`
-    fn const_literal(expr: Expr) -> CompileResult<Literal> {
+    fn const_literal(expr: Expr) -> CompileResult<LiteralValue> {
         let location = expr.location;
         expr.const_fold()?.into_literal().map_err(|runtime_expr| {
             Locatable::new(SemanticError::NotConstant(runtime_expr).into(), location)
@@ -995,7 +995,7 @@ impl PureAnalyzer {
     }
     /// Return an unsigned integer that can be evaluated at compile time, or an error otherwise.
     fn const_uint(expr: Expr) -> CompileResult<crate::arch::SIZE_T> {
-        use Literal::*;
+        use LiteralValue::*;
 
         let location = expr.location;
         match Self::const_literal(expr)? {
@@ -1019,7 +1019,7 @@ impl PureAnalyzer {
     }
     /// Return a signed integer that can be evaluated at compile time, or an error otherwise.
     fn const_sint(expr: Expr) -> CompileResult<i64> {
-        use Literal::*;
+        use LiteralValue::*;
 
         let location = expr.location;
         match Self::const_literal(expr)? {
@@ -1087,7 +1087,7 @@ impl PureAnalyzer {
                     // and also
                     // > 3 If the declaration of a file scope identifier for an object contains the storage- class specifier static, the identifier has internal linkage.
                     // so since
-                    // > If, within a translation unit, the same identifier appears with both internal and external linkage, the behavior is undefined. 
+                    // > If, within a translation unit, the same identifier appears with both internal and external linkage, the behavior is undefined.
 
                     // extern int i; int i;
                     || (existing.storage_class == StorageClass::Extern && meta.storage_class != StorageClass::Static))

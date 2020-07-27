@@ -260,7 +260,11 @@ impl<I: Lexer> Parser<I> {
         } else if let Some(loc) = self.match_id() {
             loc.map(ExprType::Id)
         } else if let Some(literal) = self.match_literal() {
-            literal.map(ExprType::Literal)
+            let loc = literal.location;
+            match literal.data.parse() {
+                Ok(literal) => loc.with(literal).map(ExprType::Literal),
+                Err(err) => return Err(loc.with(err)),
+            }
         } else {
             return Err(self.next_location().with(SyntaxError::MissingPrimary));
         };
@@ -397,7 +401,7 @@ pub(crate) mod test {
         let expr_data = |s| expr(s).unwrap().data;
         let x = || Box::new(Location::default().with(ExprType::Id("x".into())));
         fn int() -> Box<Expr> {
-            Box::new(Location::default().with(ExprType::Literal(Literal::Int(1))))
+            Box::new(Location::default().with(ExprType::Literal(LiteralValue::Int(1))))
         }
         fn assert_unary_int(s: &str, c: impl Fn(Box<Expr>) -> ExprType) {
             assert_eq!(expr(s).unwrap().data, c(int()));

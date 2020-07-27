@@ -10,14 +10,40 @@ use super::{Compiler, Id};
 use crate::arch::{PTR_SIZE, TARGET};
 use crate::data::*;
 use crate::data::{
-    hir::{Expr, ExprType, Initializer, Symbol},
-    lex::Literal,
+    hir::{Expr, ExprType, Initializer, LiteralValue, Symbol},
     types::ArrayType,
     StorageClass,
 };
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
+
+macro_rules! cast {
+    ($i: expr, $from: ty, $to: ty, $ctype: expr, $location: expr, $handler: expr) => {{
+        let cast = $i as $to;
+        if cast as $from != $i {
+            $handler.warn(
+                &format!(
+                    "conversion to {} loses precision ({} != {})",
+                    $ctype, cast as $from, $i
+                ),
+                $location,
+            )
+        }
+        cast
+    }};
+}
+
+macro_rules! bytes {
+    ($int: expr, $be: expr) => {{
+        let boxed: Box<[u8]> = if $be {
+            Box::new($int.to_be_bytes())
+        } else {
+            Box::new($int.to_le_bytes())
+        };
+        boxed
+    }};
+}
 
 impl<B: Backend> Compiler<B> {
     pub(super) fn store_static(
@@ -78,7 +104,7 @@ impl<B: Backend> Compiler<B> {
                 if let Some(len) = match &init {
                     Initializer::InitializerList(list) => Some(list.len()),
                     Initializer::Scalar(expr) => match &expr.expr {
-                        ExprType::Literal(Literal::Str(s)) => Some(s.len()),
+                        ExprType::Literal(LiteralValue::Str(s)) => Some(s.len()),
                         _ => None,
                     },
                     _ => None,
@@ -160,7 +186,7 @@ impl<B: Backend> Compiler<B> {
         match expr.expr {
             ExprType::StaticRef(inner) => match inner.expr {
                 ExprType::Id(symbol) => self.static_ref(symbol, 0, offset, ctx),
-                ExprType::Literal(Literal::Str(str_ref)) => {
+                ExprType::Literal(LiteralValue::Str(str_ref)) => {
                     let str_id = self.compile_string(str_ref, expr.location)?;
                     let str_addr = self.module.declare_data_in_data(str_id, ctx);
                     ctx.write_data_addr(offset, str_addr, 0);
@@ -324,34 +350,7 @@ impl<B: Backend> Compiler<B> {
     }
 }
 
-macro_rules! cast {
-    ($i: expr, $from: ty, $to: ty, $ctype: expr, $location: expr, $handler: expr) => {{
-        let cast = $i as $to;
-        if cast as $from != $i {
-            $handler.warn(
-                &format!(
-                    "conversion to {} loses precision ({} != {})",
-                    $ctype, cast as $from, $i
-                ),
-                $location,
-            )
-        }
-        cast
-    }};
-}
-
-macro_rules! bytes {
-    ($int: expr, $be: expr) => {{
-        let boxed: Box<[u8]> = if $be {
-            Box::new($int.to_be_bytes())
-        } else {
-            Box::new($int.to_le_bytes())
-        };
-        boxed
-    }};
-}
-
-impl Literal {
+impl LiteralValue {
     fn into_bytes(
         self,
         ctype: &Type,
@@ -365,7 +364,7 @@ impl Literal {
             == target_lexicon::Endianness::Big;
 
         match self {
-            Literal::Int(i) => Ok(match ir_type {
+            LiteralValue::Int(i) => Ok(match ir_type {
                 types::I8 => bytes!(
                     cast!(i, i64, i8, &ctype, *location, error_handler),
                     big_endian
@@ -384,7 +383,7 @@ impl Literal {
                     x, i
                 )),
             }),
-            Literal::UnsignedInt(i) => Ok(match ir_type {
+            LiteralValue::UnsignedInt(i) => Ok(match ir_type {
                 types::I8 => bytes!(
                     cast!(i, u64, u8, &ctype, *location, error_handler),
                     big_endian
@@ -403,7 +402,7 @@ impl Literal {
                     x, i
                 )),
             }),
-            Literal::Float(f) => Ok(match ir_type {
+            LiteralValue::Float(f) => Ok(match ir_type {
                 types::F32 => {
                     let cast = f as f32;
                     if (f64::from(cast) - f).abs() >= std::f64::EPSILON {
@@ -422,8 +421,8 @@ impl Literal {
                     x, f
                 )),
             }),
-            Literal::Str(string) => Ok(string.into_boxed_slice()),
-            Literal::Char(c) => Ok(Box::new([c])),
+            LiteralValue::Str(string) => Ok(string.into_boxed_slice()),
+            LiteralValue::Char(c) => Ok(Box::new([c])),
         }
     }
 }

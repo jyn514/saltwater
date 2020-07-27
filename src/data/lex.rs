@@ -2,12 +2,12 @@ use std::borrow::Borrow;
 use std::cmp::Ordering;
 
 #[cfg(test)]
-use proptest::strategy::Strategy;
-#[cfg(test)]
 use proptest_derive::Arbitrary;
 
 use crate::data::hir::BinaryOp;
 use crate::intern::InternedStr;
+
+use shared_str::RcStr;
 
 // holds where a piece of code came from
 // should almost always be immutable
@@ -15,6 +15,27 @@ use crate::intern::InternedStr;
 pub struct Span {
     pub start: u32,
     pub end: u32,
+}
+
+impl Span {
+    pub fn len(self) -> usize {
+        (self.end - self.start) as usize
+    }
+    pub fn is_empty(self) -> bool {
+        self.start == self.end
+    }
+}
+
+impl Into<codespan::Span> for Span {
+    fn into(self) -> codespan::Span {
+        codespan::Span::new(self.start, self.end)
+    }
+}
+
+impl Into<Range<usize>> for Span {
+    fn into(self) -> Range<usize> {
+        (self.start as usize)..(self.end as usize)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -142,22 +163,30 @@ pub enum ComparisonToken {
     GreaterEqual,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(test, derive(Arbitrary))]
-pub enum Literal {
+#[derive(Clone, Debug)]
+pub enum LiteralToken {
     // literals
-    Int(i64),
-    UnsignedInt(u64),
-    Float(f64),
-    #[rustfmt::skip] // just no
-    #[cfg_attr(test, proptest(strategy =
-        "proptest::prelude::any::<Vec<u8>>().prop_map(|mut v| {
-            v.push(b'\0'); Literal::Str(v)
-        })"
-    ))]
-    Str(Vec<u8>),
-    Char(u8),
+    Int(RcStr),
+    UnsignedInt(RcStr),
+    Float(RcStr),
+    Str(Vec<RcStr>),
+    Char(RcStr),
 }
+
+impl PartialEq for LiteralToken {
+    fn eq(&self, other: &Self) -> bool {
+        use LiteralToken::*;
+        match (self, other) {
+            (Int(x), Int(y))
+            | (UnsignedInt(x), UnsignedInt(y))
+            | (Float(x), Float(y))
+            | (Char(x), Char(y)) => x.as_str() == y.as_str(),
+            (Str(x), Str(y)) => x.iter().zip(y).all(|(x, y)| x.as_str() == y.as_str()),
+            _ => false,
+        }
+    }
+}
+impl Eq for LiteralToken {}
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(test, derive(Arbitrary))]
@@ -195,7 +224,7 @@ pub enum Token {
     Question,
 
     Keyword(Keyword),
-    Literal(Literal),
+    Literal(LiteralToken),
     Id(InternedStr),
 
     Whitespace(String),
@@ -243,6 +272,14 @@ impl Location {
     pub fn error<E: Into<super::error::Error>>(self, error: E) -> super::CompileError {
         self.with(error.into())
     }
+
+    pub fn len(&self) -> usize {
+        self.span.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.span.is_empty()
+    }
 }
 
 impl<T: PartialEq> PartialEq for Locatable<T> {
@@ -261,17 +298,6 @@ impl<T> Locatable<T> {
 
 impl Token {
     pub const EQUAL: Token = Token::Assignment(AssignmentToken::Equal);
-}
-
-impl Literal {
-    pub fn is_zero(&self) -> bool {
-        match *self {
-            Literal::Int(i) => i == 0,
-            Literal::UnsignedInt(u) => u == 0,
-            Literal::Char(c) => c == 0,
-            _ => false,
-        }
-    }
 }
 
 impl AssignmentToken {
@@ -371,32 +397,22 @@ impl std::fmt::Display for Token {
     }
 }
 
-impl std::fmt::Display for Literal {
+impl std::fmt::Display for LiteralToken {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use Literal::*;
+        use LiteralToken::*;
         match self {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(s) => {
-                let mut escaped = s
+            Str(rcstr) => {
+                let joined = rcstr
                     .iter()
-                    .flat_map(|c| match c {
-                        b'\n' => "\\n".bytes().collect(),
-                        b'\r' => "\\r".bytes().collect(),
-                        b'\t' => "\\t".bytes().collect(),
-                        _ => vec![*c],
-                    })
-                    .collect::<Vec<_>>();
-
-                // Remove the null byte at the end,
-                // because this will break tests and
-                // it's not needed in debug output.
-                assert_eq!(escaped.pop(), Some(b'\0'));
-
-                write!(f, "\"{}\"", String::from_utf8_lossy(&escaped))
+                    .map(RcStr::as_str)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                write!(f, "{}", joined)
             }
-            Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
+            Char(rcstr) => write!(f, "{}", rcstr.as_str()),
         }
     }
 }
@@ -426,8 +442,8 @@ impl std::fmt::Display for AssignmentToken {
     }
 }
 
-impl From<Literal> for Token {
-    fn from(l: Literal) -> Self {
+impl From<LiteralToken> for Token {
+    fn from(l: LiteralToken) -> Self {
         Token::Literal(l)
     }
 }
@@ -441,6 +457,38 @@ impl From<AssignmentToken> for Token {
 impl From<ComparisonToken> for Token {
     fn from(a: ComparisonToken) -> Self {
         Token::Comparison(a)
+    }
+}
+
+#[cfg(test)]
+mod proptest_impl {
+    use super::LiteralToken;
+    use proptest::prelude::*;
+    use shared_str::RcStr;
+
+    impl Arbitrary for LiteralToken {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<LiteralToken>;
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                // TODO give regex of all possible literals
+                any::<i64>().prop_map(|x| LiteralToken::Int(RcStr::from(x.to_string()))),
+                any::<u64>().prop_map(|x| LiteralToken::UnsignedInt(RcStr::from(x.to_string()))),
+                any::<f64>().prop_map(|x| LiteralToken::Float(RcStr::from(x.to_string()))),
+                any::<u8>().prop_map(|c| LiteralToken::Char(RcStr::from(format!(
+                    "\'{}\'",
+                    (c as char).escape_default()
+                )))),
+                prop::collection::vec(".*", 1..10).prop_map(|strs| {
+                    let rcstrs = strs
+                        .into_iter()
+                        .map(|s| RcStr::from(format!("\"{}\"", s.escape_default())))
+                        .collect();
+                    LiteralToken::Str(rcstrs)
+                }),
+            ]
+            .boxed()
+        }
     }
 }
 

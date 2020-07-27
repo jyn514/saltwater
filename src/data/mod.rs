@@ -7,7 +7,8 @@ pub mod types;
 pub use crate::intern::InternedStr;
 pub(crate) use error::ErrorHandler;
 pub use error::{CompileError, CompileResult, CompileWarning, Error, SemanticError, SyntaxError};
-pub use lex::{Literal, Locatable, Location, Token};
+pub use hir::LiteralValue;
+pub use lex::{LiteralToken, Locatable, Location, Token};
 pub use types::Type;
 pub use types::{StructRef, StructType};
 

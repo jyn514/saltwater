@@ -25,6 +25,7 @@
 
 use lazy_static::lazy_static;
 
+use shared_str::RcStr;
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
@@ -33,10 +34,10 @@ use std::rc::Rc;
 
 use super::files::FileProcessor;
 use super::replace::{replace, Definition, Definitions};
-use super::{Lexer, Token};
+use super::{Lexer, LiteralParser, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
-use crate::data::lex::{Keyword, Literal};
+use crate::data::lex::{Keyword, LiteralToken};
 use crate::data::*;
 use crate::get_str;
 use crate::Files;
@@ -324,7 +325,11 @@ impl<'a> PreProcessor<'a> {
             "{}-{}-{}",
             TARGET.architecture, TARGET.operating_system, TARGET.environment
         );
-        let int = |i| Definition::Object(vec![Token::Literal(Literal::Int(i))]);
+        let int = |i: i64| {
+            Definition::Object(vec![Token::Literal(LiteralToken::Int(RcStr::from(
+                i.to_string(),
+            )))])
+        };
 
         #[allow(clippy::inconsistent_digit_grouping)]
         let mut definitions = map! {
@@ -590,7 +595,7 @@ impl<'a> PreProcessor<'a> {
             .constexpr()?
             .data
         {
-            (Literal::Int(i), Type::Bool) => Ok(i != 0),
+            (LiteralValue::Int(i), Type::Bool) => Ok(i != 0),
             _ => unreachable!("bug in const_fold or parser: cpp cond should be boolean"),
         }
     }
@@ -687,9 +692,9 @@ impl<'a> PreProcessor<'a> {
                 } if name == defined => {
                     let def = Self::defined(&mut lex_tokens, location)?;
                     let literal = if definitions.contains_key(&def) {
-                        Literal::Int(1)
+                        LiteralToken::Int(RcStr::from("1"))
                     } else {
-                        Literal::Int(0)
+                        LiteralToken::Int(RcStr::from("0"))
                     };
                     location.with(Token::Literal(literal))
                 }
@@ -707,7 +712,7 @@ impl<'a> PreProcessor<'a> {
                 if let Ok(tok) = &mut token {
                     expr_location = Some(location.maybe_merge(expr_location));
                     if let Token::Id(_) = tok.data {
-                        tok.data = Token::Literal(Literal::Int(0));
+                        tok.data = Token::Literal(LiteralToken::Int(RcStr::from("0")));
                     }
                 }
                 token
@@ -977,7 +982,7 @@ impl<'a> PreProcessor<'a> {
             {
                 // local
                 Some(Ok(Locatable {
-                    data: Token::Literal(Literal::Str(_)),
+                    data: Token::Literal(LiteralToken::Str(_)),
                     ..
                 })) => unimplemented!("#include for macros"), //return self.include_path(id, true, start),
                 // system
@@ -1512,7 +1517,7 @@ a(2)
         let src = "
 #define a(b) b+1
 #define a(b) b+1
-a(2)        
+a(2)
 ";
         assert_same(src, "2+1");
     }
@@ -1683,7 +1688,10 @@ int main(){}
     #[test]
     // https://github.com/jyn514/rcc/issues/356
     fn preprocess_only() {
-        assert_same_exact("int \t\n\r     main() {}", "int \t\n\r     main() {}");
+        let assert_unchanged = |s| assert_same_exact(s, s);
+        assert_unchanged("\"abc\\?\" 1 2.0 3.000f 0x88 false");
+        assert_unchanged("sdflasd;lfja s;dkj;adjsfl;ds lkjl;jljlkj23840uofjsd;");
+        assert_unchanged("int \t\n\r     main() {}");
         assert_same_exact("int/* */main() {}", "int main() {}");
         assert_same_exact("int/*\n\n\n*/main() {}", "int\n\n\nmain() {}");
         assert_same_exact("#define a(c) c\tc\na(1);a(2)", "\n1\t1;2\t2");

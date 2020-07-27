@@ -8,7 +8,7 @@ use std::rc::Rc;
 #[cfg(test)]
 use proptest_derive::Arbitrary;
 
-use super::lex::{ComparisonToken, Keyword, Literal, Locatable};
+use super::lex::{ComparisonToken, Keyword, Locatable};
 use super::types::Type;
 use super::*;
 use crate::intern::InternedStr;
@@ -126,7 +126,7 @@ pub enum ExprType {
     // This stores a reference to the metadata for the identifier,
     // which can be looked up using a `metadata_store`.
     Id(Symbol),
-    Literal(Literal),
+    Literal(LiteralValue),
     FuncCall(Box<Expr>, Vec<Expr>),
     Member(Box<Expr>, InternedStr),
 
@@ -151,6 +151,17 @@ pub enum ExprType {
     StaticRef(Box<Expr>),
     // used to work around various bugs, see places this is constructed for details
     Noop(Box<Expr>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(Arbitrary))]
+pub enum LiteralValue {
+    // literals
+    Int(i64),
+    UnsignedInt(u64),
+    Float(f64),
+    Str(Vec<u8>),
+    Char(u8),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -503,6 +514,47 @@ impl Display for Declaration {
                 write!(f, "}};")
             }
             None => write!(f, ";"),
+        }
+    }
+}
+
+impl LiteralValue {
+    pub fn is_zero(&self) -> bool {
+        match *self {
+            LiteralValue::Int(i) => i == 0,
+            LiteralValue::UnsignedInt(u) => u == 0,
+            LiteralValue::Char(c) => c == 0,
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Display for LiteralValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use LiteralValue::*;
+        match self {
+            Int(i) => write!(f, "{}", i),
+            UnsignedInt(u) => write!(f, "{}", u),
+            Float(n) => write!(f, "{}", n),
+            Str(s) => {
+                let mut escaped = s
+                    .iter()
+                    .flat_map(|c| match c {
+                        b'\n' => "\\n".bytes().collect(),
+                        b'\r' => "\\r".bytes().collect(),
+                        b'\t' => "\\t".bytes().collect(),
+                        _ => vec![*c],
+                    })
+                    .collect::<Vec<_>>();
+
+                // Remove the null byte at the end,
+                // because this will break tests and
+                // it's not needed in debug output.
+                assert_eq!(escaped.pop(), Some(b'\0'));
+
+                write!(f, "\"{}\"", String::from_utf8_lossy(&escaped))
+            }
+            Char(c) => write!(f, "'{}'", char::from(*c).escape_default()),
         }
     }
 }

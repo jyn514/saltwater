@@ -43,6 +43,7 @@ use crate::data::{
     types::FunctionType,
     StorageClass, *,
 };
+
 // TODO: make this const when const_if_match is stabilized
 // TODO: see https://github.com/rust-lang/rust/issues/49146
 lazy_static! {
@@ -523,6 +524,7 @@ impl FunctionType {
         *self.return_type != Type::Void
     }
 }
+
 #[cfg(test)]
 #[test]
 fn test_compile_error_semantic() {

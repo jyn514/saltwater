@@ -1,12 +1,12 @@
 use crate::arch::CHAR_BIT;
+use crate::data::hir::LiteralValue::*;
 use crate::data::hir::*;
-use crate::data::lex::Literal::*;
 use crate::data::*;
 use std::ops::{Add, Div, Mul, Sub};
 
 macro_rules! fold_int_bin_op {
     ($op: tt) => {
-        |a: &Literal, b: &Literal, _| match (a, b) {
+        |a: &LiteralValue, b: &LiteralValue, _| match (a, b) {
             (Int(a), Int(b)) => Ok(Some(Int(a $op b))),
             (UnsignedInt(a), UnsignedInt(b)) => Ok(Some(UnsignedInt(a $op b))),
             (Char(a), Char(b)) => Ok(Some(Char(a $op b))),
@@ -21,8 +21,8 @@ fn fold_scalar_bin_op(
     overflowing: fn(i64, i64) -> (i64, bool),
     wrapping: fn(u64, u64) -> u64,
     wrapping_byte: fn(u8, u8) -> u8,
-) -> impl Fn(&Literal, &Literal, &Type) -> Result<Option<Literal>, SemanticError> {
-    move |a: &Literal, b: &Literal, _ctype| match (a, b) {
+) -> impl Fn(&LiteralValue, &LiteralValue, &Type) -> Result<Option<LiteralValue>, SemanticError> {
+    move |a: &LiteralValue, b: &LiteralValue, _ctype| match (a, b) {
         (Int(a), Int(b)) => {
             // overflowing returns the wrapped value, so if we had a negative
             // value, it would be a positive overflow.
@@ -89,13 +89,13 @@ impl Expr {
     }
 
     /// Returns a `Literal` if this is a literal, or the original expression otherwise
-    pub fn into_literal(self) -> Result<Literal, Expr> {
+    pub fn into_literal(self) -> Result<LiteralValue, Expr> {
         match self.expr {
             ExprType::Literal(lit) => Ok(lit),
             _ => Err(self),
         }
     }
-    pub(crate) fn constexpr(self) -> CompileResult<Locatable<(Literal, Type)>> {
+    pub(crate) fn constexpr(self) -> CompileResult<Locatable<(LiteralValue, Type)>> {
         let folded = self.const_fold()?;
         match folded.expr {
             ExprType::Literal(token) => Ok(Locatable {
@@ -239,7 +239,11 @@ impl Expr {
         op: BinaryOp,
     ) -> CompileResult<ExprType>
     where
-        F: FnOnce(&Literal, &Literal, &Type) -> Result<Option<Literal>, SemanticError>,
+        F: FnOnce(
+            &LiteralValue,
+            &LiteralValue,
+            &Type,
+        ) -> Result<Option<LiteralValue>, SemanticError>,
     {
         let (left, right) = (self.const_fold()?, other.const_fold()?);
         let literal: Option<ExprType> = match (&left.expr, &right.expr) {
@@ -262,7 +266,7 @@ impl Expr {
         constructor: C,
     ) -> CompileResult<ExprType>
     where
-        F: FnOnce(Literal) -> Result<Literal, SemanticError>,
+        F: FnOnce(LiteralValue) -> Result<LiteralValue, SemanticError>,
         C: FnOnce(Box<Expr>) -> ExprType,
     {
         match self.expr {
@@ -345,7 +349,7 @@ fn fold_binary(
             left.literal_bin_op(
                 right,
                 &location,
-                |a: &Literal, b: &Literal, _| match (a, b) {
+                |a: &LiteralValue, b: &LiteralValue, _| match (a, b) {
                     (Int(a), Int(b)) => {
                         let (value, overflowed) = a.overflowing_rem(*b);
 
@@ -406,7 +410,7 @@ fn fold_binary(
     }
 }
 
-impl Literal {
+impl LiteralValue {
     fn non_negative_int(&self) -> Result<u64, ()> {
         match *self {
             Int(i) if i >= 0 => Ok(i as u64),
@@ -434,7 +438,7 @@ fn cast(expr: Expr, ctype: &Type) -> CompileResult<ExprType> {
 /// all this does is make sure the folded value is in a valid range
 /// TODO: when we add suffix literals, that will have type information
 /// and we can use that to store the new type
-fn const_cast(token: &Literal, ctype: &Type) -> Option<Literal> {
+fn const_cast(token: &LiteralValue, ctype: &Type) -> Option<LiteralValue> {
     let token = match (token, ctype) {
         (Int(i), Type::Bool) => Int((*i != 0).into()),
         (Int(i), Type::Char(_)) => Char(*i as u8),

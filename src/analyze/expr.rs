@@ -254,7 +254,7 @@ impl PureAnalyzer {
                             ctype: Type::Enum(*ident, members.clone()),
                             location,
                             lval: false,
-                            expr: ExprType::Literal(Literal::Int(e)),
+                            expr: ExprType::Literal(LiteralValue::Int(e)),
                         };
                     }
                     // otherwise, `enum e { A } my_e; return my_e;`
@@ -463,7 +463,7 @@ impl PureAnalyzer {
                 1
             }
         };
-        let size_literal = literal(Literal::UnsignedInt(size), offset.location);
+        let size_literal = literal(LiteralValue::UnsignedInt(size), offset.location);
         let size_cast = Expr {
             lval: false,
             location: offset.location,
@@ -609,7 +609,7 @@ impl PureAnalyzer {
                 lval: false,
                 ctype: expr.ctype.clone(),
                 location,
-                expr: ExprType::Cast(Box::new(literal(Literal::Int(1), location))),
+                expr: ExprType::Cast(Box::new(literal(LiteralValue::Int(1), location))),
             };
             let op = if increment {
                 AssignmentToken::AddEqual
@@ -659,7 +659,7 @@ impl PureAnalyzer {
             self.err(err.into(), location);
             1
         });
-        literal(Literal::UnsignedInt(align), location)
+        literal(LiteralValue::UnsignedInt(align), location)
     }
     // sizeof(int)
     // 6.5.3.4 The sizeof and _Alignof operators
@@ -668,7 +668,7 @@ impl PureAnalyzer {
             self.err(err.into(), location);
             1
         });
-        literal(Literal::UnsignedInt(align), location)
+        literal(LiteralValue::UnsignedInt(align), location)
     }
     // ~expr
     // 6.5.3.3 Unary arithmetic operators
@@ -889,15 +889,15 @@ impl PureAnalyzer {
 }
 
 // literal
-pub(super) fn literal(literal: Literal, location: Location) -> Expr {
+pub(super) fn literal(literal: LiteralValue, location: Location) -> Expr {
     use crate::data::types::ArrayType;
 
     let ctype = match &literal {
-        Literal::Char(_) => Type::Char(true),
-        Literal::Int(_) => Type::Long(true),
-        Literal::UnsignedInt(_) => Type::Long(false),
-        Literal::Float(_) => Type::Double,
-        Literal::Str(s) => {
+        LiteralValue::Char(_) => Type::Char(true),
+        LiteralValue::Int(_) => Type::Long(true),
+        LiteralValue::UnsignedInt(_) => Type::Long(false),
+        LiteralValue::Float(_) => Type::Double,
+        LiteralValue::Str(s) => {
             let len = s.len() as arch::SIZE_T;
             Type::Array(Box::new(Type::Char(true)), ArrayType::Fixed(len))
         }
@@ -1076,7 +1076,7 @@ impl Expr {
     pub(super) fn zero(location: Location) -> Expr {
         Expr {
             ctype: Type::Int(true),
-            expr: ExprType::Literal(Literal::Int(0)),
+            expr: ExprType::Literal(LiteralValue::Int(0)),
             lval: false,
             location,
         }
@@ -1086,7 +1086,7 @@ impl Expr {
         // TODO: I think we need to const fold this to allow `(void*)0`
         if let ExprType::Literal(token) = &self.expr {
             match token {
-                Literal::Int(0) | Literal::UnsignedInt(0) | Literal::Char(0) => true,
+                LiteralValue::Int(0) | LiteralValue::UnsignedInt(0) | LiteralValue::Char(0) => true,
                 _ => false,
             }
         } else {
@@ -1342,7 +1342,7 @@ mod test {
             Err(err) => err.location(),
         }
     }
-    fn assert_literal(token: Literal) {
+    fn assert_literal(token: LiteralValue) {
         let parsed = expr(&token.to_string());
         let location = get_location(&parsed);
         assert_eq!(parsed.unwrap(), literal(token, location));
@@ -1364,19 +1364,22 @@ mod test {
     }
     #[test]
     fn test_primaries() {
-        assert_literal(Literal::Int(141));
+        assert_literal(LiteralValue::Int(141));
         let parsed = expr("\"hi there\"");
 
         assert_eq!(
             parsed,
             Ok(literal(
-                Literal::Str("hi there\0".into()),
+                LiteralValue::Str("hi there\0".into()),
                 get_location(&parsed)
             )),
         );
-        assert_literal(Literal::Float(1.5));
+        assert_literal(LiteralValue::Float(1.5));
         let parsed = expr("(1)");
-        assert_eq!(parsed, Ok(literal(Literal::Int(1), get_location(&parsed))));
+        assert_eq!(
+            parsed,
+            Ok(literal(LiteralValue::Int(1), get_location(&parsed)))
+        );
         let x = Variable {
             ctype: Type::Int(true),
             id: InternedStr::get_or_intern("x"),

@@ -396,6 +396,21 @@ pub enum SyntaxError {
 
     #[error("`static` for array sizes is only allowed in function declarations")]
     StaticInConcreteArray,
+
+    #[error("overflow while parsing {}integer literal",
+        if let Some(signed) = .is_signed {
+            if *signed { "signed "} else { "unsigned "}
+        } else { "" })]
+    IntegerOverflow { is_signed: Option<bool> },
+
+    #[error("underflow parsing floating literal")]
+    FloatUnderflow,
+
+    #[error("{0}")]
+    ParseFloat(#[from] std::num::ParseFloatError),
+
+    #[error("{0}")]
+    InvalidHexFloat(#[from] hexponent::ParseError),
 }
 
 /// Preprocessing errors are non-exhaustive and may have new variants added at any time
@@ -513,20 +528,11 @@ pub enum LexError {
     #[error("{0} character escape out of range")]
     CharEscapeOutOfRange(Radix),
 
-    #[error("overflow while parsing {}integer literal",
-        if let Some(signed) = .is_signed {
-            if *signed { "signed "} else { "unsigned "}
-        } else { "" })]
-    IntegerOverflow { is_signed: Option<bool> },
-
     #[error("exponent for floating literal has no digits")]
     ExponentMissingDigits,
 
     #[error("missing digits to {0} integer constant")]
     MissingDigits(Radix),
-
-    #[error("{0}")]
-    ParseFloat(#[from] std::num::ParseFloatError),
 
     #[error("invalid digit {digit} in {radix} constant")]
     InvalidDigit { digit: u32, radix: Radix },
@@ -539,12 +545,6 @@ pub enum LexError {
 
     #[error("empty character constant")]
     EmptyChar,
-
-    #[error("underflow parsing floating literal")]
-    FloatUnderflow,
-
-    #[error("{0}")]
-    InvalidHexFloat(#[from] hexponent::ParseError),
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
@@ -674,12 +674,6 @@ impl From<Locatable<String>> for Locatable<SemanticError> {
 impl<S: Into<String>> From<S> for SemanticError {
     fn from(err: S) -> Self {
         SemanticError::Generic(err.into())
-    }
-}
-
-impl<S: Into<String>> From<S> for SyntaxError {
-    fn from(err: S) -> Self {
-        SyntaxError::Generic(err.into())
     }
 }
 

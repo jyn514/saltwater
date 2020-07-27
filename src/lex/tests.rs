@@ -1,6 +1,8 @@
-use super::{CompileResult, Literal, Locatable, Token};
+use super::{CompileResult, LiteralToken, Locatable, Token};
+use crate::data::hir::LiteralValue;
 use crate::data::lex::test::{cpp, cpp_no_newline};
 use crate::intern::InternedStr;
+use shared_str::RcStr;
 
 type LexType = CompileResult<Locatable<Token>>;
 
@@ -46,21 +48,39 @@ where
 }
 
 fn match_char(lexed: Option<LexType>, expected: u8) -> bool {
-    match_data(lexed, |c| c == Ok(&Literal::Char(expected).into()))
+    match lexed {
+        Some(Ok(Locatable {
+            data: Token::Literal(lit @ LiteralToken::Char(_)),
+            ..
+        })) => lit.parse() == Ok(LiteralValue::Char(expected)),
+        _ => false,
+    }
 }
 
+fn match_data_eq(lexed: &Token, other: &Token) -> bool {
+    match (lexed, other) {
+        (Token::Literal(lexed), Token::Literal(other)) => {
+            lexed.clone().parse() == other.clone().parse()
+        }
+        (lexed, other) => lexed == other,
+    }
+}
 fn match_all(lexed: &[LexType], expected: &[Token]) -> bool {
     lexed
         .iter()
         .zip(expected)
         .all(|(actual, expected)| match actual {
-            Ok(token) => token.data == *expected,
+            Ok(token) => match_data_eq(&token.data, expected),
             _ => false,
         })
 }
 fn assert_int(s: &str, expected: i64) {
     assert!(
-        match_data(lex(s), |lexed| lexed == Ok(&Literal::Int(expected).into())),
+        match_data(lex(s), |lexed| match lexed.unwrap() {
+            Token::Literal(lit @ LiteralToken::Int(_)) =>
+                lit.clone().parse() == Ok(LiteralValue::Int(expected)),
+            _ => false,
+        }),
         "{} != {}",
         s,
         expected
@@ -69,8 +89,11 @@ fn assert_int(s: &str, expected: i64) {
 fn assert_float(s: &str, expected: f64) {
     let lexed = lex(s);
     assert!(
-        match_data_ref(&lexed, |lexed| lexed
-            == Ok(&Literal::Float(expected).into())),
+        match_data_ref(&lexed, |lexed| match lexed {
+            Ok(Token::Literal(lit @ LiteralToken::Float(_))) =>
+                lit.clone().parse() == Ok(LiteralValue::Float(expected)),
+            _ => false,
+        }),
         "({}) {:?} != {}",
         s,
         lexed,
@@ -116,10 +139,14 @@ fn test_ellipses() {
 
 #[test]
 fn test_overflow() {
-    assert!(match lex("10000000000000000000000") {
-        Some(lexed) => lexed.is_err(),
-        None => false,
-    })
+    let lexed = lex("10000000000000000000000");
+    match lexed {
+        Some(Ok(Locatable {
+            data: Token::Literal(lit @ LiteralToken::Int(_)),
+            ..
+        })) => assert!(lit.parse().is_err(), "No overflow"),
+        _ => panic!("Not an integer"),
+    };
 }
 
 #[test]
@@ -144,18 +171,26 @@ fn test_float_literals() {
     for i in 0..10 {
         assert_float(&format!("1{}e{}", "0".repeat(i), 10 - i), 1e10);
     }
+    fn rcstr<S: ToString>(x: S) -> RcStr {
+        RcStr::from(x.to_string())
+    }
     assert!(match_all(
         &lex_all("-1"),
-        &[Token::Minus, Literal::Int(1).into()]
+        &[Token::Minus, LiteralToken::Int(rcstr(1)).into()]
     ));
     assert!(match_all(
         &lex_all("-1e10"),
-        &[Token::Minus, Literal::Float(10_000_000_000.0).into()]
+        &[
+            Token::Minus,
+            LiteralToken::Float(rcstr(10_000_000_000.0)).into()
+        ]
     ));
-    assert!(match_data(lex("9223372036854775807u"), |lexed| lexed
-        == Ok(
-            &Literal::UnsignedInt(9_223_372_036_854_775_807u64).into()
-        )));
+    assert!(match_data(lex("9223372036854775807u"), |lexed| {
+        match_data_eq(
+            lexed.unwrap(),
+            &LiteralToken::UnsignedInt(rcstr(9_223_372_036_854_775_807u64)).into(),
+        )
+    }));
     assert_float("0x.ep0", 0.875);
     assert_float("0x.ep-0l", 0.875);
     assert_float("0xe.p-4f", 0.875);

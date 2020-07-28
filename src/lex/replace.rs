@@ -373,27 +373,24 @@ fn replace_function(
 }
 
 fn stringify(args: Vec<Token>) -> Token {
+    let escape = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
     let ret: String = args
         .into_iter()
         .map(|arg| {
             match arg {
                 Token::Whitespace(_) => String::from(" "), // Single space in replacement
-                Token::Literal(LiteralToken::Str(rcstrs)) => {
-                    rcstrs
-                        .iter()
-                        .map(|rcstr| {
-                            rcstr
-                                .as_str()
-                                .escape_default()
-                                .collect::<String>()
-                                .replace(r#"\'"#, "'") // Because Rust escapes ' but C does not
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                }
+                Token::Literal(LiteralToken::Str(rcstrs)) => rcstrs
+                    .iter()
+                    .map(|rcstr| escape(rcstr.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                Token::Literal(LiteralToken::Char(rcstr)) => escape(rcstr.as_str()),
                 other => other.to_string(),
             }
         })
         .collect();
-    Token::Literal(LiteralToken::Str(vec![RcStr::from(format!("\"{}\"", ret))]))
+    Token::Literal(LiteralToken::Str(vec![RcStr::from(format!(
+        "\"{}\"",
+        ret.trim()
+    ))]))
 }

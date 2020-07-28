@@ -1785,15 +1785,18 @@ h",
         assert_same_exact("#define xstr(a, b) a b\nxstr(1+2,3)", "\n1+2 3");
         assert_same_exact("#define xstr(a) # a\nxstr(1+2)", "\n\"1+2\"");
         assert_same_exact("#define hash #a\nhash", "\n#a");
-    }
-    #[test]
-    fn stringify_string() {
+
         assert_same_stringified(r#""\'""#, r#""\"\\'\"""#);
+        assert_same_stringified(r#""	""#, r#""\"	\"""#); // Tab in string should be maintained
         assert_same_stringified(
             r#""\a+\b+\e+\f+\r+\v+\?""#,
             r#""\"\\a+\\b+\\e+\\f+\\r+\\v+\\?\"""#,
         );
         assert_same_stringified(r#""\x3f""#, r#""\"\\x3f\"""#);
         assert_same_stringified(r#""\xff""#, r#""\"\\xff\"""#);
+
+        assert_same_stringified(r#"'\n'"#, r#""'\\n'""#);
+        assert_same_stringified(r#"  a +   b"#, r#""a + b""#);
+        assert_same_stringified("", r#""""#);
     }
 }

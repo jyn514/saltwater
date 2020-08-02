@@ -273,6 +273,16 @@ fn replace_function(
     let mut current_arg = Vec::new();
     let mut nested_parens = 1;
 
+    fn strip_whitespace(mut args: Vec<Token>) -> Vec<Token> {
+        if matches!(args.last(), Some(Token::Whitespace(_))) {
+            args.pop();
+        }
+        if matches!(args.first(), Some(Token::Whitespace(_))) {
+            args.remove(0);
+        }
+        args
+    }
+
     loop {
         let next = match incoming.pop_front().or_else(|| inner.next()) {
             // f ( <EOF>
@@ -291,7 +301,7 @@ fn replace_function(
             // NOTE: `f(,)` is _legal_ and means to replace f with two arguments, each an empty token lists
             // on the bright side, we don't have to check if `current_arg` is empty or not
             Token::Comma if nested_parens == 1 => {
-                args.push(mem::take(&mut current_arg));
+                args.push(strip_whitespace(mem::take(&mut current_arg)));
                 continue;
             }
             // f ( (a + 1)
@@ -299,7 +309,7 @@ fn replace_function(
                 nested_parens -= 1;
                 // f ( )
                 if nested_parens == 0 {
-                    args.push(mem::take(&mut current_arg));
+                    args.push(strip_whitespace(mem::take(&mut current_arg)));
                     break;
                 }
             }
@@ -332,34 +342,38 @@ fn replace_function(
         }
     }
 
-    let mut pending_hash: Vec<Token> = Vec::new(); // Holds hash until stringify
+    let mut pending_hash = false; // Seen a hash?
     for token in body {
         match *token {
             Token::Id(id) => {
                 // #define f(a) { a + 1 } \n f(b) => b + 1
                 if let Some(index) = params.iter().position(|&param| param == id) {
                     let replacement = args[index].clone();
-                    if pending_hash.is_empty() {
+                    if !pending_hash {
                         replacements.extend(replacement);
                     } else {
                         // #define str(a) #a
                         replacements.push(stringify(replacement));
                     }
+                } else if pending_hash {
+                    return vec![Err(location.with(CppError::HashMissingParameter.into()))];
                 } else {
-                    // only parameters can be stringified
-                    let token = Token::Id(id);
-                    replacements.push(token);
+                    replacements.push(Token::Id(id));
                 }
-                pending_hash.clear();
+                pending_hash = false;
             }
             Token::Hash => {
-                pending_hash.push(token.clone());
+                pending_hash = true;
+            }
+            Token::Whitespace(_) => {
+                if !pending_hash {
+                    replacements.push(Token::Whitespace(String::from(" ")));
+                }
             }
             _ => {
-                if !pending_hash.is_empty() && matches!(token, Token::Whitespace(_)) {
-                    pending_hash.push(token.clone());
+                if pending_hash {
+                    return vec![Err(location.with(CppError::HashMissingParameter.into()))];
                 } else {
-                    replacements.append(&mut pending_hash); // Dump pending_hash into replacements
                     replacements.push(token.clone());
                 }
             }
@@ -373,7 +387,7 @@ fn replace_function(
 }
 
 fn stringify(args: Vec<Token>) -> Token {
-    let escape = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    let escape = |s: &str| s.replace('\\', r#"\\"#).replace('"', r#"\""#);
     let ret: String = args
         .into_iter()
         .map(|arg| {

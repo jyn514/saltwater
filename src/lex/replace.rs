@@ -277,9 +277,11 @@ fn replace_function(
         if matches!(args.last(), Some(Token::Whitespace(_))) {
             args.pop();
         }
+        assert!(!matches!(args.last(), Some(Token::Whitespace(_))));
         if matches!(args.first(), Some(Token::Whitespace(_))) {
             args.remove(0);
         }
+        assert!(!matches!(args.first(), Some(Token::Whitespace(_))));
         args
     }
 

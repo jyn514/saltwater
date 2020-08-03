@@ -857,6 +857,10 @@ impl<'a> PreProcessor<'a> {
                     location,
                 ),
             }
+            self.consume_whitespace_oneline(
+                self.file_processor.offset(),
+                CppError::Expected("',' or ')'", "macro parameter list"),
+            )?;
             // either `,` or `)`
             if self.lexer_mut().match_next(')') {
                 return Ok(arguments);
@@ -1798,5 +1802,13 @@ h",
         assert_same_stringified(r#"'\n'"#, r#""'\\n'""#);
         assert_same_stringified(r#"  a +   b"#, r#""a + b""#);
         assert_same_stringified("", r#""""#);
+        assert_same_exact(
+            r#"#define f(  x  ,y  )   4 # x ; #y
+          f (   42 ,  "hey there world" ) + f(1,0) "#,
+            r#"
+          4 "42" ; "\"hey there world\"" + 4 "1" ; "0" "#,
+        );
+        assert!(cpp("#define f(x) #y\nf(0)").any(|x| x.is_err()));
+        assert!(cpp("#define f(x) #+\nf(0)").any(|x| x.is_err()));
     }
 }

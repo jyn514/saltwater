@@ -5,7 +5,12 @@
 use commands::default_commands;
 use dirs_next::data_dir;
 use helper::ReplHelper;
+use hir::{Declaration, Expr};
 use rustyline::{error::ReadlineError, Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
+use saltwater::{
+    data, hir, initialize_jit_module, ir, types, CompileError, Locatable, Parser,
+    PreProcessorBuilder, PureAnalyzer, SyntaxError, Type, JIT,
+};
 use std::{collections::HashMap, path::PathBuf};
 
 mod commands;
@@ -93,7 +98,92 @@ impl Repl {
                 None => println!("unknown command '{}'", name),
             }
         } else {
-            todo!()
+            match self.execute_code(line) {
+                Ok(_) => {}
+                Err(err) => {
+                    // TODO: Proper error reporting
+                    println!("error: {}", err.data);
+                }
+            }
         }
     }
+
+    fn execute_code(&mut self, code: &str) -> Result<(), CompileError> {
+        let module = initialize_jit_module();
+
+        let expr = analyze_expr(code)?;
+        let expr_ty = expr.ctype.clone();
+        let decl = wrap_expr(expr);
+        let module = ir::compile(module, vec![decl], false).0?;
+
+        let mut jit = JIT::from(module);
+        jit.finalize();
+        let execute_fun = jit
+            .get_compiled_function("execute")
+            .expect("this is not good.");
+
+        match expr_ty {
+            Type::Long(signed) => {
+                let result = unsafe {
+                    let execute: unsafe extern "C" fn() -> u64 = std::mem::transmute(execute_fun);
+                    execute()
+                };
+                match signed {
+                    true => println!("=> {}", result as i64),
+                    false => println!("=> {}", result),
+                }
+            }
+            // TODO: Implement execution for more types
+            ty => println!("error: expression returns unsupported type: {:?}", ty),
+        };
+        Ok(())
+    }
+}
+
+/// Takes an expression and wraps it into a `execute` function that looks like the following:
+///
+/// ```
+/// <type> execute() {
+///     return <expr>;
+/// }
+/// ```
+fn wrap_expr(expr: Expr) -> Locatable<Declaration> {
+    let fun = hir::Variable {
+        ctype: types::Type::Function(types::FunctionType {
+            return_type: Box::new(expr.ctype.clone()),
+            params: vec![],
+            varargs: false,
+        }),
+        storage_class: data::StorageClass::Extern,
+        qualifiers: Default::default(),
+        id: saltwater::InternedStr::get_or_intern("execute"),
+    };
+
+    let span = expr.location;
+    let return_stmt = span.with(hir::StmtType::Return(Some(expr)));
+    let init = hir::Initializer::FunctionBody(vec![return_stmt]);
+    let decl = hir::Declaration {
+        // FIXME: Currently doesn't work. Just make insert() pub?
+        symbol: fun.insert(),
+        init: Some(init),
+    };
+    span.with(decl)
+}
+
+fn analyze_expr(code: &str) -> Result<Expr, Locatable<SyntaxError>> {
+    let code = format!("{}\n", code).into_boxed_str();
+    let cpp = PreProcessorBuilder::new(code).build();
+    let mut parser = Parser::new(cpp, false);
+    let expr = parser.expr()?;
+
+    let mut analyzer = PureAnalyzer::new();
+    let expr = analyzer.expr(expr);
+
+    // FIXME: error_handler is private so this doesn't work right now.
+    // Please review and propose a solution.
+    // if let Some(err) = analyzer.error_handler.pop_front() {
+    //     return Err(err);
+    // }
+
+    Ok(expr)
 }

@@ -75,7 +75,7 @@ impl Hinter for ReplHelper {
         if !start.starts_with(PREFIX) {
             return None;
         }
-        let start = &start[1..];
+        let start = &start[PREFIX.len_utf8()..];
         self.commands
             .iter()
             .find(|cmd| cmd.starts_with(start))

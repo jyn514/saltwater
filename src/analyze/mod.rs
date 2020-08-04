@@ -139,6 +139,15 @@ impl PureAnalyzer {
     pub fn warnings(&mut self) -> VecDeque<CompileWarning> {
         std::mem::take(&mut self.error_handler.warnings)
     }
+
+    /// Return all errors seen so far.
+    ///
+    /// These errors are consumed and will not be returned if you call
+    /// `errors()` again.
+    pub fn errors(&mut self) -> VecDeque<CompileError> {
+        self.error_handler.by_ref().collect()
+    }
+
     // I type these a lot
     #[inline(always)]
     fn err(&mut self, e: SemanticError, l: Location) {

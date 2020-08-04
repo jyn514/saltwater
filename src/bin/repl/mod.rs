@@ -114,6 +114,7 @@ impl Repl {
         let expr = analyze_expr(code)?;
         let expr_ty = expr.ctype.clone();
         let decl = wrap_expr(expr);
+        // FIXME: `ir` module is currently private.
         let module = ir::compile(module, vec![decl], false).0?;
 
         let mut jit = JIT::from(module);
@@ -156,14 +157,13 @@ fn wrap_expr(expr: Expr) -> Locatable<Declaration> {
         }),
         storage_class: data::StorageClass::Extern,
         qualifiers: Default::default(),
-        id: saltwater::InternedStr::get_or_intern("execute"),
+        id: "execute".into(),
     };
 
     let span = expr.location;
     let return_stmt = span.with(hir::StmtType::Return(Some(expr)));
     let init = hir::Initializer::FunctionBody(vec![return_stmt]);
     let decl = hir::Declaration {
-        // FIXME: Currently doesn't work. Just make insert() pub?
         symbol: fun.insert(),
         init: Some(init),
     };

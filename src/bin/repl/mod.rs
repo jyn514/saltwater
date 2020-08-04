@@ -12,6 +12,7 @@ use saltwater::{
     PreProcessorBuilder, PureAnalyzer, SyntaxError, Type, JIT,
 };
 use std::{collections::HashMap, path::PathBuf};
+use types::ArrayType;
 
 mod commands;
 mod helper;
@@ -20,6 +21,15 @@ mod helper;
 const PREFIX: char = ':';
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PROMPT: &str = ">> ";
+
+macro_rules! execute {
+    ($fun:ident, $ty:path, $action:expr) => {
+        $action(unsafe {
+            let execute: unsafe extern "C" fn() -> $ty = std::mem::transmute($fun);
+            execute()
+        });
+    };
+}
 
 pub struct Repl {
     editor: Editor<ReplHelper>,
@@ -114,26 +124,37 @@ impl Repl {
         let expr = analyze_expr(code)?;
         let expr_ty = expr.ctype.clone();
         let decl = wrap_expr(expr);
-        // FIXME: `ir` module is currently private.
         let module = ir::compile(module, vec![decl], false).0?;
 
         let mut jit = JIT::from(module);
         jit.finalize();
-        let execute_fun = jit
+        let fun = jit
             .get_compiled_function("execute")
             .expect("this is not good.");
 
         match expr_ty {
-            Type::Long(signed) => {
-                let result = unsafe {
-                    let execute: unsafe extern "C" fn() -> u64 = std::mem::transmute(execute_fun);
-                    execute()
-                };
-                match signed {
-                    true => println!("=> {}", result as i64),
-                    false => println!("=> {}", result),
-                }
-            }
+            Type::Short(signed) => execute!(fun, i16, |x| match signed {
+                true => println!("=> {}", x),
+                false => println!("=> {}", x as u16),
+            }),
+            Type::Int(signed) => execute!(fun, i32, |x| match signed {
+                true => println!("=> {}", x),
+                false => println!("=> {}", x as u32),
+            }),
+            Type::Long(signed) => execute!(fun, i64, |x| match signed {
+                true => println!("=> {}", x),
+                false => println!("=> {}", x as u64),
+            }),
+            Type::Float => execute!(fun, f32, |f| println!("=> {}", f)),
+            Type::Double => execute!(fun, f64, |f| println!("=> {}", f)),
+
+            Type::Char(_) => execute!(fun, char, |c| println!("=> {}", c)),
+            Type::Bool => execute!(fun, bool, |b| println!("=> {}", b)),
+            Type::Void => unsafe {
+                let execute: unsafe extern "C" fn() = std::mem::transmute(fun);
+                execute()
+            },
+
             // TODO: Implement execution for more types
             ty => println!("error: expression returns unsupported type: {:?}", ty),
         };

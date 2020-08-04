@@ -104,7 +104,7 @@ struct Compiler<T: Backend> {
 }
 
 /// Compile a program from a high level IR to a Cranelift Module
-pub(crate) fn compile<B: Backend>(
+pub fn compile<B: Backend>(
     module: Module<B>,
     program: Vec<Locatable<Declaration>>,
     debug: bool,

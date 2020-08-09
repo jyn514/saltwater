@@ -14,7 +14,6 @@ use saltwater::{
     data::{error::CompileWarning, Location},
     link, preprocess, Error, Files, Opt, Program,
 };
-use std::ffi::OsStr;
 use tempfile::NamedTempFile;
 
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
@@ -274,8 +273,8 @@ fn main() {
         .unwrap_or_else(|(err, files)| err_exit(err, max_errors, color_choice, &files));
 }
 
-fn os_str_to_path_buf(os_str: &OsStr) -> Result<PathBuf, bool> {
-    Ok(os_str.into())
+fn str_to_path_buf(s: &str) -> Result<PathBuf, bool> {
+    Ok(s.into())
 }
 
 macro_rules! type_sizes {
@@ -327,7 +326,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         );
     }
     let output = input
-        .opt_value_from_os_str(["-o", "--output"], os_str_to_path_buf)?
+        .opt_value_from_fn(["-o", "--output"], str_to_path_buf)?
         .unwrap_or_else(|| "a.out".into());
     let max_errors = input
         .opt_value_from_fn("--max-errors", |s| {
@@ -338,9 +337,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         .opt_value_from_str("--color")?
         .unwrap_or(ColorChoice::Auto);
     let mut search_path = Vec::new();
-    while let Some(include) =
-        input.opt_value_from_os_str(["-I", "--include"], os_str_to_path_buf)?
-    {
+    while let Some(include) = input.opt_value_from_fn(["-I", "--include"], str_to_path_buf)? {
         search_path.push(include);
     }
     let mut definitions = HashMap::new();
@@ -377,7 +374,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
             // This is a little odd because `free` expects no arguments to be left,
             // so we have to parse it last.
             filename: input
-                .free_from_os_str(os_str_to_path_buf)?
+                .free_from_fn(str_to_path_buf)?
                 .unwrap_or_else(|| "-".into()),
         },
         color: color_choice,

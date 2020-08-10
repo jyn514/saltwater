@@ -79,7 +79,7 @@ pub struct Replace<'a, I: Iterator> {
     definitions: &'a Definitions,
 }
 
-pub fn replace_iter<'a, I: Iterator>(iter: I, definitions: &'a Definitions) -> Replace<'a, I> {
+pub fn replace_iter<I: Iterator>(iter: I, definitions: &Definitions) -> Replace<'_, I> {
     Replace {
         iter: iter.peekable(),
         definitions,

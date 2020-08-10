@@ -74,6 +74,35 @@ pub enum Definition {
     },
 }
 
+pub struct Replace<'a, I: Iterator> {
+    iter: std::iter::Peekable<I>,
+    definitions: &'a Definitions,
+}
+
+pub fn replace_iter<I: Iterator>(iter: I, definitions: &Definitions) -> Replace<'_, I> {
+    Replace {
+        iter: iter.peekable(),
+        definitions,
+    }
+}
+
+impl<I: Iterator<Item = CompileResult<Locatable<Token>>>> Iterator for Replace<'_, I> {
+    type Item = Vec<CompileResult<Locatable<Token>>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next() {
+            Some(Ok(t)) => Some(replace(
+                self.definitions,
+                t.data,
+                &mut self.iter,
+                t.location,
+            )),
+            Some(Err(err)) => Some(vec![Err(err)]),
+            None => None,
+        }
+    }
+}
+
 /// Perform recursive macro replacement on `token`.
 ///
 /// This first performs object-macro replacement, then function-macro replacement.

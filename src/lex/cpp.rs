@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use super::files::FileProcessor;
-use super::replace::{replace, Definition, Definitions};
+use super::replace::{replace, replace_iter, Definition, Definitions};
 use super::{Lexer, LiteralParser, Token};
 use crate::arch::TARGET;
 use crate::data::error::CppError;
@@ -703,9 +703,7 @@ impl<'a> PreProcessor<'a> {
             cpp_tokens.push(token);
         }
         let mut expr_location = None;
-        let cpp_tokens: Vec<_> = cpp_tokens
-            .into_iter()
-            .map(|t| replace(definitions, t.data, std::iter::empty(), t.location))
+        let cpp_tokens: Vec<_> = replace_iter(cpp_tokens.into_iter().map(Result::Ok), definitions)
             .flatten()
             .filter(PreProcessor::is_not_whitespace)
             .map(|mut token| {
@@ -1375,6 +1373,29 @@ mod tests {
     b
 #endif",
             "",
+        );
+    }
+    #[test]
+    fn if_fn_directive() {
+        assert_same(
+            "
+#define f(a) 1
+#if f(a)
+success
+#endif",
+            "success",
+        );
+        assert_same(
+            "
+#define f(a) a*a
+#define g(a) 2*a
+#define h(b, c) 3*b + 4*c
+#if f(5) == g(0) + h(1, 2)
+failure
+#elif f(5) == g(6) + h(3, 1)
+success
+#endif",
+            "success",
         );
     }
     #[test]

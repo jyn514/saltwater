@@ -58,11 +58,19 @@ impl PureAnalyzer {
                 let struct_type = match &inner.ctype {
                     Type::Pointer(ctype, _) => match &**ctype {
                         Type::Union(_) | Type::Struct(_) => (**ctype).clone(),
+                        Type::Error => {
+                            // already type error
+                            return inner;
+                        }
                         other => {
                             self.err(SemanticError::NotAStruct(other.clone()), inner.location);
                             return inner;
                         }
                     },
+                    Type::Error => {
+                        // already type error
+                        return inner;
+                    }
                     other => {
                         self.err(SemanticError::NotAPointer(other.clone()), inner.location);
                         return inner;
@@ -82,6 +90,7 @@ impl PureAnalyzer {
                         let ctype = (**t).clone();
                         inner.indirection(true, ctype)
                     }
+                    Type::Error => inner, // already type error
                     _ => {
                         self.err(
                             SemanticError::NotAPointer(inner.ctype.clone()),
@@ -213,7 +222,10 @@ impl PureAnalyzer {
         };
         let location = left.location.merge(right.location);
         if let Some(ctype) = non_scalar {
-            self.err(SemanticError::NonIntegralExpr(ctype.clone()), location);
+            // if not already type error
+            if *ctype != Type::Error {
+                self.err(SemanticError::NonIntegralExpr(ctype.clone()), location);
+            }
         }
         let (promoted_expr, next) = Expr::binary_promote(left, right, &mut self.error_handler);
         Expr {
@@ -227,6 +239,7 @@ impl PureAnalyzer {
     fn parse_id(&mut self, name: InternedStr, location: Location) -> Expr {
         let mut pretend_zero = Expr::zero(location);
         pretend_zero.ctype = Type::Error;
+        pretend_zero.lval = true; // set undeclared identifier as lval
         match self.scope.get(&name) {
             None => {
                 self.err(SemanticError::UndeclaredVar(name), location);
@@ -283,7 +296,10 @@ impl PureAnalyzer {
         } else {
             let (left_expr, right_expr) = (left.rval(), right.rval());
             // p1 == p2
-            if !((left_expr.ctype.is_pointer() && left_expr.ctype == right_expr.ctype)
+            // first check that not already type error
+            if left_expr.ctype != Type::Error
+                && right_expr.ctype != Type::Error // Maybe I should pull this out of the if...
+                && !((left_expr.ctype.is_pointer() && left_expr.ctype == right_expr.ctype)
                 // equality operations have different rules :(
                 || ((token == ComparisonToken::EqualEqual || token == ComparisonToken::NotEqual)
                     // shoot me now
@@ -320,6 +336,11 @@ impl PureAnalyzer {
     // 6.5.5 Multiplicative operators
     fn mul(&mut self, left: Expr, right: Expr, op: BinaryOp) -> Expr {
         let location = left.location.merge(right.location);
+
+        // TODO: is this the right behavior?
+        if left.ctype == Type::Error || right.ctype == Type::Error {
+            return left;
+        }
 
         if op == BinaryOp::Mod && !(left.ctype.is_integral() && right.ctype.is_integral()) {
             self.err(
@@ -383,10 +404,13 @@ impl PureAnalyzer {
             // not sure what type to use here, C11 standard doesn't mention it
             (left.ctype.clone(), true)
         } else {
-            self.err(
-                SemanticError::InvalidAdd(op, left.ctype.clone(), right.ctype.clone()),
-                location,
-            );
+            // check if already type error
+            if left.ctype != Type::Error && right.ctype != Type::Error {
+                self.err(
+                    SemanticError::InvalidAdd(op, left.ctype.clone(), right.ctype.clone()),
+                    location,
+                );
+            }
             (left.ctype.clone(), false)
         };
         Expr {
@@ -576,6 +600,8 @@ impl PureAnalyzer {
                     expr
                 }
             }
+            // if already type error
+            Type::Error => expr,
             // (1).a
             _ => {
                 self.err(SemanticError::NotAStruct(expr.ctype.clone()), location);
@@ -598,10 +624,13 @@ impl PureAnalyzer {
         if let Err(err) = expr.modifiable_lval() {
             self.err(err, location);
         } else if !(expr.ctype.is_arithmetic() || expr.ctype.is_pointer()) {
-            self.err(
-                SemanticError::InvalidIncrement(expr.ctype.clone()),
-                expr.location,
-            );
+            // check if already encountered type error
+            if expr.ctype != Type::Error {
+                self.err(
+                    SemanticError::InvalidIncrement(expr.ctype.clone()),
+                    expr.location,
+                );
+            }
         }
         // ++i is syntactic sugar for i+=1
         if prefix {
@@ -642,6 +671,8 @@ impl PureAnalyzer {
             (Type::Pointer(target, _), _) => ((**target).clone(), left, right),
             // i[p]
             (_, Type::Pointer(target, _)) => ((**target).clone(), right, left),
+            // already type error
+            (Type::Error, _) | (_, Type::Error) => return left,
             (l, _) => {
                 self.err(SemanticError::NotAPointer(l.clone()), location);
                 return left;
@@ -675,10 +706,13 @@ impl PureAnalyzer {
     fn bitwise_not(&mut self, expr: ast::Expr) -> Expr {
         let expr = self.expr(expr);
         if !expr.ctype.is_integral() {
-            self.err(
-                SemanticError::NonIntegralExpr(expr.ctype.clone()),
-                expr.location,
-            );
+            // check if already error
+            if expr.ctype != Type::Error {
+                self.err(
+                    SemanticError::NonIntegralExpr(expr.ctype.clone()),
+                    expr.location,
+                );
+            }
             expr
         } else {
             let expr = expr.integer_promote(&mut self.error_handler);
@@ -695,7 +729,10 @@ impl PureAnalyzer {
     fn unary_add(&mut self, expr: ast::Expr, add: bool, location: Location) -> Expr {
         let expr = self.expr(expr);
         if !expr.ctype.is_arithmetic() {
-            self.err(SemanticError::NotArithmetic(expr.ctype.clone()), location);
+            // check if already error
+            if expr.ctype != Type::Error {
+                self.err(SemanticError::NotArithmetic(expr.ctype.clone()), location);
+            }
             return expr;
         }
         let expr = expr.integer_promote(&mut self.error_handler);
@@ -764,7 +801,12 @@ impl PureAnalyzer {
             let (tmp1, tmp2) = Expr::binary_promote(then, otherwise, &mut self.error_handler);
             then = tmp1;
             otherwise = tmp2;
-        } else if !pointer_promote(&mut then, &mut otherwise) {
+        } else if !pointer_promote(&mut then, &mut otherwise)
+            // check that each part is not a type error
+            && condition.ctype != Type::Error
+            && then.ctype != Type::Error
+            && otherwise.ctype != Type::Error
+        {
             self.err(
                 SemanticError::IncompatibleTypes(then.ctype.clone(), otherwise.ctype.clone()),
                 location,
@@ -1115,7 +1157,8 @@ impl Expr {
         if self.ctype == Type::Bool {
             return self;
         }
-        if !self.ctype.is_scalar() {
+        // if not scalar and is not a type error
+        if !self.ctype.is_scalar() && self.ctype != Type::Error {
             error_handler.error(
                 SemanticError::Generic(format!(
                     "expression of type '{}' cannot be converted to bool",
@@ -1160,7 +1203,9 @@ impl Expr {
             ),
             Err(non_int) => {
                 // TODO: this location is wrong
-                error_handler.error(SemanticError::NonIntegralExpr(non_int), right.location);
+                if right.ctype != Type::Error {
+                    error_handler.error(SemanticError::NonIntegralExpr(non_int), right.location);
+                }
                 (left, right)
             }
         }
@@ -1270,10 +1315,18 @@ impl Expr {
                     return expr;
                 }
             }
-            error_handler.error(
-                SemanticError::InvalidCast(expr.ctype.clone(), ctype.clone()),
-                expr.location,
-            );
+            // There is probably a better way to do this
+            // check not type error and that if rval is a pointer, it is not a type error
+            if *ctype != Type::Error {
+                if let Type::Pointer(a, _) = expr.ctype.clone() {
+                    if *a != Type::Error {
+                        error_handler.error(
+                            SemanticError::InvalidCast(expr.ctype.clone(), ctype.clone()),
+                            expr.location,
+                        );
+                    }
+                }
+            }
             expr
         }
     }

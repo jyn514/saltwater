@@ -292,10 +292,10 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
     let mut input = Arguments::from_env();
     if input.contains("-h") {
         println!("{}", USAGE);
-        std::process::exit(1);
+        std::process::exit(0);
     } else if input.contains("--help") {
         println!("{}", HELP);
-        std::process::exit(1);
+        std::process::exit(0);
     }
     if input.contains(["-V", "--version"]) {
         #[cfg(feature = "git-testament")]

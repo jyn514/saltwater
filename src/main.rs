@@ -25,7 +25,7 @@ const HELP: &str = concat!(
     env!("CARGO_PKG_DESCRIPTION"), "\n",
     "Homepage: ", env!("CARGO_PKG_REPOSITORY"), "\n",
     "\n",
-    "usage: ", env!("CARGO_PKG_NAME"), " [FLAGS] [OPTIONS] [<file>]
+    "usage: swcc [FLAGS] [OPTIONS] [<file>]
 
 FLAGS:
         --debug-ast        If set, print the parsed abstract syntax tree (AST) in addition to compiling.
@@ -61,8 +61,8 @@ ARGS:
 
 const USAGE: &str = "\
 usage: swcc [--help | -h] [--version | -V] [--debug-ir] [--debug-ast] [--debug-lex]
-           [--debug-hir] [--jit] [--no-link | -c] [--preprocess-only | -E]
-           [-I <dir>] [-D <id[=val]>] [<file>]";
+            [--debug-hir] [--jit] [--no-link | -c] [--preprocess-only | -E]
+            [-I <dir>] [-D <id[=val]>] [<file>]";
 
 struct BinOpt {
     /// The options that will be passed to `compile()`

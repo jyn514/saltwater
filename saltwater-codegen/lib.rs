@@ -96,16 +96,6 @@ struct Compiler<T: Backend> {
     error_handler: ErrorHandler,
 }
 
-/*
-/// Compile a program from a high level IR to a Cranelift Module
-pub(crate) fn compile<B: Backend>(
-    module: Module<B>,
-    program: Vec<Locatable<Declaration>>,
-    debug: bool,
-) -> (Result<Module<B>, CompileError>, VecDeque<CompileWarning>) {
-}
-*/
-
 impl<B: Backend> Compiler<B> {
     fn new(module: Module<B>, debug: bool) -> Compiler<B> {
         Compiler {

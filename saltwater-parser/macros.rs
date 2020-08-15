@@ -24,6 +24,7 @@ macro_rules! map {
 /// ```
 ///
 /// Trailing commas are allowed.
+#[macro_export]
 macro_rules! vec_deque {
     ($elem:expr; $n:expr) => ({
         use std::collections::VecDeque;
@@ -38,6 +39,7 @@ macro_rules! vec_deque {
 
 /// ensure that a condition is true at compile time
 /// thanks to https://nikolaivazquez.com/posts/programming/rust-static-assertions/
+#[macro_export]
 macro_rules! const_assert {
     ($condition:expr) => {
         #[deny(const_err)]

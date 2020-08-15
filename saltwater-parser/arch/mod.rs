@@ -23,10 +23,10 @@ const CHAR_SIZE: u16 = 1;
 /// Traditionaly, the target triple uses this format: `<architecture>-<vendor>-<operating system>`
 /// The target triple is represented as a struct and contains additional
 /// information like ABI and endianness.
-pub(crate) const TARGET: Triple = Triple::host();
+pub const TARGET: Triple = Triple::host();
 
 mod x64;
-pub(crate) use x64::*;
+pub use x64::*;
 
 impl StructType {
     /// Get the offset of the given struct member.

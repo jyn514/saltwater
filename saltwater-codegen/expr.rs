@@ -3,10 +3,10 @@ use cranelift::prelude::{FunctionBuilder, InstBuilder, Type as IrType, Value as 
 use cranelift_module::Backend;
 
 use super::{Compiler, Id};
-use crate::data::*;
-use crate::data::{
-    hir::{BinaryOp, Expr, ExprType, LiteralValue, Symbol, Variable},
+use saltwater_parser::data::{
+    hir::{self, BinaryOp, Expr, ExprType, LiteralValue, Symbol, Variable},
     lex::ComparisonToken,
+    *
 };
 
 type IrResult = CompileResult<Value>;
@@ -504,7 +504,7 @@ impl<B: Backend> Compiler<B> {
         args: Vec<Expr>,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        use crate::data::hir::Qualifiers;
+        use hir::Qualifiers;
         use cranelift::codegen::ir::{AbiParam, ArgumentPurpose};
 
         let mut ftype = match ctype {

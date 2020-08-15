@@ -9,11 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use ansi_term::{ANSIString, Colour};
 use arcstr::ArcStr;
 use pico_args::Arguments;
-use saltwater::{
-    assemble, compile,
-    data::{error::CompileWarning, Location},
-    link, preprocess, Error, Files, Opt, Program,
-};
+use saltwater_codegen::{assemble, compile, link};
+use saltwater_parser::data::{error::CompileWarning, Location};
+use saltwater_parser::{preprocess, Error, Files, Opt, Program};
 use tempfile::NamedTempFile;
 
 static ERRORS: AtomicUsize = AtomicUsize::new(0);
@@ -163,7 +161,7 @@ fn real_main(buf: ArcStr, bin_opt: BinOpt, output: &Path) -> Result<(), (Error, 
 #[inline]
 fn aot_main(buf: &str, opt: Opt, output: &Path, color: ColorChoice) -> Result<(), (Error, Files)> {
     let no_link = opt.no_link;
-    let module = saltwater::initialize_aot_module("saltwater_main".to_owned());
+    let module = saltwater_codegen::initialize_aot_module("saltwater_main".to_owned());
     let Program {
         result,
         warnings,
@@ -305,7 +303,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
         std::process::exit(0);
     }
     if input.contains("--print-type-sizes") {
-        use saltwater::data::*;
+        use saltwater_parser::data::*;
         type_sizes!(
             Location,
             CompileError,
@@ -343,7 +341,7 @@ fn parse_args() -> Result<(BinOpt, PathBuf), pico_args::Error> {
     let mut definitions = HashMap::new();
     while let Some(arg) = input.opt_value_from_str::<_, String>(["-D", "--define"])? {
         use pico_args::Error::ArgumentParsingFailed;
-        use saltwater::data::error::LexError;
+        use saltwater_parser::data::error::LexError;
         use std::convert::TryInto;
 
         let mut iter = arg.splitn(2, '=');
@@ -555,7 +553,7 @@ mod backtrace {
 
 #[cfg(feature = "salty")]
 fn play_scream() -> Result<(), ()> {
-    const SCREAM: &[u8] = include_bytes!("data/R2D2-Scream.ogg");
+    const SCREAM: &[u8] = include_bytes!("R2D2-Scream.ogg");
     let device = rodio::default_output_device().ok_or(())?;
     let source = rodio::Decoder::new(std::io::Cursor::new(SCREAM)).or(Err(()))?;
     rodio::play_raw(&device, rodio::source::Source::convert_samples(source));
@@ -605,7 +603,7 @@ fn install_panic_hook() {
 mod test {
     use super::{Files, Location};
     use ansi_term::Style;
-    use saltwater::data::lex::Span;
+    use saltwater_parser::data::lex::Span;
 
     fn pp<S: Into<Span>>(span: S, source: &str) -> String {
         let mut file_db = Files::new();

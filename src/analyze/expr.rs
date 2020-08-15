@@ -331,9 +331,10 @@ impl PureAnalyzer {
     fn mul(&mut self, left: Expr, right: Expr, op: BinaryOp) -> Expr {
         let location = left.location.merge(right.location);
 
-        // TODO: is this the right behavior?
-        if left.ctype == Type::Error || right.ctype == Type::Error {
+        if left.ctype == Type::Error {
             return left;
+        } else if right.ctype == Type::Error {
+            return right;
         }
 
         if op == BinaryOp::Mod && !(left.ctype.is_integral() && right.ctype.is_integral()) {

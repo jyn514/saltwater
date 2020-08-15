@@ -112,13 +112,14 @@ impl<I: Lexer> Parser<I> {
     // Returns (type, end delimiter)
     pub fn type_name(
         &mut self,
-        end_delimiter: Token,
-    ) -> SyntaxResult<(Locatable<TypeName>, Option<Location>)> {
+        end_delimiters: &[&Token],
+    ) -> SyntaxResult<(Locatable<TypeName>, Option<Locatable<Token>>)> {
         use crate::ast::DeclaratorType;
 
         let (specifiers, specifier_locations) = self.specifiers()?;
-        let (maybe_declarator, end_location) = if let Some(l) = self.match_next(&end_delimiter) {
-            (None, Some(l.location))
+        let (maybe_declarator, end_delimiter) = if let Some(token) = self.match_any(end_delimiters)
+        {
+            (None, Some(token))
         } else {
             (self.declarator(true)?, None)
         };
@@ -146,7 +147,7 @@ impl<I: Lexer> Parser<I> {
             specifiers,
             declarator,
         };
-        Ok((Locatable::new(type_name, location), end_location))
+        Ok((Locatable::new(type_name, location), end_delimiter))
     }
     fn specifiers(&mut self) -> SyntaxResult<(Vec<DeclarationSpecifier>, Option<Location>)> {
         let mut specifiers = Vec::new();
@@ -499,7 +500,7 @@ impl<I: Lexer> Parser<I> {
                 )),
                 Some(Locatable {
                     data: Token::LeftParen,
-                    location,
+                    location: left_paren,
                 }) => {
                     // this is the reason we need to save next - otherwise we
                     // consume LeftParen without postfix_type ever seeing it
@@ -513,7 +514,7 @@ impl<I: Lexer> Parser<I> {
                         // (which clang parses as `int f(int (int ()))`) - it instead treats them as `int f(())`.
                         // However, this is so cursed I don't expect it to be a real problem in the real world
                         Some(Token::RightParen) => {
-                            let left_paren = self.expect(Token::LeftParen).unwrap().location;
+                            //let left_paren = self.expect(Token::LeftParen).unwrap().location;
                             let right_paren = self.expect(Token::RightParen).unwrap().location;
                             let decl = InternalDeclarator {
                                 current: InternalDeclaratorType::Function {
@@ -528,7 +529,7 @@ impl<I: Lexer> Parser<I> {
                         // need to check allow_abstract because we haven't seen an ID at
                         // this point
                         Some(Token::Keyword(k)) if k.is_decl_specifier() && allow_abstract => {
-                            Some(self.parameter_type_list(location)?.map(|current| {
+                            Some(self.parameter_type_list(left_paren)?.map(|current| {
                                 InternalDeclarator {
                                     current,
                                     next: None,
@@ -538,9 +539,6 @@ impl<I: Lexer> Parser<I> {
                         // abstract_declarator - could be an error,
                         // but if so we'll catch it later
                         _ => {
-                            // the one we already matched
-                            self.expect(Token::LeftParen)
-                                .expect("peek_next_token should be accurate");
                             let declarator = self.declarator(allow_abstract)?;
                             self.expect(Token::RightParen)?;
                             declarator
@@ -671,19 +669,34 @@ impl<I: Lexer> Parser<I> {
                     left_paren.merge(right_paren),
                 ));
             }
-            let param = self.type_name()?;
+            let (param, end_delimiter) = self.type_name(&[&Token::Comma, &Token::RightParen])?;
             params.push(param.data);
-            if self.match_next(&Token::Comma).is_none() {
-                let right_paren = self.expect(Token::RightParen)?.location;
-                let location = left_paren.merge(right_paren);
-                return Ok(Locatable::new(
-                    InternalDeclaratorType::Function {
-                        params,
-                        varargs: false,
-                    },
+
+            let right_paren = match end_delimiter {
+                Some(Locatable {
+                    data: Token::Comma, ..
+                }) => continue,
+                Some(Locatable {
+                    data: Token::RightParen,
                     location,
-                ));
-            }
+                }) => location,
+                None => {
+                    if self.match_next(&Token::Comma).is_some() {
+                        continue;
+                    } else {
+                        self.expect(Token::RightParen)?.location
+                    }
+                }
+                _ => unreachable!(),
+            };
+            let location = left_paren.merge(right_paren);
+            return Ok(Locatable::new(
+                InternalDeclaratorType::Function {
+                    params,
+                    varargs: false,
+                },
+                location,
+            ));
         }
     }
     fn initializer(&mut self) -> SyntaxResult<Initializer> {

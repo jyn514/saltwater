@@ -183,8 +183,12 @@ impl<I: Lexer> Parser<I> {
             if let Some(lookahead) = self.peek_next_token() {
                 if lookahead.is_decl_specifier() {
                     let left_paren = self.next_token().unwrap().location;
-                    let mut ctype = self.type_name()?;
-                    let right_paren = self.expect(Token::RightParen)?.location;
+                    let (mut ctype, saw_paren) = self.type_name(&[&Token::RightParen])?;
+                    let right_paren = if let Some(token) = saw_paren {
+                        token.location
+                    } else {
+                        self.expect(Token::RightParen)?.location
+                    };
                     ctype.location = left_paren.merge(right_paren);
                     return Ok(Some(ctype));
                 }

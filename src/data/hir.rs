@@ -595,10 +595,10 @@ mod tests {
             "struct s",
         ];
         for ty in types.iter() {
-            let printed_type_name =
-                analyze(*ty, Parser::type_name, |a, Locatable { data, location }| {
-                    PureAnalyzer::parse_typename_test(a, data, location)
-                })
+            let analyze_func = |a: &mut PureAnalyzer, (Locatable { data, location }, _)| {
+                PureAnalyzer::parse_typename_test(a, data, location)
+            };
+            let printed_type_name = analyze(*ty, |p| Parser::type_name(p, &[]), analyze_func)
                 .unwrap()
                 .to_string();
 

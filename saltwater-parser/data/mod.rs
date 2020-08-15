@@ -5,7 +5,9 @@ pub mod lex;
 pub mod types;
 
 pub use crate::intern::InternedStr;
-pub use error::{CompileError, CompileResult, CompileWarning, Error, ErrorHandler, SemanticError, SyntaxError};
+pub use error::{
+    CompileError, CompileResult, CompileWarning, Error, ErrorHandler, SemanticError, SyntaxError,
+};
 pub use hir::LiteralValue;
 pub use lex::{LiteralToken, Locatable, Location, Token};
 pub use types::Type;
@@ -114,14 +116,19 @@ mod tests {
 #[cfg(feature = "codegen")]
 mod codegen_impls {
     use crate::arch::*;
-    use crate::data::{lex::{ComparisonToken, Locatable}, Type, types::FunctionType, error::CompileError};
+    use crate::data::{
+        error::CompileError,
+        lex::{ComparisonToken, Locatable},
+        types::FunctionType,
+        Type,
+    };
     use crate::intern::InternedStr;
+    use cranelift_codegen::ir::Signature;
     use cranelift_codegen::ir::{
-        AbiParam, ArgumentPurpose,
         condcodes::{FloatCC, IntCC},
         types::{self, Type as IrType},
+        AbiParam, ArgumentPurpose,
     };
-    use cranelift_codegen::ir::Signature;
     use cranelift_codegen::isa::{CallConv, TargetIsa};
 
     // TODO: make this const when const_if_match is stabilized
@@ -144,8 +151,8 @@ mod codegen_impls {
         }
         /// Return an IR type which can represent this C type
         pub fn as_ir_type(&self) -> IrType {
-            use Type::*;
             use std::convert::TryInto;
+            use Type::*;
 
             match self {
                 // Integers

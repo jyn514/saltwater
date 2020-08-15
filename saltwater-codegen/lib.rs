@@ -18,8 +18,6 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::path::Path;
 
-use saltwater_parser::{Program, Opt};
-use saltwater_parser::arch::TARGET;
 use cranelift::codegen::{
     self,
     ir::{
@@ -35,6 +33,8 @@ use cranelift::frontend::Switch;
 use cranelift::prelude::{Block, FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{self, Backend, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder};
+use saltwater_parser::arch::TARGET;
+use saltwater_parser::{Opt, Program};
 
 use saltwater_parser::data::{
     hir::{Declaration, Initializer, Stmt, Symbol},
@@ -357,7 +357,7 @@ pub type Product = <cranelift_object::ObjectBackend as Backend>::Product;
 
 /// Compile and return the declarations and warnings.
 pub fn compile<B: Backend>(module: Module<B>, buf: &str, opt: Opt) -> Program<Module<B>> {
-    use saltwater_parser::{vec_deque, check_semantics};
+    use saltwater_parser::{check_semantics, vec_deque};
 
     let debug_asm = opt.debug_asm;
     let mut program = check_semantics(buf, opt);
@@ -415,8 +415,8 @@ pub fn compile<B: Backend>(module: Module<B>, buf: &str, opt: Opt) -> Program<Mo
 }
 
 pub fn assemble(product: Product, output: &Path) -> Result<(), saltwater_parser::Error> {
-    use std::io::{self, Write};
     use std::fs::File;
+    use std::io::{self, Write};
 
     let bytes = product.emit().map_err(saltwater_parser::Error::Platform)?;
     File::create(output)?

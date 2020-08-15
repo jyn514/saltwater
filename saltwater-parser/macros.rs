@@ -20,6 +20,7 @@ macro_rules! map {
 /// Very similar to `vec![]` from the standard library.
 /// Example:
 /// ```rust
+/// use saltwater_parser::vec_deque;
 /// let queue = vec_deque![1, 2, 3];
 /// ```
 ///

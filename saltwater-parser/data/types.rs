@@ -57,7 +57,7 @@ mod struct_ref {
         ///
         /// Examples:
         /// ```
-        /// use saltwater::data::types::StructRef;
+        /// use saltwater_parser::data::types::StructRef;
         /// let struct_ref = StructRef::new();
         /// let members = struct_ref.get();
         /// for symbol in members.iter() {

@@ -58,10 +58,7 @@ impl PureAnalyzer {
                 let struct_type = match &inner.ctype {
                     Type::Pointer(ctype, _) => match &**ctype {
                         Type::Union(_) | Type::Struct(_) => (**ctype).clone(),
-                        Type::Error => {
-                            // already type error
-                            return inner;
-                        }
+                        Type::Error => return inner,
                         other => {
                             self.err(SemanticError::NotAStruct(other.clone()), inner.location);
                             return inner;

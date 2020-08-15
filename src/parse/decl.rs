@@ -108,11 +108,20 @@ impl<I: Lexer> Parser<I> {
             location,
         ))
     }
-    pub fn type_name(&mut self) -> SyntaxResult<Locatable<TypeName>> {
+
+    // Returns (type, end delimiter)
+    pub fn type_name(
+        &mut self,
+        end_delimiter: Token,
+    ) -> SyntaxResult<(Locatable<TypeName>, Option<Location>)> {
         use crate::ast::DeclaratorType;
 
         let (specifiers, specifier_locations) = self.specifiers()?;
-        let maybe_declarator = self.declarator(true)?;
+        let (maybe_declarator, end_location) = if let Some(l) = self.match_next(&end_delimiter) {
+            (None, Some(l.location))
+        } else {
+            (self.declarator(true)?, None)
+        };
         let (location, declarator) = match maybe_declarator {
             None => (
                 specifier_locations,
@@ -137,7 +146,7 @@ impl<I: Lexer> Parser<I> {
             specifiers,
             declarator,
         };
-        Ok(Locatable::new(type_name, location))
+        Ok((Locatable::new(type_name, location), end_location))
     }
     fn specifiers(&mut self) -> SyntaxResult<(Vec<DeclarationSpecifier>, Option<Location>)> {
         let mut specifiers = Vec::new();
@@ -244,6 +253,7 @@ impl<I: Lexer> Parser<I> {
                 break token.location.maybe_merge(spec_location);
             }
             let decl = if self.peek_token() != Some(&Token::Colon) {
+                // There's no semicolon and no colon, so this must be a non-empty declarator.
                 self.declarator(true)?.map(|d| {
                     spec_location = Some(d.location.maybe_merge(spec_location));
                     let mut decl = d.data.parse_declarator();
@@ -346,6 +356,7 @@ impl<I: Lexer> Parser<I> {
     }
 
     fn init_declarator(&mut self) -> SyntaxResult<Locatable<ast::InitDeclarator>> {
+        // We don't allow abstract parameters here, so there must be a declarator or there is a syntax error.
         let decl = self.declarator(false)?;
         let init = if self.match_next(&Token::EQUAL).is_some() {
             Some(self.initializer()?)
@@ -379,18 +390,14 @@ impl<I: Lexer> Parser<I> {
             })
         }
     }
+
+    /// This _requires_ that there is a declarator present. If not (`int f(int)`) it will throw a syntax error.
     fn declarator(
         &mut self,
         allow_abstract: bool,
     ) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
+        // Parse pointers iteratively instead of recursively to avoid stack overflows.
         let mut pointer_decls = Vec::new();
-        // NOTE: outdated comment
-        // decls coming earlier in the Vec have lower precedence than the ones coming later
-        // e.g. `*const *volatile p` would look like `vec![Pointer(const), Pointer(volatile), Id("p")]`
-        // and  `*const (*f)()` would look like `vec![Pointer(const), Function, Pointer, Id("f")]`
-        // anything to the left of a `Function` represents the return type
-        // anything to the right represents a declarator with higher precedence
-        // the `Id` should always be the last declarator in the Vec
         while let Some(Locatable { mut location, .. }) = self.match_next(&Token::Star) {
             let mut qualifiers = Vec::new();
             // *const volatile p
@@ -721,7 +728,7 @@ impl TryFrom<Keyword> for DeclarationSpecifier {
 
         // TODO: get rid of this macro and store a `enum Keyword { Qualifier(Qualifier), etc. }` instead
         macro_rules! change_enum {
-            ($val: expr, $source: path, $dest: ident, $($name: ident),* $(,)?) => {
+            ($val: expr, $source: path, $($name: ident),* $(,)?) => {
                 match $val {
                     $(<$source>::$name => Ok(DeclarationSpecifier::Unit(UnitSpecifier::$name)),)*
                     _ => Err(()),
@@ -729,7 +736,7 @@ impl TryFrom<Keyword> for DeclarationSpecifier {
             }
         }
 
-        change_enum!(k, Keyword, DeclarationSpecifier,
+        change_enum!(k, Keyword,
             Const, Volatile, Restrict, Atomic, ThreadLocal,
             Unsigned, Signed,
             Bool, Char, Short, Int, Long, Float, Double, Void,

@@ -563,6 +563,7 @@ mod jit {
         }
     }
 }
+
 #[cfg(test)]
 #[test]
 fn test_compile_error_semantic() {

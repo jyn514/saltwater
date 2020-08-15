@@ -84,7 +84,7 @@ impl PureAnalyzer {
                         let ctype = (**t).clone();
                         inner.indirection(true, ctype)
                     }
-                    Type::Error => inner, // already type error
+                    Type::Error => inner,
                     _ => {
                         self.err(
                             SemanticError::NotAPointer(inner.ctype.clone()),

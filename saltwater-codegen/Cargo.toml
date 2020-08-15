@@ -20,4 +20,4 @@ lazy_static = "1"
 saltwater-parser = { path = "../saltwater-parser", features = ["codegen"] }
 
 [features]
-jit = ["cranelift-simplejit"]
+jit = ["cranelift-simplejit", "saltwater-parser/jit"]

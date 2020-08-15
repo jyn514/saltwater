@@ -64,10 +64,7 @@ impl PureAnalyzer {
                             return inner;
                         }
                     },
-                    Type::Error => {
-                        // already type error
-                        return inner;
-                    }
+                    Type::Error => return inner,
                     other => {
                         self.err(SemanticError::NotAPointer(other.clone()), inner.location);
                         return inner;

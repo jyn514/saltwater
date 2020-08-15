@@ -8,7 +8,8 @@ extern crate log;
 extern crate tempfile;
 
 use log::info;
-use saltwater::Error;
+use saltwater_codegen::{assemble, initialize_aot_module, link};
+use saltwater_parser::{Error, Opt};
 
 pub fn init() {
     env_logger::builder().is_test(true).init();
@@ -45,12 +46,14 @@ pub fn compile(
     filename: PathBuf,
     no_link: bool,
 ) -> Result<tempfile::TempPath, Error> {
-    let opts = saltwater::Opt {
+    let opts = Opt {
         filename,
         ..Default::default()
     };
-    let module = saltwater::initialize_aot_module(program.to_owned());
-    let module = saltwater::compile(module, program, opts).result?.finish();
+    let module = initialize_aot_module(program.to_owned());
+    let module = saltwater_codegen::compile(module, program, opts)
+        .result?
+        .finish();
     let output = tempfile::NamedTempFile::new()
         .expect("cannot create tempfile")
         .into_temp_path();
@@ -60,10 +63,10 @@ pub fn compile(
             .expect("cannot create tempfile")
             .into_temp_path();
         info!("tmp_file is {:?}", tmp_file);
-        saltwater::assemble(module, &tmp_file)?;
-        saltwater::link(&tmp_file, &output)?;
+        assemble(module, &tmp_file)?;
+        link(&tmp_file, &output)?;
     } else {
-        saltwater::assemble(module, &output)?;
+        assemble(module, &output)?;
     };
     Ok(output)
 }

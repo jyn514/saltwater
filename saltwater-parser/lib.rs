@@ -12,14 +12,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 pub use codespan;
-
-#[cfg(all(feature = "color-backtrace", not(feature = "cc")))]
-compile_error!(concat!(
-    "The color-backtrace feature does nothing unless used by the `",
-    env!("CARGO_PKG_DIR"),
-    "` binary."
-));
-
 use arcstr::ArcStr;
 
 /// The `Source` type for `codespan::Files`.

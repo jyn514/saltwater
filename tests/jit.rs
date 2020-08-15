@@ -1,6 +1,7 @@
 mod utils;
 
-use saltwater::{Opt, Program, JIT};
+use saltwater_codegen::JIT;
+use saltwater_parser::{Opt, Program};
 
 #[test]
 fn jit_readme() -> Result<(), Box<dyn std::error::Error>> {

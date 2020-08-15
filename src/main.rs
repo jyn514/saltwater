@@ -140,14 +140,14 @@ fn real_main(buf: ArcStr, bin_opt: BinOpt, output: &Path) -> Result<(), (Error, 
         if !opt.jit {
             aot_main(&buf, opt, output, bin_opt.color)
         } else {
-            let module = saltwater::initialize_jit_module();
+            let module = saltwater_codegen::initialize_jit_module();
             let Program {
                 result,
                 warnings,
                 files,
             } = compile(module, &buf, opt);
             handle_warnings(warnings, &files, bin_opt.color);
-            let mut jit = saltwater::JIT::from(sw_try!(result, files));
+            let mut jit = saltwater_codegen::JIT::from(sw_try!(result, files));
             if let Some(exit_code) = unsafe { jit.run_main() } {
                 std::process::exit(exit_code);
             }

@@ -7,13 +7,14 @@ use cranelift::codegen::ir::types;
 use cranelift_module::{Backend, DataContext, DataId, Linkage};
 
 use super::{Compiler, Id};
-use crate::arch::{PTR_SIZE, TARGET};
-use crate::data::*;
-use crate::data::{
+use saltwater_parser::arch::{PTR_SIZE, TARGET};
+use saltwater_parser::data::{
     hir::{Expr, ExprType, Initializer, LiteralValue, Symbol},
     types::ArrayType,
     StorageClass,
+    *
 };
+use saltwater_parser::const_assert;
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
@@ -52,7 +53,7 @@ impl<B: Backend> Compiler<B> {
         init: Option<Initializer>,
         location: Location,
     ) -> CompileResult<()> {
-        use crate::get_str;
+        use saltwater_parser::get_str;
         let metadata = symbol.get();
         if let StorageClass::Typedef = metadata.storage_class {
             return Ok(());
@@ -74,7 +75,7 @@ impl<B: Backend> Compiler<B> {
             // struct that was declared but never used
             return Ok(());
         }
-        let linkage = metadata.storage_class.try_into().map_err(err_closure)?;
+        let linkage = linkage_from_storage_class(metadata.storage_class).map_err(err_closure)?;
         let id = self
             .module
             .declare_data(
@@ -211,7 +212,7 @@ impl<B: Backend> Compiler<B> {
             },
             ExprType::Literal(token) => {
                 let bytes =
-                    token.into_bytes(&expr.ctype, &expr.location, &mut self.error_handler)?;
+                    into_bytes(token, &expr.ctype, &expr.location, &mut self.error_handler)?;
                 buf.copy_from_slice(&bytes);
             }
             _ => semantic_err!(
@@ -350,95 +351,90 @@ impl<B: Backend> Compiler<B> {
     }
 }
 
-impl LiteralValue {
-    fn into_bytes(
-        self,
-        ctype: &Type,
-        location: &Location,
-        error_handler: &mut ErrorHandler,
-    ) -> CompileResult<Box<[u8]>> {
-        let ir_type = ctype.as_ir_type();
-        let big_endian = TARGET
-            .endianness()
-            .expect("target should be big or little endian")
-            == target_lexicon::Endianness::Big;
+fn into_bytes(
+    value: LiteralValue,
+    ctype: &Type,
+    location: &Location,
+    error_handler: &mut ErrorHandler,
+) -> CompileResult<Box<[u8]>> {
+    let ir_type = ctype.as_ir_type();
+    let big_endian = TARGET
+        .endianness()
+        .expect("target should be big or little endian")
+        == target_lexicon::Endianness::Big;
 
-        match self {
-            LiteralValue::Int(i) => Ok(match ir_type {
-                types::I8 => bytes!(
-                    cast!(i, i64, i8, &ctype, *location, error_handler),
-                    big_endian
-                ),
-                types::I16 => bytes!(
-                    cast!(i, i64, i16, &ctype, *location, error_handler),
-                    big_endian
-                ),
-                types::I32 => bytes!(
-                    cast!(i, i64, i32, &ctype, *location, error_handler),
-                    big_endian
-                ),
-                types::I64 => bytes!(i, big_endian),
-                x => unreachable!(format!(
-                    "ir_type {} for integer {} is not of integer type",
-                    x, i
-                )),
-            }),
-            LiteralValue::UnsignedInt(i) => Ok(match ir_type {
-                types::I8 => bytes!(
-                    cast!(i, u64, u8, &ctype, *location, error_handler),
-                    big_endian
-                ),
-                types::I16 => bytes!(
-                    cast!(i, u64, u16, &ctype, *location, error_handler),
-                    big_endian
-                ),
-                types::I32 => bytes!(
-                    cast!(i, u64, u32, &ctype, *location, error_handler),
-                    big_endian
-                ),
-                types::I64 => bytes!(i, big_endian),
-                x => unreachable!(format!(
-                    "ir_type {} for integer {} is not of integer type",
-                    x, i
-                )),
-            }),
-            LiteralValue::Float(f) => Ok(match ir_type {
-                types::F32 => {
-                    let cast = f as f32;
-                    if (f64::from(cast) - f).abs() >= std::f64::EPSILON {
-                        let warning = format!(
-                            "conversion from double to float loses precision ({} is different from {} by more than DBL_EPSILON ({}))",
-                            f, std::f64::EPSILON, f64::from(cast)
-                        );
-                        error_handler.warn(&warning, *location);
-                    }
-                    let float_as_int = cast.to_bits();
-                    bytes!(float_as_int, big_endian)
+    match value {
+        LiteralValue::Int(i) => Ok(match ir_type {
+            types::I8 => bytes!(
+                cast!(i, i64, i8, &ctype, *location, error_handler),
+                big_endian
+            ),
+            types::I16 => bytes!(
+                cast!(i, i64, i16, &ctype, *location, error_handler),
+                big_endian
+            ),
+            types::I32 => bytes!(
+                cast!(i, i64, i32, &ctype, *location, error_handler),
+                big_endian
+            ),
+            types::I64 => bytes!(i, big_endian),
+            x => unreachable!(format!(
+                "ir_type {} for integer {} is not of integer type",
+                x, i
+            )),
+        }),
+        LiteralValue::UnsignedInt(i) => Ok(match ir_type {
+            types::I8 => bytes!(
+                cast!(i, u64, u8, &ctype, *location, error_handler),
+                big_endian
+            ),
+            types::I16 => bytes!(
+                cast!(i, u64, u16, &ctype, *location, error_handler),
+                big_endian
+            ),
+            types::I32 => bytes!(
+                cast!(i, u64, u32, &ctype, *location, error_handler),
+                big_endian
+            ),
+            types::I64 => bytes!(i, big_endian),
+            x => unreachable!(format!(
+                "ir_type {} for integer {} is not of integer type",
+                x, i
+            )),
+        }),
+        LiteralValue::Float(f) => Ok(match ir_type {
+            types::F32 => {
+                let cast = f as f32;
+                if (f64::from(cast) - f).abs() >= std::f64::EPSILON {
+                    let warning = format!(
+                        "conversion from double to float loses precision ({} is different from {} by more than DBL_EPSILON ({}))",
+                        f, std::f64::EPSILON, f64::from(cast)
+                    );
+                    error_handler.warn(&warning, *location);
                 }
-                types::F64 => bytes!(f.to_bits(), big_endian),
-                x => unreachable!(format!(
-                    "ir_type {} for float {} is not of integer type",
-                    x, f
-                )),
-            }),
-            LiteralValue::Str(string) => Ok(string.into_boxed_slice()),
-            LiteralValue::Char(c) => Ok(Box::new([c])),
-        }
+                let float_as_int = cast.to_bits();
+                bytes!(float_as_int, big_endian)
+            }
+            types::F64 => bytes!(f.to_bits(), big_endian),
+            x => unreachable!(format!(
+                "ir_type {} for float {} is not of integer type",
+                x, f
+            )),
+        }),
+        LiteralValue::Str(string) => Ok(string.into_boxed_slice()),
+        LiteralValue::Char(c) => Ok(Box::new([c])),
     }
 }
 
-impl TryFrom<StorageClass> for Linkage {
-    type Error = String;
-    // INVARIANT: this should be the linkage for an object, not for a function
-    fn try_from(sc: StorageClass) -> Result<Linkage, String> {
-        match sc {
-            StorageClass::Extern => Ok(Linkage::Import),
-            StorageClass::Static => Ok(Linkage::Local),
-            StorageClass::Auto => Ok(Linkage::Export),
-            StorageClass::Register => {
-                Err(format!("illegal storage class {} for global variable", sc))
-            }
-            StorageClass::Typedef => unreachable!("typedefs should be handled by parser"),
+// INVARIANT: this should be the linkage for an object, not for a function
+fn linkage_from_storage_class(sc: StorageClass) -> Result<Linkage, String> {
+    match sc {
+        StorageClass::Extern => Ok(Linkage::Import),
+        StorageClass::Static => Ok(Linkage::Local),
+        StorageClass::Auto => Ok(Linkage::Export),
+        StorageClass::Register => {
+            Err(format!("illegal storage class {} for global variable", sc))
         }
+        StorageClass::Typedef => unreachable!("typedefs should be handled by parser"),
     }
 }

@@ -16,9 +16,9 @@ pub type CompileWarning = Locatable<Warning>;
 /// part of the compiler, this cannot be represented well with Rust's normal
 /// `Result`.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ErrorHandler<T = Error> {
+pub struct ErrorHandler<T = Error> {
     errors: VecDeque<Locatable<T>>,
-    pub(crate) warnings: VecDeque<CompileWarning>,
+    pub warnings: VecDeque<CompileWarning>,
 }
 
 // Can't be derived because the derive mistakenly puts a bound of T: Default
@@ -53,7 +53,7 @@ impl<T> ErrorHandler<T> {
     }
 
     /// Shortcut for adding a warning
-    pub(crate) fn warn<W: Into<Warning>>(&mut self, warning: W, location: Location) {
+    pub fn warn<W: Into<Warning>>(&mut self, warning: W, location: Location) {
         self.warnings.push_back(location.with(warning.into()));
     }
 
@@ -291,7 +291,7 @@ pub enum SemanticError {
     // TODO: this error should happen way before codegen
     #[cfg(feature = "codegen")]
     #[error("redeclaration of label {0}")]
-    LabelRedeclaration(cranelift::prelude::Block),
+    LabelRedeclaration(cranelift_codegen::ir::entities::Block),
 
     #[error("use of undeclared label {0}")]
     UndeclaredLabel(InternedStr),

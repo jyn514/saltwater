@@ -115,7 +115,7 @@ impl Symbol {
 }
 
 impl Variable {
-    pub(crate) fn insert(self) -> Symbol {
+    pub fn insert(self) -> Symbol {
         SYMBOL_TABLE.with(|store| store.borrow_mut().insert(self))
     }
 }
@@ -242,7 +242,8 @@ impl Qualifiers {
     pub(crate) fn has_func_qualifiers(self) -> bool {
         self.func.inline || self.func.no_return
     }
-    pub(crate) const NONE: Qualifiers = Qualifiers {
+    // TODO: this should just be a Default
+    pub const NONE: Qualifiers = Qualifiers {
         c_const: false,
         volatile: false,
         func: FunctionQualifiers {

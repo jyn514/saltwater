@@ -4,7 +4,7 @@ use cranelift::prelude::{Block, FunctionBuilder, InstBuilder};
 use cranelift_module::Backend;
 
 use super::Compiler;
-use crate::data::{
+use saltwater_parser::data::{
     hir::{Expr, Stmt, StmtType},
     *,
 };
@@ -25,7 +25,7 @@ impl<B: Backend> Compiler<B> {
         stmt: Stmt,
         builder: &mut FunctionBuilder,
     ) -> CompileResult<()> {
-        if builder.is_filled() && !stmt.data.is_jump_target() {
+        if builder.is_filled() && !is_jump_target(&stmt.data) {
             return Err(stmt.location.error(SemanticError::UnreachableStatement));
         }
         match stmt.data {
@@ -374,11 +374,9 @@ impl<B: Backend> Compiler<B> {
     }
 }
 
-impl StmtType {
-    fn is_jump_target(&self) -> bool {
-        match self {
-            StmtType::Case(_, _) | StmtType::Default(_) | StmtType::Label(_, _) => true,
-            _ => false,
-        }
+fn is_jump_target(stmt: &StmtType) -> bool {
+    match stmt {
+        StmtType::Case(_, _) | StmtType::Default(_) | StmtType::Label(_, _) => true,
+        _ => false,
     }
 }

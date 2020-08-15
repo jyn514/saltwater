@@ -183,7 +183,7 @@ pub struct FunctionType {
 impl Type {
     /// https://stackoverflow.com/questions/14821936/what-is-a-scalar-object-in-c#14822074
     #[inline]
-    pub(crate) fn is_scalar(&self) -> bool {
+    pub fn is_scalar(&self) -> bool {
         use Type::*;
         match self {
             Enum(_, _) => true,

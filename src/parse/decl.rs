@@ -476,71 +476,91 @@ impl<I: Lexer> Parser<I> {
         // we'll pass this to postfix_type in just a second
         // if None, we didn't find an ID
         // should only happen if allow_abstract is true
-        let decl: Option<Locatable<InternalDeclarator>> = match self.peek_token() {
-            Some(Token::Id(_)) => Some(self.next_token().unwrap().map(|data| match data {
-                Token::Id(id) => InternalDeclarator {
-                    current: InternalDeclaratorType::Id(id),
-                    next: None,
-                },
-                _ => panic!("peek() should always return the same thing as next()"),
-            })),
-            // handled by postfix_type
-            Some(Token::LeftBracket) if allow_abstract => None,
-            Some(Token::LeftParen) => {
-                // this is the reason we need to save next - otherwise we
-                // consume LeftParen without postfix_type ever seeing it
-                match self.peek_next_token() {
-                    // HACK: catch function declarators with implicit int
-                    // If we see code like the following: `int f(());`,
-                    // this does _not_ mean a parenthesized declarator. Instead,
-                    // this is a function declarator with an implicit `int` (compare `int f(int ())`).
-                    // This will later be desugared by the analyzer to `int f(int (*)())`.
-                    // TODO: this does _not_ catch more complex types like `int f((()))`
-                    // (which clang parses as `int f(int (int ()))`) - it instead treats them as `int f(())`.
-                    // However, this is so cursed I don't expect it to be a real problem in the real world
-                    Some(Token::RightParen) => {
-                        let left_paren = self.expect(Token::LeftParen).unwrap().location;
-                        let right_paren = self.expect(Token::RightParen).unwrap().location;
-                        let decl = InternalDeclarator {
-                            current: InternalDeclaratorType::Function {
-                                params: Vec::new(),
-                                varargs: false,
-                            },
-                            next: None,
-                        };
-                        Some(Locatable::new(decl, left_paren.merge(right_paren)))
-                    }
-                    // parameter_type_list, leave it for postfix_type
-                    // need to check allow_abstract because we haven't seen an ID at
-                    // this point
-                    Some(Token::Keyword(k)) if k.is_decl_specifier() && allow_abstract => None,
-                    // abstract_declarator - could be an error,
-                    // but if so we'll catch it later
-                    _ => {
-                        // the one we already matched
-                        self.expect(Token::LeftParen)
-                            .expect("peek_next_token should be accurate");
-                        let declarator = self.declarator(allow_abstract)?;
-                        self.expect(Token::RightParen)?;
-                        declarator
+        let decl: Option<Locatable<InternalDeclarator>> =
+            match self.next_token() {
+                Some(Locatable {
+                    data: Token::Id(id),
+                    location,
+                }) => Some(Locatable::new(
+                    InternalDeclarator {
+                        current: InternalDeclaratorType::Id(id),
+                        next: None,
+                    },
+                    location,
+                )),
+                Some(Locatable {
+                    data: Token::LeftBracket,
+                    location,
+                }) if allow_abstract => Some(self.array_declarator(true, location)?.map(
+                    |current| InternalDeclarator {
+                        current,
+                        next: None,
+                    },
+                )),
+                Some(Locatable {
+                    data: Token::LeftParen,
+                    location,
+                }) => {
+                    // this is the reason we need to save next - otherwise we
+                    // consume LeftParen without postfix_type ever seeing it
+                    match self.peek_token() {
+                        // HACK: catch function declarators with implicit int
+                        // If we see code like the following: `int f(());`,
+                        // this does _not_ mean a parenthesized declarator. Instead,
+                        // this is a function declarator with an implicit `int` (compare `int f(int ())`).
+                        // This will later be desugared by the analyzer to `int f(int (*)())`.
+                        // TODO: this does _not_ catch more complex types like `int f((()))`
+                        // (which clang parses as `int f(int (int ()))`) - it instead treats them as `int f(())`.
+                        // However, this is so cursed I don't expect it to be a real problem in the real world
+                        Some(Token::RightParen) => {
+                            let left_paren = self.expect(Token::LeftParen).unwrap().location;
+                            let right_paren = self.expect(Token::RightParen).unwrap().location;
+                            let decl = InternalDeclarator {
+                                current: InternalDeclaratorType::Function {
+                                    params: Vec::new(),
+                                    varargs: false,
+                                },
+                                next: None,
+                            };
+                            Some(Locatable::new(decl, left_paren.merge(right_paren)))
+                        }
+                        // parameter_type_list, leave it for postfix_type
+                        // need to check allow_abstract because we haven't seen an ID at
+                        // this point
+                        Some(Token::Keyword(k)) if k.is_decl_specifier() && allow_abstract => {
+                            Some(self.parameter_type_list(location)?.map(|current| {
+                                InternalDeclarator {
+                                    current,
+                                    next: None,
+                                }
+                            }))
+                        }
+                        // abstract_declarator - could be an error,
+                        // but if so we'll catch it later
+                        _ => {
+                            // the one we already matched
+                            self.expect(Token::LeftParen)
+                                .expect("peek_next_token should be accurate");
+                            let declarator = self.declarator(allow_abstract)?;
+                            self.expect(Token::RightParen)?;
+                            declarator
+                        }
                     }
                 }
-            }
-            _ if allow_abstract => None,
-            Some(x) => {
-                let err = Err(Locatable::new(
-                    SyntaxError::Generic(format!("expected variable name or '(', got '{}'", x)),
-                    self.next_location(),
-                ));
-                self.panic();
-                return err;
-            }
-            None => {
-                return Err(self.next_location().with(SyntaxError::Generic(
-                    "expected variable name or '(', got <end-of-of-file>".into(),
-                )));
-            }
-        };
+                _ if allow_abstract => None,
+                Some(x) => {
+                    let err = Err(x.map(|x| {
+                        SyntaxError::Generic(format!("expected variable name or '(', got '{}'", x))
+                    }));
+                    self.panic();
+                    return err;
+                }
+                None => {
+                    return Err(self.next_location().with(SyntaxError::Generic(
+                        "expected variable name or '(', got <end-of-of-file>".into(),
+                    )));
+                }
+            };
         self.postfix_type(decl, allow_abstract)
     }
     /*
@@ -561,35 +581,49 @@ impl<I: Lexer> Parser<I> {
         mut prefix: Option<Locatable<InternalDeclarator>>,
         allow_abstract: bool,
     ) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
-        while let Some(data) = self.peek_token() {
-            let current = match data {
+        while let Some(token) = self.peek_token() {
+            let current = match token {
                 // Array; Specified in section 6.7.6.2 of the C11 spec
                 Token::LeftBracket => {
-                    self.expect(Token::LeftBracket).unwrap();
-                    if let Some(token) = self.match_next(&Token::Keyword(Keyword::Static)) {
-                        if !allow_abstract {
-                            self.error_handler.push_back(Locatable::new(
-                                SyntaxError::StaticInConcreteArray,
-                                token.location,
-                            ));
-                        }
-                    }
-                    let (size, location) =
-                        if let Some(token) = self.match_next(&Token::RightBracket) {
-                            (None, token.location)
-                        } else {
-                            let expr = Box::new(self.expr()?);
-                            (Some(expr), self.expect(Token::RightBracket)?.location)
-                        };
-                    Locatable::new(InternalDeclaratorType::Array { size }, location)
+                    let location = self.expect(Token::LeftBracket)?.location;
+                    self.array_declarator(allow_abstract, location)?
                 }
-                Token::LeftParen => self.parameter_type_list()?,
+                Token::LeftParen => {
+                    let location = self.expect(Token::LeftParen)?.location;
+                    self.parameter_type_list(location)?
+                }
                 _ => break,
             };
             prefix = Some(Self::merge_decls(current, prefix))
         }
         Ok(prefix)
     }
+
+    fn array_declarator(
+        &mut self,
+        allow_abstract: bool,
+        left_bracket: Location,
+    ) -> SyntaxResult<Locatable<InternalDeclaratorType>> {
+        if let Some(token) = self.match_next(&Token::Keyword(Keyword::Static)) {
+            if !allow_abstract {
+                self.error_handler.push_back(Locatable::new(
+                    SyntaxError::StaticInConcreteArray,
+                    token.location,
+                ));
+            }
+        }
+        let (size, right_bracket) = if let Some(token) = self.match_next(&Token::RightBracket) {
+            (None, token.location)
+        } else {
+            let expr = Box::new(self.expr()?);
+            (Some(expr), self.expect(Token::RightBracket)?.location)
+        };
+        Ok(Locatable::new(
+            InternalDeclaratorType::Array { size },
+            left_bracket.merge(right_bracket),
+        ))
+    }
+
     /*
      * function parameters
      * reference grammar:
@@ -612,11 +646,10 @@ impl<I: Lexer> Parser<I> {
      *
      * <http://www.quut.com/c/ANSI-C-grammar-y.html#parameter_type_list>
      */
-    fn parameter_type_list(&mut self) -> SyntaxResult<Locatable<InternalDeclaratorType>> {
-        let left_paren = self
-            .expect(Token::LeftParen)
-            .expect("parameter_type_list should only be called with '(' as the next token")
-            .location;
+    fn parameter_type_list(
+        &mut self,
+        left_paren: Location,
+    ) -> SyntaxResult<Locatable<InternalDeclaratorType>> {
         let mut params = vec![];
         if let Some(right_paren) = self.match_next(&Token::RightParen) {
             return Ok(Locatable::new(

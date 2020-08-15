@@ -1313,14 +1313,10 @@ impl Expr {
             // There is probably a better way to do this
             // check not type error and that if rval is a pointer, it is not a type error
             if *ctype != Type::Error {
-                if let Type::Pointer(a, _) = expr.ctype.clone() {
-                    if *a != Type::Error {
-                        error_handler.error(
-                            SemanticError::InvalidCast(expr.ctype.clone(), ctype.clone()),
-                            expr.location,
-                        );
-                    }
-                }
+                error_handler.error(
+                    SemanticError::InvalidCast(expr.ctype.clone(), ctype.clone()),
+                    expr.location,
+                );
             }
             expr
         }

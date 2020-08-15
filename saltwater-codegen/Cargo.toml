@@ -1,6 +1,6 @@
 [package]
 name = "saltwater-codegen"
-version = "0.1.0"
+version = "0.11.0"
 authors = ["Joshua Nelson <jyn514@gmail.com>"]
 edition = "2018"
 

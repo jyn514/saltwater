@@ -1179,7 +1179,7 @@ macro_rules! built_in_headers {
     ( $($filename: literal),+ $(,)? ) => {
         [
             // Relative to the current file, not the crate root
-            $( ($filename, include_str!(concat!("../../headers/", $filename))) ),+
+            $( ($filename, include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/headers/", $filename))) ),+
         ]
     };
 }

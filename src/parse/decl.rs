@@ -28,6 +28,8 @@ struct InternalDeclarator {
     next: Option<Box<InternalDeclarator>>,
 }
 
+type DelimitedResult<T> = SyntaxResult<(T, Option<Locatable<Token>>)>;
+
 impl<I: Lexer> Parser<I> {
     /// ```yacc
     /// external_declaration
@@ -110,10 +112,7 @@ impl<I: Lexer> Parser<I> {
     }
 
     // Returns (type, end delimiter)
-    pub fn type_name(
-        &mut self,
-        end_delimiters: &[&Token],
-    ) -> SyntaxResult<(Locatable<TypeName>, Option<Locatable<Token>>)> {
+    pub fn type_name(&mut self, end_delimiters: &[&Token]) -> DelimitedResult<Locatable<TypeName>> {
         use crate::ast::DeclaratorType;
 
         let (specifiers, specifier_locations) = self.specifiers()?;
@@ -392,10 +391,7 @@ impl<I: Lexer> Parser<I> {
         &mut self,
         allow_abstract: bool,
         end_delimiters: &[&Token],
-    ) -> SyntaxResult<(
-        Option<Locatable<InternalDeclarator>>,
-        Option<Locatable<Token>>,
-    )> {
+    ) -> DelimitedResult<Option<Locatable<InternalDeclarator>>> {
         // Parse pointers iteratively instead of recursively to avoid stack overflows.
         let mut pointer_decls = Vec::new();
         while let Some(Locatable { mut location, .. }) = self.match_next(&Token::Star) {

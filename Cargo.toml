@@ -49,8 +49,6 @@ env_logger = { version = "0.7", default-features = false }
 log = "0.4"
 criterion = "0.3"
 walkdir = "2"
-proptest = "^0.9.6"
-proptest-derive = "0.1"
 
 [features]
 default = ["color-backtrace"]
@@ -58,6 +56,8 @@ default = ["color-backtrace"]
 salty = ["rand", "rodio"]
 # for internal use
 _test_headers = []
+
+[workspace]
 
 [[bin]]
 name = "swcc"

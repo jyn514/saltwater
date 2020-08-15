@@ -8,13 +8,12 @@ use cranelift_module::{Backend, DataContext, DataId, Linkage};
 
 use super::{Compiler, Id};
 use saltwater_parser::arch::{PTR_SIZE, TARGET};
+use saltwater_parser::const_assert;
 use saltwater_parser::data::{
     hir::{Expr, ExprType, Initializer, LiteralValue, Symbol},
     types::ArrayType,
-    StorageClass,
-    *
+    StorageClass, *,
 };
-use saltwater_parser::const_assert;
 
 const_assert!(PTR_SIZE <= std::usize::MAX as u16);
 const ZERO_PTR: [u8; PTR_SIZE as usize] = [0; PTR_SIZE as usize];
@@ -432,9 +431,7 @@ fn linkage_from_storage_class(sc: StorageClass) -> Result<Linkage, String> {
         StorageClass::Extern => Ok(Linkage::Import),
         StorageClass::Static => Ok(Linkage::Local),
         StorageClass::Auto => Ok(Linkage::Export),
-        StorageClass::Register => {
-            Err(format!("illegal storage class {} for global variable", sc))
-        }
+        StorageClass::Register => Err(format!("illegal storage class {} for global variable", sc)),
         StorageClass::Typedef => unreachable!("typedefs should be handled by parser"),
     }
 }

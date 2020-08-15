@@ -6,7 +6,7 @@ use super::{Compiler, Id};
 use saltwater_parser::data::{
     hir::{self, BinaryOp, Expr, ExprType, LiteralValue, Symbol, Variable},
     lex::ComparisonToken,
-    *
+    *,
 };
 
 type IrResult = CompileResult<Value>;
@@ -504,8 +504,8 @@ impl<B: Backend> Compiler<B> {
         args: Vec<Expr>,
         builder: &mut FunctionBuilder,
     ) -> IrResult {
-        use hir::Qualifiers;
         use cranelift::codegen::ir::{AbiParam, ArgumentPurpose};
+        use hir::Qualifiers;
 
         let mut ftype = match ctype {
             Type::Function(ftype) => ftype,

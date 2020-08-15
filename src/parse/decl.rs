@@ -386,7 +386,6 @@ impl<I: Lexer> Parser<I> {
         }
     }
 
-    /// This _requires_ that there is a declarator present. If not (`int f(int)`) it will throw a syntax error.
     fn declarator(
         &mut self,
         allow_abstract: bool,
@@ -469,6 +468,7 @@ impl<I: Lexer> Parser<I> {
      *   parameter_type_list starts with declaration specifiers, abstract_declarator doesn't:
      *   https://stackoverflow.com/questions/56410673/how-should-int-fint-be-parsed
      */
+    /// This _requires_ that there is a declarator present. If not (`int f(int)`) it will throw a syntax error.
     fn direct_declarator(
         &mut self,
         allow_abstract: bool,

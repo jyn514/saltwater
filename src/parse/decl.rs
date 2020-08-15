@@ -117,12 +117,7 @@ impl<I: Lexer> Parser<I> {
         use crate::ast::DeclaratorType;
 
         let (specifiers, specifier_locations) = self.specifiers()?;
-        let (maybe_declarator, end_delimiter) = if let Some(token) = self.match_any(end_delimiters)
-        {
-            (None, Some(token))
-        } else {
-            (self.declarator(true)?, None)
-        };
+        let (maybe_declarator, end_delimiter) = self.declarator(true, end_delimiters)?;
         let (location, declarator) = match maybe_declarator {
             None => (
                 specifier_locations,
@@ -255,7 +250,7 @@ impl<I: Lexer> Parser<I> {
             }
             let decl = if self.peek_token() != Some(&Token::Colon) {
                 // There's no semicolon and no colon, so this must be a non-empty declarator.
-                self.declarator(true)?.map(|d| {
+                self.declarator(true, &[])?.0.map(|d| {
                     spec_location = Some(d.location.maybe_merge(spec_location));
                     let mut decl = d.data.parse_declarator();
                     if decl.id.is_none() {
@@ -358,7 +353,7 @@ impl<I: Lexer> Parser<I> {
 
     fn init_declarator(&mut self) -> SyntaxResult<Locatable<ast::InitDeclarator>> {
         // We don't allow abstract parameters here, so there must be a declarator or there is a syntax error.
-        let decl = self.declarator(false)?;
+        let (decl, _) = self.declarator(false, &[])?;
         let init = if self.match_next(&Token::EQUAL).is_some() {
             Some(self.initializer()?)
         } else {
@@ -396,7 +391,11 @@ impl<I: Lexer> Parser<I> {
     fn declarator(
         &mut self,
         allow_abstract: bool,
-    ) -> SyntaxResult<Option<Locatable<InternalDeclarator>>> {
+        end_delimiters: &[&Token],
+    ) -> SyntaxResult<(
+        Option<Locatable<InternalDeclarator>>,
+        Option<Locatable<Token>>,
+    )> {
         // Parse pointers iteratively instead of recursively to avoid stack overflows.
         let mut pointer_decls = Vec::new();
         while let Some(Locatable { mut location, .. }) = self.match_next(&Token::Star) {
@@ -418,11 +417,16 @@ impl<I: Lexer> Parser<I> {
             let current = Locatable::new(InternalDeclaratorType::Pointer { qualifiers }, location);
             pointer_decls.push(current);
         }
-        let mut decl = self.direct_declarator(allow_abstract)?;
+        let (mut decl, end_delimiter) = if let Some(token) = self.match_any(end_delimiters) {
+            (None, Some(token))
+        } else {
+            (self.direct_declarator(allow_abstract)?, None)
+        };
+        //let mut decl = self.direct_declarator(allow_abstract)?;
         while let Some(pointer) = pointer_decls.pop() {
             decl = Some(Self::merge_decls(pointer, decl));
         }
-        Ok(decl)
+        Ok((decl, end_delimiter))
     }
     /*
      * Originally written as follows:
@@ -539,8 +543,11 @@ impl<I: Lexer> Parser<I> {
                         // abstract_declarator - could be an error,
                         // but if so we'll catch it later
                         _ => {
-                            let declarator = self.declarator(allow_abstract)?;
-                            self.expect(Token::RightParen)?;
+                            let (declarator, right_paren) =
+                                self.declarator(allow_abstract, &[&Token::RightParen])?;
+                            if right_paren.is_none() {
+                                self.expect(Token::RightParen)?;
+                            }
                             declarator
                         }
                     }
@@ -887,8 +894,9 @@ pub(crate) mod test {
     #[test]
     fn test_cursed_function_declarator() {
         let decl = parser("f(())")
-            .declarator(false)
+            .declarator(false, &[])
             .unwrap()
+            .0
             .unwrap()
             .data
             .parse_declarator();

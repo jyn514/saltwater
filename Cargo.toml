@@ -30,8 +30,8 @@ atty = { version = "0.2", default-features = false }
 git-testament = { version = "0.1", optional = true }
 rand = { version = "0.7", optional = true }
 rodio = { version = "0.11.0", optional = true }
-saltwater-parser = { path = "saltwater-parser" }
-saltwater-codegen = { path = "saltwater-codegen" }
+saltwater-parser = { path = "saltwater-parser", version = "0.11.0" }
+saltwater-codegen = { path = "saltwater-codegen", version = "0.11.0" }
 
 [dev-dependencies]
 env_logger = { version = "0.7", default-features = false }

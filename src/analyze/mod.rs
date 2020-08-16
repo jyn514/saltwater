@@ -193,12 +193,16 @@ impl PureAnalyzer {
         let sc = original.storage_class.unwrap_or(StorageClass::Auto);
         let mut decls = Vec::new();
         for d in declaration.declarators {
+            // NOTE: this clone is cheap, but making it explicit so it's clear this is mutable
+            // This needs to be separate because qualifiers are specific to a single declarator,
+            // e.g. `int *const p, i;`
+            let mut qualifiers = original.qualifiers;
             let mut ctype =
-                self.parse_declarator(original.ctype.clone(), d.data.declarator.decl, d.location);
+                self.parse_declarator(original.ctype.clone(), d.data.declarator.decl, &mut qualifiers, d.location);
 
-            if !ctype.is_function() && original.qualifiers.func != FunctionQualifiers::default() {
+            if !ctype.is_function() && qualifiers.func != FunctionQualifiers::default() {
                 self.err(
-                    SemanticError::FuncQualifiersNotAllowed(original.qualifiers.func),
+                    SemanticError::FuncQualifiersNotAllowed(qualifiers.func),
                     d.location,
                 );
             }
@@ -226,7 +230,7 @@ impl PureAnalyzer {
             let symbol = Variable {
                 ctype,
                 id,
-                qualifiers: original.qualifiers,
+                qualifiers,
                 storage_class: sc,
             };
             let symbol = self.declare(symbol, init.is_some(), d.location);
@@ -278,7 +282,7 @@ impl PureAnalyzer {
         location: Location,
     ) -> ParsedType {
         let mut specs = self.parse_specifiers(specifiers, location);
-        specs.ctype = self.parse_declarator(specs.ctype, declarator, location);
+        specs.ctype = self.parse_declarator(specs.ctype, declarator, &mut specs.qualifiers, location);
 
         if !specs.ctype.is_function() && specs.qualifiers.func != FunctionQualifiers::default() {
             self.err(
@@ -590,12 +594,6 @@ impl PureAnalyzer {
         location: Location,
     ) -> Vec<Variable> {
         let parsed_type = self.parse_specifiers(members.specifiers, location);
-        if parsed_type.qualifiers.has_func_qualifiers() {
-            self.err(
-                SemanticError::FuncQualifiersNotAllowed(parsed_type.qualifiers.func),
-                location,
-            );
-        }
 
         let mut parsed_members = Vec::new();
         // A member of a structure or union may have any complete object type other than a variably modified type.
@@ -606,7 +604,9 @@ impl PureAnalyzer {
                 None => continue,
                 Some(d) => d,
             };
-            let ctype = match self.parse_declarator(parsed_type.ctype.clone(), decl.decl, location)
+            // NOTE: need to make a copy in case there are multiple declarators: `int *const p, i;`
+            let mut qualifiers = parsed_type.qualifiers;
+            let ctype = match self.parse_declarator(parsed_type.ctype.clone(), decl.decl, &mut qualifiers, location)
             {
                 Type::Void => {
                     // TODO: catch this error for types besides void?
@@ -615,9 +615,16 @@ impl PureAnalyzer {
                 }
                 other => other,
             };
+            // TODO: does this really belong here`
+            if qualifiers.has_func_qualifiers() {
+                self.err(
+                    SemanticError::FuncQualifiersNotAllowed(qualifiers.func),
+                    location,
+                );
+            }
             let mut symbol = Variable {
                 storage_class: StorageClass::Auto,
-                qualifiers: parsed_type.qualifiers,
+                qualifiers,
                 ctype,
                 id: decl.id.expect("struct members should have an id"),
             };
@@ -834,11 +841,17 @@ impl PureAnalyzer {
     /// The parser generated a linked list `DeclaratorType`,
     /// which we now transform into the recursive `Type`.
     ///
+    /// Note the special handling of qualifiers. In the AST, we store
+    /// `int *const p` with the `const` as part of the pointer declarator.
+    /// But this code actually means that the variable binding is const and the pointed-to data is mutable.
+    /// So we need to switch it.
+    ///
     /// 6.7.6 Declarators
     fn parse_declarator(
         &mut self,
         current: Type,
         decl: ast::DeclaratorType,
+        ptr_qualifiers: &mut Qualifiers,
         location: Location,
     ) -> Type {
         use crate::data::ast::DeclaratorType::*;
@@ -848,15 +861,17 @@ impl PureAnalyzer {
         match decl {
             End => current,
             Pointer { to, qualifiers } => {
+                use std::mem;
                 use UnitSpecifier::*;
 
-                let inner = self.parse_declarator(current, *to, location);
+                // `**const p` still means `p` is const, not `*p` or `**p`
+                // TODO: is this correct for `*const *p` and `const **p`?
+                let inner = self.parse_declarator(current, *to, ptr_qualifiers, location);
                 // we reuse `count_specifiers` even though we really only want the qualifiers
                 let (counter, compounds) =
                     count_specifiers(qualifiers, &mut self.error_handler, location);
                 // *const volatile
-                // TODO: this shouldn't allow `inline` or `_Noreturn`
-                let qualifiers = Qualifiers {
+                let binding_qualifiers = Qualifiers {
                     c_const: counter.get(&Const).is_some(),
                     volatile: counter.get(&Volatile).is_some(),
                     func: FunctionQualifiers {
@@ -867,6 +882,7 @@ impl PureAnalyzer {
                 for &q in counter.keys() {
                     if !q.is_qualifier() {
                         // *extern
+                        // TODO: this location is wrong, it points to the declarator and not the keyword
                         self.err(SemanticError::NotAQualifier(q.into()), location);
                     }
                 }
@@ -874,7 +890,15 @@ impl PureAnalyzer {
                     // *struct s {}
                     self.err(SemanticError::NotAQualifier(spec), location);
                 }
-                Type::Pointer(Box::new(inner), qualifiers)
+                // disallow `int (*inline f)();`
+                if binding_qualifiers.func != FunctionQualifiers::default() {
+                    self.err(SemanticError::FuncQualifiersNotAllowed(binding_qualifiers.func), location);
+                // disallow `inline int (*f)();`
+                } else if ptr_qualifiers.func != FunctionQualifiers::default() {
+                    self.err(SemanticError::FuncQualifiersNotAllowed(ptr_qualifiers.func), location);
+                }
+                let ptr_quals = mem::replace(ptr_qualifiers, binding_qualifiers);
+                Type::Pointer(Box::new(inner), ptr_quals)
             }
             Array { of, size } => {
                 // int a[5]
@@ -888,7 +912,7 @@ impl PureAnalyzer {
                     // int a[]
                     ArrayType::Unbounded
                 };
-                let of = self.parse_declarator(current, *of, location);
+                let of = self.parse_declarator(current, *of, ptr_qualifiers, location);
                 // int a[]()
                 if let Type::Function(_) = &of {
                     self.err(SemanticError::ArrayStoringFunction(of.clone()), location);
@@ -897,7 +921,8 @@ impl PureAnalyzer {
             }
             Function(func) => {
                 // TODO: give a warning for `const int f();` somewhere
-                let return_type = self.parse_declarator(current, *func.return_type, location);
+                // TODO: should we do something else with `ptr_qualifiers`?
+                let return_type = self.parse_declarator(current, *func.return_type, ptr_qualifiers, location);
                 match &return_type {
                     // int a()[]
                     Type::Array(_, _) => self.err(
@@ -1950,5 +1975,24 @@ int main() {
             "int f(void) { return 1; }",
             "extern int f(void) {\n    return (int)(1);\n}\n",
         );
+    }
+
+    #[test]
+    fn qualifiers() {
+        assert!(decl("int (*inline f)();").is_err());
+        assert!(decl("inline int (*f)();").is_err());
+        assert_no_change("const int *p;");
+        assert_no_change("int *const p;");
+
+        let const_binding = decl("int *const p;").unwrap().symbol.get();
+        assert!(const_binding.qualifiers.c_const);
+        assert_eq!(const_binding.ctype, Type::Pointer(Box::new(Type::Int(true)), Qualifiers::default()));
+
+        let const_ptr = decl("const int *p;").unwrap().symbol.get();
+        assert!(!const_ptr.qualifiers.c_const); // this is the binding, not the pointer qualifier
+        assert_eq!(const_binding.ctype, Type::Pointer(Box::new(Type::Int(true)), Qualifiers {
+            c_const: true,
+            ..Qualifiers::default()
+        }));
     }
 }

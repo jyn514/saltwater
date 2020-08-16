@@ -256,7 +256,7 @@ impl Display for FunctionQualifiers {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match (self.inline, self.no_return) {
             (true, true) => write!(f, "{} {}", Keyword::Inline, Keyword::NoReturn),
-            (true, false) => write!(f, "{}", Keyword::NoReturn),
+            (true, false) => write!(f, "{}", Keyword::Inline),
             (false, true) => write!(f, "{}", Keyword::NoReturn),
             (false, false) => Ok(()),
         }

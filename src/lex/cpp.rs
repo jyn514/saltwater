@@ -326,24 +326,23 @@ impl<'a> PreProcessor<'a> {
             "{}-{}-{}",
             TARGET.architecture, TARGET.operating_system, TARGET.environment
         );
-        let int = |i: i64| {
-            Definition::Object(vec![Token::Literal(LiteralToken::Int(RcStr::from(
-                i.to_string(),
-            )))])
-        };
+
+        let now = time::OffsetDateTime::now_local();
 
         #[allow(clippy::inconsistent_digit_grouping)]
         let mut definitions = map! {
-            format!("__{}__", TARGET.architecture).into() => int(1),
-            format!("__{}__", TARGET.operating_system).into() => int(1),
-            "__STDC__".into() => int(1),
-            "__STDC_HOSTED__".into() => int(1),
-            "__STDC_VERSION__".into() => int(2011_12),
-            "__STDC_NO_ATOMICS__".into() => int(1),
-            "__STDC_NO_COMPLEX__".into() => int(1),
-            "__STDC_NO_THREADS__".into() => int(1),
-            "__STDC_NO_VLA__".into() => int(1),
-            "__STDC_IEC_559__".into() => int(1),
+            format!("__{}__", TARGET.architecture).into() => int_def(1),
+            format!("__{}__", TARGET.operating_system).into() => int_def(1),
+            "__STDC__".into() => int_def(1),
+            "__STDC_HOSTED__".into() => int_def(1),
+            "__STDC_VERSION__".into() => int_def(2011_12),
+            "__STDC_NO_ATOMICS__".into() => int_def(1),
+            "__STDC_NO_COMPLEX__".into() => int_def(1),
+            "__STDC_NO_THREADS__".into() => int_def(1),
+            "__STDC_NO_VLA__".into() => int_def(1),
+            "__STDC_IEC_559__".into() => int_def(1),
+            "__DATE__".into() => str_def(&now.format("%b %_d %Y")),
+            "__TIME__".into() => str_def(&now.format("%H:%M:%S")),
         };
         definitions.extend(user_definitions);
         let mut search_path = vec![
@@ -593,8 +592,8 @@ impl<'a> PreProcessor<'a> {
             .collect::<Result<_, CompileError>>()?;
         let location = self.span(start);
 
-        // TODO: is this unwrap safe? there should only be scalar types in a cpp directive...
         self.update_builtin_definitions();
+        // TODO: is this unwrap safe? there should only be scalar types in a cpp directive...
         match Self::cpp_expr(&self.definitions, lex_tokens.into_iter(), location)?
             .truthy(&mut self.error_handler)
             .constexpr()?
@@ -1160,23 +1159,19 @@ impl<'a> PreProcessor<'a> {
     }
 
     fn update_builtin_definitions(&mut self) {
-        use Definition::Object;
-        let int_def = |i: i32| Object(vec![LiteralToken::Int(RcStr::from(i.to_string())).into()]);
-        let str_def = |s: &str| {
-            let rcstr = RcStr::from(format!("\"{}\"", s));
-            Object(vec![LiteralToken::Str(vec![rcstr]).into()])
-        };
         self.definitions.extend(map! {
             "__LINE__".into() => int_def((self.line() + 1) as i32),
             "__FILE__".into() => str_def(self.file_processor.path().to_str().unwrap()),  // Fails if non-Unicode
-            "__DATE__".into() => {
-                str_def(&time::OffsetDateTime::now_local().format("%b %_d %Y"))
-            },
-            "__TIME__".into() => {
-                str_def(&time::OffsetDateTime::now_local().format("%H:%M:%S"))
-            },
         })
     }
+}
+
+fn int_def(i: i32) -> Definition {
+    Definition::Object(vec![LiteralToken::Int(RcStr::from(i.to_string())).into()])
+}
+fn str_def(s: &str) -> Definition {
+    let rcstr = RcStr::from(format!("\"{}\"", s));
+    Definition::Object(vec![LiteralToken::Str(vec![rcstr]).into()])
 }
 
 macro_rules! built_in_headers {
@@ -1879,9 +1874,17 @@ h",
         assert_same(
             "#define LINE __LINE__
             
-
+            
             LINE",
             "4",
+        );
+        assert_same(
+            "__LINE__
+            __LINE__
+            __LINE__
+
+            __LINE__",
+            "1 2 3 5",
         );
     }
     #[test]
@@ -1902,6 +1905,41 @@ h",
     }
     #[test]
     fn builtins_date_time() {
-        todo!();
+        use time::OffsetDateTime;
+        fn assert_same_datetime(src: &str, cpp_src: &str, datetime: OffsetDateTime) {
+            let mut preprocessor = PreProcessorBuilder::new(src).build();
+            preprocessor.definitions.extend(map! {
+                "__DATE__".into() => str_def(&datetime.format("%b %_d %Y")),
+                "__TIME__".into() => str_def(&datetime.format("%H:%M:%S")),
+            });
+            assert!(
+                is_same_preprocessed(preprocessor, cpp(cpp_src)),
+                "{} is not the same as {}",
+                src,
+                cpp_src,
+            );
+        }
+
+        fn assert_is_str(src: &str) {
+            assert!(matches!(
+                cpp(src).next_non_whitespace().unwrap().unwrap().data,
+                Token::Literal(LiteralToken::Str(_))
+            ));
+        }
+
+        assert_same_datetime(
+            "__DATE__|__TIME__",
+            "\"Jan  1 1970\"|\"00:00:00\"",
+            OffsetDateTime::unix_epoch(),
+        );
+        assert_same_datetime(
+            "__DATE__|__TIME__",
+            "\"Aug 16 2020\"|\"14:58:36\"",
+            OffsetDateTime::from_unix_timestamp(1_597_589_916),
+        );
+
+        // Assert current date and time work (without checking value)
+        assert_is_str("__DATE__");
+        assert_is_str("__TIME__");
     }
 }

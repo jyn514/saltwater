@@ -1161,7 +1161,7 @@ impl<'a> PreProcessor<'a> {
     fn update_builtin_definitions(&mut self) {
         self.definitions.extend(map! {
             "__LINE__".into() => int_def((self.line() + 1) as i32),
-            "__FILE__".into() => str_def(self.file_processor.path().to_str().unwrap()),  // Fails if non-Unicode
+            "__FILE__".into() => str_def(self.file_processor.path().to_string_lossy()),
         })
     }
 }
@@ -1169,8 +1169,8 @@ impl<'a> PreProcessor<'a> {
 fn int_def(i: i32) -> Definition {
     Definition::Object(vec![LiteralToken::Int(RcStr::from(i.to_string())).into()])
 }
-fn str_def(s: &str) -> Definition {
-    let rcstr = RcStr::from(format!("\"{}\"", s));
+fn str_def<S: ToString>(s: S) -> Definition {
+    let rcstr = RcStr::from(format!("\"{}\"", s.to_string().replace(r#"""#, r#"\""#)));
     Definition::Object(vec![LiteralToken::Str(vec![rcstr]).into()])
 }
 

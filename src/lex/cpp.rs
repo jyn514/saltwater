@@ -340,7 +340,6 @@ impl<'a> PreProcessor<'a> {
             "__STDC_NO_COMPLEX__".into() => int_def(1),
             "__STDC_NO_THREADS__".into() => int_def(1),
             "__STDC_NO_VLA__".into() => int_def(1),
-            "__STDC_IEC_559__".into() => int_def(1),
             "__DATE__".into() => str_def(&now.format("%b %_d %Y")),
             "__TIME__".into() => str_def(&now.format("%H:%M:%S")),
         };

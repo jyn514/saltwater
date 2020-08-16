@@ -1311,7 +1311,7 @@ impl Expr {
                 }
             }
             // There is probably a better way to do this
-            // check not type error and that if rval is a pointer, it is not a type error
+            // don't report cascading errors
             if *ctype != Type::Error {
                 error_handler.error(
                     SemanticError::InvalidCast(expr.ctype.clone(), ctype.clone()),

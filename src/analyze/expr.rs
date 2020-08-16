@@ -58,19 +58,13 @@ impl PureAnalyzer {
                 let struct_type = match &inner.ctype {
                     Type::Pointer(ctype, _) => match &**ctype {
                         Type::Union(_) | Type::Struct(_) => (**ctype).clone(),
-                        Type::Error => {
-                            // already type error
-                            return inner;
-                        }
+                        Type::Error => return inner,
                         other => {
                             self.err(SemanticError::NotAStruct(other.clone()), inner.location);
                             return inner;
                         }
                     },
-                    Type::Error => {
-                        // already type error
-                        return inner;
-                    }
+                    Type::Error => return inner,
                     other => {
                         self.err(SemanticError::NotAPointer(other.clone()), inner.location);
                         return inner;
@@ -90,7 +84,7 @@ impl PureAnalyzer {
                         let ctype = (**t).clone();
                         inner.indirection(true, ctype)
                     }
-                    Type::Error => inner, // already type error
+                    Type::Error => inner,
                     _ => {
                         self.err(
                             SemanticError::NotAPointer(inner.ctype.clone()),
@@ -337,9 +331,10 @@ impl PureAnalyzer {
     fn mul(&mut self, left: Expr, right: Expr, op: BinaryOp) -> Expr {
         let location = left.location.merge(right.location);
 
-        // TODO: is this the right behavior?
-        if left.ctype == Type::Error || right.ctype == Type::Error {
+        if left.ctype == Type::Error {
             return left;
+        } else if right.ctype == Type::Error {
+            return right;
         }
 
         if op == BinaryOp::Mod && !(left.ctype.is_integral() && right.ctype.is_integral()) {
@@ -1316,16 +1311,12 @@ impl Expr {
                 }
             }
             // There is probably a better way to do this
-            // check not type error and that if rval is a pointer, it is not a type error
+            // don't report cascading errors
             if *ctype != Type::Error {
-                if let Type::Pointer(a, _) = expr.ctype.clone() {
-                    if *a != Type::Error {
-                        error_handler.error(
-                            SemanticError::InvalidCast(expr.ctype.clone(), ctype.clone()),
-                            expr.location,
-                        );
-                    }
-                }
+                error_handler.error(
+                    SemanticError::InvalidCast(expr.ctype.clone(), ctype.clone()),
+                    expr.location,
+                );
             }
             expr
         }

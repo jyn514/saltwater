@@ -1169,8 +1169,8 @@ impl<'a> PreProcessor<'a> {
 fn int_def(i: i32) -> Definition {
     Definition::Object(vec![LiteralToken::Int(RcStr::from(i.to_string())).into()])
 }
-fn str_def<S: ToString>(s: S) -> Definition {
-    let rcstr = RcStr::from(format!("\"{}\"", s.to_string().replace(r#"""#, r#"\""#)));
+fn str_def<S: Into<String>>(s: S) -> Definition {
+    let rcstr = RcStr::from(format!("\"{}\"", s.into().replace(r#"""#, r#"\""#)));
     Definition::Object(vec![LiteralToken::Str(vec![rcstr]).into()])
 }
 

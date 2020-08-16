@@ -280,6 +280,7 @@ impl<'a> PreProcessor<'a> {
             match token {
                 PendingToken::Replaced(t) => Some(Ok(Locatable::new(t, location))),
                 PendingToken::NeedsReplacement(token) => {
+                    self.update_builtin_definitions();
                     let mut replacement_list =
                         replace(&self.definitions, token, &mut self.file_processor, location)
                             .into_iter();
@@ -342,6 +343,7 @@ impl<'a> PreProcessor<'a> {
             "__STDC_NO_COMPLEX__".into() => int(1),
             "__STDC_NO_THREADS__".into() => int(1),
             "__STDC_NO_VLA__".into() => int(1),
+            "__STDC_IEC_559__".into() => int(1),
         };
         definitions.extend(user_definitions);
         let mut search_path = vec![
@@ -354,14 +356,16 @@ impl<'a> PreProcessor<'a> {
 
         let file_processor = FileProcessor::new(chars, filename, debug);
 
-        Self {
+        let mut new_cpp = Self {
             error_handler: Default::default(),
             nested_ifs: Default::default(),
             pending: Default::default(),
             search_path,
             definitions,
             file_processor,
-        }
+        };
+        new_cpp.update_builtin_definitions(); // So they are defined from the start
+        new_cpp
     }
 
     /// Return all warnings found so far.
@@ -590,6 +594,7 @@ impl<'a> PreProcessor<'a> {
         let location = self.span(start);
 
         // TODO: is this unwrap safe? there should only be scalar types in a cpp directive...
+        self.update_builtin_definitions();
         match Self::cpp_expr(&self.definitions, lex_tokens.into_iter(), location)?
             .truthy(&mut self.error_handler)
             .constexpr()?
@@ -973,6 +978,7 @@ impl<'a> PreProcessor<'a> {
                     ))
                 }
             };
+            self.update_builtin_definitions();
             match replace(
                 &self.definitions,
                 Token::Id(id),
@@ -1151,6 +1157,25 @@ impl<'a> PreProcessor<'a> {
             return Err(self.span(start).error(error));
         }
         Ok(ret)
+    }
+
+    fn update_builtin_definitions(&mut self) {
+        use Definition::Object;
+        let int_def = |i: i32| Object(vec![LiteralToken::Int(RcStr::from(i.to_string())).into()]);
+        let str_def = |s: &str| {
+            let rcstr = RcStr::from(format!("\"{}\"", s));
+            Object(vec![LiteralToken::Str(vec![rcstr]).into()])
+        };
+        self.definitions.extend(map! {
+            "__LINE__".into() => int_def((self.line() + 1) as i32),
+            "__FILE__".into() => str_def(self.file_processor.path().to_str().unwrap()),  // Fails if non-Unicode
+            "__DATE__".into() => {
+                str_def(&time::OffsetDateTime::now_local().format("%b %_d %Y"))
+            },
+            "__TIME__".into() => {
+                str_def(&time::OffsetDateTime::now_local().format("%H:%M:%S"))
+            },
+        })
     }
 }
 
@@ -1831,5 +1856,52 @@ h",
         );
         assert!(cpp("#define f(x) #y\nf(0)").any(|x| x.is_err()));
         assert!(cpp("#define f(x) #+\nf(0)").any(|x| x.is_err()));
+    }
+
+    #[test]
+    fn builtins_line() {
+        assert_same("__LINE__", "1");
+        assert_same("\n\n\n\n\n\n\n\n\n__LINE__", "10");
+        assert_same(
+            "#ifdef __LINE__
+            1
+            #endif",
+            "1",
+        );
+        assert_same(
+            "
+            
+            #if __LINE__ == 3
+            1
+            #endif",
+            "1",
+        );
+        assert_same(
+            "#define LINE __LINE__
+            
+
+            LINE",
+            "4",
+        );
+    }
+    #[test]
+    fn builtins_file() {
+        let filename = "helloworld.c";
+        let mut cpp = PreProcessorBuilder::new("__FILE__")
+            .filename(filename)
+            .build();
+        let token = cpp.next_non_whitespace().unwrap().unwrap().data;
+        if let Token::Literal(LiteralToken::Str(rcstrs)) = token {
+            assert_eq!(
+                rcstrs.first().unwrap().as_str(),
+                format!("\"{}\"", filename)
+            );
+        } else {
+            panic!();
+        }
+    }
+    #[test]
+    fn builtins_date_time() {
+        todo!();
     }
 }

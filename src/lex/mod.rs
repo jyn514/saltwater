@@ -362,7 +362,13 @@ impl Iterator for Lexer {
             let span_start = self.location.offset - c.len_utf8() as u32;
             // this giant switch is most of the logic
             let data = match c {
-                '#' => Token::Hash,
+                '#' => match self.peek() {
+                    Some('#') => {
+                        self.next_char();
+                        Token::HashHash
+                    }
+                    _ => Token::Hash,
+                },
                 '+' => match self.peek() {
                     Some('=') => {
                         self.next_char();

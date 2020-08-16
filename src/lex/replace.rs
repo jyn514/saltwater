@@ -166,56 +166,95 @@ pub fn replace(
     // - _not_ after every token, since otherwise that won't catch some mutual recursion
     // See https://github.com/jyn514/rcc/issues/427 for examples.
     let mut ids_seen = HashSet::new();
-    let mut replacements = Vec::new();
+    let mut replacements: Vec<CompileResult<Locatable<Token>>> = Vec::new();
     let mut pending = VecDeque::new();
     pending.push_back(Ok(location.with(token)));
 
+    let mut pending_hashhash: Option<Token> = None; // Token before ##
+
     // outer loop: replace all tokens in the replacement list
     while let Some(token) = pending.pop_front() {
-        // first step: perform (recursive) substitution on the ID
-        if let Ok(Locatable {
-            data: Token::Id(id),
-            ..
-        }) = token
-        {
-            if !ids_seen.contains(&id) {
-                match definitions.get(&id) {
-                    Some(Definition::Object(replacement_list)) => {
-                        ids_seen.insert(id);
-                        // prepend the new tokens to the pending tokens
-                        // They need to go before, not after. For instance:
-                        // ```c
-                        // #define a b c d
-                        // #define b 1 + 2
-                        // a
-                        // ```
-                        // should replace to `1 + 2 c d`, not `c d 1 + 2`
-                        let mut new_pending = VecDeque::new();
-                        // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
-                        new_pending.extend(
-                            replacement_list
-                                .iter()
-                                .cloned()
-                                .map(|t| Ok(location.with(t))),
-                        );
-                        new_pending.append(&mut pending);
-                        pending = new_pending;
-                        continue;
+        match token {
+            Ok(Locatable {
+                data: ref succeeding_tok,
+                ..
+            }) if pending_hashhash.is_some() => {
+                if matches!(succeeding_tok, Token::Whitespace(_)) {
+                    continue;
+                }
+                let pending_hashhash = pending_hashhash.take().unwrap(); // We just checked that it's some
+                let concat_token = concat(pending_hashhash, succeeding_tok.clone(), &location);
+                replacements.push(concat_token); // TODO don't bypass pending
+                continue;
+            }
+            Ok(Locatable {
+                data: Token::Id(id),
+                ..
+            }) => {
+                if !ids_seen.contains(&id) {
+                    match definitions.get(&id) {
+                        Some(Definition::Object(replacement_list)) => {
+                            ids_seen.insert(id);
+                            // prepend the new tokens to the pending tokens
+                            // They need to go before, not after. For instance:
+                            // ```c
+                            // #define a b c d
+                            // #define b 1 + 2
+                            // a
+                            // ```
+                            // should replace to `1 + 2 c d`, not `c d 1 + 2`
+                            let mut new_pending = VecDeque::new();
+                            // we need a `clone()` because `self.definitions` needs to keep its copy of the definition
+                            new_pending.extend(
+                                replacement_list
+                                    .iter()
+                                    .cloned()
+                                    .map(|t| Ok(location.with(t))),
+                            );
+                            new_pending.append(&mut pending);
+                            pending = new_pending;
+                            continue;
+                        }
+                        // TODO: so many allocations :(
+                        Some(Definition::Function { .. }) => {
+                            ids_seen.insert(id);
+                            let func_replacements = replace_function(
+                                definitions,
+                                id,
+                                location,
+                                &mut pending,
+                                &mut inner,
+                            );
+                            let mut func_replacements: VecDeque<_> =
+                                func_replacements.into_iter().collect();
+                            func_replacements.append(&mut pending);
+                            pending = func_replacements;
+                            continue;
+                        }
+                        None => {}
                     }
-                    // TODO: so many allocations :(
-                    Some(Definition::Function { .. }) => {
-                        ids_seen.insert(id);
-                        let func_replacements =
-                            replace_function(definitions, id, location, &mut pending, &mut inner);
-                        let mut func_replacements: VecDeque<_> =
-                            func_replacements.into_iter().collect();
-                        func_replacements.append(&mut pending);
-                        pending = func_replacements;
-                        continue;
-                    }
-                    None => {}
                 }
             }
+            Ok(Locatable {
+                data: Token::HashHash,
+                ..
+            }) => {
+                let preceding_tok = loop {
+                    match replacements.pop() {
+                        Some(Ok(Locatable {
+                            data: Token::Whitespace(_),
+                            ..
+                        })) => continue,
+                        Some(Ok(Locatable { data: token, .. })) => break token,
+                        None | Some(Err(_)) => {
+                            return wrap_error(&location, CppError::HashHashMissingParameter(true))
+                        }
+                    }
+                };
+                pending_hashhash = Some(preceding_tok);
+                continue;
+            }
+            _ => {}
         }
         replacements.push(token);
     }
@@ -367,16 +406,17 @@ fn replace_function(
         // and taking no arguments other than knowing the number of parameters.
         if !(args.len() == 1 && params.is_empty() && args[0].is_empty()) {
             // booo, this is the _only_ error in the whole replacer
-            return vec![Err(
-                location.with(CppError::TooFewArguments(params.len(), args.len()).into())
-            )];
+            return wrap_error(
+                &location,
+                CppError::TooFewArguments(params.len(), args.len()).into(),
+            );
         }
     }
 
     let mut pending_hash = false; // Seen a hash?
     for token in body {
-        match *token {
-            Token::Id(id) => {
+        match token {
+            &Token::Id(id) => {
                 // #define f(a) { a + 1 } \n f(b) => b + 1
                 if let Some(index) = params.iter().position(|&param| param == id) {
                     let replacement = args[index].clone();
@@ -387,7 +427,7 @@ fn replace_function(
                         replacements.push(stringify(replacement));
                     }
                 } else if pending_hash {
-                    return vec![Err(location.with(CppError::HashMissingParameter.into()))];
+                    return wrap_error(&location, CppError::HashMissingParameter);
                 } else {
                     replacements.push(Token::Id(id));
                 }
@@ -403,7 +443,7 @@ fn replace_function(
             }
             _ => {
                 if pending_hash {
-                    return vec![Err(location.with(CppError::HashMissingParameter.into()))];
+                    return wrap_error(&location, CppError::HashMissingParameter);
                 } else {
                     replacements.push(token.clone());
                 }
@@ -438,4 +478,12 @@ fn stringify(args: Vec<Token>) -> Token {
         "\"{}\"",
         ret.trim()
     ))]))
+}
+
+fn concat(x: Token, b: Token, location: &Location) -> CompileResult<Locatable<Token>> {
+    todo!();
+}
+
+fn wrap_error(location: &Location, err: CppError) -> Vec<CppResult<Token>> {
+    vec![Err(location.with(err.into()))]
 }

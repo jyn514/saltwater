@@ -506,6 +506,10 @@ pub enum CppError {
     /// '#' in a function macro not followed by function parameter
     #[error("'#' is not followed by a macro parameter")]
     HashMissingParameter,
+
+    /// '##' missing arguments
+    #[error("'##' cannot appear at {} of macro expansion", if *(.0) { "start" } else { "end"})]
+    HashHashMissingParameter(bool),
 }
 
 /// Lex errors are non-exhaustive and may have new variants added at any time

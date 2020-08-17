@@ -692,7 +692,9 @@ impl PureAnalyzer {
     // 6.5.3.4 The sizeof and _Alignof operators
     fn sizeof(&mut self, ctype: Type, location: Location) -> Expr {
         let align = ctype.sizeof().unwrap_or_else(|err| {
-            self.err(err.into(), location);
+            if ctype != Type::Error {
+                self.err(err.into(), location);
+            }
             1
         });
         literal(LiteralValue::UnsignedInt(align), location)

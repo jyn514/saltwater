@@ -417,7 +417,7 @@ fn replace_function(
             // booo, this is the _only_ error in the whole replacer
             return wrap_error(
                 &location,
-                CppError::TooFewArguments(params.len(), args.len()).into(),
+                CppError::TooFewArguments(params.len(), args.len()),
             );
         }
     }

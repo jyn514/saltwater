@@ -9,7 +9,7 @@ use super::data::{
     *,
 };
 use super::intern::InternedStr;
-use arcstr::ArcStr;
+use arcstr::{ArcStr, Substr};
 
 mod cpp;
 mod files;
@@ -118,14 +118,11 @@ impl Lexer {
         self.chars[self.location.offset as usize..].chars()
     }
 
-    fn slice(&self, span_start: u32) -> ArcStr {
+    fn slice(&self, span_start: u32) -> Substr {
         use std::ops::Range;
 
-        let chars = self.chars.clone();
-        let chars = chars
-            .get::<Range<usize>>(self.span(span_start).span.into())
-            .unwrap_or("");
-        ArcStr::from(chars)
+        let range: Range<usize> = self.span(span_start).span.into();
+        ArcStr::from(self.chars.clone()).substr(range)
     }
 
     /// Parse a number literal, given the starting character and whether floats are allowed.

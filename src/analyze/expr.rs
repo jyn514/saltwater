@@ -667,7 +667,8 @@ impl PureAnalyzer {
             // i[p]
             (_, Type::Pointer(target, _)) => ((**target).clone(), right, left),
             // already type error
-            (Type::Error, _) | (_, Type::Error) => return left,
+            (Type::Error, _) => return left,
+            (_, Type::Error) => return right,
             (l, _) => {
                 self.err(SemanticError::NotAPointer(l.clone()), location);
                 return left;

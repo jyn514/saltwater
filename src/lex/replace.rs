@@ -193,7 +193,7 @@ pub fn replace(
                             .into(),
                         )
                     });
-                replacements.push(concat_token); // TODO don't bypass pending
+                pending.push_back(concat_token);
                 continue;
             }
             Ok(Locatable {
@@ -245,7 +245,7 @@ pub fn replace(
                 }
             }
             Ok(Locatable {
-                data: Token::HashHash,
+                data: Token::HashHash(true),
                 ..
             }) => {
                 let preceding_tok = loop {
@@ -492,7 +492,13 @@ fn stringify(args: Vec<Token>) -> Token {
 fn concat(x: &Token, y: &Token, location: &Location) -> Option<Locatable<Token>> {
     let mut lexer = Lexer::new(location.file, format!("{}{}", x, y), false);
     match lexer.next() {
-        Some(Ok(tok)) if lexer.next().is_none() => Some(tok),
+        Some(Ok(tok)) if lexer.next().is_none() => Some(match tok {
+            Locatable {
+                data: Token::HashHash(_),
+                location,
+            } => location.with(Token::HashHash(false)),
+            tok => tok,
+        }),
         _ => None,
     }
 }

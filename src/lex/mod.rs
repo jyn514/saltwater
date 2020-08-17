@@ -365,7 +365,7 @@ impl Iterator for Lexer {
                 '#' => match self.peek() {
                     Some('#') => {
                         self.next_char();
-                        Token::HashHash
+                        Token::HashHash(true)
                     }
                     _ => Token::Hash,
                 },

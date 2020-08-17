@@ -9,7 +9,7 @@ use crate::{
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use shared_str::RcStr;
+use arcstr::ArcStr;
 
 /// All known macro definitions.
 ///
@@ -434,7 +434,7 @@ fn stringify(args: Vec<Token>) -> Token {
             }
         })
         .collect();
-    Token::Literal(LiteralToken::Str(vec![RcStr::from(format!(
+    Token::Literal(LiteralToken::Str(vec![ArcStr::from(format!(
         "\"{}\"",
         ret.trim()
     ))]))

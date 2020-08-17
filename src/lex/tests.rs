@@ -2,7 +2,7 @@ use super::{CompileResult, LiteralToken, Locatable, Token};
 use crate::data::hir::LiteralValue;
 use crate::data::lex::test::{cpp, cpp_no_newline};
 use crate::intern::InternedStr;
-use shared_str::RcStr;
+use arcstr::ArcStr;
 
 type LexType = CompileResult<Locatable<Token>>;
 
@@ -171,8 +171,8 @@ fn test_float_literals() {
     for i in 0..10 {
         assert_float(&format!("1{}e{}", "0".repeat(i), 10 - i), 1e10);
     }
-    fn rcstr<S: ToString>(x: S) -> RcStr {
-        RcStr::from(x.to_string())
+    fn rcstr<S: ToString>(x: S) -> ArcStr {
+        ArcStr::from(x.to_string())
     }
     assert!(match_all(
         &lex_all("-1"),

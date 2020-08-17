@@ -9,7 +9,7 @@ use super::data::{
     *,
 };
 use super::intern::InternedStr;
-use shared_str::RcStr;
+use arcstr::ArcStr;
 
 mod cpp;
 mod files;
@@ -118,14 +118,14 @@ impl Lexer {
         self.chars[self.location.offset as usize..].chars()
     }
 
-    fn slice(&self, span_start: u32) -> RcStr {
+    fn slice(&self, span_start: u32) -> ArcStr {
         use std::ops::Range;
-        RcStr::from(self.chars.clone())
-            .slice_with(|s| {
-                s.get::<Range<usize>>(self.span(span_start).span.into())
-                    .unwrap_or("")
-            })
-            .unwrap()
+
+        let chars = self.chars.clone();
+        let chars = chars
+            .get::<Range<usize>>(self.span(span_start).span.into())
+            .unwrap_or("");
+        ArcStr::from(chars)
     }
 
     /// Parse a number literal, given the starting character and whether floats are allowed.
@@ -199,7 +199,7 @@ impl Lexer {
         Ok(Token::Literal(literal))
     }
     // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, radix: Radix, span_start: u32) -> Result<RcStr, LexError> {
+    fn parse_float(&mut self, radix: Radix, span_start: u32) -> Result<ArcStr, LexError> {
         // parse fraction: second {digits} in regex
         while let Some(c) = self.peek() {
             let c = c as char;

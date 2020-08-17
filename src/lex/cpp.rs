@@ -1941,4 +1941,47 @@ h",
         assert_is_str("__DATE__");
         assert_is_str("__TIME__");
     }
+
+    #[test]
+    fn hashhash() {
+        use crate::data::lex::{AssignmentToken::*, ComparisonToken::*, Keyword, LiteralToken::*};
+        use Token::*;
+        fn assert_concat(x: &str, y: &str, cpp_src: Option<Token>) {
+            let src = format!("#define tok {} ## {}\ntok", x, y);
+            let tok = cpp(&src)
+                .next_non_whitespace()
+                .unwrap()
+                .map(|tok| tok.data)
+                .ok();
+            assert_eq!(tok, cpp_src);
+        }
+        assert_concat("<", "<", Some(ShiftLeft));
+        assert_concat("+", "+", Some(PlusPlus));
+        assert_concat(">>", "=", Some(Assignment(ShrEqual)));
+        assert_concat(">", "=", Some(Comparison(GreaterEqual)));
+        assert_concat("#", "#", Some(HashHash));
+        assert_concat("-", ">", Some(StructDeref));
+        assert_concat("const", "ance", Some(Id("constance".into())));
+        assert_concat("xyz", "123", Some(Id("xyz123".into())));
+        assert_concat("un", "signed", Some(Keyword(Keyword::Unsigned)));
+        assert_concat("unsign", "ed", Some(Keyword(Keyword::Unsigned)));
+        assert_concat("5", "e5", Some(Literal(Float("5e5".into()))));
+        assert_concat("1234", ".5", Some(Literal(Float("1234.5".into()))));
+        assert_concat("42", "000", Some(Literal(Int("42000".into()))));
+
+        assert_concat("+", "/", None);
+        assert_concat(r#"'x'"#, r#"'y'"#, None);
+        assert_concat(r#""x""#, r#""y""#, None);
+        assert_concat("0b1", "6", None);
+        assert_concat("/", "/", None); // Not a comment
+
+        assert_same(
+            "#define     hash_hash # ## #
+             #define     mkstr(a) # a
+             #define     in_between(a) mkstr(a)
+             #define     join(c, d) in_between(c hash_hash d)
+             join(x, y);",
+            r#""X ## Y""#,
+        );
+    }
 }

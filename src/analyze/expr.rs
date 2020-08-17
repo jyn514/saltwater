@@ -1199,7 +1199,7 @@ impl Expr {
             ),
             Err(non_int) => {
                 // TODO: this location is wrong
-                if right.ctype != Type::Error {
+                if left.ctype != Type::Error && right.ctype != Type::Error {
                     error_handler.error(SemanticError::NonIntegralExpr(non_int), right.location);
                 }
                 (left, right)

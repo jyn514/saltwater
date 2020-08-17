@@ -2,7 +2,7 @@
 //!
 //! This module does no parsing and accepts only tokens.
 
-use super::{cpp::CppResult, files::FileProcessor};
+use super::{cpp::CppResult, files::FileProcessor, Lexer};
 use crate::{
     error::CppError, CompileError, CompileResult, InternedStr, LiteralToken, Locatable, Location,
     Token,
@@ -183,7 +183,16 @@ pub fn replace(
                     continue;
                 }
                 let pending_hashhash = pending_hashhash.take().unwrap(); // We just checked that it's some
-                let concat_token = concat(pending_hashhash, succeeding_tok.clone(), &location);
+                let concat_token =
+                    concat(&pending_hashhash, succeeding_tok, &location).ok_or_else(|| {
+                        location.with(
+                            CppError::HashHashInvalid(
+                                pending_hashhash.clone(),
+                                succeeding_tok.clone(),
+                            )
+                            .into(),
+                        )
+                    });
                 replacements.push(concat_token); // TODO don't bypass pending
                 continue;
             }
@@ -480,8 +489,12 @@ fn stringify(args: Vec<Token>) -> Token {
     ))]))
 }
 
-fn concat(x: Token, b: Token, location: &Location) -> CompileResult<Locatable<Token>> {
-    todo!();
+fn concat(x: &Token, y: &Token, location: &Location) -> Option<Locatable<Token>> {
+    let mut lexer = Lexer::new(location.file, format!("{}{}", x, y), false);
+    match lexer.next() {
+        Some(Ok(tok)) if lexer.next().is_none() => Some(tok),
+        _ => None,
+    }
 }
 
 fn wrap_error(location: &Location, err: CppError) -> Vec<CppResult<Token>> {

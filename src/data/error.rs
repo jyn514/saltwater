@@ -510,6 +510,10 @@ pub enum CppError {
     /// '##' missing arguments
     #[error("'##' cannot appear at {} of macro expansion", if *(.0) { "start" } else { "end"})]
     HashHashMissingParameter(bool),
+
+    /// The result of '##' is not a valid token
+    #[error("pasting formed '{0}{1}', an invalid preprocessing token")]
+    HashHashInvalid(Token, Token),
 }
 
 /// Lex errors are non-exhaustive and may have new variants added at any time

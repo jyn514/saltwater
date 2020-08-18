@@ -7,7 +7,7 @@ use proptest_derive::Arbitrary;
 use crate::data::hir::BinaryOp;
 use crate::intern::InternedStr;
 
-use arcstr::ArcStr;
+use arcstr::Substr;
 
 // holds where a piece of code came from
 // should almost always be immutable
@@ -166,11 +166,11 @@ pub enum ComparisonToken {
 #[derive(Clone, Debug)]
 pub enum LiteralToken {
     // literals
-    Int(ArcStr),
-    UnsignedInt(ArcStr),
-    Float(ArcStr),
-    Str(Vec<ArcStr>),
-    Char(ArcStr),
+    Int(Substr),
+    UnsignedInt(Substr),
+    Float(Substr),
+    Str(Vec<Substr>),
+    Char(Substr),
 }
 
 impl PartialEq for LiteralToken {
@@ -407,7 +407,7 @@ impl std::fmt::Display for LiteralToken {
             Str(rcstr) => {
                 let joined = rcstr
                     .iter()
-                    .map(ArcStr::as_str)
+                    .map(Substr::as_str)
                     .collect::<Vec<_>>()
                     .join(" ");
                 write!(f, "{}", joined)
@@ -472,17 +472,17 @@ mod proptest_impl {
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             prop_oneof![
                 // TODO give regex of all possible literals
-                any::<i64>().prop_map(|x| LiteralToken::Int(ArcStr::from(x.to_string()))),
-                any::<u64>().prop_map(|x| LiteralToken::UnsignedInt(ArcStr::from(x.to_string()))),
-                any::<f64>().prop_map(|x| LiteralToken::Float(ArcStr::from(x.to_string()))),
-                any::<u8>().prop_map(|c| LiteralToken::Char(ArcStr::from(format!(
-                    "\'{}\'",
-                    (c as char).escape_default()
-                )))),
+                any::<i64>().prop_map(|x| LiteralToken::Int(ArcStr::from(x.to_string()).into())),
+                any::<u64>()
+                    .prop_map(|x| LiteralToken::UnsignedInt(ArcStr::from(x.to_string()).into())),
+                any::<f64>().prop_map(|x| LiteralToken::Float(ArcStr::from(x.to_string()).into())),
+                any::<u8>().prop_map(|c| LiteralToken::Char(
+                    ArcStr::from(format!("\'{}\'", (c as char).escape_default())).into()
+                )),
                 prop::collection::vec(".*", 1..10).prop_map(|strs| {
                     let rcstrs = strs
                         .into_iter()
-                        .map(|s| ArcStr::from(format!("\"{}\"", s.escape_default())))
+                        .map(|s| ArcStr::from(format!("\"{}\"", s.escape_default())).into())
                         .collect();
                     LiteralToken::Str(rcstrs)
                 }),

@@ -434,8 +434,7 @@ fn stringify(args: Vec<Token>) -> Token {
             }
         })
         .collect();
-    Token::Literal(LiteralToken::Str(vec![ArcStr::from(format!(
-        "\"{}\"",
-        ret.trim()
-    ))]))
+
+    let lit = ArcStr::from(format!("\"{}\"", ret.trim()));
+    Token::Literal(LiteralToken::Str(vec![lit.substr(..)]))
 }

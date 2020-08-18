@@ -196,7 +196,7 @@ impl Lexer {
         Ok(Token::Literal(literal))
     }
     // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, radix: Radix, span_start: u32) -> Result<ArcStr, LexError> {
+    fn parse_float(&mut self, radix: Radix, span_start: u32) -> Result<Substr, LexError> {
         // parse fraction: second {digits} in regex
         while let Some(c) = self.peek() {
             let c = c as char;

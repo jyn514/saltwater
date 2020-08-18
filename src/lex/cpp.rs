@@ -695,9 +695,9 @@ impl<'a> PreProcessor<'a> {
                 } if name == defined => {
                     let def = Self::defined(&mut lex_tokens, location)?;
                     let literal = if definitions.contains_key(&def) {
-                        LiteralToken::Int(literal!("1"))
+                        LiteralToken::Int(literal!("1").substr(..))
                     } else {
-                        LiteralToken::Int(literal!("0"))
+                        LiteralToken::Int(literal!("0").substr(..))
                     };
                     location.with(Token::Literal(literal))
                 }
@@ -713,7 +713,7 @@ impl<'a> PreProcessor<'a> {
                 if let Ok(tok) = &mut token {
                     expr_location = Some(location.maybe_merge(expr_location));
                     if let Token::Id(_) = tok.data {
-                        tok.data = Token::Literal(LiteralToken::Int(literal!("0")));
+                        tok.data = Token::Literal(LiteralToken::Int(literal!("0").substr(..)));
                     }
                 }
                 token
@@ -1166,11 +1166,13 @@ impl<'a> PreProcessor<'a> {
 }
 
 fn int_def(i: i32) -> Definition {
-    Definition::Object(vec![LiteralToken::Int(ArcStr::from(i.to_string())).into()])
+    let arcstr = ArcStr::from(i.to_string());
+    Definition::Object(vec![LiteralToken::Int(arcstr.substr(..)).into()])
 }
+
 fn str_def<S: Into<String>>(s: S) -> Definition {
     let rcstr = ArcStr::from(format!("\"{}\"", s.into().replace(r#"""#, r#"\""#)));
-    Definition::Object(vec![LiteralToken::Str(vec![rcstr]).into()])
+    Definition::Object(vec![LiteralToken::Str(vec![rcstr.substr(..)]).into()])
 }
 
 macro_rules! built_in_headers {

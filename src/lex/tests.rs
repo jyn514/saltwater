@@ -174,21 +174,22 @@ fn test_float_literals() {
     fn rcstr<S: ToString>(x: S) -> ArcStr {
         ArcStr::from(x.to_string())
     }
+
     assert!(match_all(
         &lex_all("-1"),
-        &[Token::Minus, LiteralToken::Int(rcstr(1)).into()]
+        &[Token::Minus, LiteralToken::Int(rcstr(1).into()).into()]
     ));
     assert!(match_all(
         &lex_all("-1e10"),
         &[
             Token::Minus,
-            LiteralToken::Float(rcstr(10_000_000_000.0)).into()
+            LiteralToken::Float(rcstr(10_000_000_000.0).into()).into()
         ]
     ));
     assert!(match_data(lex("9223372036854775807u"), |lexed| {
         match_data_eq(
             lexed.unwrap(),
-            &LiteralToken::UnsignedInt(rcstr(9_223_372_036_854_775_807u64)).into(),
+            &LiteralToken::UnsignedInt(rcstr(9_223_372_036_854_775_807u64).into()).into(),
         )
     }));
     assert_float("0x.ep0", 0.875);

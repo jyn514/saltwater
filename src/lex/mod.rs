@@ -1,5 +1,4 @@
 use std::convert::{TryFrom, TryInto};
-use std::rc::Rc;
 
 use codespan::FileId;
 
@@ -36,7 +35,7 @@ type LexResult<T = Token> = Result<T, Locatable<LexError>>;
 #[derive(Debug)]
 pub struct Lexer {
     location: SingleLocation,
-    chars: Rc<str>,
+    chars: ArcStr,
     /// used for 2-character tokens
     current: Option<char>,
     /// used for 3-character tokens
@@ -78,7 +77,7 @@ pub(crate) struct SingleLocation {
 
 impl Lexer {
     /// Creates a Lexer from a filename and the contents of a file
-    pub fn new<S: Into<Rc<str>>>(file: FileId, chars: S, debug: bool) -> Lexer {
+    pub fn new<S: Into<ArcStr>>(file: FileId, chars: S, debug: bool) -> Lexer {
         Lexer {
             given_newline_error: false,
             debug,
@@ -122,7 +121,7 @@ impl Lexer {
         use std::ops::Range;
 
         let range: Range<usize> = self.span(span_start).span.into();
-        ArcStr::from(self.chars.clone()).substr(range)
+        self.chars.substr(range)
     }
 
     /// Parse a number literal, given the starting character and whether floats are allowed.

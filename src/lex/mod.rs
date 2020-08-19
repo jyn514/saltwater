@@ -1059,3 +1059,23 @@ impl LiteralToken {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::Lexer;
+    use arcstr::ArcStr;
+    #[test]
+    fn test_lexer_slice_parent() {
+        let mut files = codespan::Files::new();
+        let astr = arcstr::literal!("int main() { return 0; }\n");
+        let dummy_id = files.add("dummy main", ArcStr::clone(&astr));
+        let mut lexer = Lexer::new(dummy_id, &astr, false);
+        let _ = lexer.next();
+        let sliced = lexer.slice(0);
+        // Note that the parent is not guaranteed to be equal for empty strings,
+        // since we don't want to have an empty substr which is the last
+        // remaining thing keeping some non-empty ArcStr from being freed.
+        assert!(!sliced.is_empty(), "{:?}", sliced);
+        assert!(ArcStr::ptr_eq(sliced.parent(), &astr));
+    }
+}

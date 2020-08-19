@@ -404,14 +404,7 @@ impl std::fmt::Display for LiteralToken {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(s) => {
-                let joined = s
-                    // .iter()
-                    // .map(Substr::as_str)
-                    // .collect::<Vec<_>>()
-                    .join(" ");
-                write!(f, "{}", joined)
-            }
+            Str(s) => write!(f, "{}", s.join(" ")),
             Char(s) => write!(f, "{}", s),
         }
     }

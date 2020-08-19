@@ -26,6 +26,8 @@ compile_error!(concat!(
     "` binary."
 ));
 
+use arcstr::ArcStr;
+
 /// The `Source` type for `codespan::Files`.
 ///
 /// Used to store extra metadata about the file, like the absolute filename.
@@ -36,7 +38,7 @@ compile_error!(concat!(
 /// since it does not adhere to the C standard.
 #[derive(Debug, Clone)]
 pub struct Source {
-    pub code: Rc<str>,
+    pub code: ArcStr,
     pub path: PathBuf,
 }
 
@@ -356,16 +358,16 @@ mod jit {
         }
     }
 
-    impl TryFrom<Rc<str>> for JIT {
+    impl TryFrom<ArcStr> for JIT {
         type Error = Error;
-        fn try_from(source: Rc<str>) -> Result<JIT, Self::Error> {
+        fn try_from(source: ArcStr) -> Result<JIT, Self::Error> {
             JIT::from_string(source, Opt::default()).result
         }
     }
 
     impl JIT {
         /// Compile string and return JITed code.
-        pub fn from_string<R: Into<Rc<str>>>(source: R, opt: Opt) -> Program<Self, Error> {
+        pub fn from_string<R: Into<ArcStr>>(source: R, opt: Opt) -> Program<Self, Error> {
             let source = source.into();
             let module = initialize_jit_module();
             let program = compile(module, &source, opt);
@@ -444,7 +446,7 @@ mod jit {
     }
 }
 
-impl<T: Into<Rc<str>>> From<T> for Source {
+impl<T: Into<ArcStr>> From<T> for Source {
     fn from(src: T) -> Self {
         Self {
             code: src.into(),

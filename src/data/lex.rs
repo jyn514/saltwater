@@ -7,7 +7,7 @@ use proptest_derive::Arbitrary;
 use crate::data::hir::BinaryOp;
 use crate::intern::InternedStr;
 
-use shared_str::RcStr;
+use arcstr::Substr;
 
 // holds where a piece of code came from
 // should almost always be immutable
@@ -166,11 +166,11 @@ pub enum ComparisonToken {
 #[derive(Clone, Debug)]
 pub enum LiteralToken {
     // literals
-    Int(RcStr),
-    UnsignedInt(RcStr),
-    Float(RcStr),
-    Str(Vec<RcStr>),
-    Char(RcStr),
+    Int(Substr),
+    UnsignedInt(Substr),
+    Float(Substr),
+    Str(Vec<Substr>),
+    Char(Substr),
 }
 
 impl PartialEq for LiteralToken {
@@ -404,15 +404,15 @@ impl std::fmt::Display for LiteralToken {
             Int(i) => write!(f, "{}", i),
             UnsignedInt(u) => write!(f, "{}", u),
             Float(n) => write!(f, "{}", n),
-            Str(rcstr) => {
-                let joined = rcstr
-                    .iter()
-                    .map(RcStr::as_str)
-                    .collect::<Vec<_>>()
+            Str(s) => {
+                let joined = s
+                    // .iter()
+                    // .map(Substr::as_str)
+                    // .collect::<Vec<_>>()
                     .join(" ");
                 write!(f, "{}", joined)
             }
-            Char(rcstr) => write!(f, "{}", rcstr.as_str()),
+            Char(s) => write!(f, "{}", s),
         }
     }
 }
@@ -463,8 +463,8 @@ impl From<ComparisonToken> for Token {
 #[cfg(test)]
 mod proptest_impl {
     use super::LiteralToken;
+    use arcstr::Substr;
     use proptest::prelude::*;
-    use shared_str::RcStr;
 
     impl Arbitrary for LiteralToken {
         type Parameters = ();
@@ -472,19 +472,19 @@ mod proptest_impl {
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             prop_oneof![
                 // TODO give regex of all possible literals
-                any::<i64>().prop_map(|x| LiteralToken::Int(RcStr::from(x.to_string()))),
-                any::<u64>().prop_map(|x| LiteralToken::UnsignedInt(RcStr::from(x.to_string()))),
-                any::<f64>().prop_map(|x| LiteralToken::Float(RcStr::from(x.to_string()))),
-                any::<u8>().prop_map(|c| LiteralToken::Char(RcStr::from(format!(
+                any::<i64>().prop_map(|x| LiteralToken::Int(Substr::from(x.to_string()))),
+                any::<u64>().prop_map(|x| LiteralToken::UnsignedInt(Substr::from(x.to_string()))),
+                any::<f64>().prop_map(|x| LiteralToken::Float(Substr::from(x.to_string()))),
+                any::<u8>().prop_map(|c| LiteralToken::Char(Substr::from(arcstr::format!(
                     "\'{}\'",
                     (c as char).escape_default()
                 )))),
                 prop::collection::vec(".*", 1..10).prop_map(|strs| {
-                    let rcstrs = strs
+                    let substrs = strs
                         .into_iter()
-                        .map(|s| RcStr::from(format!("\"{}\"", s.escape_default())))
+                        .map(|s| Substr::from(arcstr::format!("\"{}\"", s.escape_default())))
                         .collect();
-                    LiteralToken::Str(rcstrs)
+                    LiteralToken::Str(substrs)
                 }),
             ]
             .boxed()

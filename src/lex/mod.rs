@@ -1,5 +1,4 @@
 use std::convert::{TryFrom, TryInto};
-use std::rc::Rc;
 
 use codespan::FileId;
 
@@ -9,7 +8,7 @@ use super::data::{
     *,
 };
 use super::intern::InternedStr;
-use shared_str::RcStr;
+use arcstr::{ArcStr, Substr};
 
 mod cpp;
 mod files;
@@ -36,7 +35,7 @@ type LexResult<T = Token> = Result<T, Locatable<LexError>>;
 #[derive(Debug)]
 pub struct Lexer {
     location: SingleLocation,
-    chars: Rc<str>,
+    chars: ArcStr,
     /// used for 2-character tokens
     current: Option<char>,
     /// used for 3-character tokens
@@ -78,7 +77,7 @@ pub(crate) struct SingleLocation {
 
 impl Lexer {
     /// Creates a Lexer from a filename and the contents of a file
-    pub fn new<S: Into<Rc<str>>>(file: FileId, chars: S, debug: bool) -> Lexer {
+    pub fn new<S: Into<ArcStr>>(file: FileId, chars: S, debug: bool) -> Lexer {
         Lexer {
             given_newline_error: false,
             debug,
@@ -118,14 +117,12 @@ impl Lexer {
         self.chars[self.location.offset as usize..].chars()
     }
 
-    fn slice(&self, span_start: u32) -> RcStr {
+    fn slice(&self, span_start: u32) -> Substr {
         use std::ops::Range;
-        RcStr::from(self.chars.clone())
-            .slice_with(|s| {
-                s.get::<Range<usize>>(self.span(span_start).span.into())
-                    .unwrap_or("")
-            })
-            .unwrap()
+        self.chars.substr_using(|s| {
+            s.get::<Range<usize>>(self.span(span_start).span.into())
+                .unwrap_or("")
+        })
     }
 
     /// Parse a number literal, given the starting character and whether floats are allowed.
@@ -199,7 +196,7 @@ impl Lexer {
         Ok(Token::Literal(literal))
     }
     // at this point we've already seen a '.', if we see one again it's an error
-    fn parse_float(&mut self, radix: Radix, span_start: u32) -> Result<RcStr, LexError> {
+    fn parse_float(&mut self, radix: Radix, span_start: u32) -> Result<Substr, LexError> {
         // parse fraction: second {digits} in regex
         while let Some(c) = self.peek() {
             let c = c as char;

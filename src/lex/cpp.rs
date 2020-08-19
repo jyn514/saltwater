@@ -25,12 +25,11 @@
 
 use lazy_static::lazy_static;
 
-use shared_str::RcStr;
+use arcstr::{ArcStr, Substr};
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::convert::TryFrom;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 use super::files::FileProcessor;
 use super::replace::{replace, replace_iter, Definition, Definitions};
@@ -55,7 +54,7 @@ use crate::Files;
 /// ```
 pub struct PreProcessorBuilder<'a> {
     /// The buffer for the starting file
-    buf: Rc<str>,
+    buf: ArcStr,
     /// The name of the file
     filename: PathBuf,
     /// Whether to print each token before replacement
@@ -67,7 +66,7 @@ pub struct PreProcessorBuilder<'a> {
 }
 
 impl<'a> PreProcessorBuilder<'a> {
-    pub fn new<S: Into<Rc<str>>>(buf: S) -> PreProcessorBuilder<'a> {
+    pub fn new<S: Into<ArcStr>>(buf: S) -> PreProcessorBuilder<'a> {
         PreProcessorBuilder {
             debug: false,
             filename: PathBuf::default(),
@@ -163,9 +162,9 @@ impl From<Vec<Token>> for Definition {
 impl TryFrom<&str> for Definition {
     type Error = error::LexError;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let value = Rc::from(format!("{}\n", value));
+        let value = arcstr::format!("{}\n", value);
         let mut files = codespan::Files::new();
-        let dummy_id = files.add("<impl TryFrom<&str> for Definition>", Rc::clone(&value));
+        let dummy_id = files.add("<impl TryFrom<&str> for Definition>", ArcStr::clone(&value));
         let lexer = Lexer::new(dummy_id, value, false);
         lexer
             .map(|res| match res {
@@ -315,7 +314,7 @@ impl<'a> PreProcessor<'a> {
     /// but will never delete a file.
     ///
     /// The `debug` parameter specifies whether to print out tokens before replacement.
-    pub fn new<'search: 'a, I: IntoIterator<Item = Cow<'search, Path>>, S: Into<Rc<str>>>(
+    pub fn new<'search: 'a, I: IntoIterator<Item = Cow<'search, Path>>, S: Into<ArcStr>>(
         chars: S,
         filename: impl Into<std::ffi::OsString>,
         debug: bool,
@@ -683,6 +682,9 @@ impl<'a> PreProcessor<'a> {
     where
         L: Iterator<Item = Locatable<Token>>,
     {
+        const ONE: LiteralToken = LiteralToken::Int(arcstr::literal_substr!("1"));
+        const ZERO: LiteralToken = LiteralToken::Int(arcstr::literal_substr!("0"));
+
         let mut cpp_tokens = Vec::with_capacity(lex_tokens.size_hint().1.unwrap_or_default());
         let defined = "defined".into();
 
@@ -695,9 +697,9 @@ impl<'a> PreProcessor<'a> {
                 } if name == defined => {
                     let def = Self::defined(&mut lex_tokens, location)?;
                     let literal = if definitions.contains_key(&def) {
-                        LiteralToken::Int(RcStr::from("1"))
+                        ONE
                     } else {
-                        LiteralToken::Int(RcStr::from("0"))
+                        ZERO
                     };
                     location.with(Token::Literal(literal))
                 }
@@ -713,7 +715,7 @@ impl<'a> PreProcessor<'a> {
                 if let Ok(tok) = &mut token {
                     expr_location = Some(location.maybe_merge(expr_location));
                     if let Token::Id(_) = tok.data {
-                        tok.data = Token::Literal(LiteralToken::Int(RcStr::from("0")));
+                        tok.data = Token::Literal(ZERO);
                     }
                 }
                 token
@@ -1096,7 +1098,7 @@ impl<'a> PreProcessor<'a> {
                     Some(file) => {
                         let mut path = PathBuf::from("<builtin>");
                         path.push(filename);
-                        (path, Rc::from(file))
+                        (path, ArcStr::from(file))
                     }
                     None => return Err(not_found),
                 }
@@ -1104,7 +1106,7 @@ impl<'a> PreProcessor<'a> {
         };
         let source = crate::Source {
             path,
-            code: Rc::clone(&src),
+            code: ArcStr::clone(&src),
         };
         self.file_processor.add_file(filename, source);
         Ok(())
@@ -1166,11 +1168,11 @@ impl<'a> PreProcessor<'a> {
 }
 
 fn int_def(i: i32) -> Definition {
-    Definition::Object(vec![LiteralToken::Int(RcStr::from(i.to_string())).into()])
+    Definition::Object(vec![LiteralToken::Int(Substr::from(i.to_string())).into()])
 }
 fn str_def<S: Into<String>>(s: S) -> Definition {
-    let rcstr = RcStr::from(format!("\"{}\"", s.into().replace(r#"""#, r#"\""#)));
-    Definition::Object(vec![LiteralToken::Str(vec![rcstr]).into()])
+    let substr = Substr::from(arcstr::format!("\"{}\"", s.into().replace(r#"""#, r#"\""#)));
+    Definition::Object(vec![LiteralToken::Str(vec![substr]).into()])
 }
 
 macro_rules! built_in_headers {

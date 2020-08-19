@@ -4,8 +4,8 @@ use crate::{
     ErrorHandler, Location,
 };
 use crate::{Files, Source};
+use arcstr::ArcStr;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 // TODO: this API is absolutely terrible, there's _no_ encapsulation
 pub(super) struct FileProcessor {
@@ -49,7 +49,7 @@ impl Iterator for FileProcessor {
 
 impl FileProcessor {
     pub(super) fn new(
-        chars: impl Into<Rc<str>>,
+        chars: impl Into<ArcStr>,
         filename: impl Into<std::ffi::OsString>,
         debug: bool,
     ) -> Self {
@@ -57,7 +57,7 @@ impl FileProcessor {
         let chars = chars.into();
         let filename = filename.into();
         let source = crate::Source {
-            code: Rc::clone(&chars),
+            code: ArcStr::clone(&chars),
             path: filename.clone().into(),
         };
         let file = files.add(filename, source);
@@ -87,7 +87,7 @@ impl FileProcessor {
         self.includes.last_mut().unwrap_or(&mut self.first_lexer)
     }
     pub(super) fn add_file(&mut self, filename: PathBuf, source: Source) {
-        let code = Rc::clone(&source.code);
+        let code = ArcStr::clone(&source.code);
         let id = self.files.add(filename, source);
         self.includes
             .push(Lexer::new(id, code, self.first_lexer.debug));

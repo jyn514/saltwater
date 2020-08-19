@@ -4,10 +4,10 @@ use std::io::{self, Read};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ansi_term::{ANSIString, Colour};
+use arcstr::ArcStr;
 use pico_args::Arguments;
 use saltwater::{
     assemble, compile,
@@ -116,7 +116,7 @@ macro_rules! sw_try {
 
 // TODO: when std::process::termination is stable, make err_exit an impl for CompileError
 // TODO: then we can move this into `main` and have main return `Result<(), Error>`
-fn real_main(buf: Rc<str>, bin_opt: BinOpt, output: &Path) -> Result<(), (Error, Files)> {
+fn real_main(buf: ArcStr, bin_opt: BinOpt, output: &Path) -> Result<(), (Error, Files)> {
     let opt = if bin_opt.preprocess_only {
         use std::io::{BufWriter, Write};
 
@@ -266,7 +266,7 @@ fn main() {
             });
         opt.opt.filename
     };
-    let buf: Rc<_> = buf.into();
+    let buf: ArcStr = buf.into();
     let max_errors = opt.opt.max_errors;
     let color_choice = opt.color;
     real_main(buf, opt, &output)

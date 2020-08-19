@@ -2,7 +2,7 @@ use super::{CompileResult, LiteralToken, Locatable, Token};
 use crate::data::hir::LiteralValue;
 use crate::data::lex::test::{cpp, cpp_no_newline};
 use crate::intern::InternedStr;
-use shared_str::RcStr;
+use arcstr::Substr;
 
 type LexType = CompileResult<Locatable<Token>>;
 
@@ -171,24 +171,24 @@ fn test_float_literals() {
     for i in 0..10 {
         assert_float(&format!("1{}e{}", "0".repeat(i), 10 - i), 1e10);
     }
-    fn rcstr<S: ToString>(x: S) -> RcStr {
-        RcStr::from(x.to_string())
+    fn substr<S: ToString>(x: S) -> Substr {
+        Substr::from(x.to_string())
     }
     assert!(match_all(
         &lex_all("-1"),
-        &[Token::Minus, LiteralToken::Int(rcstr(1)).into()]
+        &[Token::Minus, LiteralToken::Int(substr(1)).into()]
     ));
     assert!(match_all(
         &lex_all("-1e10"),
         &[
             Token::Minus,
-            LiteralToken::Float(rcstr(10_000_000_000.0)).into()
+            LiteralToken::Float(substr(10_000_000_000.0)).into()
         ]
     ));
     assert!(match_data(lex("9223372036854775807u"), |lexed| {
         match_data_eq(
             lexed.unwrap(),
-            &LiteralToken::UnsignedInt(rcstr(9_223_372_036_854_775_807u64)).into(),
+            &LiteralToken::UnsignedInt(substr(9_223_372_036_854_775_807u64)).into(),
         )
     }));
     assert_float("0x.ep0", 0.875);

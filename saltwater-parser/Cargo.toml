@@ -1,0 +1,31 @@
+[package]
+name = "saltwater-parser"
+version = "0.11.0"
+authors = ["Joshua Nelson <jyn514@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+path = "lib.rs"
+
+[dependencies]
+lazy_static = "1"
+arcstr = "0.2.2"
+hexponent = "0.3"
+thiserror = "^1.0.10"
+target-lexicon = "0.10"
+lasso = "0.2"
+codespan = { version = ">=0.9.5", default-features = false }
+counter = "0.4"
+shared_str = "0.1.1"
+time = "0.2"
+cranelift-codegen = { version = "0.66", optional = true }
+cranelift-object = { version = "0.66", optional = true }
+
+[dev-dependencies]
+proptest = "^0.9.6"
+proptest-derive = "0.1"
+
+[features]
+codegen = ["cranelift-codegen", "cranelift-object"]
+jit = []

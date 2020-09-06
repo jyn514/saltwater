@@ -1,0 +1,23 @@
+[package]
+name = "saltwater-codegen"
+version = "0.11.0"
+authors = ["Joshua Nelson <jyn514@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+path = "lib.rs"
+
+[dependencies]
+cranelift = "0.66"
+cranelift-module = "0.66"
+cranelift-object = "0.66"
+cranelift-simplejit = { version = "0.66", optional = true }
+target-lexicon = "0.10"
+
+lazy_static = "1"
+
+saltwater-parser = { path = "../saltwater-parser", features = ["codegen"] }
+
+[features]
+jit = ["cranelift-simplejit", "saltwater-parser/jit"]

@@ -11,8 +11,8 @@ use std::io;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-pub use codespan;
 use arcstr::ArcStr;
+pub use codespan;
 
 /// The `Source` type for `codespan::Files`.
 ///

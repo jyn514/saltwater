@@ -57,7 +57,7 @@ mod struct_ref {
         ///
         /// Examples:
         /// ```
-        /// use saltwater::data::types::StructRef;
+        /// use saltwater_parser::data::types::StructRef;
         /// let struct_ref = StructRef::new();
         /// let members = struct_ref.get();
         /// for symbol in members.iter() {
@@ -183,7 +183,7 @@ pub struct FunctionType {
 impl Type {
     /// https://stackoverflow.com/questions/14821936/what-is-a-scalar-object-in-c#14822074
     #[inline]
-    pub(crate) fn is_scalar(&self) -> bool {
+    pub fn is_scalar(&self) -> bool {
         use Type::*;
         match self {
             Enum(_, _) => true,

@@ -8,25 +8,11 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 use std::rc::Rc;
 
-pub use codespan;
-#[cfg(feature = "codegen")]
-use cranelift_module::{Backend, Module};
-
-#[cfg(feature = "codegen")]
-pub use ir::initialize_aot_module;
-
-#[cfg(all(feature = "color-backtrace", not(feature = "cc")))]
-compile_error!(concat!(
-    "The color-backtrace feature does nothing unless used by the `",
-    env!("CARGO_PKG_DIR"),
-    "` binary."
-));
-
 use arcstr::ArcStr;
+pub use codespan;
 
 /// The `Source` type for `codespan::Files`.
 ///
@@ -49,8 +35,6 @@ impl AsRef<str> for Source {
 }
 
 pub type Files = codespan::Files<Source>;
-#[cfg(feature = "codegen")]
-pub type Product = <cranelift_object::ObjectBackend as Backend>::Product;
 /// A result which includes all warnings, even for `Err` variants.
 ///
 /// If successful, this returns an `Ok(T)`.
@@ -85,12 +69,11 @@ pub use parse::Parser;
 #[macro_use]
 mod macros;
 mod analyze;
-mod arch;
+/// Architecture-specific traits and data
+pub mod arch;
 pub mod data;
 mod fold;
 pub mod intern;
-#[cfg(feature = "codegen")]
-mod ir;
 mod lex;
 mod parse;
 
@@ -100,9 +83,11 @@ pub use lex::replace;
 pub enum Error {
     #[error("{}", .0.iter().map(|err| err.data.to_string()).collect::<Vec<_>>().join("\n"))]
     Source(VecDeque<CompileError>),
+
     #[cfg(feature = "codegen")]
     #[error("linking error: {0}")]
     Platform(cranelift_object::object::write::Error),
+
     #[error("io error: {0}")]
     IO(#[from] io::Error),
 }
@@ -263,186 +248,6 @@ pub fn check_semantics(buf: &str, opt: Opt) -> Program<Vec<Locatable<hir::Declar
         result,
         warnings,
         files: cpp.into_files(),
-    }
-}
-
-#[cfg(feature = "codegen")]
-/// Compile and return the declarations and warnings.
-pub fn compile<B: Backend>(module: Module<B>, buf: &str, opt: Opt) -> Program<Module<B>> {
-    let debug_asm = opt.debug_asm;
-    let mut program = check_semantics(buf, opt);
-    let hir = match program.result {
-        Ok(hir) => hir,
-        Err(err) => {
-            return Program {
-                result: Err(err),
-                warnings: program.warnings,
-                files: program.files,
-            }
-        }
-    };
-    let (result, ir_warnings) = ir::compile(module, hir, debug_asm);
-    program.warnings.extend(ir_warnings);
-    Program {
-        result: result.map_err(|errs| vec_deque![errs]),
-        warnings: program.warnings,
-        files: program.files,
-    }
-}
-
-#[cfg(feature = "codegen")]
-pub fn assemble(product: Product, output: &Path) -> Result<(), Error> {
-    use io::Write;
-    use std::fs::File;
-
-    let bytes = product.emit().map_err(Error::Platform)?;
-    File::create(output)?
-        .write_all(&bytes)
-        .map_err(io::Error::into)
-}
-
-pub fn link(obj_file: &Path, output: &Path) -> Result<(), io::Error> {
-    use std::io::{Error, ErrorKind};
-    // link the .o file using host linker
-    let status = Command::new("cc")
-        .args(&[&obj_file, Path::new("-o"), output])
-        .status()
-        .map_err(|err| {
-            if err.kind() == ErrorKind::NotFound {
-                Error::new(
-                    ErrorKind::NotFound,
-                    "could not find host cc (for linking). Is it on your PATH?",
-                )
-            } else {
-                err
-            }
-        })?;
-    if !status.success() {
-        Err(Error::new(ErrorKind::Other, "linking program failed"))
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(feature = "jit")]
-pub use jit::*;
-
-#[cfg(feature = "jit")]
-mod jit {
-    use super::*;
-    use crate::ir::get_isa;
-    use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
-    use std::convert::TryFrom;
-
-    pub fn initialize_jit_module() -> Module<SimpleJITBackend> {
-        let libcall_names = cranelift_module::default_libcall_names();
-        Module::new(SimpleJITBuilder::with_isa(get_isa(true), libcall_names))
-    }
-
-    /// Structure used to handle compiling C code to memory instead of to disk.
-    ///
-    /// You can use [`from_string`] to create a JIT instance.
-    /// Alternatively, if you don't care about compile warnings, you can use `JIT::try_from` instead.
-    /// If you already have a `Module`, you can use `JIT::from` to avoid having to `unwrap()`.
-    ///
-    /// JIT stands for 'Just In Time' compiled, the way that Java and JavaScript work.
-    ///
-    /// [`from_string`]: #method.from_string
-    pub struct JIT {
-        module: Module<SimpleJITBackend>,
-    }
-
-    impl From<Module<SimpleJITBackend>> for JIT {
-        fn from(module: Module<SimpleJITBackend>) -> Self {
-            Self { module }
-        }
-    }
-
-    impl TryFrom<ArcStr> for JIT {
-        type Error = Error;
-        fn try_from(source: ArcStr) -> Result<JIT, Self::Error> {
-            JIT::from_string(source, Opt::default()).result
-        }
-    }
-
-    impl JIT {
-        /// Compile string and return JITed code.
-        pub fn from_string<R: Into<ArcStr>>(source: R, opt: Opt) -> Program<Self, Error> {
-            let source = source.into();
-            let module = initialize_jit_module();
-            let program = compile(module, &source, opt);
-            let result = match program.result {
-                Ok(module) => Ok(JIT::from(module)),
-                Err(errs) => Err(errs.into()),
-            };
-            Program {
-                result,
-                warnings: program.warnings,
-                files: program.files,
-            }
-        }
-
-        /// Invoke this function before trying to get access to "new" compiled functions.
-        pub fn finalize(&mut self) {
-            self.module.finalize_definitions();
-        }
-        /// Get a compiled function. If this function doesn't exist then `None` is returned, otherwise its address returned.
-        ///
-        /// # Panics
-        /// Panics if function is not compiled (finalized). Try to invoke `finalize` before using `get_compiled_function`.
-        pub fn get_compiled_function(&mut self, name: &str) -> Option<*const u8> {
-            use cranelift_module::FuncOrDataId;
-
-            let name = self.module.get_name(name);
-            if let Some(FuncOrDataId::Func(id)) = name {
-                Some(self.module.get_finalized_function(id))
-            } else {
-                None
-            }
-        }
-        /// Get compiled static data. If this data doesn't exist then `None` is returned, otherwise its address and size are returned.
-        pub fn get_compiled_data(&mut self, name: &str) -> Option<(*mut u8, usize)> {
-            use cranelift_module::FuncOrDataId;
-
-            let name = self.module.get_name(name);
-            if let Some(FuncOrDataId::Data(id)) = name {
-                Some(self.module.get_finalized_data(id))
-            } else {
-                None
-            }
-        }
-        /// Given a module, run the `main` function.
-        ///
-        /// This automatically calls `self.finalize()`.
-        /// If `main()` does not exist in the module, returns `None`; otherwise returns the exit code.
-        ///
-        /// # Safety
-        /// This function runs arbitrary C code.
-        /// It can segfault, access out-of-bounds memory, cause data races, or do anything else C can do.
-        #[allow(unsafe_code)]
-        pub unsafe fn run_main(&mut self) -> Option<i32> {
-            self.finalize();
-            let main = self.get_compiled_function("main")?;
-            let args = std::env::args().skip(1);
-            let argc = args.len() as i32;
-            // CString should be alive if we want to pass its pointer to another function,
-            // otherwise this may lead to UB.
-            let vec_args = args
-                .map(|string| std::ffi::CString::new(string).unwrap())
-                .collect::<Vec<_>>();
-            // This vec needs to be stored so we aren't passing a pointer to a freed temporary.
-            let argv = vec_args
-                .iter()
-                .map(|cstr| cstr.as_ptr() as *const u8)
-                .collect::<Vec<_>>();
-            assert_ne!(main, std::ptr::null());
-            // this transmute is safe: this function is finalized (`self.finalize()`)
-            // and **guaranteed** to be non-null
-            let main: unsafe extern "C" fn(i32, *const *const u8) -> i32 =
-                std::mem::transmute(main);
-            // though transmute is safe, invoking this function is unsafe because we invoke C code.
-            Some(main(argc, argv.as_ptr() as *const *const u8))
-        }
     }
 }
 

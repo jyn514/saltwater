@@ -14,4 +14,4 @@ owo-colors = "1.1"
 
 [[bin]]
 name = "swcci"
-path = "src/main.rs"
+path = "main.rs"

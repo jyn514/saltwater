@@ -47,6 +47,7 @@ jit = ["saltwater-codegen/jit"]
 _test_headers = []
 
 [workspace]
+members = ["saltwater-repl"]
 
 [[bin]]
 name = "swcc"

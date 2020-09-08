@@ -17,7 +17,7 @@ pub type CompileWarning = Locatable<Warning>;
 /// `Result`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ErrorHandler<T = Error> {
-    errors: VecDeque<Locatable<T>>,
+    pub errors: VecDeque<Locatable<T>>,
     pub warnings: VecDeque<CompileWarning>,
 }
 

@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 saltwater-codegen = { path = "../saltwater-codegen", features = ["jit"] }
+saltwater-parser = { path = "../saltwater-parser" }
 rustyline = "6.2"
 rustyline-derive = "0.3"
 dirs-next = "1.0"

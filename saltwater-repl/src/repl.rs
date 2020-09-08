@@ -1,12 +1,26 @@
 use crate::{commands::default_commands, helper::ReplHelper};
 use dirs_next::data_dir;
 use rustyline::{error::ReadlineError, Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
+use saltwater_codegen::{compile, initialize_jit_module, JIT};
+use saltwater_parser::{
+    data, hir, hir::Declaration, hir::Expr, types, CompileError, Error, Locatable, Parser,
+    PreProcessorBuilder, PureAnalyzer, SyntaxError, Type,
+};
 use std::{collections::HashMap, path::PathBuf};
 
 /// The prefix for commands inside the repl.
 pub(crate) const PREFIX: char = ':';
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PROMPT: &str = ">> ";
+
+macro_rules! execute {
+    ($fun:ident, $ty:path, $action:expr) => {
+        $action(unsafe {
+            let execute: unsafe extern "C" fn() -> $ty = std::mem::transmute($fun);
+            execute()
+        });
+    };
+}
 
 pub struct Repl {
     editor: Editor<ReplHelper>,
@@ -89,7 +103,91 @@ impl Repl {
         }
     }
 
-    fn execute_code(&mut self, _code: &str) {
-        todo!()
+    fn execute_code(&mut self, code: &str) -> Result<(), CompileError> {
+        let module = initialize_jit_module();
+
+        let expr = analyze_expr(code)?;
+        let expr_ty = expr.ctype.clone();
+        let decl = wrap_expr(expr);
+        let module = todo!("how to compile a decl?");
+
+        let mut jit = JIT::from(module);
+        jit.finalize();
+        let fun = jit
+            .get_compiled_function("execute")
+            .expect("this is not good.");
+
+        match expr_ty {
+            Type::Short(signed) => execute!(fun, i16, |x| match signed {
+                true => println!("=> {}", x),
+                false => println!("=> {}", x as u16),
+            }),
+            Type::Int(signed) => execute!(fun, i32, |x| match signed {
+                true => println!("=> {}", x),
+                false => println!("=> {}", x as u32),
+            }),
+            Type::Long(signed) => execute!(fun, i64, |x| match signed {
+                true => println!("=> {}", x),
+                false => println!("=> {}", x as u64),
+            }),
+            Type::Float => execute!(fun, f32, |f| println!("=> {}", f)),
+            Type::Double => execute!(fun, f64, |f| println!("=> {}", f)),
+
+            Type::Char(_) => execute!(fun, char, |c| println!("=> {}", c)),
+            Type::Bool => execute!(fun, bool, |b| println!("=> {}", b)),
+            Type::Void => unsafe {
+                let execute: unsafe extern "C" fn() = std::mem::transmute(fun);
+                execute()
+            },
+
+            // TODO: Implement execution for more types
+            ty => println!("error: expression returns unsupported type: {:?}", ty),
+        };
+        Ok(())
     }
+}
+
+/// Takes an expression and wraps it into a `execute` function that looks like the following:
+///
+/// ```
+/// <type> execute() {
+///     return <expr>;
+/// }
+/// ```
+fn wrap_expr(expr: Expr) -> Locatable<Declaration> {
+    let fun = hir::Variable {
+        ctype: types::Type::Function(types::FunctionType {
+            return_type: Box::new(expr.ctype.clone()),
+            params: vec![],
+            varargs: false,
+        }),
+        storage_class: data::StorageClass::Extern,
+        qualifiers: Default::default(),
+        id: "execute".into(),
+    };
+
+    let span = expr.location;
+    let return_stmt = span.with(hir::StmtType::Return(Some(expr)));
+    let init = hir::Initializer::FunctionBody(vec![return_stmt]);
+    let decl = hir::Declaration {
+        symbol: fun.insert(),
+        init: Some(init),
+    };
+    span.with(decl)
+}
+
+fn analyze_expr(code: &str) -> Result<Expr, Locatable<data::Error>> {
+    let code = format!("{}\n", code).into_boxed_str();
+    let cpp = PreProcessorBuilder::new(code).build();
+    let mut parser = Parser::new(cpp, false);
+    let expr = parser.expr()?;
+
+    let mut analyzer = PureAnalyzer::new();
+    let expr = analyzer.expr(expr);
+
+    if let Some(err) = analyzer.errors().pop_front() {
+        return Err(err);
+    }
+
+    Ok(expr)
 }

@@ -1,24 +1,51 @@
 use crate::repl::Repl;
-use std::collections::HashMap;
+use std::fmt::Write;
 
-pub fn default_commands() -> HashMap<&'static str, fn(&mut Repl, &str)> {
-    let mut map = HashMap::<&'static str, fn(&mut Repl, &str)>::new();
-    map.insert("help", help_command);
-    map.insert("h", help_command);
-    map.insert("quit", quit_command);
-    map.insert("q", quit_command);
-    map
+macro_rules! cmds {
+    ($($($name:expr),* ; $description:expr => $action:expr),*$(,)?) => {{
+        let mut cmds = Vec::new();
+        $(
+            cmds.push(Command { names: &[$($name),*], description: $description, action: $action });
+        )*
+        cmds
+    }};
 }
 
-fn help_command(_repl: &mut Repl, _args: &str) {
-    print!(
-        "\
-Available commands:
-    {p}help|h    Shows this message
-    {p}quit|q    Quits the repl
-",
-        p = crate::repl::PREFIX
-    );
+pub struct Command {
+    pub names: &'static [&'static str],
+    pub description: &'static str,
+    pub action: fn(&mut Repl, &str),
+}
+
+pub fn default_commands() -> Vec<Command> {
+    cmds! {
+        "help", "h"; "Shows this help message" => help_command,
+        "quit", "q"; "Quits the repl" => quit_command,
+    }
+}
+
+pub fn generate_help_message(cmds: &[Command]) -> String {
+    let inner = || {
+        let mut buf = String::new();
+        writeln!(buf, "Available commands:")?;
+        for cmd in cmds {
+            let names = cmd.names.iter().copied().collect::<Vec<_>>().join("|");
+            writeln!(
+                buf,
+                "{:>4}{}{:>4}{}",
+                crate::repl::PREFIX,
+                names,
+                "",
+                cmd.description
+            )?;
+        }
+        Ok::<String, Box<dyn std::error::Error>>(buf)
+    };
+    inner().expect("failed to generate help message")
+}
+
+fn help_command(repl: &mut Repl, _args: &str) {
+    print!("{}", repl.help_message);
 }
 
 fn quit_command(repl: &mut Repl, _args: &str) {

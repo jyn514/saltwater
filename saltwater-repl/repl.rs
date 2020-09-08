@@ -1,4 +1,7 @@
-use crate::{commands::default_commands, helper::ReplHelper};
+use crate::{
+    commands::default_commands, commands::generate_help_message, commands::Command,
+    helper::ReplHelper,
+};
 use dirs_next::data_dir;
 use rustyline::{error::ReadlineError, Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use saltwater_codegen::{compile, initialize_jit_module, JIT};
@@ -24,7 +27,9 @@ macro_rules! execute {
 
 pub struct Repl {
     editor: Editor<ReplHelper>,
-    commands: HashMap<&'static str, fn(&mut Repl, &str)>,
+    commands: Vec<Command>,
+    /// Generated help message for all commands.
+    pub help_message: String,
 }
 
 impl Repl {
@@ -40,14 +45,19 @@ impl Repl {
         let mut editor = Editor::with_config(config);
 
         let commands = default_commands();
-        let helper = ReplHelper::new(commands.keys().copied().collect());
+        let help_message = generate_help_message(&commands);
+        let helper = ReplHelper::new(commands.iter().flat_map(|cmd| cmd.names).copied().collect());
         editor.set_helper(Some(helper));
 
         editor.bind_sequence(KeyPress::Up, Cmd::LineUpOrPreviousHistory(1));
         editor.bind_sequence(KeyPress::Down, Cmd::LineDownOrNextHistory(1));
         editor.bind_sequence(KeyPress::Tab, Cmd::Complete);
 
-        Self { editor, commands }
+        Self {
+            editor,
+            commands,
+            help_message,
+        }
     }
 
     pub fn run(&mut self) -> rustyline::Result<()> {
@@ -94,8 +104,15 @@ impl Repl {
         if line.starts_with(PREFIX) {
             let name = line.split(' ').next().unwrap();
 
-            match self.commands.get(&name[1..]) {
-                Some(action) => action(self, &line[name.len()..]),
+            match self
+                .commands
+                .iter()
+                .find(|cmd| cmd.names.contains(&&name[1..]))
+            {
+                Some(cmd) => {
+                    let action = cmd.action;
+                    action(self, &line[name.len()..])
+                }
                 None => println!("unknown command '{}'", name),
             }
         } else {
@@ -109,7 +126,6 @@ impl Repl {
         let expr = analyze_expr(code)?;
         let expr_ty = expr.ctype.clone();
         let decl = wrap_expr(expr);
-        let module = todo!("how to compile a decl?");
 
         let mut jit = JIT::from(module);
         jit.finalize();

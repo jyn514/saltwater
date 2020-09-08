@@ -4,12 +4,12 @@ use crate::{
 };
 use dirs_next::data_dir;
 use rustyline::{error::ReadlineError, Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
-use saltwater_codegen::{compile, initialize_jit_module, JIT};
+use saltwater_codegen::{initialize_jit_module, JIT};
 use saltwater_parser::{
-    data, hir, hir::Declaration, hir::Expr, types, CompileError, Error, Locatable, Parser,
-    PreProcessorBuilder, PureAnalyzer, SyntaxError, Type,
+    data, hir, hir::Declaration, hir::Expr, types, CompileError, Locatable, Parser,
+    PreProcessorBuilder, PureAnalyzer, Type,
 };
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
 /// The prefix for commands inside the repl.
 pub(crate) const PREFIX: char = ':';
@@ -116,7 +116,13 @@ impl Repl {
                 None => println!("unknown command '{}'", name),
             }
         } else {
-            self.execute_code(line);
+            match self.execute_code(line) {
+                Ok(_) => {}
+                Err(err) => {
+                    // TODO: Proper error reporting
+                    println!("error: {}", err.data);
+                }
+            }
         }
     }
 
@@ -125,7 +131,7 @@ impl Repl {
 
         let expr = analyze_expr(code)?;
         let expr_ty = expr.ctype.clone();
-        let decl = wrap_expr(expr);
+        let _decl = wrap_expr(expr);
 
         let mut jit = JIT::from(module);
         jit.finalize();
@@ -192,7 +198,7 @@ fn wrap_expr(expr: Expr) -> Locatable<Declaration> {
     span.with(decl)
 }
 
-fn analyze_expr(code: &str) -> Result<Expr, Locatable<data::Error>> {
+pub fn analyze_expr(code: &str) -> Result<Expr, Locatable<data::Error>> {
     let code = format!("{}\n", code).into_boxed_str();
     let cpp = PreProcessorBuilder::new(code).build();
     let mut parser = Parser::new(cpp, false);

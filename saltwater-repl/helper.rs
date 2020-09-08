@@ -42,28 +42,11 @@ impl Highlighter for ReplHelper {
 
 impl Validator for ReplHelper {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
-        let input = ctx.input();
-        let mut stack = vec![];
-
-        for c in input.chars() {
-            match c {
-                '(' | '[' | '{' => stack.push(c),
-                ')' | ']' | '}' => match (stack.pop(), c) {
-                    (Some('('), ')') | (Some('['), ']') | (Some('{'), '}') => {}
-                    (_, _) => {
-                        return Ok(ValidationResult::Invalid(Some(
-                            "extra closing delimiter".to_string(),
-                        )));
-                    }
-                },
-                _ => continue,
-            }
-        }
-
-        if stack.is_empty() {
-            Ok(ValidationResult::Valid(None))
+        let result = crate::repl::analyze_expr(ctx.input());
+        if let Err(err) = result {
+            Ok(ValidationResult::Invalid(Some(err.data.to_string())))
         } else {
-            Ok(ValidationResult::Incomplete)
+            Ok(ValidationResult::Valid(None))
         }
     }
 }

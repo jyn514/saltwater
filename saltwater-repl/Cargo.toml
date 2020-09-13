@@ -11,6 +11,7 @@ rustyline = "6.2"
 rustyline-derive = "0.3"
 dirs-next = "1.0"
 owo-colors = "1.1"
+hex = "0.4.2"
 
 [[bin]]
 name = "swcci"

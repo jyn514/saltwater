@@ -17,11 +17,11 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PROMPT: &str = ">> ";
 
 macro_rules! execute {
-    ($fun:ident, $ty:path, $action:expr) => {
-        $action(unsafe {
+    ($fun:ident, $ty:tt) => {
+        unsafe {
             let execute: unsafe extern "C" fn() -> $ty = std::mem::transmute($fun);
             execute()
-        });
+        }
     };
 }
 
@@ -141,27 +141,28 @@ impl Repl {
             .expect("this is not good.");
 
         match expr_ty {
-            Type::Short(signed) => execute!(fun, i16, |x| match signed {
-                true => println!("=> {}", x),
-                false => println!("=> {}", x as u16),
-            }),
-            Type::Int(signed) => execute!(fun, i32, |x| match signed {
-                true => println!("=> {}", x),
-                false => println!("=> {}", x as u32),
-            }),
-            Type::Long(signed) => execute!(fun, i64, |x| match signed {
-                true => println!("=> {}", x),
-                false => println!("=> {}", x as u64),
-            }),
-            Type::Float => execute!(fun, f32, |f| println!("=> {}", f)),
-            Type::Double => execute!(fun, f64, |f| println!("=> {}", f)),
+            Type::Short(true) => println!("=> {}", execute!(fun, i16)),
+            Type::Short(false) => println!("=> {}", execute!(fun, u16)),
 
-            Type::Char(_) => execute!(fun, char, |c| println!("=> {}", c)),
-            Type::Bool => execute!(fun, bool, |b| println!("=> {}", b)),
-            Type::Void => unsafe {
-                let execute: unsafe extern "C" fn() = std::mem::transmute(fun);
-                execute()
-            },
+            Type::Int(true) => println!("=> {}", execute!(fun, i32)),
+            Type::Int(false) => println!("=> {}", execute!(fun, u32)),
+
+            Type::Long(true) => println!("=> {}", execute!(fun, i64)),
+            Type::Long(false) => println!("=> {}", execute!(fun, u64)),
+
+            Type::Float => println!("=> {}", execute!(fun, f32)),
+            Type::Double => println!("=> {}", execute!(fun, f64)),
+
+            Type::Char(_) => {
+                let c = execute!(fun, u8);
+                if c.is_ascii() {
+                    println!("=> {}", c);
+                } else {
+                    println!("=> {}", hex::encode(&[c]));
+                }
+            }
+            Type::Bool => println!("=> {}", execute!(fun, bool)),
+            Type::Void => execute!(fun, ()),
 
             // TODO: Implement execution for more types
             ty => println!("error: expression returns unsupported type: {:?}", ty),

@@ -428,7 +428,7 @@ fn error<T: std::fmt::Display>(msg: T, location: Location, file_db: &Files, colo
     let err = {
         use rand::Rng;
 
-        let name = std::env::var("USER").unwrap_or("programmer".into());
+        let name = std::env::var("USER").unwrap_or_else(|_| "programmer".into());
         shut_up = format!("Shut up, {}. I don't ever want to hear that kind of obvious garbage and idiocy from a developer again", name);
         let msgs = [
             "you can't write code",

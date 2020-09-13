@@ -11,6 +11,9 @@ use saltwater_parser::{
 };
 use std::path::PathBuf;
 
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("only x86_64 is supported");
+
 /// The prefix for commands inside the repl.
 pub(crate) const PREFIX: char = ':';
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -25,7 +28,7 @@ const PROMPT: &str = ">> ";
 macro_rules! execute {
     ($fun:ident, $ty:tt) => {
         unsafe {
-            let execute: unsafe extern "C" fn() -> $ty = std::mem::transmute($fun);
+            let execute = std::mem::transmute::<*const u8, unsafe extern "C" fn() -> $ty>($fun);
             execute()
         }
     };
@@ -146,14 +149,6 @@ impl Repl {
             .get_compiled_function("execute")
             .expect("wrap_expr should create a function named `execute`");
 
-        //let sizes = saltwater_parser::arch::TARGET
-        //.data_model()
-        //.expect("unknown target");
-        //assert_eq!(sizes.short_size().bits(), 16);
-        //assert_eq!(sizes.int_size().bits(), 32);
-        //assert_eq!(sizes.long_size().bits(), 64);
-        //assert_eq!(sizes.float_size().bits(), 32);
-        //assert_eq!(sizes.double_size().bits(), 64);
         match expr_ty {
             Type::Short(true) => println!("=> {}", execute!(fun, i16)),
             Type::Short(false) => println!("=> {}", execute!(fun, u16)),
@@ -179,7 +174,7 @@ impl Repl {
             Type::Void => execute!(fun, ()),
 
             // TODO: Implement execution for more types
-            ty => println!("error: expression has an  unsupported type: {:?}", ty),
+            ty => println!("error: expression has an unsupported type: {:?}", ty),
         };
         Ok(())
     }

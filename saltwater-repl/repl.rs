@@ -4,7 +4,7 @@ use crate::{
 };
 use dirs_next::data_dir;
 use rustyline::{error::ReadlineError, Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
-use saltwater_codegen::{initialize_jit_module, JIT};
+use saltwater_codegen::{compile_decl, initialize_jit_module, JIT};
 use saltwater_parser::{
     data, hir, hir::Declaration, hir::Expr, types, CompileError, Locatable, Parser,
     PreProcessorBuilder, PureAnalyzer, Type,
@@ -131,7 +131,8 @@ impl Repl {
 
         let expr = analyze_expr(code)?;
         let expr_ty = expr.ctype.clone();
-        let _decl = wrap_expr(expr);
+        let decl = wrap_expr(expr);
+        let module = compile_decl(module, decl, Default::default())?;
 
         let mut jit = JIT::from(module);
         jit.finalize();

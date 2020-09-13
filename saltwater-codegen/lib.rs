@@ -345,6 +345,44 @@ impl<B: Backend> Compiler<B> {
 
 pub type Product = <cranelift_object::ObjectBackend as Backend>::Product;
 
+/// Compiles a single declaration.
+pub fn compile_decl<B: Backend>(
+    module: Module<B>,
+    decl: Locatable<Declaration>,
+    debug_asm: bool,
+) -> Result<Module<B>, CompileError> {
+    let mut compiler = Compiler::new(module, debug_asm);
+    let mut err = None;
+
+    let meta = decl.data.symbol.get();
+
+    if !matches!(meta.storage_class, StorageClass::Typedef) {
+        let current = match &meta.ctype {
+            Type::Function(func_type) => match decl.data.init {
+                Some(Initializer::FunctionBody(stmts)) => {
+                    compiler.compile_func(decl.data.symbol, &func_type, stmts, decl.location)
+                }
+                None => compiler.declare_func(decl.data.symbol, false).map(|_| ()),
+                _ => unreachable!("functions can only be initialized by a FunctionBody"),
+            },
+            Type::Void | Type::Error => unreachable!("parser let an incomplete type through"),
+            _ => {
+                if let Some(Initializer::FunctionBody(_)) = &decl.data.init {
+                    unreachable!("only functions should have a function body")
+                }
+                compiler.store_static(decl.data.symbol, decl.data.init, decl.location)
+            }
+        };
+        err = current.err();
+    }
+
+    if let Some(err) = err {
+        Err(err)
+    } else {
+        Ok(compiler.module)
+    }
+}
+
 /// Compile and return the declarations and warnings.
 pub fn compile<B: Backend>(module: Module<B>, buf: &str, opt: Opt) -> Program<Module<B>> {
     use saltwater_parser::{check_semantics, vec_deque};

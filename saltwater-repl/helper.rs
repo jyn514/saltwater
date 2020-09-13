@@ -42,7 +42,11 @@ impl Highlighter for ReplHelper {
 
 impl Validator for ReplHelper {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
-        let result = crate::repl::analyze_expr(ctx.input());
+        if ctx.input().starts_with(crate::repl::PREFIX) {
+            return Ok(ValidationResult::Valid(None));
+        }
+
+        let result = crate::repl::analyze_expr(ctx.input().to_string());
         if let Err(err) = result {
             Ok(ValidationResult::Invalid(Some(err.data.to_string())))
         } else {

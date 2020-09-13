@@ -1,16 +1,6 @@
 use crate::repl::Repl;
 use std::fmt::Write;
 
-macro_rules! cmds {
-    ($($($name:expr),* ; $description:expr => $action:expr),*$(,)?) => {{
-        let mut cmds = Vec::new();
-        $(
-            cmds.push(Command { names: &[$($name),*], description: $description, action: $action });
-        )*
-        cmds
-    }};
-}
-
 pub struct Command {
     pub names: &'static [&'static str],
     pub description: &'static str,
@@ -18,10 +8,18 @@ pub struct Command {
 }
 
 pub fn default_commands() -> Vec<Command> {
-    cmds! {
-        "help", "h"; "Shows this help message" => help_command,
-        "quit", "q"; "Quits the repl" => quit_command,
-    }
+    vec![
+        Command {
+            names: &["help", "h"],
+            description: "Shows this help message",
+            action: help_command,
+        },
+        Command {
+            names: &["quit", "q"],
+            description: "Quits the repl",
+            action: quit_command,
+        },
+    ]
 }
 
 pub fn generate_help_message(cmds: &[Command]) -> String {
@@ -39,13 +37,13 @@ pub fn generate_help_message(cmds: &[Command]) -> String {
                 cmd.description
             )?;
         }
-        Ok::<String, Box<dyn std::error::Error>>(buf)
+        Ok::<String, std::fmt::Error>(buf)
     };
     inner().expect("failed to generate help message")
 }
 
 fn help_command(repl: &mut Repl, _args: &str) {
-    print!("{}", repl.help_message);
+    println!("{}", repl.help_message);
 }
 
 fn quit_command(repl: &mut Repl, _args: &str) {

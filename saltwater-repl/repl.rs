@@ -16,6 +16,12 @@ pub(crate) const PREFIX: char = ':';
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const PROMPT: &str = ">> ";
 
+/// Takes a function pointer and transmute it into a function
+/// that returns the given type. Then executes it and returns the result.
+///
+/// # Safety
+///
+/// `$fun` has to be a valid pointer to a function that returns the `$ty`.
 macro_rules! execute {
     ($fun:ident, $ty:tt) => {
         unsafe {
@@ -64,7 +70,7 @@ impl Repl {
         self.load_history();
 
         println!("Saltwater {}", VERSION);
-        println!(r#"Type "{}help" for more information."#, PREFIX);
+        println!("Type {}help for more information.", PREFIX);
         let result = loop {
             let line = self.editor.readline(PROMPT);
             match line {
@@ -100,9 +106,9 @@ impl Repl {
     fn process_line(&mut self, line: String) {
         self.editor.add_history_entry(line.clone());
 
-        let line = line.trim();
-        if line.starts_with(PREFIX) {
-            let name = line.split(' ').next().unwrap();
+        let trimmed_line = line.trim();
+        if trimmed_line.starts_with(PREFIX) {
+            let name = trimmed_line.split(' ').next().unwrap();
 
             match self
                 .commands
@@ -111,7 +117,7 @@ impl Repl {
             {
                 Some(cmd) => {
                     let action = cmd.action;
-                    action(self, &line[name.len()..])
+                    action(self, &trimmed_line[name.len()..])
                 }
                 None => println!("unknown command '{}'", name),
             }
@@ -126,7 +132,7 @@ impl Repl {
         }
     }
 
-    fn execute_code(&mut self, code: &str) -> Result<(), CompileError> {
+    fn execute_code(&mut self, code: String) -> Result<(), CompileError> {
         let module = initialize_jit_module();
 
         let expr = analyze_expr(code)?;
@@ -138,8 +144,16 @@ impl Repl {
         jit.finalize();
         let fun = jit
             .get_compiled_function("execute")
-            .expect("this is not good.");
+            .expect("wrap_expr should create a function named `execute`");
 
+        //let sizes = saltwater_parser::arch::TARGET
+        //.data_model()
+        //.expect("unknown target");
+        //assert_eq!(sizes.short_size().bits(), 16);
+        //assert_eq!(sizes.int_size().bits(), 32);
+        //assert_eq!(sizes.long_size().bits(), 64);
+        //assert_eq!(sizes.float_size().bits(), 32);
+        //assert_eq!(sizes.double_size().bits(), 64);
         match expr_ty {
             Type::Short(true) => println!("=> {}", execute!(fun, i16)),
             Type::Short(false) => println!("=> {}", execute!(fun, u16)),
@@ -165,7 +179,7 @@ impl Repl {
             Type::Void => execute!(fun, ()),
 
             // TODO: Implement execution for more types
-            ty => println!("error: expression returns unsupported type: {:?}", ty),
+            ty => println!("error: expression has an  unsupported type: {:?}", ty),
         };
         Ok(())
     }
@@ -185,7 +199,7 @@ fn wrap_expr(expr: Expr) -> Locatable<Declaration> {
             params: vec![],
             varargs: false,
         }),
-        storage_class: data::StorageClass::Extern,
+        storage_class: data::StorageClass::Static,
         qualifiers: Default::default(),
         id: "execute".into(),
     };
@@ -200,8 +214,8 @@ fn wrap_expr(expr: Expr) -> Locatable<Declaration> {
     span.with(decl)
 }
 
-pub fn analyze_expr(code: &str) -> Result<Expr, Locatable<data::Error>> {
-    let code = format!("{}\n", code).into_boxed_str();
+pub fn analyze_expr(mut code: String) -> Result<Expr, Locatable<data::Error>> {
+    code.push('\n');
     let cpp = PreProcessorBuilder::new(code).build();
     let mut parser = Parser::new(cpp, false);
     let expr = parser.expr()?;

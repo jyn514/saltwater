@@ -1033,7 +1033,7 @@ impl Type {
             Int(_) => 3,
             Long(_) => 4,
             // don't make this 5 in case we add `long long` at some point
-            _ => std::usize::MAX,
+            _ => usize::MAX,
         }
     }
     // Subclause 2 of 6.3.1.1 Boolean, characters, and integers

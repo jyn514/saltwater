@@ -4,7 +4,7 @@
 #[allow(non_camel_case_types)]
 pub type SIZE_T = u64;
 #[allow(dead_code)]
-pub const SIZE_MAX: SIZE_T = SIZE_T::max_value();
+pub const SIZE_MAX: SIZE_T = SIZE_T::MAX;
 
 pub const FLOAT_SIZE: u16 = 4;
 pub const DOUBLE_SIZE: u16 = 8;

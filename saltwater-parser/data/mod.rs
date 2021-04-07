@@ -165,7 +165,7 @@ mod codegen_impls {
                     IrType::int(int_size.try_into().unwrap_or_else(|_| {
                         panic!(
                             "integers should never have a size larger than {}",
-                            i16::max_value()
+                            i16::MAX
                         )
                     }))
                     .unwrap_or_else(|| panic!("unsupported size for IR: {}", int_size))

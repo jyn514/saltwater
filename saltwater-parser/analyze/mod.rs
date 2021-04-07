@@ -732,7 +732,7 @@ impl PureAnalyzer {
             if let Some(value) = maybe_value {
                 discriminant = Self::const_sint(self.expr(value)).unwrap_or_else(|err| {
                     self.error_handler.push_back(err);
-                    std::i64::MIN
+                    i64::MIN
                 });
             }
             members.push((name, discriminant));

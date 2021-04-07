@@ -257,6 +257,13 @@ impl Iterator for PreProcessor<'_> {
     }
 }
 
+fn now_local() -> time::OffsetDateTime {
+    match time::OffsetDateTime::try_now_local() {
+        Ok(ok) => ok,
+        Err(_) => time::OffsetDateTime::now_utc()
+    }
+}
+
 // idiom: to check if there has been a newline since the last token,
 // use the following pattern:
 // ```rust
@@ -326,7 +333,7 @@ impl<'a> PreProcessor<'a> {
             TARGET.architecture, TARGET.operating_system, TARGET.environment
         );
 
-        let now = time::OffsetDateTime::now_local();
+        let now = now_local();
 
         #[allow(clippy::inconsistent_digit_grouping)]
         let mut definitions = map! {
@@ -611,7 +618,7 @@ impl<'a> PreProcessor<'a> {
             Start,
             SawParen,
             SawId(InternedStr),
-        };
+        }
         use State::*;
         let mut state = Start;
         loop {

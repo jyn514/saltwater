@@ -163,10 +163,7 @@ mod codegen_impls {
                             .sizeof()
                             .expect("integers should always have a valid size");
                     IrType::int(int_size.try_into().unwrap_or_else(|_| {
-                        panic!(
-                            "integers should never have a size larger than {}",
-                            i16::MAX
-                        )
+                        panic!("integers should never have a size larger than {}", i16::MAX)
                     }))
                     .unwrap_or_else(|| panic!("unsupported size for IR: {}", int_size))
                 }

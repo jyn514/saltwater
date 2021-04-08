@@ -260,7 +260,7 @@ impl Iterator for PreProcessor<'_> {
 fn now_local() -> time::OffsetDateTime {
     match time::OffsetDateTime::try_now_local() {
         Ok(ok) => ok,
-        Err(_) => time::OffsetDateTime::now_utc()
+        Err(_) => time::OffsetDateTime::now_utc(),
     }
 }
 

@@ -7,6 +7,12 @@ saltwater: the part of the sea causing lots of rust
 
 A C compiler written in Rust, with a focus on good error messages.
 
+---
+
+_**This project is no longer maintained.**_
+
+---
+
 ## Running
 
 `swcc` reads from standard in by default, so you can type in code directly.

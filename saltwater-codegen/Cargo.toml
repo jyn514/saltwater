@@ -1,7 +1,6 @@
 [package]
 name = "saltwater-codegen"
 version = "0.11.0"
-authors = ["Joshua Nelson <jyn514@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

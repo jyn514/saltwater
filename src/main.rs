@@ -19,7 +19,7 @@ static WARNINGS: AtomicUsize = AtomicUsize::new(0);
 
 const HELP: &str = concat!(
     env!("CARGO_PKG_NAME"), " ", env!("CARGO_PKG_VERSION"), "\n",
-    "Joshua Nelson <jyn514@gmail.com>\n",
+    "Jynn Nelson <github@jyn.dev>\n",
     env!("CARGO_PKG_DESCRIPTION"), "\n",
     "Homepage: ", env!("CARGO_PKG_REPOSITORY"), "\n",
     "\n",

@@ -131,7 +131,7 @@ Hello, world!
 ```txt
 $ swcc --help
 swcc 0.9.0
-Joshua Nelson <jyn514@gmail.com>
+Jynn Nelson <github@jyn.dev>
 A C compiler written in Rust, with a focus on good error messages.
 Homepage: https://github.com/jyn514/rcc/
 
